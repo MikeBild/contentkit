@@ -1,0 +1,12 @@
+{
+  "version": "1",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "tag": "0000_contentkit_baseline",
+      "when": 1782720000000,
+      "breakpoints": true
+    }
+  ]
+}

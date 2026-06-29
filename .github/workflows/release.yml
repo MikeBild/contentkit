@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            asset: contentkit-macos-arm64
+          - os: ubuntu-latest
+            asset: contentkit-linux-x64
+          - os: ubuntu-24.04-arm
+            asset: contentkit-linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - name: Verify release version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "${TAG#v}" = "$(node -p "require('./package.json').version")"
+      - run: npm run lint
+      - run: npm test
+      - run: npm run check:embedded-drift
+      - run: npm run build:binary
+      - run: mv dist/contentkit "${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum contentkit-* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  notify-deploy:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch systemd deploy
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "DEPLOY_DISPATCH_TOKEN unset — skipping deploy dispatch"; exit 0; fi
+          printf '{"event_type":"contentkit-deploy-release","client_payload":{"ref":"%s"}}' "$TAG" \
+            | gh api -X POST repos/MikeBild/subkit-deploy/dispatches --input -

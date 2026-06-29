@@ -1,0 +1,93 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { VERSION } from './version.mjs'
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)))
+
+function readDotEnv(path) {
+  const values = {}
+  try {
+    for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Z][A-Z0-9_]*)=(.*)\s*$/)
+      if (!match) continue
+      let value = match[2]
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1)
+      }
+      values[match[1]] = value
+    }
+  } catch {}
+  return values
+}
+
+function loadEnvironment() {
+  const external = new Set(Object.keys(process.env))
+  const overrides = readDotEnv(join(root, '.env'))
+  const production = (process.env.NODE_ENV ?? overrides.NODE_ENV) === 'production'
+  if (!production) {
+    for (const [name, value] of Object.entries(readDotEnv(join(root, '.env.defaults')))) {
+      if (process.env[name] === undefined) process.env[name] = value
+    }
+  }
+  for (const [name, value] of Object.entries(overrides)) {
+    if (!external.has(name)) process.env[name] = value
+  }
+}
+
+function integer(name, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const raw = process.env[name]
+  const value = raw === undefined ? fallback : Number.parseInt(raw, 10)
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`)
+  }
+  return value
+}
+
+function bool(name, fallback = false) {
+  const raw = process.env[name]
+  if (raw === undefined) return fallback
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase())
+}
+
+export function loadConfig() {
+  loadEnvironment()
+  const config = {
+    root,
+    host: process.env.HOST || '127.0.0.1',
+    port: integer('PORT', 4050, { min: 1, max: 65535 }),
+    publicUrl: (process.env.CONTENTKIT_PUBLIC_URL || 'http://127.0.0.1:4050').replace(/\/$/, ''),
+    bootstrapApiKey: process.env.CONTENTKIT_BOOTSTRAP_API_KEY || '',
+    keyPepper: process.env.CONTENTKIT_KEY_PEPPER || '',
+    previewSecret: process.env.CONTENTKIT_PREVIEW_SECRET || '',
+    storageUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+    storageServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    databaseUrl: process.env.DATABASE_URL || '',
+    storageBucket: process.env.CONTENTKIT_STORAGE_BUCKET || 'contentkit',
+    subkitWebhookUrl: process.env.CONTENTKIT_SUBKIT_WEBHOOK_URL || '',
+    subkitWebhookSecret: process.env.CONTENTKIT_SUBKIT_WEBHOOK_SECRET || '',
+    turnstileSecret: process.env.CONTENTKIT_TURNSTILE_SECRET || '',
+    trustProxy: bool('CONTENTKIT_TRUST_PROXY', false),
+    maxBodyBytes: integer('CONTENTKIT_MAX_BODY_BYTES', 25 * 1024 * 1024, { min: 1024, max: 250 * 1024 * 1024 }),
+    buildConcurrency: integer('CONTENTKIT_BUILD_CONCURRENCY', 1, { min: 1, max: 8 }),
+    webhookPollMs: integer('CONTENTKIT_WEBHOOK_POLL_MS', 5000, { min: 1000, max: 300000 }),
+    logLevel: process.env.LOG_LEVEL || 'info',
+    version: VERSION,
+  }
+  if (process.env.NODE_ENV === 'production') {
+    const required = {
+      CONTENTKIT_BOOTSTRAP_API_KEY: config.bootstrapApiKey,
+      CONTENTKIT_KEY_PEPPER: config.keyPepper,
+      CONTENTKIT_PREVIEW_SECRET: config.previewSecret,
+      SUPABASE_URL: config.storageUrl,
+      SUPABASE_SERVICE_ROLE_KEY: config.storageServiceKey,
+      DATABASE_URL: config.databaseUrl,
+      CONTENTKIT_SUBKIT_WEBHOOK_URL: config.subkitWebhookUrl,
+      CONTENTKIT_SUBKIT_WEBHOOK_SECRET: config.subkitWebhookSecret,
+      CONTENTKIT_TURNSTILE_SECRET: config.turnstileSecret,
+    }
+    const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name)
+    if (missing.length) throw new Error(`missing production configuration: ${missing.join(', ')}`)
+  }
+  return Object.freeze(config)
+}

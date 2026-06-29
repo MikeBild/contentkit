@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.contentkit-local/
+.node-bin
+payload.tgz
+*.log
+.DS_Store
