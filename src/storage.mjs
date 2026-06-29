@@ -32,7 +32,9 @@ export function createStorage(config, fetchImpl = fetch) {
   const storage = {
     async ensureBucket() {
       const existing = await request(`/storage/v1/bucket/${encodeURIComponent(config.storageBucket)}`).catch((error) => {
-        if (error.status === 404) return null
+        // Self-hosted storage-api currently wraps a missing bucket as HTTP 400
+        // while preserving the actual 404 in its JSON body.
+        if (error.status === 404 || Number(error.details?.statusCode) === 404) return null
         throw error
       })
       if (existing) {

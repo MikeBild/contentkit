@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "API-first Markdown mini-CMS that publishes immutable static-site releases to Supabase Storage.",
   "type": "module",
   "license": "MIT",
