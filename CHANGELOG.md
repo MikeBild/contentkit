@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-04
+
+### Changed
+
+- Dependency updates: `@shikijs/rehype` 4.x, `katex` 0.17, and current major
+  versions of all GitHub Actions used by CI and the release pipeline.
+
+### Fixed
+
+- A timing race in the build-serialization integration test that could hang
+  the suite on slow CI runners.
+
 ## [1.0.0] - 2026-07-04
 
 First public release. Contentkit is an API-first Markdown mini-CMS that turns
@@ -39,4 +51,5 @@ atomic activation and pointer-based rollback.
 - Tag links on content cards now use the same slug as the generated tag pages;
   multi-word tags previously linked to a non-existent URL.
 
+[1.0.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.0.1
 [1.0.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.0.0
