@@ -190,13 +190,23 @@ test('serializes builds at buildConcurrency 1', async () => {
     { async upload() {} },
     { debug() {}, warn() {} },
   )
+  // Poll for the expected state instead of sleeping a fixed interval: on a
+  // slow runner the first (real) build can outlast any fixed delay, and a
+  // gate release fired too early is a silent no-op that hangs the test.
+  const until = async (condition, label) => {
+    const deadline = Date.now() + 15000
+    while (!condition()) {
+      if (Date.now() >= deadline) throw new Error(`timed out waiting for ${label}`)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
   const p1 = manager.publish({ siteId: 's', revisionIds: ['revision'] })
   const p2 = manager.publish({ siteId: 's', revisionIds: ['revision'] })
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  await until(() => gate.length === 1, 'the first build to reach the snapshot gate')
   assert.equal(peak, 1, 'only one build enters the snapshot stage at a time')
-  gate.shift()?.()
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  gate.shift()?.()
+  gate.shift()()
+  await until(() => gate.length === 1, 'the second build to reach the snapshot gate')
+  gate.shift()()
   await Promise.all([p1, p2])
   assert.equal(peak, 1)
 })
