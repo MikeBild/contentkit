@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+      placeholder: |
+        1. POST /v1/sites/... with ...
+        2. Expected 201, got 500 ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Contentkit version
+      description: Output of `contentkit --version` (or the release tag).
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local development (npm start)
+        - Self-hosted binary (production)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Trim to the relevant lines. Remove secrets and API keys.
+      render: shell

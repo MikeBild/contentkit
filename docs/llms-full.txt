@@ -1,0 +1,974 @@
+# Contentkit — Full Documentation for LLMs
+
+This single file contains the complete Contentkit documentation for LLM
+consumption. A concise index is in `docs/llms.txt`; the committed OpenAPI
+snapshot is in `docs/openapi.json`.
+
+Contentkit is an API-first Markdown mini-CMS for personal websites, blogs and
+project portfolios. It stores CMS metadata and immutable content revisions in a
+dedicated PostgreSQL database, stores assets and release objects in private
+Supabase Storage, and serves clean static websites through atomically activated
+release pointers.
+
+- Production API: your own deployment (examples use https://contentkit-api.example.com)
+- Local API: http://127.0.0.1:4050
+- Source: https://github.com/MikeBild/contentkit
+- License: MIT
+
+---
+
+## 1. Core concept
+
+Contentkit turns Markdown into a complete static website:
+
+```
+site config + Markdown + assets
+  ──content API──▶ immutable content items and revisions
+  ──preview/release──▶ rendered static files
+  ──Supabase Storage──▶ immutable release prefix
+  ──ck_activate_release()──▶ active public website
+```
+
+The public website is static output. Most pages need no JavaScript. Search,
+Mermaid, contact forms, comment forms and Turnstile load only on pages that use
+them. HTML is cache-revalidated; first-party assets (site.css, forms.js, …) are
+content-hashed (`/assets/<name>-<hash>.<ext>`) and served `immutable`, so a new
+release changes the URL and returning visitors always fetch the current build
+instead of a stale cached copy. Rollback activates a known release pointer
+without re-rendering or copying files.
+
+Contentkit is not a visual page builder and not a generic Supabase application.
+It is a focused, API-first Markdown-to-static-site CMS with explicit operational
+boundaries.
+
+---
+
+## 2. Base URLs and discovery
+
+Use these service endpoints for discovery and health checks:
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | JSON service descriptor on the configured API host |
+| GET | `/health` | Liveness; returns `ok` while the process is up |
+| GET | `/ready` | Readiness; returns status, version and in-flight release count |
+| GET | `/metrics` | Prometheus metrics |
+| GET | `/openapi.json` | Generated OpenAPI 3.1 spec |
+| GET | `/llms.txt` | Concise LLM documentation index |
+| GET | `/llms-full.txt` | Full LLM documentation in one file |
+
+Production examples in this file use:
+
+```text
+https://contentkit-api.example.com
+```
+
+The committed OpenAPI snapshot is generated with:
+
+```bash
+npm run docs:gen-openapi
+```
+
+CI runs `npm run check:docs-drift`. That test fails when `docs/openapi.json`
+differs from generated OpenAPI, when this file omits an OpenAPI path, when
+`docs/llms.txt` links to missing files, or when the HTTP LLM documentation
+endpoints do not serve the committed files.
+
+---
+
+## 3. Authentication, scopes and API keys
+
+Management endpoints accept either:
+
+```http
+Authorization: Bearer <key>
+```
+
+or:
+
+```http
+X-API-Key: <key>
+```
+
+Production has a bootstrap key from `CONTENTKIT_BOOTSTRAP_API_KEY`. Treat it as
+a break-glass credential. Routine automation should use scoped keys created via
+`POST /v1/api-keys`.
+
+### Key model
+
+A key looks like `ck_<43-char base64url>` (a `ck_` prefix over 32 random bytes).
+The server never stores the raw key: it keeps only `key_hash =
+HMAC-SHA256(key = CONTENTKIT_KEY_PEPPER, message = raw key)` (hex) plus a short
+`key_prefix` (the first 11 characters, e.g. `ck_A1b2C3d4`) for identification.
+The raw key is returned **only once**, in the `key` field of the `POST
+/v1/api-keys` response, and cannot be recovered later — store it in a secret
+manager immediately. Because the hash is peppered, rotating
+`CONTENTKIT_KEY_PEPPER` invalidates every existing key (they will then fail with
+401, see below).
+
+### Authentication errors: 401 vs 403
+
+These two statuses mean different things and are fixed in different ways:
+
+| Status | Body | Meaning | How to fix |
+|---|---|---|---|
+| `401` | `{"error":"unauthorized"}` | The credential was **not accepted**: no key, malformed header, revoked, expired, or the HMAC hash matched no stored key. Sent with a `WWW-Authenticate: Bearer` header. | Verify you sent the exact raw key and that `CONTENTKIT_KEY_PEPPER` matches the pepper in force when the key was created. Do **not** touch scopes — the key was never even recognized. |
+| `403` | `{"error":"insufficient_scope","scope":"<required>","site":"<site-id>"}` | The key **is valid and recognized** but lacks the required scope, or is restricted to `site_ids` that do not include the target site. | Use (or mint) a key that carries the named `scope` for that `site`. |
+
+Worked example: a valid `site:admin` key that returns `401` is not a
+scope/authorization problem — the key bytes or the server pepper are wrong (or
+the key was revoked). By contrast, a `content:write` key calling an
+admin-only endpoint returns `403 insufficient_scope` with `"scope":"site:admin"`
+— that key is fine, it just isn't allowed there.
+
+### Scopes
+
+| Scope | Allows |
+|---|---|
+| `site:admin` | Create/update sites and create scoped API keys |
+| `content:read` | List content items and revisions |
+| `content:write` | Upload Markdown/assets and create immutable revisions |
+| `release:write` | Build previews, publish releases, run scheduled publish and roll back |
+| `moderation:write` | List/moderate comments and contact submissions |
+| `*` | Bootstrap-only global access |
+
+Keys can also be restricted to `site_ids`. If `site_ids` is empty, the key is
+global for its scopes. If `site_ids` contains UUIDs, authorization succeeds only
+for those sites.
+
+Recommended key split:
+
+| Key | Scopes | Use |
+|---|---|---|
+| Site admin key | `site:admin` | Create/update sites and create additional scoped keys |
+| Publishing key | `content:read content:write release:write` | Upload Markdown, build previews, publish releases and roll back |
+| Moderation key | `moderation:write` | Review comments and contact submissions |
+| Scheduler key | `content:read content:write release:write moderation:write` if needed by workflow design | Scheduled publish automation |
+
+A key with only `site:admin` cannot publish content. A publishing key without
+`site:admin` cannot create sites or additional keys. This separation is
+intentional.
+
+Create a publishing key:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/api-keys" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "publisher",
+    "scopes": ["content:read", "content:write", "release:write"],
+    "site_ids": ["<optional-site-id>"]
+  }'
+```
+
+Create a site-admin key:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/api-keys" \
+  -H "Authorization: Bearer $CONTENTKIT_BOOTSTRAP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"site-admin","scopes":["site:admin"]}'
+```
+
+Suggested shell variables:
+
+```bash
+export CONTENTKIT_URL="https://contentkit-api.example.com"
+export CONTENTKIT_SITE_ADMIN_KEY="ck_..."
+export CONTENTKIT_PUBLISH_API_KEY="ck_..."
+```
+
+---
+
+## 4. Complete HTTP API
+
+### Management endpoints
+
+| Method | Path | Scope | Function |
+|---|---|---|---|
+| POST | `/v1/sites` | `site:admin` | Create a site, locales and optional hostnames |
+| PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings |
+| GET | `/v1/sites/{site}/content` | `content:read` | List content items for a site |
+| POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
+| GET | `/v1/content/{item}/revisions` | `content:read` | List immutable revisions for one content item |
+| PUT | `/v1/content/{item}/revisions` | `content:write` | Create another immutable revision for an existing content item |
+| POST | `/v1/sites/{site}/previews` | `release:write` | Build an expiring preview release and return a preview URL |
+| GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
+| POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
+| POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
+| DELETE | `/v1/content/{item}/published` | `release:write` | Unpublish a content item from the live site |
+| POST | `/v1/publish-due` | `release:write` | Publish scheduled revisions grouped by site |
+| POST | `/v1/maintenance/storage-gc` | `release:write` (unrestricted) | GC old release objects and reap stuck builds |
+| GET | `/v1/comments` | `moderation:write` | List pending/approved/rejected comments, optionally filtered by site/status |
+| PATCH | `/v1/comments/{comment}` | `moderation:write` | Approve or reject a comment; approval can publish a new release |
+| GET | `/v1/contact-submissions` | `moderation:write` | List contact submissions, optionally filtered by site |
+| PATCH | `/v1/contact-submissions/{id}` | `moderation:write` | Mark a contact submission as `read` or `closed` |
+| POST | `/v1/api-keys` | `site:admin` | Create a scoped API key; raw key is returned once |
+| GET | `/v1/sites/{site}/webhooks` | `site:admin` | List webhook endpoints (secrets never returned) |
+| POST | `/v1/sites/{site}/webhooks` | `site:admin` | Register a signed webhook endpoint; `whsec_` secret returned once |
+| PATCH | `/v1/sites/{site}/webhooks/{endpoint}` | `site:admin` | Update url/events/description or enable/disable an endpoint |
+| DELETE | `/v1/sites/{site}/webhooks/{endpoint}` | `site:admin` | Delete a webhook endpoint |
+| POST | `/v1/sites/{site}/webhooks/{endpoint}/rotate` | `site:admin` | Rotate the endpoint signing secret; new secret returned once |
+| GET | `/v1/webhook-deliveries` | `site:admin` | List deliveries (status, attempts, last error) for observability |
+| POST | `/v1/webhook-deliveries/{delivery}/retry` | `site:admin` | Manually re-queue a delivery |
+
+### Public endpoints
+
+| Method | Path | Function |
+|---|---|---|
+| POST | `/public/v1/contact` | Submit a contact request |
+| POST | `/public/v1/posts/{post}/comments` | Submit a comment for moderation on a post |
+
+Public endpoints require `site_id` in the request body. They use an in-memory IP
+rate limit, a honeypot field named `website`, input length checks, email
+validation, and Cloudflare Turnstile in production.
+
+### Static gateway endpoints
+
+The same service also serves published static sites:
+
+| Route | Function |
+|---|---|
+| `/p/{token}/...` | Expiring preview release; `noindex`, `private,no-store` |
+| `/media/{asset-id}/...` | Content-addressed uploaded asset; immutable cache |
+| Custom domain paths | Active release files resolved by request host |
+
+Extensionless public paths redirect to trailing-slash directory routes. Missing
+release objects fall back to `/404.html`.
+
+---
+
+## 5. Site administration
+
+Create a site:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "personal",
+    "name": "Example Person",
+    "description": "Personal website and blog.",
+    "base_url": "https://example.com",
+    "default_locale": "de",
+    "locales": ["de", "en"],
+    "domains": ["example.com"],
+    "settings": {
+      "eyebrow": "Software · AI · Products",
+      "hero_title": "Hello.",
+      "hero_text": "Personal website built from Markdown.",
+      "accent": "#2563eb",
+      "theme_color": "#f8fafc",
+      "profile_image": "/media/...",
+      "profile_image_alt": "Portrait",
+      "turnstile_site_key": "<public-turnstile-site-key>",
+      "socials": {
+        "GitHub": "https://github.com/example"
+      }
+    }
+  }'
+```
+
+Important site fields:
+
+| Field | Function |
+|---|---|
+| `slug` | Optional stable slug; defaults from name when omitted |
+| `name` | Site title, brand label and schema.org person name |
+| `description` | SEO description and RSS channel description |
+| `base_url` | Canonical public website URL used in sitemap/RSS/canonical links |
+| `default_locale` | Locale used by root redirect and fallback 404 |
+| `locales` | Locales generated by the static site builder |
+| `domains` | Hostnames that map public gateway requests to this site |
+| `settings.eyebrow` | Small hero label |
+| `settings.hero_title` | Home hero headline |
+| `settings.hero_text` | Home hero copy |
+| `settings.accent` | Primary/accent color. Authored as a hex (`#2563eb`); the site builder converts it to the shadcn-style `H S% L%` triple that `--primary` expects (the theme consumes it via `hsl(var(--primary))`). An HSL triple (`221 83% 53%`) is also accepted verbatim. Injecting a raw hex into `--primary` unconverted breaks every `hsl(var(--primary))` rule (e.g. an invisible submit button). |
+| `settings.theme_color` | `<meta name="theme-color">` |
+| `settings.profile_image` | Optional hero image/avatar URL |
+| `settings.profile_image_alt` | Alt text for profile image |
+| `settings.turnstile_site_key` | **Public** Turnstile site key injected into contact/comment forms. Turnstile is per-site: it is only enforced+rendered when THIS is set. If the server has a global `CONTENTKIT_TURNSTILE_SECRET` but the site has no `turnstile_site_key`, the form renders no widget, produces no token, and every submission fails `422 captcha verification failed`. Set BOTH the public site key here and the matching secret in the env — they are a Cloudflare pair. (Cloudflare test pair: site key `1x00000000000000000000AA` + secret `1x0000000000000000000000000000000AA` always pass; the widget shows a "Testing only" banner — do not use in production.) |
+| `settings.socials` | Footer social links and schema.org `sameAs` |
+| `settings.og_image` | Default Open Graph/Twitter image for pages without a `cover` |
+| `settings.og_image_alt` | Alt text for the default OG image |
+| `settings.favicon` | Favicon URL (also used for the web app manifest icon) |
+| `settings.apple_touch_icon` | Apple touch icon URL |
+| `settings.mask_icon` | Safari mask-icon URL |
+| `settings.twitter_handle` | `@handle` for `twitter:site`/`twitter:creator` |
+| `settings.analytics` | `{ "provider": "plausible", "domain": "..." }` or `{ "provider": "ga4", "id": "G-..." }` |
+
+Update a site:
+
+```bash
+curl -X PATCH "$CONTENTKIT_URL/v1/sites/<site-id>" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"description":"Updated description","settings":{"accent":"#0f766e"}}'
+```
+
+Updating site settings affects future previews/releases. Existing active release
+files remain unchanged until a new release is built.
+
+---
+
+## 6. Content model and frontmatter
+
+Contentkit supports three content kinds:
+
+| Kind | Route |
+|---|---|
+| `page` | `/{locale}/{slug}/` |
+| `post` | `/{locale}/blog/{slug}/` |
+| `project` | `/{locale}/projects/{slug}/` |
+
+Each Markdown write creates an immutable revision. A content item is identified
+by `site_id + kind + locale + translationKey`. A `PUT /v1/content/{item}/revisions`
+request cannot change kind, locale or translation key for that item.
+
+Supported YAML frontmatter:
+
+| Field | Required | Function |
+|---|---:|---|
+| `kind` | no | `page`, `post` or `project`; defaults to `page` |
+| `title` | yes | Title, navigation label and SEO title basis |
+| `locale` | yes | IETF-ish tag such as `de`, `en` or `en-us` |
+| `slug` | no | URL segment; generated from title when omitted |
+| `translationKey` / `translation_key` | no | Stable key linking translations; defaults to slug |
+| `summary` | no | Meta description/card copy; excerpt generated when omitted |
+| `date` / `publishedAt` | no | Published date for posts/projects |
+| `scheduledAt` | no | Marks revision as scheduled until `/v1/publish-due` publishes it |
+| `updatedAt` | no | Used in rendered metadata when supplied |
+| `tags` | no | Tag archive membership for posts |
+| `cover` (or `image`) | no | Per-page Open Graph/Twitter image; overrides `settings.og_image` |
+| `coverAlt` (or `imageAlt`) | no | Alt text for the cover image |
+| `noindex` | no | Emit `<meta name="robots" content="noindex,nofollow">` for this page |
+| `featured` | no | Sort projects ahead of non-featured projects |
+| `technologies` | no | Stored in metadata for project use |
+| `externalUrl` | no | Stored in metadata for project use |
+| `navOrder` | no | Includes pages in the top navigation, sorted ascending |
+
+Example post:
+
+```md
+---
+kind: post
+title: A first post
+locale: en
+slug: first-post
+translationKey: first-post
+summary: A complete Contentkit example.
+date: 2026-06-29T10:00:00+02:00
+tags: [Contentkit, Markdown]
+---
+
+# A first post
+
+Contentkit supports **GFM**, footnotes, KaTeX, Mermaid and Shiki.
+```
+
+---
+
+## 7. Markdown support
+
+The Markdown renderer supports:
+
+- YAML frontmatter;
+- GitHub Flavored Markdown, including tables and task-list inputs;
+- footnotes;
+- math with KaTeX;
+- fenced code highlighting via Shiki using GitHub light/dark themes;
+- safe `:::note`, `:::tip` and `:::warning` directives rendered as callouts;
+- Mermaid code fences rendered client-side only on pages that contain Mermaid;
+- autolinked headings with stable heading IDs.
+
+Raw HTML is sanitized. Script URLs and arbitrary unsafe markup are not passed
+through. Mermaid runs with strict initialization in the browser.
+
+---
+
+## 8. Asset upload and media delivery
+
+Markdown can be uploaded as raw `text/markdown`:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/content" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: text/markdown; charset=utf-8" \
+  --data-binary @post.md
+```
+
+Or as multipart with assets:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/content" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -F "document=@post.md;type=text/markdown" \
+  -F "asset:images/hero.jpg=@hero.jpg;type=image/jpeg"
+```
+
+Asset field names must start with `asset:`. The remaining value is the path used
+inside Markdown. Contentkit rejects empty paths and traversal segments. Uploaded
+asset bytes are SHA-256 content-addressed and stored once per site in Supabase
+Storage. Markdown references like `](images/hero.jpg)` and `src="images/hero.jpg"`
+are rewritten to immutable `/media/<asset-id>/<filename>` URLs.
+
+`/media/...` responses use the asset content type, an ETag based on the SHA-256
+hash and immutable cache headers.
+
+---
+
+## 9. Static output
+
+For each configured locale, Contentkit generates:
+
+| Output | Path |
+|---|---|
+| Locale home | `/{locale}/` |
+| Blog listing | `/{locale}/blog/` |
+| Project listing | `/{locale}/projects/` |
+| Archive | `/{locale}/archive/` |
+| Search page | `/{locale}/search/` |
+| Contact page | `/{locale}/contact/` |
+| Search index | `/{locale}/search-index.json` |
+| RSS feed | `/{locale}/feed.xml` |
+| Tag pages | `/{locale}/tags/{tag}/` |
+| Content pages | by kind-specific route |
+
+Global generated files:
+
+| Output | Path |
+|---|---|
+| Root redirect | `/index.html` redirects to `/{default_locale}/` |
+| Sitemap | `/sitemap.xml` |
+| Robots | `/robots.txt` |
+| Not found page | `/404.html` |
+| Web app manifest | `/manifest.webmanifest` |
+| CSS/JS/fonts | `/assets/...` |
+
+Generated metadata includes canonical links, alternate hreflang links for
+translations (with `x-default`), full OpenGraph (`og:site_name`, `og:locale`,
+`og:image` from the page `cover` or `settings.og_image`, and `article:*` on
+posts), Twitter cards, favicons + web app manifest, optional privacy-first
+analytics (Plausible or GA4), RSS discovery links and JSON-LD for the home page
+(`Person`) and posts (`BlogPosting`).
+
+The layout includes:
+
+- accessible skip link and navigation;
+- navigation entries from pages with `navOrder`;
+- blog/archive/project/search/contact links;
+- footer copyright;
+- social links from `settings.socials`;
+- optional Turnstile script only when forms are present and a site key exists;
+- optional Mermaid scripts only when a page contains Mermaid;
+- optional search JS only on the search page.
+
+---
+
+## 10. Preview, release and rollback
+
+Build a preview:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/previews" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"revision_ids":["<revision-id>"],"expires_in":3600,"reason":"review"}'
+```
+
+Preview details:
+
+- overlays selected revisions on top of the currently published snapshot;
+- creates a release row with kind `preview`;
+- uploads complete static output under an immutable release prefix;
+- returns a URL under `/p/{token}/`;
+- stores only a hash of the preview token;
+- caps expiration at seven days internally;
+- serves preview HTML with `X-Robots-Tag: noindex,nofollow,noarchive` and
+  `private,no-store`.
+
+Publish a release:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"revision_ids":["<revision-id>"],"reason":"initial release"}'
+```
+
+Release details:
+
+- renders the full site snapshot: `revision_ids` are overlaid on top of every
+  currently published item, and `retire_item_ids` are removed from it — items
+  in neither list keep their published revision unchanged;
+- uploads every object before activation;
+- records a manifest in `ck_release_entries`;
+- marks the release `ready`;
+- calls `ck_activate_release()` to switch the active site pointer and published
+  revision state in one database transaction;
+- leaves the previous public site active if render or upload fails;
+- emits `contentkit.release.failed` to the outbox on failure.
+
+Unpublish (retract) content:
+
+```bash
+# remove one item from the live site
+curl -X DELETE "$CONTENTKIT_URL/v1/content/<item-id>/published" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY"
+
+# or retire several items in one release, optionally publishing others
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"retire_item_ids":["<item-id>"],"reason":"unpublish"}'
+```
+
+Unpublishing archives the item's published revision, clears its published
+pointer and activates a fresh release without it. Revisions stay immutable —
+republishing any revision of the item brings it back. `DELETE .../published`
+returns 409 if the item is not currently published.
+
+List releases and roll back:
+
+```bash
+curl "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY"
+
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases/<release-id>/activate" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY"
+```
+
+Rollback activates an existing `ready`, `active` or `superseded` release. It
+does not rebuild or copy files, and it does not rewrite per-item published
+revision pointers — the next regular release is built from those pointers.
+
+Storage lifecycle: each release uploads a full immutable snapshot, so old
+snapshots accumulate. `POST /v1/maintenance/storage-gc` (cron-triggered, an
+unrestricted `release:write` key) sweeps them: it deletes the objects and rows
+of releases that are past `CONTENTKIT_RELEASE_RETENTION_MS`, not currently
+active, outside the per-site `CONTENTKIT_RELEASE_HISTORY_KEEP` rollback window,
+and not referenced by a live preview token; it also reaps releases stuck in
+`building` past `CONTENTKIT_BUILDING_REAP_MS`. A failed or concurrency-aborted
+build also removes its own partial uploads immediately. The active release and
+recent rollback targets are never deleted.
+
+---
+
+## 11. Scheduled publishing
+
+A revision with `scheduledAt` is stored with status `scheduled`. It is not
+published until a release includes it.
+
+`POST /v1/publish-due` finds scheduled revisions whose `scheduled_at` is due,
+groups them by site and publishes one release per site. If multiple due
+revisions exist for the same content item, only the latest is published and the
+earlier due revisions are archived in the same run, so published content never
+walks backwards over successive runs. A failure for one site is isolated and
+reported per-site; it does not abort publishing for the other sites.
+Unpublishing an item also archives its pending scheduled revisions, so a
+retracted post cannot be resurrected by a later publish-due run.
+
+Typical automation is any external scheduler (cron, CI schedule or a workflow engine) calling this endpoint every minute:
+
+```text
+POST /v1/publish-due
+Authorization: Bearer <key with release:write>
+```
+
+Use an idempotency key in the workflow layer; Contentkit itself makes releases
+atomic but does not expose an idempotency header on this endpoint.
+
+---
+
+## 12. Public forms, comments and moderation
+
+Generated contact pages submit to:
+
+```text
+POST /public/v1/contact
+```
+
+Body fields:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `site_id` | yes | Site UUID |
+| `name` | yes | Max 80 chars |
+| `email` | yes | Max 254 chars, basic email validation |
+| `message` | yes | Max 10000 chars |
+| `website` | no | Honeypot; if filled, request is accepted but ignored |
+| `cf-turnstile-response` / `turnstile_token` | production | Turnstile token |
+
+Generated post comment forms submit to:
+
+```text
+POST /public/v1/posts/{post}/comments
+```
+
+Body fields:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `site_id` | yes | Site UUID |
+| `name` | yes | Max 80 chars |
+| `email` | no | Max 254 chars, basic email validation |
+| `message` | yes | Max 5000 chars |
+| `website` | no | Honeypot |
+| `cf-turnstile-response` / `turnstile_token` | production | Turnstile token |
+
+Submitted comments start as `pending`. Approve or reject:
+
+```bash
+curl -X PATCH "$CONTENTKIT_URL/v1/comments/<comment-id>" \
+  -H "Authorization: Bearer $CONTENTKIT_MODERATION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"approved","publish":true}'
+```
+
+If a comment is approved and `publish` is not `false`, Contentkit publishes a
+new release so the approved comment appears on the static post page.
+
+Contact submissions can be listed and marked:
+
+```bash
+curl "$CONTENTKIT_URL/v1/contact-submissions?site_id=<site-id>" \
+  -H "Authorization: Bearer $CONTENTKIT_MODERATION_API_KEY"
+
+curl -X PATCH "$CONTENTKIT_URL/v1/contact-submissions/<id>" \
+  -H "Authorization: Bearer $CONTENTKIT_MODERATION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"read"}'
+```
+
+Valid contact statuses are `new`, `read` and `closed`. Valid comment statuses
+are `pending`, `approved` and `rejected`.
+
+---
+
+## 13. Webhooks and signed notifications
+
+Contentkit delivers events (especially the user-submitted contact and comment
+forms) to configurable per-site endpoints as Standard Webhooks signed messages.
+
+### Endpoints (subscriptions)
+
+Register endpoints per site with `POST /v1/sites/{site}/webhooks`
+(`site:admin`). Each endpoint has its own `whsec_` signing secret (returned
+once on create and on `/rotate`, stored encrypted at rest) and an optional
+`events` filter (empty = all events; entries match the full type, a bare suffix
+like `contact.submitted`, or `contentkit.<entry>`). Endpoint URLs must be https
+and are SSRF-validated on registration — private, loopback, link-local and
+cloud-metadata targets are rejected. An event fans out to every enabled
+matching endpoint. The legacy `CONTENTKIT_WEBHOOK_URL` /
+`CONTENTKIT_WEBHOOK_SECRET` still receives all events as an implicit
+built-in endpoint when configured.
+
+Events emitted:
+
+| Event type | Cause | `data` fields |
+|---|---|---|
+| `contentkit.contact.submitted` | A contact form submission was accepted | `name`, `email`, `message` |
+| `contentkit.comment.submitted` | A comment was submitted for moderation | `post_id`, `author_name`, `author_email`, `body`, `status` |
+| `contentkit.comment.approved` | A comment was approved | `post_id`, `author_name`, `body` |
+| `contentkit.release.failed` | A release/preview build failed | — |
+
+### Payload and signing
+
+The JSON body carries the full submitted content:
+
+```json
+{
+  "event_id": "<uuid>",
+  "type": "contentkit.contact.submitted",
+  "site": { "id": "<uuid>", "name": "Example" },
+  "occurred_at": "2026-07-02T12:00:00.000Z",
+  "data": { "name": "Ada", "email": "ada@example.com", "message": "Hello" },
+  "resource": { "kind": "contact", "id": "<uuid>" },
+  "summary": "New contact request"
+}
+```
+
+Delivery headers follow Standard Webhooks:
+
+| Header | Value |
+|---|---|
+| `webhook-id` | Unique delivery id (a UUID). Dedupe on this — a retried delivery keeps the same id. |
+| `webhook-timestamp` | Unix seconds when the attempt was signed. Reject if outside your tolerance window. |
+| `webhook-type` | The event type, e.g. `contentkit.contact.submitted`. |
+| `webhook-signature` | `v1,<signature>` where `<signature>` is `base64(HMAC-SHA256(secret, "{webhook-id}.{webhook-timestamp}.{raw-body}"))`. Contentkit rotates secrets atomically (a single active secret per endpoint), so it emits exactly one `v1,...` value — but per the Standard Webhooks spec a robust consumer should still tolerate multiple space-separated `v1,...` values and accept if any matches. |
+
+To verify a delivery: take the **raw request body bytes** (do not re-serialize
+the JSON — key order and whitespace must match), build the signed content
+`` `${webhookId}.${webhookTimestamp}.${rawBody}` ``, HMAC-SHA256 it with the
+endpoint secret, base64-encode, and compare in constant time against each
+`v1,`-prefixed value in `webhook-signature`. Then check `webhook-timestamp`
+freshness and dedupe by `webhook-id`.
+
+Important — the HMAC key is the **entire secret string including the `whsec_`
+prefix**, taken as raw UTF-8 bytes. Contentkit does **not** base64-decode the
+part after `whsec_`, so off-the-shelf Standard Webhooks / Svix verifiers (which
+strip `whsec_` and base64-decode the remainder) will compute a different
+signature and reject valid deliveries. Use the secret verbatim:
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+function verify(secret, headers, rawBody, toleranceSeconds = 300) {
+  const id = headers['webhook-id']
+  const timestamp = headers['webhook-timestamp']
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > toleranceSeconds) return false
+  // `secret` is the full "whsec_..." string, used verbatim as the HMAC key.
+  const expected = createHmac('sha256', secret).update(`${id}.${timestamp}.${rawBody}`).digest('base64')
+  const expectedBuf = Buffer.from(expected)
+  return headers['webhook-signature'].split(' ').some((part) => {
+    const sig = part.startsWith('v1,') ? part.slice(3) : null
+    const sigBuf = sig ? Buffer.from(sig) : null
+    return sigBuf && sigBuf.length === expectedBuf.length && timingSafeEqual(sigBuf, expectedBuf)
+  })
+}
+```
+
+### Delivery guarantees
+
+Events are enqueued in the same database transaction as the form write (no lost
+events). Delivery is at-least-once with a per-request timeout, exponential
+backoff with jitter, and up to `CONTENTKIT_WEBHOOK_MAX_ATTEMPTS` attempts before
+a delivery is marked `failed`. An endpoint that accumulates
+`CONTENTKIT_WEBHOOK_CIRCUIT_THRESHOLD` fully-failed deliveries is auto-disabled
+(re-enable via `PATCH .../webhooks/{endpoint}` with `{"enabled":true}`). Inspect
+and replay deliveries with `GET /v1/webhook-deliveries` and
+`POST /v1/webhook-deliveries/{delivery}/retry`.
+
+Recommended automation:
+
+1. a scheduled job (cron or similar) that calls
+   `POST /v1/publish-due`.
+2. a webhook receiver that validates signed
+   events and forwards selected notifications.
+
+Always verify the Standard Webhooks signature at the receiver; never accept unsigned deliveries.
+
+---
+
+## 14. Local development
+
+Requirements: Node 20.12+ and Docker Desktop.
+
+```bash
+npm install
+npm start
+```
+
+`npm start` is zero-config for local development. It loads `.env.defaults`,
+starts or reuses PostgreSQL 16 in Docker, starts a persistent local
+Storage/Webhook boundary and serves Contentkit at `127.0.0.1:4050`.
+
+Local state:
+
+| State | Location |
+|---|---|
+| PostgreSQL | Docker volume `contentkit-local-postgres` |
+| Local storage/webhook boundary | `.contentkit-local/` |
+
+Reset local state:
+
+```bash
+npm run local:reset
+```
+
+Create and publish a local personal profile demo:
+
+```bash
+npm run demo:profile
+```
+
+Then open:
+
+```text
+http://127.0.0.1:4050/de/
+```
+
+For a server without the local helper, use:
+
+```bash
+npm run serve
+```
+
+To migrate without starting HTTP:
+
+```bash
+node server.mjs --migrate
+```
+
+---
+
+## 15. Configuration
+
+Production config is explicit. Missing required production values fail startup.
+
+| Variable | Purpose |
+|---|---|
+| `NODE_ENV=production` | disables `.env.defaults` and enables strict required config |
+| `HOST` | bind address |
+| `PORT` | HTTP port |
+| `CONTENTKIT_PUBLIC_URL` | canonical API/public base URL |
+| `DATABASE_URL` | dedicated Contentkit PostgreSQL database URL |
+| `CONTENTKIT_BOOTSTRAP_API_KEY` | initial break-glass admin key |
+| `CONTENTKIT_KEY_PEPPER` | server-side API key hashing pepper |
+| `CONTENTKIT_PREVIEW_SECRET` | preview token hashing secret |
+| `SUPABASE_URL` | Supabase project URL for Storage API |
+| `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
+| `CONTENTKIT_STORAGE_BUCKET` | Storage bucket name; default `contentkit` |
+| `CONTENTKIT_WEBHOOK_URL` | legacy built-in webhook endpoint URL (receives all events) |
+| `CONTENTKIT_WEBHOOK_SECRET` | Standard Webhooks signing secret for the built-in endpoint |
+| `CONTENTKIT_TURNSTILE_SECRET` | Cloudflare Turnstile secret |
+| `CONTENTKIT_TRUST_PROXY` | trust `X-Forwarded-For` behind a reverse proxy |
+| `CONTENTKIT_MAX_BODY_BYTES` | upload body limit |
+| `CONTENTKIT_BUILD_CONCURRENCY` | concurrent release builds |
+| `CONTENTKIT_WEBHOOK_POLL_MS` | delivery worker poll interval |
+| `CONTENTKIT_WEBHOOK_TIMEOUT_MS` | per-delivery HTTP timeout; default 10000 |
+| `CONTENTKIT_WEBHOOK_MAX_ATTEMPTS` | attempts before a delivery is marked failed; default 10 |
+| `CONTENTKIT_WEBHOOK_CIRCUIT_THRESHOLD` | failed deliveries before an endpoint auto-disables; default 5 |
+| `CONTENTKIT_WEBHOOK_ALLOW_PRIVATE` | allow http/private webhook targets (default true off-production) |
+| `CONTENTKIT_TURNSTILE_DEV_BYPASS` | accept public submissions without a Turnstile secret; local dev only, default false (fail-closed) |
+| `CONTENTKIT_RELEASE_HISTORY_KEEP` | releases kept per site as a rollback window; default 5 |
+| `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible; default 7 days |
+| `CONTENTKIT_BUILDING_REAP_MS` | age after which a release stuck in building is reaped; default 1 hour |
+| `LOG_LEVEL` | structured log verbosity |
+
+Never reuse the Supabase service-role key as a Contentkit, database or webhook
+credential.
+
+---
+
+## 16. Database and migrations
+
+Contentkit owns its schema directly in a dedicated PostgreSQL database on the
+existing production cluster. It does not use Supabase SQL migrations.
+
+The binary embeds the ordered SQL migration journal and SQL bodies from
+`src/db/migrations/`. On every normal boot and on `--migrate`, Contentkit opens a
+dedicated PostgreSQL connection, takes a stable advisory lock, applies pending
+migrations transactionally and records each journal row in the same transaction.
+Stable tags are authoritative, legacy hash-only rows are adopted, and edited
+historical SQL is recorded as hash drift without executing it again.
+
+Operational implication: deployment scripts provision the database and login,
+but the deployed Contentkit binary applies application SQL itself. A migration
+failure aborts HTTP startup.
+
+Add a migration:
+
+1. create an ordered `.sql` file under `src/db/migrations/`;
+2. add the matching journal entry under `src/db/migrations/meta/_journal.json`;
+3. run `npm run db:gen-embedded`;
+4. run migration tests before release.
+
+---
+
+## 17. Binary-only deployment
+
+Contentkit is binary-only for distribution. `package.json` exists for local
+development and build metadata, is marked `private`, and does not define an npm
+package binary or npm publish file list.
+
+Build:
+
+```bash
+npm ci
+npm run build:binary
+```
+
+The resulting `dist/contentkit` embeds Node, dependencies, source, assets,
+documentation, development defaults and the ordered SQL migration journal. It
+extracts a content-hashed runtime under `$HOME/.cache/contentkit/<hash>` on
+first start.
+
+GitHub release tags matching `package.json` build:
+
+- `contentkit-linux-x64`
+- `contentkit-linux-arm64`
+- `contentkit-macos-arm64`
+- `SHA256SUMS`
+
+A typical deployment downloads the Linux x64
+binary, ships it to the production host, applies embedded migrations under the
+service account and performs a smoke test against `/ready`, `/health`,
+`/openapi.json` and an unauthorized write check.
+
+---
+
+## 18. Security model
+
+Security boundaries:
+
+- CMS metadata lives in the dedicated `contentkit` PostgreSQL database.
+- The Storage bucket is private; Contentkit alone has the service-role key.
+- API keys are HMAC-hashed with a server-side pepper and scoped to sites/actions.
+- Preview tokens are random, hashed, expiring and revocable.
+- Markdown raw HTML is sanitized; unsafe links/scripts do not pass through.
+- Mermaid runs in strict mode.
+- Public writes pass Turnstile, honeypot, length checks and IP rate limits.
+- Webhook delivery uses signed Standard Webhooks messages and an outbox worker.
+- Release activation is transactional; failed renders/uploads do not alter the
+  active public site.
+
+Treat all Contentkit management keys as production credentials. Store them in a
+secret manager and prefer scoped keys over the bootstrap key.
+
+---
+
+## 19. Verification and troubleshooting
+
+Run local checks:
+
+```bash
+npm run lint
+npm test
+npm run check:docs-drift
+npm run check:embedded-drift
+npm run test:integration
+npm run test:e2e:local
+npm audit
+```
+
+Common failures:
+
+- startup fails with missing config: production mode requires explicit env vars;
+- startup fails during migrations: embedded migrations could not be applied, so
+  HTTP does not open;
+- `/ready` returns `initializing`: Storage bucket initialization has not
+  succeeded yet;
+- 401: missing, invalid or expired API key (`WWW-Authenticate: Bearer`);
+- 403 `insufficient_scope`: the key is valid but lacks the required scope or
+  site access (response includes the missing `scope` and, when relevant, `site`);
+- 405: known API path with an unsupported method; the `Allow` header lists the
+  supported methods (OPTIONS returns 204 with the same header);
+- 409 on `DELETE /v1/content/{item}/published`: the item is not published;
+- 422 on Markdown upload: invalid frontmatter, slug, locale or YAML;
+- 422 on public writes: invalid captcha, missing fields or invalid email. The
+  most common cause is a **half-configured Turnstile**: the server has a global
+  `CONTENTKIT_TURNSTILE_SECRET` but the target site has no `settings.turnstile_site_key`,
+  so the rendered form has no widget, sends no token, and every submission fails
+  `captcha verification failed`. Fix: set the site's public `turnstile_site_key`
+  to the key that pairs with the secret (or use the Cloudflare test pair);
+- an invisible/broken submit button on a form page: `settings.accent` was stored
+  as a raw hex but reached `--primary` unconverted, so `hsl(var(--primary))`
+  became invalid. The site builder converts hex→`H S% L%`; ensure `accent` is a
+  hex or an HSL triple, then rebuild a release;
+- contact/comment submissions succeed but no downstream notification arrives, or
+  a per-submission `webhook delivery failed: endpoint returned 404`: the legacy
+  built-in `CONTENTKIT_WEBHOOK_URL` (or a registered endpoint) points at an
+  ingress path that does not exist on the receiver. Point it at a live hook and
+  ensure the shared secret matches on both sides (the whole `whsec_...` string is
+  the HMAC key verbatim, not base64-decoded);
+- preview returns 404: token expired, was revoked or was typed incorrectly;
+- custom-domain route returns 503: the site has no active release;
+- every custom-domain path returns 404 (`{"error":"not found"}`): the request
+  `Host` matches no site domain. A wildcard domain (`*.example.com`) matches
+  sub-domains only, never the bare apex (`example.com`), so register the apex as
+  its own domain (or serve it via `www.`) to avoid whole-site 404s;
+- release request fails: render or storage upload failed; the previous active
+  release remains active and a failure event is queued.

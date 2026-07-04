@@ -1,0 +1,173 @@
+# Contentkit
+
+[![CI](https://github.com/MikeBild/contentkit/actions/workflows/ci.yml/badge.svg)](https://github.com/MikeBild/contentkit/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/MikeBild/contentkit)](https://github.com/MikeBild/contentkit/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Markdown in, multilingual static website out.** Contentkit is an API-first
+mini-CMS for personal sites, blogs and project portfolios: you upload Markdown
+through an HTTP API, Contentkit renders it into an immutable static-site
+release and activates it atomically — with instant, pointer-based rollback.
+
+It is deliberately not a WYSIWYG CMS: there is no admin UI, no page builder
+and no plugin system. Content lives as portable Markdown, the API is the
+contract ([OpenAPI 3.1](docs/openapi.json)), and production is a single
+self-contained binary.
+
+## Quickstart
+
+Requirements: Node 20.12+ and Docker Desktop.
+
+```bash
+git clone https://github.com/MikeBild/contentkit.git
+cd contentkit
+npm install
+npm start
+```
+
+`npm start` boots a zero-config local stack (PostgreSQL 16 in Docker plus a
+local storage/webhook boundary), prints the API URL and a development admin
+key, and opens `http://127.0.0.1:4050`. Then publish a complete demo site —
+profile page, blog post and legal notice:
+
+```bash
+npm run demo:profile
+```
+
+Local state lives in the Docker volume `contentkit-local-postgres` and
+`.contentkit-local/`; reset everything with `npm run local:reset`.
+
+## Features
+
+- Pages, posts and projects with immutable draft revisions.
+- GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
+- Locale-prefixed routes, translation alternates, archive and tag pages.
+- RSS, sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
+- Expiring preview links and pointer-based instant rollback.
+- Scoped API keys, moderated guest comments and contact submissions.
+- Cloudflare Turnstile, honeypot and rate limits on public writes.
+- Signed Standard Webhooks notifications for contact, comment and release events.
+- One self-contained Linux binary and hardened systemd deployment.
+
+## How it works
+
+Every content upload creates an immutable revision in PostgreSQL. A release
+renders selected revisions into a complete static site (HTML, RSS, sitemap,
+search index, hashed assets) and uploads it to a private storage bucket under
+a new immutable prefix. Activation atomically moves the site's release
+pointer; rollback moves it back. Serving is a thin gateway that maps custom
+domains to the active release. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full model.
+
+The application applies the SQL bundle embedded in this exact build under a
+PostgreSQL advisory lock before opening HTTP. A migration or storage failure
+aborts startup. To migrate without starting HTTP, run
+`node server.mjs --migrate` (or `NODE_ENV=production dist/contentkit --migrate`).
+
+## Create content
+
+For production, use two scoped keys instead of the bootstrap key:
+
+```bash
+export CONTENTKIT_URL="https://contentkit-api.example.com"
+export CONTENTKIT_SITE_ADMIN_KEY="ck_..."      # site:admin
+export CONTENTKIT_PUBLISH_API_KEY="ck_..."     # content:read content:write release:write
+```
+
+`site:admin` can create/update sites and create more keys. It cannot publish
+content unless the same key also has content/release scopes. A publishing key can
+upload Markdown, build previews and publish releases, but cannot create sites.
+Raw API keys are returned only once by `/v1/api-keys`. Send a key as
+`Authorization: Bearer ck_...` or `X-API-Key: ck_...`. A rejected key returns
+`401 {"error":"unauthorized"}` (missing/revoked/expired or wrong
+`CONTENTKIT_KEY_PEPPER` — the key was not recognized), whereas a recognized key
+without the needed scope returns `403 {"error":"insufficient_scope",...}`. See
+[docs/llms-full.txt](docs/llms-full.txt) section 3 for the full auth model and
+section 13 for webhook signature verification.
+
+Create a site:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"Example",
+    "base_url":"https://example.com",
+    "default_locale":"de",
+    "locales":["de","en"],
+    "domains":["example.com"],
+    "settings":{"hero_title":"Hello","hero_text":"Personal website"}
+  }'
+```
+
+Upload Markdown and referenced files:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/content" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -F "document=@examples/post.de.md;type=text/markdown" \
+  -F "asset:images/hero.jpg=@hero.jpg;type=image/jpeg"
+```
+
+Build a preview or release using the returned revision ID:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/previews" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"revision_ids":["<revision-id>"],"expires_in":3600}'
+
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"revision_ids":["<revision-id>"],"reason":"initial release"}'
+```
+
+The full live contract is available at `/openapi.json`. A committed canonical
+snapshot lives in [docs/openapi.json](docs/openapi.json); update it with
+`npm run docs:gen-openapi` whenever the HTTP API changes. LLM-friendly docs
+are served at `/llms.txt` and `/llms-full.txt`.
+
+## Development
+
+An optional `.env` overrides development defaults; shell environment variables
+override both. `.env.defaults` is never loaded when `NODE_ENV=production`.
+
+```bash
+npm run lint
+npm test
+npm run check:docs-drift
+npm run test:integration
+npm run test:e2e:local
+npm audit
+```
+
+`test:e2e:local` requires Docker and Bun. It boots disposable PostgreSQL,
+executes the compiled single binary against a local storage/webhook boundary,
+and verifies draft, preview, release, custom-domain delivery and signed
+notification delivery.
+
+Add migrations as ordered `.sql` files plus journal entries under
+`src/db/migrations/`, then run `npm run db:gen-embedded`. The build runs the
+generator again and the drift test verifies that the committed bundle matches
+the SQL sources.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
+
+## Deployment and webhooks
+
+Production runs as one self-contained binary (built with `npm run
+build:binary`) behind a reverse proxy; prebuilt binaries with SHA-256
+checksums are attached to every GitHub release. Outbound notifications are
+signed following the Standard Webhooks specification.
+
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — build, systemd, secrets, release pipeline
+- [docs/WEBHOOKS.md](docs/WEBHOOKS.md) — events, signature verification, scheduled publishing
+
+## Versioning and license
+
+Contentkit follows [Semantic Versioning](https://semver.org). Changes are
+documented in the [CHANGELOG](CHANGELOG.md).
+
+[MIT](LICENSE) © Mike Bild

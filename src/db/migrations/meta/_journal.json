@@ -1,0 +1,30 @@
+{
+  "version": "1",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "tag": "0000_contentkit_baseline",
+      "when": 1782720000000,
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "tag": "0001_contentkit_unpublish",
+      "when": 1782950400000,
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "tag": "0002_contentkit_webhooks",
+      "when": 1783180800000,
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "tag": "0003_contentkit_publish_epoch",
+      "when": 1783267200000,
+      "breakpoints": true
+    }
+  ]
+}

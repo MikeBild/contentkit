@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.contentkit-local/
+docs/
+examples/
+package-lock.json
+src/db/migrations/embedded.mjs
+*.md
