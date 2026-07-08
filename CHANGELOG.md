@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The header navigation no longer links Contact, Impressum or the privacy policy;
+  those pages now appear in the footer only. `navOrder` above 60 now means
+  "footer legal column only" (previously: footer *and* trailing header nav).
+- Search moved out of the header navigation into a `role="combobox"` search field
+  in the header itself, with a live results dropdown and full keyboard support. It
+  is inline on wide viewports and a full-width second header row below 48rem.
+  `/{locale}/search/` remains as a noindex `?q=` deep-link target and is no longer
+  linked from the navigation.
+- `search.js` now loads on every page and fetches the search index lazily on the
+  first interaction with the search field, so a page view costs no extra request.
+  Result rows are built via DOM APIs instead of `innerHTML`.
+
+### Fixed
+
+- The empty search result message is now localized instead of always German.
+- `404.html` now references the content-hashed stylesheet and scripts; it
+  previously pointed at unhashed asset paths that no release contains, so it
+  rendered unstyled.
+- Preview rewriting now covers `action` attributes, so the header search form no
+  longer navigates out of a preview to the production search page.
+
 ## [1.1.1] - 2026-07-08
 
 ### Added

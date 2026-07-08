@@ -47,6 +47,11 @@ provision the database and login; they do not copy or execute migration files.
 
 ## Static output
 
-Normal pages need no JavaScript. Search, Mermaid, forms and Turnstile load only
-on pages using them. Shared assets are immutable. HTML is revalidated so an
-atomic release-pointer change becomes visible quickly.
+Pages render without JavaScript except for the header search, which needs it:
+`search.js` ships on every page and fetches the search index lazily on the first
+interaction with the field, so a page view costs no extra request. Mermaid, forms
+and Turnstile still load only on pages using them. `/{locale}/search/` is a static
+page — the header form's GET fallback carries `?q=` deep links and Enter pressed
+before the index has loaded; it is not a server-side search. Shared assets are
+immutable. HTML is revalidated so an atomic release-pointer change becomes visible
+quickly.

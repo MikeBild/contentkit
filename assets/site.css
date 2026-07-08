@@ -64,26 +64,47 @@ svg {
   margin-left: max(1rem, 50% - 36rem);
   margin-right: auto;
 }
+/* The blur sits on a pseudo-element rather than on .site-header itself: a
+   backdrop-filter other than `none` turns an element into a containing block AND
+   a stacking context for every descendant, and WebKit has repeatedly clipped
+   absolutely positioned children of such elements. The search dropdown is exactly
+   such a child, so the filter is isolated behind the header's content instead.
+   Never give .site-header, .nav or .container an `overflow`: it would clip the
+   dropdown and break `position: sticky`. */
 .site-header {
   position: sticky;
   top: 0;
   z-index: 20;
+  isolation: isolate;
   border-bottom: 1px solid hsl(var(--border));
+}
+.site-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: hsl(var(--background) / 0.88);
   backdrop-filter: blur(12px);
 }
 .nav {
   min-height: 4rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
 }
 .brand {
+  order: 1;
+  flex: 0 0 auto;
   font-weight: 750;
   text-decoration: none;
   letter-spacing: -0.02em;
 }
+/* margin-left:auto pushes the links and the search field to the right edge while
+   all three share one line. Flexbox resolves auto margins per line, so once
+   .site-search wraps onto row two it only governs row one (brand | links). */
 .nav-links {
+  order: 2;
   display: flex;
   gap: 1rem;
   margin-left: auto;
@@ -98,6 +119,83 @@ svg {
 .nav-links a:hover,
 .nav-links a[aria-current='page'] {
   color: hsl(var(--foreground));
+}
+/* The search field sits inline on the header row. If the nav grows past the point
+   where it still fits, flex-wrap drops it onto its own row — the same shape as the
+   narrow-screen layout below, so the header never overflows horizontally. */
+.site-search {
+  order: 3;
+  position: relative;
+  flex: 0 1 18rem;
+  min-width: 12rem;
+  margin: 0;
+}
+.site-search .search-box {
+  /* 1rem == 16px. Anything smaller makes iOS Safari zoom the viewport on focus,
+     so the height comes from padding + min-height rather than a smaller font.
+     appearance:none normalizes the searchfield box model; it also drops WebKit's
+     native clear button, which Escape-to-clear in search.js replaces. */
+  font-size: 1rem;
+  min-height: 2.75rem; /* 44px touch target */
+  padding: 0.5rem 0.85rem;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.search-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  left: auto;
+  width: min(28rem, calc(100vw - 3rem));
+  /* Ordered within .site-header's stacking context (z-index 20), so the panel
+     paints over <main> but stays under .consent-banner (fixed, z-index 50) —
+     consent must always stay operable. */
+  z-index: 1;
+  max-height: min(60vh, 26rem);
+  max-height: min(60svh, 26rem); /* the on-screen keyboard shrinks svh, not vh */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  box-shadow: 0 0.75rem 2rem hsl(var(--foreground) / 0.12);
+}
+.search-panel[hidden],
+.search-results[hidden],
+.search-empty[hidden] {
+  display: none;
+}
+.search-option {
+  display: block;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.85rem;
+  text-decoration: none;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.search-option:last-child {
+  border-bottom: 0;
+}
+.search-option:hover,
+.search-option[aria-selected='true'] {
+  background: hsl(var(--muted));
+}
+.search-option-title {
+  display: block;
+  font-weight: 650;
+}
+.search-option-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+}
+.search-empty {
+  margin: 0;
+  padding: 0.9rem;
+  color: hsl(var(--muted-foreground));
 }
 .skip-link {
   position: absolute;
@@ -472,12 +570,24 @@ main {
     width: 11rem;
     grid-row: 1;
   }
+  /* Two rows: brand + links, then the search field across the full width. The
+     flex-basis of 100% is what forces the wrap; `order` documents the intent.
+     The field stays visible — no icon toggle, no dialog. */
   .nav {
-    align-items: flex-start;
-    padding-block: 1rem;
+    align-items: center;
+    padding-block: 0.75rem;
   }
   .nav-links {
     justify-content: flex-end;
+  }
+  .site-search {
+    flex: 1 0 100%;
+    min-width: 0;
+  }
+  .search-panel {
+    left: 0;
+    right: 0;
+    width: auto;
   }
   .archive-list li {
     grid-template-columns: 1fr;

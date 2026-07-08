@@ -14,6 +14,11 @@ const words = {
     published: 'Veröffentlicht',
     updated: 'Aktualisiert',
     searchPlaceholder: 'Website durchsuchen …',
+    searchResults: 'Suchergebnisse',
+    searchHint: 'Tippe in das Suchfeld oben in der Kopfzeile.',
+    noResults: 'Keine Ergebnisse.',
+    oneResult: '1 Ergebnis',
+    manyResults: '{n} Ergebnisse',
     comments: 'Kommentare',
     comment: 'Kommentar schreiben',
     name: 'Name',
@@ -43,6 +48,11 @@ const words = {
     published: 'Published',
     updated: 'Updated',
     searchPlaceholder: 'Search this site …',
+    searchResults: 'Search results',
+    searchHint: 'Type in the search field in the header above.',
+    noResults: 'No results.',
+    oneResult: '1 result',
+    manyResults: '{n} results',
     comments: 'Comments',
     comment: 'Write a comment',
     name: 'Name',
@@ -115,14 +125,15 @@ export function dictionary(locale) {
 function navLinks(ctx) {
   const { locale, t, pages, currentPath } = ctx
   // Built-in links carry fixed weights so page frontmatter (navOrder) can slot
-  // pages anywhere: below 20 leads the nav, above 60 trails it (e.g. Impressum).
+  // pages anywhere in the header: below 20 leads the nav, 41…60 trails it.
+  // navOrder above 60 is reserved for footer-only legal pages (Impressum,
+  // Datenschutzerklärung) — see siteFooter(). Contact is footer-only for the
+  // same reason, and search is the header's combobox, not a navigation link.
   const links = [
-    ...pages.filter((p) => p.nav_order != null).map((p) => [p.title, p.url, p.nav_order]),
+    ...pages.filter((p) => p.nav_order != null && p.nav_order <= 60).map((p) => [p.title, p.url, p.nav_order]),
     [t.blog, `/${locale}/blog/`, 20],
     [t.archive, `/${locale}/archive/`, 30],
     [t.projects, `/${locale}/projects/`, 40],
-    [t.search, `/${locale}/search/`, 50],
-    [t.contact, `/${locale}/contact/`, 60],
   ].sort((a, b) => a[2] - b[2])
   return links
     .map(
@@ -136,8 +147,10 @@ function siteFooter(ctx) {
   const { site, locale, t, pages = [] } = ctx
   const settings = site.settings || {}
   const item = ([label, href], attrs = '') => `<li><a href="${escapeHtml(href)}"${attrs}>${escapeHtml(label)}</a></li>`
-  // Pages weighted past the built-in nav links (navOrder > 60, e.g. Impressum)
-  // double as the footer's legal links next to the contact page.
+  // Pages weighted past the header nav (navOrder > 60, e.g. Impressum,
+  // Datenschutzerklärung) are footer-only legal links. Together with the contact
+  // page they form this column — and the footer is the only place either is
+  // linked from, so this column must never become conditional.
   const legalPages = pages
     .filter((p) => p.nav_order != null && p.nav_order > 60)
     .sort((a, b) => a.nav_order - b.nav_order)
@@ -172,6 +185,31 @@ function siteFooter(ctx) {
 </div>
 <div class="footer-bottom">© ${new Date().getUTCFullYear()} ${escapeHtml(site.name)}</div>
 </div></footer>`
+}
+
+// The header search is a combobox, not navigation, so it sits beside <nav>
+// rather than inside it (role="search" contributes its own landmark).
+//
+// Enter performs a real GET to /{locale}/search/?q=… whenever the lazily fetched
+// index is not in memory yet. That page is a static file: this buys deep links
+// and Enter-before-index-ready, it is NOT a server-side search without JS.
+//
+// Localized strings ride on data-* (the same contract forms.js uses for
+// data-success), so the `words` table stays the single source of translation
+// truth instead of a second copy inside search.js.
+//
+// role="listbox" may only contain options, so the empty-state paragraph is a
+// sibling of the listbox rather than a child, and aria-expanded stays "false"
+// when there is nothing to show. The visually hidden role="status" carries the
+// result count either way.
+function siteSearch(ctx) {
+  const { locale, t } = ctx
+  return `<form class="site-search" role="search" method="get" action="/${escapeHtml(locale)}/search/" data-site-search>
+<label class="sr-only" for="site-search-input">${escapeHtml(t.search)}</label>
+<input id="site-search-input" class="search-box" type="search" name="q" maxlength="100" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="${escapeHtml(t.searchPlaceholder)}" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false" aria-controls="site-search-listbox" data-search-input data-index="/${escapeHtml(locale)}/search-index.json" data-empty-text="${escapeHtml(t.noResults)}" data-count-one="${escapeHtml(t.oneResult)}" data-count-many="${escapeHtml(t.manyResults)}">
+<div class="search-panel" data-search-panel hidden><div class="search-results" id="site-search-listbox" role="listbox" aria-label="${escapeHtml(t.searchResults)}" data-search-listbox hidden></div><p class="search-empty" data-search-empty hidden>${escapeHtml(t.noResults)}</p></div>
+<div class="sr-only" role="status" aria-live="polite" data-search-status></div>
+</form>`
 }
 
 function alternateLinks(translations = [], defaultLocale) {
@@ -256,8 +294,9 @@ export function layout(ctx, body, options = {}) {
       ? String(settings.twitter_handle)
       : `@${settings.twitter_handle}`
     : ''
-  const scripts = []
-  if (options.search) scripts.push(`<script src="${asset('search.js')}" defer></script>`)
+  // The header search field is on every page, so its script is too. It fetches
+  // the index lazily on first interaction, so a plain page view stays request-free.
+  const scripts = [`<script src="${asset('search.js')}" defer></script>`]
   if (options.forms) {
     scripts.push(`<script src="${asset('forms.js')}" defer></script>`)
     if (site.settings?.turnstile_site_key)
@@ -315,10 +354,11 @@ ${scripts.join('\n')}
 </head>
 <body>
 <a class="skip-link" href="#content">Skip to content</a>
-<header class="site-header"><nav class="container nav" aria-label="Main navigation">
+<header class="site-header"><div class="container nav">
 <a class="brand" href="/${escapeHtml(locale)}/">${escapeHtml(site.name)}</a>
-<div class="nav-links">${navLinks({ ...ctx, currentPath })}</div>
-</nav></header>
+<nav class="nav-links" aria-label="Main navigation">${navLinks({ ...ctx, currentPath })}</nav>
+${siteSearch(ctx)}
+</div></header>
 <main id="content">${body}</main>
 ${siteFooter(ctx)}
 </body></html>`
@@ -380,8 +420,16 @@ function commentForm(item, ctx) {
 ${turnstileWidget(ctx)}<div class="form-actions"><button class="button" type="submit">${escapeHtml(ctx.t.send)}</button></div><div class="form-alert" data-form-status role="alert" hidden></div></form>`
 }
 
+// This page has no input of its own — the header combobox is the only search
+// field on the site, including here. It is the header form's GET target: noindex,
+// never linked from the nav, reachable via ?q= deep links. search.js sees
+// [data-search-results], demotes the header input from a combobox (there is no
+// popup here — results render inline) and runs the query from ?q=.
+//
+// No aria-live on the results grid: the header's role="status" already announces
+// the count, and two live regions would announce every keystroke twice.
 export function searchBody(ctx) {
-  return `<section class="container article-header"><h1>${escapeHtml(ctx.t.search)}</h1><label class="sr-only" for="search">${escapeHtml(ctx.t.search)}</label><input id="search" class="search-box" type="search" placeholder="${escapeHtml(ctx.t.searchPlaceholder)}" data-search-input data-index="/${ctx.locale}/search-index.json"></section><section class="container grid" data-search-results aria-live="polite"></section>`
+  return `<section class="container article-header"><h1>${escapeHtml(ctx.t.search)}</h1><p class="article-summary">${escapeHtml(ctx.t.searchHint)}</p></section><section class="container grid" data-search-results></section>`
 }
 
 export function contactBody(ctx) {

@@ -347,7 +347,7 @@ Supported YAML frontmatter:
 | `featured` | no | Sort projects ahead of non-featured projects |
 | `technologies` | no | Stored in metadata for project use |
 | `externalUrl` | no | Stored in metadata for project use |
-| `navOrder` | no | Includes pages in the top navigation, sorted ascending |
+| `navOrder` | no | Includes pages in the header navigation, sorted ascending. Values above 60 place the page in the footer's legal column instead |
 
 Example post:
 
@@ -429,7 +429,7 @@ For each configured locale, Contentkit generates:
 | Blog listing | `/{locale}/blog/` |
 | Project listing | `/{locale}/projects/` |
 | Archive | `/{locale}/archive/` |
-| Search page | `/{locale}/search/` |
+| Search page | `/{locale}/search/` (noindex; the header search form's GET target, prefills from `?q=`) |
 | Contact page | `/{locale}/contact/` |
 | Search index | `/{locale}/search-index.json` |
 | RSS feed | `/{locale}/feed.xml` |
@@ -457,13 +457,17 @@ analytics (Plausible or GA4), RSS discovery links and JSON-LD for the home page
 The layout includes:
 
 - accessible skip link and navigation;
-- navigation entries from pages with `navOrder`;
-- blog/archive/project/search/contact links;
-- footer copyright;
+- header navigation entries from pages with `navOrder` up to 60, plus the
+  built-in blog/archive/project links;
+- a header search field: a `role="combobox"` input with a live results dropdown,
+  responsive down to a full-width second header row on narrow screens;
+- footer contact and legal links (pages with `navOrder` above 60) and copyright;
 - social links from `settings.socials`;
 - optional Turnstile script only when forms are present and a site key exists;
 - optional Mermaid scripts only when a page contains Mermaid;
-- optional search JS only on the search page.
+- `search.js` on every page; it fetches `/{locale}/search-index.json` lazily on
+  the first interaction with the search field, so a page view costs no extra
+  request.
 
 ---
 

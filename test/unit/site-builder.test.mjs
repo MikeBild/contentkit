@@ -59,6 +59,26 @@ test('search page is noindex and stays out of the sitemap', async () => {
   assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /\/en\/search\//)
 })
 
+test('every page carries the header search form and hashed search.js, and the nav omits search and contact', async () => {
+  const result = await build({ revisions: [post({ slug: 'a', title: 'A' })] })
+  for (const path of ['en/index.html', 'en/blog/a/index.html', '404.html']) {
+    const html = result.files.get(path).body.toString()
+    assert.match(
+      html,
+      /<script src="\/assets\/search-[0-9a-f]{10}\.js" defer><\/script>/,
+      `search.js missing in ${path}`,
+    )
+    assert.match(
+      html,
+      /<link rel="stylesheet" href="\/assets\/site-[0-9a-f]{10}\.css">/,
+      `hashed css missing in ${path}`,
+    )
+    assert.match(html, /<form class="site-search" role="search" method="get" action="\/en\/search\/"/, path)
+    const nav = html.match(/<nav class="nav-links"[^>]*>(.*?)<\/nav>/s)[1]
+    assert.doesNotMatch(nav, /\/en\/search\/|\/en\/contact\//, `nav must not link search or contact in ${path}`)
+  }
+})
+
 test('the search index carries lowercased searchable text per item', async () => {
   const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha Beta', tags: ['GaMmA'] })] })
   const index = JSON.parse(result.files.get('en/search-index.json').body.toString())

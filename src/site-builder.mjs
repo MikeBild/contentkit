@@ -220,7 +220,6 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
             noindex: true,
           },
           searchBody(base),
-          { search: true },
         ),
       ),
     )
@@ -380,6 +379,9 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
           posts: [],
           projects: [],
           pages: [],
+          // Without the asset map layout() falls back to unhashed /assets/site.css,
+          // which no release contains — the 404 page would render unstyled.
+          assets,
           title: '404',
           description: 'Not found',
           canonical: absolute(site, '/404'),

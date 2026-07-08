@@ -227,7 +227,9 @@ export function createRequestHandler(ctx) {
     if (preview && body.length && (contentType.includes('html') || contentType.includes('css'))) {
       let value = body.toString('utf8')
       if (contentType.includes('html')) {
-        value = value.replace(/(href|src|data-index)="\/(?!media\/|public\/)/g, `$1="${previewBase}/`)
+        // `action` covers the header search form; the lookahead keeps the public
+        // contact/comment endpoints pointing at the real API.
+        value = value.replace(/(href|src|action|data-index)="\/(?!media\/|public\/)/g, `$1="${previewBase}/`)
       } else {
         value = value.replaceAll('url(/assets/', `url(${previewBase}/assets/`)
       }

@@ -204,20 +204,43 @@ test('post comments can omit the submission form while keeping approved comments
 })
 
 test('search pages can be rendered with noindex robots metadata', () => {
-  const html = render({ noindex: true }, { search: true })
+  const html = render({ noindex: true })
   assert.match(html, /<meta name="robots" content="noindex,nofollow">/)
-  assert.match(html, /<script src="\/assets\/search\.js" defer><\/script>/)
-  assert.match(searchBody({ locale: 'de', t: dictionary('de') }), /data-index="\/de\/search-index\.json"/)
+  // The search page carries no input of its own — the header combobox is the only
+  // one — and no second live region beside the header's role="status".
+  const body = searchBody({ locale: 'de', t: dictionary('de') })
+  assert.match(body, /data-search-results/)
+  assert.doesNotMatch(body, /data-search-input|aria-live/)
 })
 
-test('nav merges page navOrder with built-in link weights', () => {
-  const pages = [
-    { title: 'Profil', url: '/de/profil/', nav_order: 1 },
-    { title: 'Impressum', url: '/de/impressum/', nav_order: 99 },
-  ]
+test('the header ships a search combobox and search.js on every page', () => {
+  const html = render()
+  assert.match(html, /<script src="\/assets\/search\.js" defer><\/script>/)
+  assert.match(html, /<form class="site-search" role="search" method="get" action="\/de\/search\/" data-site-search>/)
+  for (const attribute of [
+    /name="q"/,
+    /type="search"/,
+    /role="combobox"/,
+    /aria-autocomplete="list"/,
+    /aria-expanded="false"/,
+    /aria-controls="site-search-listbox"/,
+    /data-index="\/de\/search-index\.json"/,
+    /data-empty-text="Keine Ergebnisse\."/,
+    /data-count-many="\{n\} Ergebnisse"/,
+    /id="site-search-listbox" role="listbox"/,
+    /role="status" aria-live="polite" data-search-status/,
+  ])
+    assert.match(html, attribute)
+  // Search is not navigation: the form must sit beside the nav landmark, not inside it.
+  const nav = html.match(/<nav class="nav-links"[^>]*>(.*?)<\/nav>/s)[1]
+  assert.doesNotMatch(nav, /data-site-search|<input/)
+})
+
+test('the header nav merges page navOrder with built-in weights and omits search', () => {
+  const pages = [{ title: 'Profil', url: '/de/profil/', nav_order: 1 }]
   const html = render({ pages })
-  const nav = html.match(/<div class="nav-links">(.*?)<\/div>/s)[1]
-  const order = ['Profil', 'Blog', 'Archiv', 'Projekte', 'Suche', 'Kontakt', 'Impressum']
+  const nav = html.match(/<nav class="nav-links"[^>]*>(.*?)<\/nav>/s)[1]
+  const order = ['Profil', 'Blog', 'Archiv', 'Projekte']
   const positions = order.map((label) => nav.indexOf(`>${label}</a>`))
   assert.ok(
     positions.every((p) => p >= 0),
@@ -228,6 +251,29 @@ test('nav merges page navOrder with built-in link weights', () => {
     [...positions].sort((a, b) => a - b),
     `nav order wrong: ${nav}`,
   )
+  assert.equal(nav.indexOf('>Suche</a>'), -1, 'search is the header combobox, not a nav link')
+})
+
+test('contact and legal pages live only in the footer, never in the header nav', () => {
+  const html = render({
+    pages: [
+      { title: 'Profil', url: '/de/profil/', nav_order: 1 },
+      { title: 'Datenschutzerklärung', url: '/de/datenschutz/', nav_order: 70 },
+      { title: 'Impressum', url: '/de/impressum/', nav_order: 99 },
+    ],
+  })
+  const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
+  const footer = html.slice(html.indexOf('<footer class="site-footer">'))
+  // Match `>Label</a>` rather than the bare label: `Kontakt` is also the footer
+  // column's <h2> text and its aria-label.
+  for (const label of ['Kontakt', 'Datenschutzerklärung', 'Impressum']) {
+    assert.equal(header.indexOf(`>${label}</a>`), -1, `${label} must not be linked from the header`)
+    assert.ok(footer.includes(`>${label}</a>`), `${label} must be linked from the footer`)
+  }
+  // navOrder <= 60 still leads the header nav, and stays out of the legal column.
+  assert.match(header, />Profil<\/a>/)
+  const contactCol = footer.match(/<h2>Kontakt<\/h2><ul>(.*?)<\/ul>/s)[1]
+  assert.doesNotMatch(contactCol, /Profil/)
 })
 
 test('footer renders brand, navigation, contact/legal and social columns', () => {
@@ -246,6 +292,7 @@ test('footer renders brand, navigation, contact/legal and social columns', () =>
   })
   const footer = html.match(/<footer class="site-footer">(.*?)<\/footer>/s)[1]
   assert.match(footer, /class="footer-grid"/)
+  assert.doesNotMatch(footer, /data-site-search/)
   assert.match(footer, /<p>Personal site<\/p>/)
   assert.match(footer, /<h2>Navigation<\/h2>/)
   assert.match(footer, /href="\/de\/blog\/">Blog<\/a>/)
