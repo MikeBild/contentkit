@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-07-08
+
+### Fixed
+
+- The redundant-title heading is now also dropped when the title contains inline Markdown.
+  A title such as ``Control Flow vor `async/await` `` is a raw string in the frontmatter but
+  renders as an inlineCode node without backticks in the body, so the two never compared
+  equal and the duplicate `<h1>` survived. Inline markers are stripped from both sides.
+
 ## [1.3.1] - 2026-07-08
 
 ### Fixed

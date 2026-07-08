@@ -67,6 +67,17 @@ test('a leading heading that repeats the title is dropped from the rendered html
   assert.equal(h1s((await renderMarkdown(doc('#   signed   webhooks\n\nText.'))).html), 0)
   assert.equal(h1s((await renderMarkdown(doc('# Signed *Webhooks*\n\nText.'))).html), 0)
 
+  // Inline markdown in the *title* is the case that shipped broken: mdast renders
+  // `` `async/await` `` as an inlineCode node without backticks, while the frontmatter
+  // title is a raw string that still has them.
+  const coded = (title, body) => `---\nkind: post\ntitle: ${title}\nlocale: de\nslug: s\nsummary: S\n---\n\n${body}`
+  assert.equal(h1s((await renderMarkdown(coded('Control Flow vor `x/y`', '# Control Flow vor `x/y`\n\nT.'))).html), 0)
+  assert.equal(h1s((await renderMarkdown(coded('Signed *Webhooks*', '# Signed *Webhooks*\n\nT.'))).html), 0)
+  assert.equal(h1s((await renderMarkdown(coded('snake_case Regeln', '# snake_case Regeln\n\nT.'))).html), 0)
+
+  // A near-miss must not be swallowed.
+  assert.equal(h1s((await renderMarkdown(doc('# Signed Webhooks II\n\nText.'))).html), 1)
+
   // A body that deliberately opens with a different top-level heading keeps it, and a
   // heading that is not the first block is never touched.
   assert.equal(h1s((await renderMarkdown(doc('# Vorwort\n\nText.'))).html), 1)

@@ -34,8 +34,15 @@ function headingText(node) {
   return (node.children || []).map(headingText).join('')
 }
 
+// Compared against `headingText`, which yields the heading's *rendered* text: mdast has
+// already turned `` `async/await` `` into an inlineCode node whose value carries no
+// backticks, and `*x*` into emphasis around plain text. A frontmatter title, being a raw
+// string, still holds that syntax. Strip the inline markers from both sides so the two
+// spellings of the same title compare equal. Applied symmetrically, so a literal
+// underscore inside a word survives on both sides or on neither.
 const normalizeTitle = (value) =>
   String(value || '')
+    .replace(/[`*_~]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase()
