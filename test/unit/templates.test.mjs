@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { layout, dictionary } from '../../src/templates.mjs'
+import { contentBody, dictionary, layout, searchBody } from '../../src/templates.mjs'
 import { contentCsp } from '../../src/security.mjs'
 
 function render(ctxOverrides = {}, options = {}) {
@@ -158,6 +158,56 @@ test('non-ga4 sites render no consent gate or revoke control', () => {
     site: { name: 'Example', base_url: 'https://example.test', default_locale: 'de', settings: {} },
   })
   assert.doesNotMatch(html, /consent\.js|data-consent-settings/)
+})
+
+test('post comments render a submission form by default', () => {
+  const html = contentBody(
+    {
+      kind: 'post',
+      item_id: 'post-1',
+      title: 'A',
+      summary: 'S',
+      html: '<p>Body</p>',
+      published_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      site: { id: 'site-1', settings: {} },
+      t: dictionary('de'),
+      locale: 'de',
+    },
+    [],
+  )
+  assert.match(html, /<form action="\/public\/v1\/posts\/post-1\/comments"/)
+  assert.match(html, /name="email" type="email"/)
+})
+
+test('post comments can omit the submission form while keeping approved comments', () => {
+  const html = contentBody(
+    {
+      kind: 'post',
+      item_id: 'post-1',
+      title: 'A',
+      summary: 'S',
+      html: '<p>Body</p>',
+      published_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      site: { id: 'site-1', settings: { comments: { enabled: false } } },
+      t: dictionary('de'),
+      locale: 'de',
+    },
+    [{ author_name: 'Ada', body: 'Approved' }],
+  )
+  assert.match(html, /Approved/)
+  assert.doesNotMatch(html, /<form action="\/public\/v1\/posts\/post-1\/comments"/)
+  assert.doesNotMatch(html, /Kommentar schreiben/)
+})
+
+test('search pages can be rendered with noindex robots metadata', () => {
+  const html = render({ noindex: true }, { search: true })
+  assert.match(html, /<meta name="robots" content="noindex,nofollow">/)
+  assert.match(html, /<script src="\/assets\/search\.js" defer><\/script>/)
+  assert.match(searchBody({ locale: 'de', t: dictionary('de') }), /data-index="\/de\/search-index\.json"/)
 })
 
 test('nav merges page navOrder with built-in link weights', () => {

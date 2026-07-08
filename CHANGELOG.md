@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-08
+
+### Added
+
+- Site-level `settings.comments.enabled=false` support to suppress public post
+  comment forms while keeping approved comments visible.
+
+### Changed
+
+- Locale search pages are now emitted with `noindex,nofollow` and are omitted
+  from the sitemap.
+- Search indexes now exclude `noindex` content and only include title, summary
+  and tags by default. Full body indexing is opt-in via
+  `settings.search.index_body=true`.
+
+### Fixed
+
+- Public comment submissions now return `404` when comments are disabled for a
+  site, so stale cached forms cannot continue to submit. Contact forms are
+  unaffected.
+
 ## [1.1.0] - 2026-07-08
 
 ### Added
@@ -70,6 +91,7 @@ atomic activation and pointer-based rollback.
 - Tag links on content cards now use the same slug as the generated tag pages;
   multi-word tags previously linked to a non-existent URL.
 
+[1.1.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.1
 [1.1.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.0
 [1.0.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.0.1
 [1.0.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.0.0

@@ -354,6 +354,10 @@ export function contentBody(item, ctx, comments = []) {
   return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(new Date(item.published_at).toLocaleDateString(item.locale))}</time>` : ''}</div></header><div class="container prose">${item.html}${item.kind === 'post' ? commentsBody(item, ctx, comments) : ''}</div></article>`
 }
 
+export function commentsEnabled(site) {
+  return site?.settings?.comments?.enabled !== false
+}
+
 function turnstileWidget(ctx) {
   const siteKey = ctx.site.settings?.turnstile_site_key
   return siteKey
@@ -363,12 +367,17 @@ function turnstileWidget(ctx) {
 
 function commentsBody(item, ctx, comments) {
   return `<section class="comments"><h2>${escapeHtml(ctx.t.comments)}</h2>${comments.map((comment) => `<article class="comment"><strong>${escapeHtml(comment.author_name)}</strong><p>${escapeHtml(comment.body)}</p></article>`).join('')}
+${commentsEnabled(ctx.site) ? commentForm(item, ctx) : ''}</section>`
+}
+
+function commentForm(item, ctx) {
+  return `
 <h3>${escapeHtml(ctx.t.comment)}</h3><form action="/public/v1/posts/${escapeHtml(item.item_id)}/comments" method="post" data-contentkit-form data-success="${escapeHtml(ctx.t.commentPending)}">
 <div class="form-group"><label>${escapeHtml(ctx.t.name)}<input class="form-control" name="name" required maxlength="80"></label></div>
 <div class="form-group"><label>${escapeHtml(ctx.t.email)}<input class="form-control" name="email" type="email" maxlength="254"></label></div>
 <div class="form-group"><label>${escapeHtml(ctx.t.message)}<textarea class="form-control" name="message" required maxlength="5000" rows="6"></textarea></label></div>
 <input class="sr-only" name="website" tabindex="-1" autocomplete="off"><input type="hidden" name="site_id" value="${escapeHtml(ctx.site.id)}">
-${turnstileWidget(ctx)}<div class="form-actions"><button class="button" type="submit">${escapeHtml(ctx.t.send)}</button></div><div class="form-alert" data-form-status role="alert" hidden></div></form></section>`
+${turnstileWidget(ctx)}<div class="form-actions"><button class="button" type="submit">${escapeHtml(ctx.t.send)}</button></div><div class="form-alert" data-form-status role="alert" hidden></div></form>`
 }
 
 export function searchBody(ctx) {

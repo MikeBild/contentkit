@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { renderMarkdown } from './markdown.mjs'
 import {
   archiveBody,
+  commentsEnabled,
   contactBody,
   contentBody,
   dictionary,
@@ -211,7 +212,13 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
       `${locale}/search/index.html`,
       text(
         layout(
-          { ...base, title: t.search, description: t.search, canonical: absolute(site, `/${locale}/search/`) },
+          {
+            ...base,
+            title: t.search,
+            description: t.search,
+            canonical: absolute(site, `/${locale}/search/`),
+            noindex: true,
+          },
           searchBody(base),
           { search: true },
         ),
@@ -233,18 +240,19 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
         translations: staticAlternates((l) => `/${l}/archive/`),
         updated_at: lastUpdated(posts),
       },
-      { canonical: absolute(site, `/${locale}/search/`), translations: staticAlternates((l) => `/${l}/search/`) },
       { canonical: absolute(site, `/${locale}/contact/`), translations: staticAlternates((l) => `/${l}/contact/`) },
     )
+    const searchIndexItems = local.filter((item) => !item.noindex)
+    const includeSearchBody = site.settings?.search?.index_body === true
     files.set(
       `${locale}/search-index.json`,
       text(
         json(
-          local.map((item) => ({
+          searchIndexItems.map((item) => ({
             title: item.title,
             summary: item.summary,
             url: item.url,
-            text: `${item.title} ${item.summary} ${item.tags.join(' ')} ${item.source || item.markdown}`.toLocaleLowerCase(
+            text: `${item.title} ${item.summary} ${item.tags.join(' ')}${includeSearchBody ? ` ${item.source || item.markdown}` : ''}`.toLocaleLowerCase(
               locale,
             ),
           })),
@@ -316,7 +324,7 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
               articleTags: item.kind === 'post' ? item.tags : [],
             },
             contentBody(item, base, itemComments),
-            { structured, mermaid: item.hasMermaid, forms: item.kind === 'post' },
+            { structured, mermaid: item.hasMermaid, forms: item.kind === 'post' && commentsEnabled(site) },
           ),
         ),
       )

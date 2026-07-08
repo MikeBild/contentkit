@@ -15,14 +15,14 @@ const site = {
   settings: {},
 }
 
-function post({ slug, title, tags = [], noindex = false, date = '2026-06-01' }) {
+function post({ slug, title, tags = [], noindex = false, date = '2026-06-01', body = 'Body text.' }) {
   return {
     id: `rev-${slug}`,
     item_id: `item-${slug}`,
     kind: 'post',
     locale: 'en',
     translation_key: slug,
-    markdown: `---\nkind: post\ntitle: ${title}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: About ${title}\ndate: ${date}\ntags: [${tags.join(', ')}]\n${noindex ? 'noindex: true\n' : ''}---\n# ${title}\n\nBody text.`,
+    markdown: `---\nkind: post\ntitle: ${title}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: About ${title}\ndate: ${date}\ntags: [${tags.join(', ')}]\n${noindex ? 'noindex: true\n' : ''}---\n# ${title}\n\n${body}`,
   }
 }
 
@@ -53,6 +53,12 @@ test('noindex posts render a page but stay out of the sitemap', async () => {
   assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /\/blog\/secret\//)
 })
 
+test('search page is noindex and stays out of the sitemap', async () => {
+  const result = await build()
+  assert.match(result.files.get('en/search/index.html').body.toString(), /noindex,nofollow/)
+  assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /\/en\/search\//)
+})
+
 test('the search index carries lowercased searchable text per item', async () => {
   const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha Beta', tags: ['GaMmA'] })] })
   const index = JSON.parse(result.files.get('en/search-index.json').body.toString())
@@ -60,6 +66,40 @@ test('the search index carries lowercased searchable text per item', async () =>
   assert.equal(index[0].url, '/en/blog/a/')
   assert.match(index[0].text, /alpha beta/)
   assert.match(index[0].text, /gamma/)
+})
+
+test('the search index excludes noindex posts and omits body text by default', async () => {
+  const result = await build({
+    revisions: [
+      post({ slug: 'public', title: 'Public', body: 'private body password phrase' }),
+      post({ slug: 'hidden', title: 'Hidden', noindex: true }),
+    ],
+  })
+  const index = JSON.parse(result.files.get('en/search-index.json').body.toString())
+  assert.deepEqual(
+    index.map((item) => item.url),
+    ['/en/blog/public/'],
+  )
+  assert.doesNotMatch(index[0].text, /private body password phrase/)
+})
+
+test('the search index can opt into body text', async () => {
+  const result = await build({
+    site: { ...site, settings: { search: { index_body: true } } },
+    revisions: [post({ slug: 'a', title: 'Alpha', body: 'Unique body phrase' })],
+  })
+  const index = JSON.parse(result.files.get('en/search-index.json').body.toString())
+  assert.match(index[0].text, /unique body phrase/)
+})
+
+test('disabled comments omit post form assets from generated post pages', async () => {
+  const result = await build({
+    site: { ...site, settings: { comments: { enabled: false } } },
+    revisions: [post({ slug: 'a', title: 'Alpha' })],
+  })
+  const page = result.files.get('en/blog/a/index.html').body.toString()
+  assert.doesNotMatch(page, /\/assets\/forms-/)
+  assert.doesNotMatch(page, /\/comments"/)
 })
 
 test('the RSS feed lists posts with absolute links and pubDate', async () => {

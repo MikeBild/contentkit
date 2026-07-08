@@ -101,6 +101,53 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 429, { error: 'rate limit exceeded' }, { 'retry-after': '60' })
     const input = parseJson(await bodyFor(req))
     if (input.website) return sendJson(res, 201, { accepted: true })
+    const commentMatch = url.pathname.match(/^\/public\/v1\/posts\/([^/]+)\/comments$/)
+    if (commentMatch) {
+      const site = await repo.getSite(input.site_id || '')
+      if (!site || site.settings?.comments?.enabled === false) return sendJson(res, 404, { error: 'not found' })
+      const captcha = input['cf-turnstile-response'] || input.turnstile_token
+      if (!(await verifyTurnstile(config, captcha, ip)))
+        return sendJson(res, 422, { error: 'captcha verification failed' })
+      if (!input.name || !input.message || String(input.message).length > 5000) {
+        return sendJson(res, 422, { error: 'name and message are required' })
+      }
+      if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input.email))) {
+        return sendJson(res, 422, { error: 'email is invalid' })
+      }
+      const items = await db.select('ck_content_items', {
+        id: `eq.${commentMatch[1]}`,
+        site_id: `eq.${site.id}`,
+        kind: 'eq.post',
+        limit: '1',
+      })
+      if (!items[0]) return sendJson(res, 404, { error: 'post not found' })
+      const record = await db.tx(async (tx) => {
+        const [row] = await tx.insert('ck_comments', {
+          site_id: site.id,
+          content_item_id: commentMatch[1],
+          author_name: String(input.name).slice(0, 80),
+          author_email: input.email ? String(input.email).slice(0, 254) : null,
+          body: String(input.message).slice(0, 5000),
+          status: 'pending',
+        })
+        await repo.enqueueEvent(tx, {
+          site,
+          type: 'contentkit.comment.submitted',
+          resourceKind: 'comment',
+          resourceId: row.id,
+          summary: 'New comment awaits moderation',
+          data: {
+            post_id: commentMatch[1],
+            author_name: row.author_name,
+            author_email: row.author_email,
+            body: row.body,
+            status: row.status,
+          },
+        })
+        return row
+      })
+      return sendJson(res, 201, { accepted: true, id: record.id })
+    }
     const captcha = input['cf-turnstile-response'] || input.turnstile_token
     if (!(await verifyTurnstile(config, captcha, ip)))
       return sendJson(res, 422, { error: 'captcha verification failed' })
@@ -138,48 +185,6 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 201, { accepted: true, id: record.id })
     }
 
-    const match = url.pathname.match(/^\/public\/v1\/posts\/([^/]+)\/comments$/)
-    if (match) {
-      if (!input.name || !input.message || String(input.message).length > 5000) {
-        return sendJson(res, 422, { error: 'name and message are required' })
-      }
-      if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input.email))) {
-        return sendJson(res, 422, { error: 'email is invalid' })
-      }
-      const items = await db.select('ck_content_items', {
-        id: `eq.${match[1]}`,
-        site_id: `eq.${site.id}`,
-        kind: 'eq.post',
-        limit: '1',
-      })
-      if (!items[0]) return sendJson(res, 404, { error: 'post not found' })
-      const record = await db.tx(async (tx) => {
-        const [row] = await tx.insert('ck_comments', {
-          site_id: site.id,
-          content_item_id: match[1],
-          author_name: String(input.name).slice(0, 80),
-          author_email: input.email ? String(input.email).slice(0, 254) : null,
-          body: String(input.message).slice(0, 5000),
-          status: 'pending',
-        })
-        await repo.enqueueEvent(tx, {
-          site,
-          type: 'contentkit.comment.submitted',
-          resourceKind: 'comment',
-          resourceId: row.id,
-          summary: 'New comment awaits moderation',
-          data: {
-            post_id: match[1],
-            author_name: row.author_name,
-            author_email: row.author_email,
-            body: row.body,
-            status: row.status,
-          },
-        })
-        return row
-      })
-      return sendJson(res, 201, { accepted: true, id: record.id })
-    }
     return sendJson(res, 404, { error: 'not found' })
   }
 

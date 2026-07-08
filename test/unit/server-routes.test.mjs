@@ -57,6 +57,65 @@ test('public submission proceeds past the captcha when the dev bypass is enabled
   )
 })
 
+test('public comment submission returns 404 when comments are disabled for the site', async () => {
+  await withApp(
+    {
+      repo: {
+        async getSite() {
+          return { id: 's', settings: { comments: { enabled: false } } }
+        },
+      },
+      db: {
+        async select() {
+          throw new Error('disabled comments must not query content')
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/public/v1/posts/post-1/comments', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ site_id: 's', name: 'A', message: 'hi' }),
+      })
+      assert.equal(response.status, 404)
+      assert.deepEqual(await response.json(), { error: 'not found' })
+    },
+  )
+})
+
+test('public contact submission is unaffected by disabled comments', async () => {
+  await withApp(
+    {
+      config: { turnstileDevBypass: true },
+      repo: {
+        async getSite() {
+          return { id: 's', settings: { comments: { enabled: false } } }
+        },
+        async enqueueEvent() {},
+      },
+      db: {
+        async tx(fn) {
+          return fn({
+            async insert(table, row) {
+              assert.equal(table, 'ck_contact_submissions')
+              return [{ id: 'contact-1', name: row.name, email: row.email, body: row.body }]
+            },
+          })
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/public/v1/contact', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ site_id: 's', name: 'A', email: 'a@b.c', message: 'hi' }),
+      })
+      assert.equal(response.status, 201)
+      assert.deepEqual(await response.json(), { accepted: true, id: 'contact-1' })
+    },
+  )
+})
+
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 async function withApp(
