@@ -37,8 +37,11 @@ and this project adheres to
   rendered the identical list of every post.
 - Tag pages with a single post are emitted as `noindex,follow` and are excluded
   from the sitemap and from per-tag feeds.
-- Rendered dates are formatted in UTC. Previously the build machine's timezone
-  could shift a printed date by a day and change the release's asset hashes.
+- Rendered dates are formatted in UTC, from an explicit locale. Previously the
+  build machine's timezone could shift a printed date by a day, and its locale
+  decided whether a date read `1.1.2026` or `1/1/2026` — both changed the
+  release's asset hashes for identical content. Formatting a date without a
+  locale is now an error rather than a silent fall back to the system's.
 
 ### Fixed
 

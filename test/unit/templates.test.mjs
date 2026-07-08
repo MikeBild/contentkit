@@ -361,13 +361,35 @@ test('ctx.feedUrl replaces the site feed link rather than adding a second one', 
   assert.match(links[0], /title="Example · React"/)
 })
 
-test('rendered dates do not depend on the build machine timezone', () => {
-  // 2026-01-01T00:00:00Z is 31.12.2025 in America/New_York without an explicit
-  // zone — same content, different bytes, different release hash.
-  const html = contentBody(
-    { kind: 'post', item_id: 'p', title: 'A', summary: 'S', html: '<p>B</p>', published_at: '2026-01-01T00:00:00Z' },
-    { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de' },
-    [],
+test('rendered dates depend on neither the build machine timezone nor its locale', () => {
+  // Two independent sources of build-machine nondeterminism. Without an explicit
+  // zone, 2026-01-01T00:00:00Z prints as 31.12.2025 in America/New_York. Without an
+  // explicit locale it prints as 1/1/2026 on an en-US runner and 1.1.2026 on a de-DE
+  // laptop — identical content, different bytes, different release hash.
+  const item = {
+    kind: 'post',
+    item_id: 'p',
+    locale: 'de',
+    title: 'A',
+    summary: 'S',
+    html: '<p>B</p>',
+    published_at: '2026-01-01T00:00:00Z',
+  }
+  const ctx = { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de' }
+  assert.match(contentBody(item, ctx, []), /Veröffentlicht: 1\.1\.2026/)
+
+  // An item without its own locale takes the rendering context's, never the operating
+  // system's. `toLocaleDateString(undefined)` would silently do the latter.
+  const { locale, ...localeless } = item
+  assert.equal(locale, 'de')
+  assert.match(contentBody(localeless, ctx, []), /Veröffentlicht: 1\.1\.2026/)
+  assert.match(contentBody(localeless, { ...ctx, t: dictionary('en'), locale: 'en' }, []), /Published: 1\/1\/2026/)
+})
+
+test('formatting a date without any locale is a hard error, not a system-locale guess', () => {
+  const item = { kind: 'post', item_id: 'p', title: 'A', summary: 'S', html: '', published_at: '2026-01-01T00:00:00Z' }
+  assert.throws(
+    () => contentBody(item, { site: { id: 's', settings: {} }, t: dictionary('de') }, []),
+    /formatDate requires an explicit locale/,
   )
-  assert.match(html, /Veröffentlicht: 1\.1\.2026/)
 })

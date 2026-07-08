@@ -121,7 +121,15 @@ const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 // bytes, different asset hash. Format in UTC, and derive the archive's year
 // headings from the same ISO prefix so a post can never sit under a heading that
 // contradicts its own printed date.
-const formatDate = (value, locale) => new Date(value).toLocaleDateString(locale, { timeZone: 'UTC' })
+// `toLocaleDateString(undefined)` resolves to the *build machine's* locale, which is
+// the same class of nondeterminism as the timezone: a de-DE laptop renders 1.1.2026
+// and an en-US CI runner 1/1/2026, from identical content. The locale is therefore
+// required, never inferred. Build items always carry one (frontmatter `locale` is
+// mandatory); direct callers fall back to the rendering context's locale.
+const formatDate = (value, locale) => {
+  if (!locale) throw new TypeError('formatDate requires an explicit locale')
+  return new Date(value).toLocaleDateString(locale, { timeZone: 'UTC' })
+}
 const yearOf = (post) => (post.published_at ? String(post.published_at).slice(0, 4) : '')
 
 // Tag frequency across posts, keyed by slug (the same key the tag pages use), so
@@ -605,13 +613,14 @@ function postNav(item, ctx) {
 
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
+  const locale = item.locale || ctx.locale
   const updated = item.updated_at && item.updated_at > item.published_at ? item.updated_at : ''
   const meta = [
     item.published_at
-      ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(formatDate(item.published_at, item.locale))}</time>`
+      ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(formatDate(item.published_at, locale))}</time>`
       : '',
     updated
-      ? `<time datetime="${escapeHtml(updated)}">${escapeHtml(ctx.t.updated)}: ${escapeHtml(formatDate(updated, item.locale))}</time>`
+      ? `<time datetime="${escapeHtml(updated)}">${escapeHtml(ctx.t.updated)}: ${escapeHtml(formatDate(updated, locale))}</time>`
       : '',
     isPost && item.reading_minutes
       ? `<span class="reading-time">${escapeHtml(fill(ctx.t.readingTime, { n: item.reading_minutes }))}</span>`
