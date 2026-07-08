@@ -221,7 +221,7 @@ test('renders a per-post cover image and site-default OG image', async () => {
   assert.deepEqual(manifest.icons[0], { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' })
 })
 
-test('GA4 analytics emits a self-hosted init file with the sanitized id, matching the head', async () => {
+test('GA4 analytics gates the loader behind consent.js with the sanitized id in the head', async () => {
   const result = await buildSite({
     root,
     site: {
@@ -245,16 +245,15 @@ test('GA4 analytics emits a self-hosted init file with the sanitized id, matchin
     ],
     comments: [],
   })
-  assert.ok(result.files.has('assets/analytics.js'), 'GA4 init file emitted')
-  const init = result.files.get('assets/analytics.js').body.toString()
-  // id is sanitized to alphanumerics/hyphen (injection stripped) and used in config.
-  assert.match(init, /gtag\('config','G-ABC123x'\)/)
+  // No per-site gtag init file anymore; the loader is withheld until opt-in.
+  assert.ok(!result.files.has('assets/analytics.js'))
   const head = result.files.get('de/blog/a/index.html').body.toString()
-  assert.match(head, /googletagmanager\.com\/gtag\/js\?id=G-ABC123x/)
-  assert.match(head, /<script src="\/assets\/analytics\.js" defer><\/script>/)
+  // Google is not contacted from the head; consent.js carries the sanitized id.
+  assert.doesNotMatch(head, /googletagmanager\.com\/gtag\/js/)
+  assert.match(head, /<script src="\/assets\/consent-[0-9a-f]{10}\.js" data-ga-id="G-ABC123x" defer><\/script>/)
 })
 
-test('Plausible analytics emits no self-hosted init file', async () => {
+test('Plausible analytics emits no gated consent loader in the head', async () => {
   const result = await buildSite({
     root,
     site: {
@@ -270,4 +269,7 @@ test('Plausible analytics emits no self-hosted init file', async () => {
     comments: [],
   })
   assert.ok(!result.files.has('assets/analytics.js'))
+  const head = result.files.get('de/index.html').body.toString()
+  assert.match(head, /plausible\.io\/js\/script\.js/)
+  assert.doesNotMatch(head, /data-ga-id|consent-[0-9a-f]{10}\.js/)
 })

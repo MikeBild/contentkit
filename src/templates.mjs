@@ -28,6 +28,7 @@ const words = {
     navigation: 'Navigation',
     social: 'Social',
     rss: 'RSS',
+    cookieSettings: 'Cookie-Einstellungen',
   },
   en: {
     blog: 'Blog',
@@ -56,6 +57,7 @@ const words = {
     navigation: 'Navigation',
     social: 'Social',
     rss: 'RSS',
+    cookieSettings: 'Cookie settings',
   },
 }
 
@@ -146,9 +148,17 @@ function siteFooter(ctx) {
   ]
     .map((link) => item(link))
     .join('')
-  const contact = [[t.contact, `/${locale}/contact/`], ...legalPages.map((p) => [p.title, p.url])]
-    .map((link) => item(link))
-    .join('')
+  // GA4 requires an always-available way to revoke consent; consent.js binds the
+  // click and reopens the banner (Art. 7 Abs. 3 DSGVO). Plausible/no analytics
+  // set nothing, so the control is omitted there.
+  const consentControl =
+    settings.analytics?.provider === 'ga4' && settings.analytics.id
+      ? `<li><button type="button" class="link-button" data-consent-settings>${escapeHtml(t.cookieSettings)}</button></li>`
+      : ''
+  const contact =
+    [[t.contact, `/${locale}/contact/`], ...legalPages.map((p) => [p.title, p.url])]
+      .map((link) => item(link))
+      .join('') + consentControl
   const social = [
     ...Object.entries(settings.socials || {}).map(([name, url]) => item([name, safeUrl(url)], ' rel="me"')),
     item([t.rss, `/${locale}/feed.xml`]),
@@ -196,8 +206,11 @@ function iconLinks(settings) {
 }
 
 // Privacy-first Plausible loads a single external script (no inline, so the CSP
-// stays strict). GA4's loader runs alongside a self-hosted init at /assets/analytics.js.
-function analyticsTags(settings) {
+// stays strict) and is cookieless, so it needs no consent banner. GA4 instead
+// ships /assets/consent.js, which withholds the gtag loader until the visitor
+// opts in (§ 25 TDDDG / Art. 6 Abs. 1 lit. a DSGVO); the measurement id rides
+// along as data-ga-id so consent.js stays generic and content-hashable.
+function analyticsTags(settings, asset) {
   const analytics = settings.analytics
   if (!analytics || !analytics.provider) return ''
   if (analytics.provider === 'plausible' && analytics.domain) {
@@ -206,7 +219,8 @@ function analyticsTags(settings) {
   }
   if (analytics.provider === 'ga4' && analytics.id) {
     const id = String(analytics.id).replace(/[^A-Za-z0-9-]/g, '')
-    return `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script><script src="/assets/analytics.js" defer></script>`
+    const src = asset ? asset('consent.js') : '/assets/consent.js'
+    return `<script src="${escapeHtml(src)}" data-ga-id="${id}" defer></script>`
   }
   return ''
 }
@@ -253,7 +267,7 @@ export function layout(ctx, body, options = {}) {
     scripts.push(`<script src="${asset('mermaid.min.js')}" defer></script>`)
     scripts.push(`<script src="${asset('mermaid-init.js')}" defer></script>`)
   }
-  const analytics = analyticsTags(settings)
+  const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
   const articleMeta =

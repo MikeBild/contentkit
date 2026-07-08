@@ -501,3 +501,61 @@ main {
     transition-duration: 0.01ms !important;
   }
 }
+/* Cookie consent banner (GA4 opt-in). Rendered by consent.js only when a
+   decision is still pending; accept/reject are given equal visual weight so
+   rejecting is as easy as accepting (VG Hannover, 19.03.2025). */
+.consent-banner {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 50;
+  border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  box-shadow: 0 -0.5rem 1.5rem hsl(var(--foreground) / 0.08);
+}
+.consent-inner {
+  max-width: var(--container, 72rem);
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.consent-text {
+  margin: 0;
+  flex: 1 1 20rem;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.5;
+}
+.consent-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.button-ghost {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+/* A button styled to sit inline with footer/nav links (consent revoke entry). */
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.link-button:hover {
+  text-decoration: underline;
+}
+@media (max-width: 40rem) {
+  .consent-actions {
+    width: 100%;
+  }
+  .consent-actions .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

@@ -137,7 +137,7 @@ test('plausible analytics injects a single external script (no inline)', () => {
   )
 })
 
-test('ga4 analytics injects the loader plus a self-hosted init', () => {
+test('ga4 analytics ships the consent gate, not the gtag loader', () => {
   const html = render({
     site: {
       name: 'Example',
@@ -146,8 +146,18 @@ test('ga4 analytics injects the loader plus a self-hosted init', () => {
       settings: { analytics: { provider: 'ga4', id: 'G-ABC123' } },
     },
   })
-  assert.match(html, /googletagmanager\.com\/gtag\/js\?id=G-ABC123/)
-  assert.match(html, /<script src="\/assets\/analytics\.js" defer><\/script>/)
+  // The head must not load Google directly — consent.js withholds it until opt-in.
+  assert.doesNotMatch(html, /googletagmanager\.com\/gtag\/js/)
+  assert.match(html, /<script src="\/assets\/consent\.js" data-ga-id="G-ABC123" defer><\/script>/)
+  // GA4 also exposes the footer revoke control.
+  assert.match(html, /data-consent-settings/)
+})
+
+test('non-ga4 sites render no consent gate or revoke control', () => {
+  const html = render({
+    site: { name: 'Example', base_url: 'https://example.test', default_locale: 'de', settings: {} },
+  })
+  assert.doesNotMatch(html, /consent\.js|data-consent-settings/)
 })
 
 test('nav merges page navOrder with built-in link weights', () => {

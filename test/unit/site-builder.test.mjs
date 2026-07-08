@@ -69,18 +69,16 @@ test('the RSS feed lists posts with absolute links and pubDate', async () => {
   assert.match(feed, /<pubDate>[A-Z][a-z]{2}, 01 Jun 2026/)
 })
 
-test('ga4 analytics emits a self-hosted init with a sanitized measurement id', async () => {
+test('consent.js is emitted as a content-hashed asset and no per-site init file remains', async () => {
   const result = await build({
-    site: { ...site, settings: { analytics: { provider: 'ga4', id: 'G-ABC123"<script>' } } },
+    site: { ...site, settings: { analytics: { provider: 'ga4', id: 'G-ABC123' } } },
   })
-  const analytics = result.files.get('assets/analytics.js')
-  assert.ok(analytics, 'assets/analytics.js missing')
-  assert.match(analytics.body.toString(), /gtag\('config','G-ABC123script'\)/)
-  assert.doesNotMatch(analytics.body.toString(), /[<>"]/)
-})
-
-test('no analytics file is emitted without a ga4 configuration', async () => {
-  const result = await build()
+  const keys = [...result.files.keys()]
+  assert.ok(
+    keys.some((k) => /^assets\/consent-[0-9a-f]{10}\.js$/.test(k)),
+    'hashed consent.js missing',
+  )
+  // The gated loader replaces the old inline-free gtag init file entirely.
   assert.ok(!result.files.has('assets/analytics.js'))
 })
 

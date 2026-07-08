@@ -56,7 +56,7 @@ async function staticAssets(root) {
     'url(/assets/katex/',
   )
   emit('site.css', `${css}\n${katexCss}`, 'text/css; charset=utf-8')
-  for (const name of ['search.js', 'forms.js', 'mermaid-init.js']) {
+  for (const name of ['search.js', 'forms.js', 'mermaid-init.js', 'consent.js']) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
   emit(
@@ -356,18 +356,10 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
     ),
   )
 
-  // GA4 needs its init off the inline path so the CSP can stay free of
-  // 'unsafe-inline'; the loader is added in the head and this runs from 'self'.
-  if (settings.analytics?.provider === 'ga4' && settings.analytics.id) {
-    const id = String(settings.analytics.id).replace(/[^A-Za-z0-9-]/g, '')
-    files.set(
-      'assets/analytics.js',
-      text(
-        `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${id}');`,
-        'application/javascript; charset=utf-8',
-      ),
-    )
-  }
+  // GA4's gtag loader is no longer injected here: consent.js (a hashed static
+  // asset) withholds it until the visitor opts in. The measurement id reaches
+  // that generic asset via the head tag's data-ga-id, so nothing per-site is
+  // emitted for analytics anymore.
   files.set('sitemap.xml', text(sitemap(sitemapItems), 'application/xml; charset=utf-8'))
   files.set(
     '404.html',
