@@ -55,3 +55,77 @@ page — the header form's GET fallback carries `?q=` deep links and Enter press
 before the index has loaded; it is not a server-side search. Shared assets are
 immutable. HTML is revalidated so an atomic release-pointer change becomes visible
 quickly.
+
+### Blog and archive
+
+The two listings render the same posts to different ends. `/{locale}/blog/` is the
+curated feed: the newest twelve posts as cards, plus topic chips. `/{locale}/archive/`
+is the reference index: every post, grouped by year. Neither paginates, and the blog
+deliberately does not — the archive already gives crawlers one page with every post
+two clicks from the root, while pages `2..N` would need `hreflang` alternates that
+cannot exist in every locale (`staticAlternates()` assumes a URL exists in all of
+them, and post counts differ per locale). If the corpus ever outgrows one page,
+paginate the *archive*: page 1 keeps its alternates and sitemap entry, later pages
+get `noindex,follow`, no sitemap entry and no `hreflang`.
+
+`archive.js` filters the archive in place by tag and free text. It fetches nothing —
+the preview HTML rewriter only patches `href|src|action|data-index`, so a fifth path
+attribute would 404 under `/p/<token>/`. Every post is server-rendered before the
+script runs and the facet chips are real links to the tag pages, so the archive is a
+complete crawlable index without scripting.
+
+Tag pages carry no `hreflang`: tag slugs are locale-specific (`softwarearchitektur`
+vs `software-architecture`), so derived alternates would point at URLs that do not
+exist. The tag *index* does carry them, because it exists in every locale. A tag with
+a single post gets `noindex,follow` — never `nofollow`, which would strangle the link
+equity flowing to the post it lists — and neither a sitemap entry nor a feed.
+
+Tags group by `slugify(tag)`, not by lowercased label, so `Node JS` and `Node.js`
+merge into one page instead of the second silently overwriting the first. `C`, `C#`
+and `C++` all slugify to `c` and therefore also merge; only a smarter `slugify()`
+could separate them.
+
+### API host vs. site hosts
+
+One deployment serves the admin API and every published site. Anything that
+describes contentkit *itself* — `/`, `/openapi.json`, `/llms.txt`, `/llms-full.txt`,
+`/metrics` — is gated on the request `Host` matching `CONTENTKIT_PUBLIC_URL`. Served
+unconditionally, they answered on every customer domain, where `/llms.txt` means
+"describe this site", not "describe the CMS that built it", and `/metrics` handed
+out request telemetry for the admin API.
+
+`/health` and `/ready` are deliberately exempt: supervisors probe them over the
+loopback or a pod IP, so `Host` is an address, and `/health` must not depend on a
+database lookup.
+
+Each site therefore generates its own `llms.txt` and `llms-full.txt` into the
+release, exactly as it already did for `robots.txt` and `sitemap.xml` — root-level
+well-known files whose content differs per host belong to the release, not to a
+global route. The root copies are the default locale's; each locale also gets its
+own under `/{locale}/`, linked from the other locales' `## Optional` section, which
+[the spec](https://llmstxt.org/) defines as URLs a consumer may skip when it needs a
+shorter context.
+
+### Derived, not authored
+
+Reading time, related posts and older/newer links are computed at build time from
+fields the author already wrote. They never enter `renderMarkdown()`'s `meta`, which
+is the frontmatter contract. Related posts use cosine similarity over IDF-weighted
+tag vectors: a tag on every post has an IDF of zero and contributes nothing, so a
+post whose only tags are universal has no related section at all. Sort comparators
+avoid `localeCompare`, whose behaviour follows the ICU data compiled into the Node
+build.
+
+### Build time is an input
+
+`buildSite({ now })` drives the post-age notice and the footer's copyright year, so
+generated HTML varies with build time even when content does not. A release is an
+immutable snapshot: a published release keeps the age notice it was built with until
+the site is published again. Rendered dates are formatted in UTC for the same
+reason — without an explicit zone, `2026-01-01T00:00:00Z` prints as `31.12.2025` on a
+build machine in `America/New_York`, changing the bytes and the asset hash.
+
+A post older than three years shows a notice that its content may be out of date.
+`updatedAt` in the frontmatter is the only suppressor, and buys another three years;
+an `evergreen` tag convention would surface publicly on the tag index, the tag pages,
+the per-tag feeds, `article:tag` and the search index.

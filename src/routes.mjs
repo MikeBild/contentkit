@@ -23,16 +23,56 @@ export function routeName(path) {
   return path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id').replace(/\/p\/[^/]+/, '/p/:token')
 }
 
+// Content types for gateway-served release objects. Order matters: `feed.xml`
+// must be tested before the generic `.xml` suffix, because every
+// `<link rel="alternate" type="application/rss+xml">` the builder emits
+// advertises that type and serving application/xml contradicts it. sitemap.xml
+// keeps application/xml. Returns undefined for unknown suffixes so the caller
+// can fall back to the stored object's own content-type.
+const RELEASE_CONTENT_TYPES = [
+  ['.html', 'text/html; charset=utf-8'],
+  ['feed.xml', 'application/rss+xml; charset=utf-8'],
+  ['.xml', 'application/xml; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.js', 'application/javascript; charset=utf-8'],
+  ['.txt', 'text/plain; charset=utf-8'],
+]
+
+export function releaseContentType(releasePath) {
+  return RELEASE_CONTENT_TYPES.find(([suffix]) => releasePath.endsWith(suffix))?.[1]
+}
+
+// One deployment serves the admin API *and* every published tenant site, on
+// different hostnames. Routes that describe contentkit itself — its docs, its
+// OpenAPI spec, its metrics — belong to the API host alone. Served
+// unconditionally they answer on every customer domain, where `/llms.txt` means
+// "describe this site", not "describe the CMS that built it".
+//
+// Deliberately NOT applied to /health and /ready: supervisors and load balancers
+// probe them over the loopback or a pod IP, so the Host header never matches
+// publicUrl. Gating them would keep readiness permanently down. They also must
+// not depend on a database lookup, which rules out resolving the host to a site.
+export function isApiHost(req, config) {
+  return (req.headers.host || '').split(':')[0] === new URL(config.publicUrl).hostname
+}
+
 // Method map for the API surface (system, public and /v1 routes). Keep in sync
 // with the matches in handle(); gateway-served site paths are intentionally
 // absent so OPTIONS/405 handling never shadows a published page.
+//
+// `apiHostOnly` entries exist only on the API host. Off it they must not reach the
+// 405/OPTIONS fallback at all: `/llms.txt` on a site host has to fall through to
+// the gateway (which serves that site's own file), and answering `405 Allow: GET`
+// there would both break it and advertise a route the site does not have.
+// `/health` and `/ready` stay host-independent because probes reach them by IP.
 export const API_ROUTES = [
   { pattern: /^\/health$/, methods: ['GET'] },
   { pattern: /^\/ready$/, methods: ['GET'] },
-  { pattern: /^\/metrics$/, methods: ['GET'] },
-  { pattern: /^\/openapi\.json$/, methods: ['GET'] },
-  { pattern: /^\/llms\.txt$/, methods: ['GET'] },
-  { pattern: /^\/llms-full\.txt$/, methods: ['GET'] },
+  { pattern: /^\/metrics$/, methods: ['GET'], apiHostOnly: true },
+  { pattern: /^\/openapi\.json$/, methods: ['GET'], apiHostOnly: true },
+  { pattern: /^\/llms\.txt$/, methods: ['GET'], apiHostOnly: true },
+  { pattern: /^\/llms-full\.txt$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/public\/v1\/contact$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/comments$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
@@ -209,17 +249,8 @@ export function createRequestHandler(ctx) {
       throw error
     }
     let body = method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
-    const contentType = releasePath.endsWith('.html')
-      ? 'text/html; charset=utf-8'
-      : releasePath.endsWith('.xml')
-        ? 'application/xml; charset=utf-8'
-        : releasePath.endsWith('.json')
-          ? 'application/json; charset=utf-8'
-          : releasePath.endsWith('.css')
-            ? 'text/css; charset=utf-8'
-            : releasePath.endsWith('.js')
-              ? 'application/javascript; charset=utf-8'
-              : response.headers.get('content-type') || 'application/octet-stream'
+    const contentType =
+      releaseContentType(releasePath) || response.headers.get('content-type') || 'application/octet-stream'
     const cacheControl = preview
       ? 'private,no-store'
       : response.headers.get('cache-control') ||
@@ -304,19 +335,18 @@ export function createRequestHandler(ctx) {
         inflight: releases.inflight(),
       })
     }
-    if (req.method === 'GET' && path === '/metrics')
+    // Everything below is scoped to the API host. On a site host these paths fall
+    // through to the gateway, which serves the release's own llms.txt/robots.txt
+    // or a 404 — never contentkit's documentation or its request telemetry.
+    const apiHost = isApiHost(req, config)
+    if (apiHost && req.method === 'GET' && path === '/metrics')
       return send(res, 200, metrics.render(releases.inflight()), { 'content-type': 'text/plain; version=0.0.4' })
-    if (req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
-    if (req.method === 'GET' && path === '/llms.txt')
+    if (apiHost && req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
+    if (apiHost && req.method === 'GET' && path === '/llms.txt')
       return send(res, 200, documentation(config, 'llms.txt'), { 'content-type': 'text/plain; charset=utf-8' })
-    if (req.method === 'GET' && path === '/llms-full.txt')
+    if (apiHost && req.method === 'GET' && path === '/llms-full.txt')
       return send(res, 200, documentation(config, 'llms-full.txt'), { 'content-type': 'text/plain; charset=utf-8' })
-    if (
-      req.method === 'GET' &&
-      path === '/' &&
-      (req.headers.host || '').split(':')[0] === new URL(config.publicUrl).hostname
-    )
-      return sendJson(res, 200, SERVICE)
+    if (apiHost && req.method === 'GET' && path === '/') return sendJson(res, 200, SERVICE)
     if (
       req.method === 'POST' &&
       (path === '/public/v1/contact' || /^\/public\/v1\/posts\/[^/]+\/comments$/.test(path))
@@ -653,8 +683,10 @@ export function createRequestHandler(ctx) {
     }
 
     // Unmatched method on a known API path: answer with OPTIONS/405 + Allow
-    // instead of falling through to the static gateway's opaque 404.
-    const known = API_ROUTES.find((route) => route.pattern.test(path))
+    // instead of falling through to the static gateway's opaque 404. Routes that
+    // only exist on the API host are skipped elsewhere, so a site keeps its own
+    // /llms.txt and never advertises /metrics.
+    const known = API_ROUTES.find((route) => (apiHost || !route.apiHostOnly) && route.pattern.test(path))
     if (known) {
       const allow = [...known.methods, 'OPTIONS'].join(', ')
       if (req.method === 'OPTIONS') return send(res, 204, '', { allow })

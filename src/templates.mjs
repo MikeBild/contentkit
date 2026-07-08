@@ -34,6 +34,22 @@ const words = {
     social: 'Social',
     rss: 'RSS',
     cookieSettings: 'Cookie-Einstellungen',
+    readingTime: '≈ {n} Min. Lesezeit',
+    postAge: 'Dieser Beitrag ist über {n} Jahre alt. Manches davon ist womöglich nicht mehr aktuell.',
+    related: 'Verwandte Beiträge',
+    olderPost: 'Älterer Beitrag',
+    newerPost: 'Neuerer Beitrag',
+    allTags: 'Alle Themen',
+    tags: 'Themen',
+    allPostsCount: 'Alle {n} Beiträge',
+    filterPosts: 'Beiträge filtern',
+    resetFilters: 'Filter zurücksetzen',
+    postCountOne: '1 Beitrag',
+    postCountMany: '{n} Beiträge',
+    years: 'Jahre',
+    noMatches: 'Keine Beiträge für diese Auswahl.',
+    pages: 'Seiten',
+    llmsFullContent: 'Vollständiger Inhalt als Markdown',
   },
   en: {
     blog: 'Blog',
@@ -68,7 +84,58 @@ const words = {
     social: 'Social',
     rss: 'RSS',
     cookieSettings: 'Cookie settings',
+    readingTime: '≈ {n} min read',
+    postAge: 'This post is over {n} years old. Some of it may no longer be accurate.',
+    related: 'Related posts',
+    olderPost: 'Older post',
+    newerPost: 'Newer post',
+    allTags: 'All topics',
+    tags: 'Topics',
+    allPostsCount: 'All {n} posts',
+    filterPosts: 'Filter posts',
+    resetFilters: 'Reset filters',
+    postCountOne: '1 post',
+    postCountMany: '{n} posts',
+    years: 'Years',
+    noMatches: 'No posts match this selection.',
+    pages: 'Pages',
+    llmsFullContent: 'Full content as Markdown',
   },
+}
+
+// The `words` table stays the single source of translation truth: strings that
+// client scripts need ride out on data-* attributes, never a second copy in JS.
+const fill = (template, values) =>
+  String(template).replace(/\{(\w+)\}/g, (match, key) => (key in values ? String(values[key]) : match))
+
+const plural = (t, count) => fill(count === 1 ? t.postCountOne : t.postCountMany, { n: count })
+
+// A total comparator that, unlike localeCompare, does not depend on the ICU data
+// compiled into the Node build. Releases are content-hashed: ordering must be
+// reproducible.
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
+// Rendered dates must not depend on the build machine's timezone. Without an
+// explicit zone, `2026-01-01T00:00:00Z` prints as 31.12.2025 under
+// America/New_York and 1.1.2026 under Europe/Berlin — same content, different
+// bytes, different asset hash. Format in UTC, and derive the archive's year
+// headings from the same ISO prefix so a post can never sit under a heading that
+// contradicts its own printed date.
+const formatDate = (value, locale) => new Date(value).toLocaleDateString(locale, { timeZone: 'UTC' })
+const yearOf = (post) => (post.published_at ? String(post.published_at).slice(0, 4) : '')
+
+// Tag frequency across posts, keyed by slug (the same key the tag pages use), so
+// spellings that slugify alike are counted once. Sorted by count desc, then label.
+export function tagCounts(posts) {
+  const tags = new Map()
+  for (const post of posts)
+    for (const tag of post.tags || []) {
+      const slug = slugify(tag)
+      if (!slug) continue
+      if (!tags.has(slug)) tags.set(slug, { label: tag, slug, count: 0 })
+      tags.get(slug).count += 1
+    }
+  return [...tags.values()].sort((a, b) => b.count - a.count || cmp(a.label, b.label))
 }
 
 function safeUrl(value, { relative = false } = {}) {
@@ -144,7 +211,7 @@ function navLinks(ctx) {
 }
 
 function siteFooter(ctx) {
-  const { site, locale, t, pages = [] } = ctx
+  const { site, locale, t, pages = [], now = new Date() } = ctx
   const settings = site.settings || {}
   const item = ([label, href], attrs = '') => `<li><a href="${escapeHtml(href)}"${attrs}>${escapeHtml(label)}</a></li>`
   // Pages weighted past the header nav (navOrder > 60, e.g. Impressum,
@@ -154,10 +221,14 @@ function siteFooter(ctx) {
   const legalPages = pages
     .filter((p) => p.nav_order != null && p.nav_order > 60)
     .sort((a, b) => a.nav_order - b.nav_order)
+  // The tag index has no header-nav slot (the nav is already four items wide on
+  // mobile), so the footer is the only place it is linked from besides the blog's
+  // chip row. Without it, /{locale}/tags/ is reachable only by typing the URL.
   const navigation = [
     [t.blog, `/${locale}/blog/`],
     [t.projects, `/${locale}/projects/`],
     [t.archive, `/${locale}/archive/`],
+    [t.tags, `/${locale}/tags/`],
   ]
     .map((link) => item(link))
     .join('')
@@ -183,7 +254,7 @@ function siteFooter(ctx) {
 <nav class="footer-col" aria-label="${escapeHtml(t.contact)}"><h2>${escapeHtml(t.contact)}</h2><ul>${contact}</ul></nav>
 <div class="footer-col"><h2>${escapeHtml(t.social)}</h2><ul>${social}</ul></div>
 </div>
-<div class="footer-bottom">© ${new Date().getUTCFullYear()} ${escapeHtml(site.name)}</div>
+<div class="footer-bottom">© ${now.getUTCFullYear()} ${escapeHtml(site.name)}</div>
 </div></footer>`
 }
 
@@ -279,7 +350,14 @@ export function layout(ctx, body, options = {}) {
     publishedTime,
     modifiedTime,
     articleTags = [],
+    feedUrl,
+    feedTitle,
   } = ctx
+  // `noindex: true` means "hide this page entirely" (the search page). A thin tag
+  // page instead wants `noindex,follow`: keep it out of the index, but never
+  // strangle the link equity flowing to the posts it lists. Hence an explicit
+  // override rather than a second boolean.
+  const robots = ctx.robots || (noindex ? 'noindex,nofollow' : '')
   const settings = site.settings || {}
   // Resolve a first-party asset to its content-hashed URL for this build; falls
   // back to the stable path if the map is absent (e.g. a direct layout() caller).
@@ -306,6 +384,8 @@ export function layout(ctx, body, options = {}) {
     scripts.push(`<script src="${asset('mermaid.min.js')}" defer></script>`)
     scripts.push(`<script src="${asset('mermaid-init.js')}" defer></script>`)
   }
+  // Archive-only: the filter enhances one page, so it must not tax every page view.
+  if (options.archive) scripts.push(`<script src="${asset('archive.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
@@ -327,7 +407,7 @@ export function layout(ctx, body, options = {}) {
 <title>${escapeHtml(fullTitle)}</title>
 <meta name="description" content="${escapeHtml(description || '')}">
 <meta name="theme-color" content="${escapeHtml(settings.theme_color || '#ffffff')}">
-${noindex ? '<meta name="robots" content="noindex,nofollow">' : ''}
+${robots ? `<meta name="robots" content="${escapeHtml(robots)}">` : ''}
 <link rel="canonical" href="${escapeHtml(canonical)}">
 ${alternateLinks(translations, site.default_locale)}
 <meta property="og:type" content="${escapeHtml(type)}">
@@ -347,7 +427,7 @@ ${twitterHandle ? `<meta name="twitter:site" content="${escapeHtml(twitterHandle
 ${iconLinks(settings)}
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="${asset('site.css')}">
-<link rel="alternate" type="application/rss+xml" title="${escapeHtml(site.name)}" href="/${escapeHtml(locale)}/feed.xml">
+<link rel="alternate" type="application/rss+xml" title="${escapeHtml(feedTitle || site.name)}" href="${escapeHtml(feedUrl || `/${locale}/feed.xml`)}">
 ${settings.accent ? `<style>:root{--primary:${escapeHtml(accentToHslTriple(settings.accent))}}</style>` : ''}
 ${structured}
 ${scripts.join('\n')}
@@ -364,11 +444,14 @@ ${siteFooter(ctx)}
 </body></html>`
 }
 
+// Tag pills render for posts only: tag pages are built from `posts`, so a
+// project's tags would link into 404s. Projects carry `technologies` for the
+// same job, and that is not rendered here either.
 export function card(item) {
   return `<article class="card"><a href="${escapeHtml(item.url)}">
-<div class="meta">${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(new Date(item.published_at).toLocaleDateString(item.locale))}</time>` : ''}</div>
+<div class="meta">${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div>
 <h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.summary)}</p>
-</a>${item.tags?.length ? `<div class="tags">${item.tags.map((tag) => `<a class="tag" href="/${escapeHtml(item.locale)}/tags/${slugify(tag)}/">${escapeHtml(tag)}</a>`).join('')}</div>` : ''}</article>`
+</a>${item.kind === 'post' && item.tags?.length ? `<div class="tags">${item.tags.map((tag) => `<a class="tag" href="/${escapeHtml(item.locale)}/tags/${slugify(tag)}/">${escapeHtml(tag)}</a>`).join('')}</div>` : ''}</article>`
 }
 
 export function homeBody(ctx) {
@@ -386,12 +469,165 @@ export function listingBody(title, items) {
   return `<section class="container article-header"><h1>${escapeHtml(title)}</h1></section><section class="container section"><div class="grid">${items.map(card).join('')}</div></section>`
 }
 
+// How many posts the blog feed shows before handing off to the archive. The grid
+// is repeat(auto-fit, minmax(18rem, 1fr)), so 12 fills 2/3/4/6-column layouts
+// evenly — and the home page already teases 6, which the blog must visibly beat.
+const BLOG_FEED_SIZE = 12
+
+function tagChip(locale, tag, { count = null, current = false } = {}) {
+  return `<a class="tag" href="/${escapeHtml(locale)}/tags/${escapeHtml(tag.slug)}/" data-tag="${escapeHtml(tag.slug)}"${current ? ' aria-current="true"' : ''}>${escapeHtml(tag.label)}${count === null ? '' : `<span class="tag-count" data-facet-count>${count}</span>`}</a>`
+}
+
+// The blog is the curated feed: newest posts as cards, topic chips to pivot by,
+// and a hand-off to the archive for everything else. It deliberately does not
+// paginate — the archive is the crawlable full index, so pages 2..N would add
+// thin near-duplicates and hreflang alternates that cannot exist in every locale.
+export function blogBody(ctx) {
+  const { t, locale, posts } = ctx
+  const chips = tagCounts(posts)
+    .map((tag) => tagChip(locale, tag, { count: tag.count }))
+    .join('')
+  const feed = posts.slice(0, BLOG_FEED_SIZE)
+  return `<section class="container article-header"><h1>${escapeHtml(t.blog)}</h1>${chips ? `<div class="tags blog-topics" aria-label="${escapeHtml(t.tags)}">${chips}<a class="tag tag-all" href="/${escapeHtml(locale)}/tags/">${escapeHtml(t.allTags)}</a></div>` : ''}</section>
+<section class="container section"><div class="grid">${feed.map(card).join('')}</div>
+<p class="listing-more"><a class="button" href="/${escapeHtml(locale)}/archive/">${escapeHtml(fill(t.allPostsCount, { n: posts.length }))} →</a></p></section>`
+}
+
+// The archive is the reference index: every post, server-rendered, grouped by
+// year. archive.js enhances it with in-place tag + text filtering, but with
+// scripting off this must remain a complete, crawlable list — so the year groups
+// and the facet links are real markup, and the only element hidden up front is
+// the free-text field, which has no server-side counterpart to fall back on.
 export function archiveBody(ctx) {
-  return `<section class="container article-header"><h1>${escapeHtml(ctx.t.archive)}</h1></section><section class="container section"><ol class="archive-list">${ctx.posts.map((post) => `<li><time datetime="${escapeHtml(post.published_at || '')}">${post.published_at ? escapeHtml(new Date(post.published_at).toLocaleDateString(post.locale)) : ''}</time><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></li>`).join('')}</ol></section>`
+  const { t, locale, posts } = ctx
+  const groups = new Map()
+  for (const post of posts) {
+    const year = yearOf(post)
+    if (!groups.has(year)) groups.set(year, [])
+    groups.get(year).push(post)
+  }
+  // `posts` is published_at DESC. Undated posts (year '') sort last.
+  const years = [...groups.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : cmp(b, a)))
+  const dated = years.filter(Boolean)
+  const range = dated.length ? (dated[0] === dated.at(-1) ? dated[0] : `${dated.at(-1)}–${dated[0]}`) : ''
+  const intro = range ? `${plural(t, posts.length)}, ${range}.` : `${plural(t, posts.length)}.`
+
+  const facets = tagCounts(posts)
+    .map((tag) => tagChip(locale, tag, { count: tag.count }))
+    .join('')
+
+  const jump = years
+    .map(
+      (year) =>
+        `<li data-year-link="${escapeHtml(year)}"><a href="#y${escapeHtml(year || 'undated')}">${escapeHtml(year || '—')}<span class="year-count" data-year-count>${groups.get(year).length}</span></a></li>`,
+    )
+    .join('')
+
+  // data-search is pre-folded with the build locale's toLocaleLowerCase, matching
+  // the contract search-index.json uses, so the client's fold agrees (Turkish
+  // dotless i). data-tags carries slugs — the same keys the facet chips emit.
+  const entry = (post) => {
+    const slugs = [...new Set((post.tags || []).map(slugify).filter(Boolean))].join(' ')
+    const haystack = `${post.title} ${post.summary} ${(post.tags || []).join(' ')}`.toLocaleLowerCase(locale)
+    return `<li data-tags="${escapeHtml(slugs)}" data-search="${escapeHtml(haystack)}"><time datetime="${escapeHtml(post.published_at || '')}">${post.published_at ? escapeHtml(formatDate(post.published_at, locale)) : ''}</time><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></li>`
+  }
+
+  const sections = years
+    .map(
+      (year) =>
+        `<section data-year-group="${escapeHtml(year)}"><h2 class="archive-year" id="y${escapeHtml(year || 'undated')}">${escapeHtml(year || '—')}<span class="year-count" data-year-count>${groups.get(year).length}</span></h2><ol class="archive-list">${groups.get(year).map(entry).join('')}</ol></section>`,
+    )
+    .join('')
+
+  return `<section class="container article-header"><h1>${escapeHtml(t.archive)}</h1><p class="article-summary">${escapeHtml(intro)}</p></section>
+<div class="container archive-toolbar" data-archive>
+${facets ? `<div class="tags archive-facets" aria-label="${escapeHtml(t.tags)}">${facets}</div>` : ''}
+<div class="archive-search" data-archive-search hidden>
+<label class="sr-only" for="archive-q">${escapeHtml(t.filterPosts)}</label>
+<input id="archive-q" class="search-box" type="search" maxlength="100" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(t.filterPosts)}" data-archive-q data-count-one="${escapeHtml(t.postCountOne)}" data-count-many="${escapeHtml(t.postCountMany)}" data-empty-text="${escapeHtml(t.noMatches)}">
+<button type="button" class="link-button" data-archive-reset hidden>${escapeHtml(t.resetFilters)}</button>
+</div>
+<div class="sr-only" role="status" aria-live="polite" data-archive-status></div>
+</div>
+${jump ? `<nav class="container archive-jump" aria-label="${escapeHtml(t.years)}"><ol>${jump}</ol></nav>` : ''}
+<section class="container section archive-groups">${sections}<p class="archive-empty" data-archive-empty hidden>${escapeHtml(t.noMatches)}</p></section>`
+}
+
+// The tag index. Previously absent: every card's tag pill pointed at
+// /{locale}/tags/{slug}/ while /{locale}/tags/ itself was a 404.
+export function tagsBody(ctx, tags) {
+  const { t, locale } = ctx
+  return `<section class="container article-header"><h1>${escapeHtml(t.allTags)}</h1><p class="article-summary">${escapeHtml(`${tags.length} ${t.tags}`)}</p></section>
+<section class="container section"><div class="tags tag-index">${tags.map((tag) => tagChip(locale, tag, { count: tag.count })).join('')}</div></section>`
+}
+
+// Three years. One year is noise on a corpus that spans 2014–2026; three is the
+// point where a technical post's framework version, API surface and idioms have
+// all plausibly moved on. Yes, this flags most of an old blog — that is the
+// point, not a bug: a 2016 post is actively misleading to a reader arriving from
+// a search engine.
+const POST_AGE_DAYS = 1095
+
+// `updated_at` is the evergreen suppressor, and the only one. Touching
+// `updatedAt` in the frontmatter buys another three years. A dedicated
+// `evergreen` tag would surface on the tag index, the tag pages, the per-tag
+// feeds, article:tag meta and the search index — a nonsense tag, publicly.
+function postAgeNotice(item, ctx) {
+  const stamp = item.updated_at || item.published_at
+  if (!stamp) return ''
+  const now = ctx.now ?? new Date()
+  const days = (now.valueOf() - new Date(stamp).valueOf()) / 86_400_000
+  if (!(days >= POST_AGE_DAYS)) return ''
+  const years = Math.floor(days / 365)
+  return `<aside class="callout callout-warning post-age" role="note">${escapeHtml(fill(ctx.t.postAge, { n: years }))}</aside>`
+}
+
+function relatedBody(item, ctx) {
+  const related = item.related ?? []
+  if (!related.length) return ''
+  return `<nav class="related" aria-label="${escapeHtml(ctx.t.related)}"><h2>${escapeHtml(ctx.t.related)}</h2><ul>${related
+    .map((post) => `<li><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></li>`)
+    .join('')}</ul></nav>`
+}
+
+// Labelled by chronology, never by list position: "previous" flips meaning
+// depending on whether you mean earlier in the list (newer) or earlier in time
+// (older). Older sits left, newer right, so the row reads left-to-right in time.
+function postNav(item, ctx) {
+  const { older, newer } = item
+  if (!older && !newer) return ''
+  const link = (post, rel, label) =>
+    post
+      ? `<a class="post-nav-link post-nav-${rel === 'prev' ? 'older' : 'newer'}" rel="${rel}" href="${escapeHtml(post.url)}"><span class="post-nav-label">${escapeHtml(label)}</span><span class="post-nav-title">${escapeHtml(post.title)}</span></a>`
+      : '<span></span>'
+  return `<nav class="post-nav" aria-label="${escapeHtml(ctx.t.archive)}">${link(older, 'prev', ctx.t.olderPost)}${link(newer, 'next', ctx.t.newerPost)}</nav>`
 }
 
 export function contentBody(item, ctx, comments = []) {
-  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(new Date(item.published_at).toLocaleDateString(item.locale))}</time>` : ''}</div></header><div class="container prose">${item.html}${item.kind === 'post' ? commentsBody(item, ctx, comments) : ''}</div></article>`
+  const isPost = item.kind === 'post'
+  const updated = item.updated_at && item.updated_at > item.published_at ? item.updated_at : ''
+  const meta = [
+    item.published_at
+      ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(formatDate(item.published_at, item.locale))}</time>`
+      : '',
+    updated
+      ? `<time datetime="${escapeHtml(updated)}">${escapeHtml(ctx.t.updated)}: ${escapeHtml(formatDate(updated, item.locale))}</time>`
+      : '',
+    isPost && item.reading_minutes
+      ? `<span class="reading-time">${escapeHtml(fill(ctx.t.readingTime, { n: item.reading_minutes }))}</span>`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('')
+  const pills =
+    isPost && item.tags?.length
+      ? `<div class="tags">${item.tags.map((tag) => `<a class="tag" href="/${escapeHtml(item.locale)}/tags/${slugify(tag)}/">${escapeHtml(tag)}</a>`).join('')}</div>`
+      : ''
+  // The age notice opens the prose, not the header: under the summary it would
+  // read as a subtitle, and above the <h1> it outranks the title and shifts layout.
+  const notice = isPost ? postAgeNotice(item, ctx) : ''
+  const footer = isPost ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${commentsBody(item, ctx, comments)}` : ''
+  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}</header><div class="container prose">${notice}${item.html}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

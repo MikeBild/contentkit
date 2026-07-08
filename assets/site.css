@@ -24,6 +24,13 @@
   box-sizing: border-box;
   border-color: hsl(var(--border));
 }
+/* The UA stylesheet's `[hidden] { display: none }` loses to any author rule that
+   sets `display` on the same element — `.tag` is inline-flex, `.archive-list li`
+   is grid. Both are toggled via the `hidden` property by archive.js, so without
+   this every filtered-out chip and row would stay on screen. */
+[hidden] {
+  display: none !important;
+}
 html {
   scroll-behavior: smooth;
 }
@@ -402,6 +409,112 @@ main {
   padding: 0.8rem 0;
   border-bottom: 1px solid hsl(var(--border));
 }
+.tag-count {
+  margin-left: 0.4rem;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.tag[aria-current='true'] {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.tag[aria-current='true'] .tag-count {
+  color: inherit;
+  opacity: 0.7;
+}
+.blog-topics,
+.tag-index {
+  margin-top: 1.25rem;
+}
+.listing-more {
+  margin-top: 2.5rem;
+  text-align: center;
+}
+/* No max-width: the toolbar and the jump nav share the full .container width, so
+   their left edge lines up with the year groups below rather than sitting in a
+   centred 48rem box while the headings stay left-aligned. */
+.archive-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.archive-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.archive-search .search-box {
+  flex: 0 1 24rem;
+}
+.archive-jump {
+  margin-top: 1.5rem;
+}
+.archive-jump ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.archive-year {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 2.5rem 0 0.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid hsl(var(--border));
+  scroll-margin-top: 5rem;
+}
+.year-count {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.archive-empty {
+  color: hsl(var(--muted-foreground));
+  padding: 2rem 0;
+}
+.reading-time {
+  color: hsl(var(--muted-foreground));
+}
+.post-age {
+  margin-bottom: 2rem;
+}
+.related {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid hsl(var(--border));
+}
+.related ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.post-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+.post-nav-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  text-decoration: none;
+}
+.post-nav-newer {
+  text-align: right;
+}
+.post-nav-label {
+  font-size: 0.78rem;
+  color: hsl(var(--muted-foreground));
+}
 .search-box,
 .form-control {
   width: 100%;
@@ -565,6 +678,14 @@ main {
   .hero {
     grid-template-columns: 1fr;
     padding-top: 4rem;
+  }
+  /* Older/newer stack vertically; the right-aligned "newer" cell would otherwise
+     read as a second column that is not there. */
+  .post-nav {
+    grid-template-columns: 1fr;
+  }
+  .post-nav-newer {
+    text-align: left;
   }
   .hero .avatar {
     width: 11rem;

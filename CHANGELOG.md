@@ -6,6 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Tag index at `/{locale}/tags/`, listing every tag with its post count. Tag pills
+  have always linked to `/{locale}/tags/{tag}/`, but the index itself was a 404.
+- Per-tag RSS feeds at `/{locale}/tags/{tag}/feed.xml` for tags with two or more
+  posts, advertised from the tag page. The main feed now emits `<category>` per
+  tag and an `<atom:link rel="self">`.
+- Post pages show reading time, tag pills, related posts (cosine similarity over
+  IDF-weighted tag vectors), older/newer navigation, and `Updated:` when a post
+  has been revised.
+- Posts older than three years carry a notice that the content may be out of date.
+  Set `updatedAt` in the frontmatter to suppress it for another three years.
+- `buildSite({ now })` makes build time an explicit input, so builds are
+  reproducible and the age notice is testable.
+- Each site now generates its own `llms.txt` and `llms-full.txt`
+  ([llmstxt.org](https://llmstxt.org/) format), at the root and per locale, listing
+  its posts, projects and pages, with the archive, tag index and other locales under
+  the spec's `## Optional` section. `llms-full.txt` carries every published
+  document's Markdown source. `noindex` content is excluded from both.
+
+### Changed
+
+- `/{locale}/blog/` is now a curated feed: the newest twelve posts as cards, topic
+  chips, and a link to the archive. `/{locale}/archive/` is now the full index:
+  every post grouped by year, with a jump navigation and client-side tag and
+  free-text filtering via a new archive-only `archive.js`. Both previously
+  rendered the identical list of every post.
+- Tag pages with a single post are emitted as `noindex,follow` and are excluded
+  from the sitemap and from per-tag feeds.
+- Rendered dates are formatted in UTC. Previously the build machine's timezone
+  could shift a printed date by a day and change the release's asset hashes.
+
+### Fixed
+
+- `noindex` posts and projects no longer leak into the blog, archive, tag pages,
+  the tag index, the home page, the projects listing or the RSS feed. Their own
+  pages still render, as before; only listings exclude them.
+- Tags whose slugs collide no longer overwrite each other's page. `Node JS` and
+  `Node.js` both slugify to `node-js`; previously the last one written won and the
+  other tag's posts silently disappeared. They now merge into a single page.
+- A tag consisting only of punctuation (slugifying to the empty string) no longer
+  writes a file at `{locale}/tags//index.html`.
+- Projects no longer render tag pills. Tag pages are built from posts only, so a
+  project's pills pointed at URLs that 404.
+- `feed.xml` is served as `application/rss+xml`, matching the type every
+  `<link rel="alternate">` on the site advertises. It was served as
+  `application/xml`.
+- The archive, search, contact and tag pages now mark their navigation entry with
+  `aria-current="page"`.
+- Contentkit's own `/llms.txt`, `/llms-full.txt`, `/openapi.json` and `/metrics` are
+  no longer served on published site domains. One deployment hosts the admin API and
+  every site; these paths answered on all of them, so every site served the CMS's
+  documentation instead of its own `llms.txt`, and handed out unauthenticated
+  Prometheus telemetry for the admin API. They are now gated on the request `Host`
+  matching `CONTENTKIT_PUBLIC_URL`, like the `/` service descriptor already was.
+  `/health` and `/ready` stay reachable on every host for probes. Set
+  `CONTENTKIT_PUBLIC_URL` to a hostname you do not also publish a site on.
+
 ## [1.2.0] - 2026-07-08
 
 ### Changed

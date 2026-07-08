@@ -52,9 +52,9 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   site key.
 - Content authoring: immutable revisions for `page`, `post` and `project`
   Markdown documents, scheduled revisions, tags, translations and asset uploads.
-- Static generation: home, blog, project, archive, tag, search, contact,
-  content pages, RSS, sitemap, robots, 404, canonical links, hreflang,
-  OpenGraph, Twitter cards and JSON-LD.
+- Static generation: home, blog, project, archive, tag index, tag, search,
+  contact, content pages, RSS, per-tag feeds, sitemap, robots, 404, canonical
+  links, hreflang, OpenGraph, Twitter cards and JSON-LD.
 - Publishing: expiring previews, atomic releases, scheduled publishing through
   `/v1/publish-due`, and pointer rollback to an existing release.
 - Public interaction: contact form, post comments, Turnstile, honeypot, rate
@@ -70,8 +70,12 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - A release overlays `revision_ids` on the published set and removes
   `retire_item_ids` from it. `DELETE /v1/content/{item}/published` unpublishes
   a single item; revisions stay immutable, so republishing brings it back.
-- Static output includes locale-prefixed routes, archive/tag pages, RSS,
-  sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
+- Static output includes locale-prefixed routes, a year-grouped archive,
+  a tag index and tag pages, RSS and per-tag feeds, sitemap, robots, a per-site
+  `llms.txt` and `llms-full.txt`, canonical metadata, OpenGraph and JSON-LD.
+- This file describes Contentkit itself and is served only on the API host
+  (`CONTENTKIT_PUBLIC_URL`). On a published site domain, `/llms.txt` is that
+  site's own generated index, not this document.
 
 ## Operating & deployment
 

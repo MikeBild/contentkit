@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from '../../src/server.mjs'
+import { releaseContentType } from '../../src/routes.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
 
@@ -764,4 +765,15 @@ test('storage-gc rejects a site-restricted key', async () => {
     const response = await request('/v1/maintenance/storage-gc', { method: 'POST', headers: { 'x-api-key': 'valid' } })
     assert.equal(response.status, 403)
   })
+})
+
+test('feed.xml is served as RSS while other xml stays application/xml', () => {
+  assert.equal(releaseContentType('de/feed.xml'), 'application/rss+xml; charset=utf-8')
+  assert.equal(releaseContentType('de/tags/react/feed.xml'), 'application/rss+xml; charset=utf-8')
+  assert.equal(releaseContentType('sitemap.xml'), 'application/xml; charset=utf-8')
+  assert.equal(releaseContentType('de/index.html'), 'text/html; charset=utf-8')
+  assert.equal(releaseContentType('llms.txt'), 'text/plain; charset=utf-8')
+  assert.equal(releaseContentType('de/llms-full.txt'), 'text/plain; charset=utf-8')
+  assert.equal(releaseContentType('robots.txt'), 'text/plain; charset=utf-8')
+  assert.equal(releaseContentType('assets/logo.woff2'), undefined)
 })

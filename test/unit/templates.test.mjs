@@ -317,3 +317,57 @@ test('contentCsp widens script/connect only for the configured provider', () => 
   assert.match(ga, /script-src[^;]*https:\/\/www\.googletagmanager\.com/)
   assert.match(ga, /connect-src[^;]*https:\/\/www\.google-analytics\.com/)
 })
+
+test('contentBody survives a bare item: no tags, no relations, no injected clock', () => {
+  // Locks the null-safety that lets the older direct-call tests above pass an
+  // item straight from a fixture rather than a fully-derived build item.
+  const html = contentBody(
+    { kind: 'post', item_id: 'p', title: 'A', summary: 'S', html: '<p>B</p>' },
+    { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de' },
+    [],
+  )
+  assert.doesNotMatch(html, /class="related"|class="post-nav"|post-age/)
+  assert.doesNotMatch(html, /undefined|NaN/)
+})
+
+test('pages render neither reading time nor an age notice, however old', () => {
+  const html = contentBody(
+    {
+      kind: 'page',
+      item_id: 'pg',
+      title: 'Impressum',
+      summary: 'S',
+      html: '<p>B</p>',
+      published_at: '2010-01-01T00:00:00Z',
+      reading_minutes: 7,
+    },
+    { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de', now: new Date('2026-07-08T00:00:00Z') },
+    [],
+  )
+  assert.doesNotMatch(html, /Lesezeit|post-age/)
+})
+
+test('ctx.robots overrides the noindex default without nofollow', () => {
+  const html = render({ robots: 'noindex,follow' })
+  assert.match(html, /<meta name="robots" content="noindex,follow">/)
+  assert.doesNotMatch(html, /nofollow/)
+})
+
+test('ctx.feedUrl replaces the site feed link rather than adding a second one', () => {
+  const html = render({ feedUrl: '/de/tags/react/feed.xml', feedTitle: 'Example · React' })
+  const links = html.match(/<link rel="alternate" type="application\/rss\+xml"[^>]*>/g)
+  assert.equal(links.length, 1)
+  assert.match(links[0], /href="\/de\/tags\/react\/feed\.xml"/)
+  assert.match(links[0], /title="Example · React"/)
+})
+
+test('rendered dates do not depend on the build machine timezone', () => {
+  // 2026-01-01T00:00:00Z is 31.12.2025 in America/New_York without an explicit
+  // zone — same content, different bytes, different release hash.
+  const html = contentBody(
+    { kind: 'post', item_id: 'p', title: 'A', summary: 'S', html: '<p>B</p>', published_at: '2026-01-01T00:00:00Z' },
+    { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de' },
+    [],
+  )
+  assert.match(html, /Veröffentlicht: 1\.1\.2026/)
+})

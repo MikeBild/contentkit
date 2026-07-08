@@ -47,8 +47,12 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 
 - Pages, posts and projects with immutable draft revisions.
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
-- Locale-prefixed routes, translation alternates, archive and tag pages.
-- RSS, sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
+- Locale-prefixed routes, translation alternates, a year-grouped archive with
+  client-side tag filtering, a tag index and tag pages.
+- Reading time, related posts by tag similarity, older/newer navigation and a
+  staleness notice on posts older than three years.
+- RSS, per-tag feeds, sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
+- A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
 - Expiring preview links and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
 - Cloudflare Turnstile, honeypot and rate limits on public writes.

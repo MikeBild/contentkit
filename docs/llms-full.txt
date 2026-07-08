@@ -340,7 +340,7 @@ Supported YAML frontmatter:
 | `date` / `publishedAt` | no | Published date for posts/projects |
 | `scheduledAt` | no | Marks revision as scheduled until `/v1/publish-due` publishes it |
 | `updatedAt` | no | Used in rendered metadata when supplied |
-| `tags` | no | Tag archive membership for posts |
+| `tags` | no | Posts only. Drives tag pages, the tag index, per-tag feeds, related posts and `article:tag`. Tags on projects are ignored |
 | `cover` (or `image`) | no | Per-page Open Graph/Twitter image; overrides `settings.og_image` |
 | `coverAlt` (or `imageAlt`) | no | Alt text for the cover image |
 | `noindex` | no | Emit `<meta name="robots" content="noindex,nofollow">` for this page |
@@ -426,14 +426,18 @@ For each configured locale, Contentkit generates:
 | Output | Path |
 |---|---|
 | Locale home | `/{locale}/` |
-| Blog listing | `/{locale}/blog/` |
+| Blog listing | `/{locale}/blog/` (feed: newest 12 posts, topic chips, link to the archive) |
 | Project listing | `/{locale}/projects/` |
-| Archive | `/{locale}/archive/` |
+| Archive | `/{locale}/archive/` (full index: every post, grouped by year, client-side tag + text filter) |
 | Search page | `/{locale}/search/` (noindex; the header search form's GET target, prefills from `?q=`) |
 | Contact page | `/{locale}/contact/` |
 | Search index | `/{locale}/search-index.json` |
 | RSS feed | `/{locale}/feed.xml` |
-| Tag pages | `/{locale}/tags/{tag}/` |
+| Tag index | `/{locale}/tags/` |
+| Tag pages | `/{locale}/tags/{tag}/` (`noindex,follow` and unlisted when the tag has a single post) |
+| Tag feeds | `/{locale}/tags/{tag}/feed.xml` (only for tags with two or more posts) |
+| LLM index | `/{locale}/llms.txt` (llmstxt.org format, describing the site) |
+| LLM full text | `/{locale}/llms-full.txt` (every published document's Markdown source) |
 | Content pages | by kind-specific route |
 
 Global generated files:
@@ -441,11 +445,21 @@ Global generated files:
 | Output | Path |
 |---|---|
 | Root redirect | `/index.html` redirects to `/{default_locale}/` |
+| LLM index | `/llms.txt` — a copy of the default locale's |
+| LLM full text | `/llms-full.txt` — a copy of the default locale's |
 | Sitemap | `/sitemap.xml` |
 | Robots | `/robots.txt` |
 | Not found page | `/404.html` |
 | Web app manifest | `/manifest.webmanifest` |
 | CSS/JS/fonts | `/assets/...` |
+
+One deployment serves the admin API and every published site on different
+hostnames. Contentkit's own surface — `/`, `/openapi.json`, `/llms.txt`,
+`/llms-full.txt` and `/metrics` — answers only when the request `Host` matches the
+hostname of `CONTENTKIT_PUBLIC_URL`. On a site domain those paths fall through to
+the gateway, so `/llms.txt` there is the *site's* llms.txt, generated into the
+release, never this documentation. `/health` and `/ready` remain reachable on every
+host because probes address them by IP.
 
 Generated metadata includes canonical links, alternate hreflang links for
 translations (with `x-default`), full OpenGraph (`og:site_name`, `og:locale`,
@@ -467,7 +481,19 @@ The layout includes:
 - optional Mermaid scripts only when a page contains Mermaid;
 - `search.js` on every page; it fetches `/{locale}/search-index.json` lazily on
   the first interaction with the search field, so a page view costs no extra
-  request.
+  request;
+- `archive.js` on the archive page only; it filters the server-rendered list in
+  place by tag and free text, fetching nothing. Every post is rendered server
+  side, and the facet chips are real links to the tag pages, so the archive stays
+  a complete, crawlable index without scripting. Only the free-text field, which
+  has no server-side counterpart, is hidden until the script runs.
+
+Post pages additionally carry an estimated reading time (prose only — fenced code,
+math and image alt text are excluded), tag pills, related posts (cosine similarity
+over IDF-weighted tag vectors, so a tag carried by every post contributes nothing),
+older/newer navigation labelled by chronology, and — for posts older than three
+years — a notice that the content may be out of date. Setting `updatedAt` in the
+frontmatter suppresses that notice for another three years.
 
 ---
 

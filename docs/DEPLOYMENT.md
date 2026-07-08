@@ -57,4 +57,37 @@ release.
 
 A typical continuous deployment then downloads the binary for its platform,
 ships it to the production host, restarts the systemd unit and smoke-tests
-`/ready`, `/health`, `/openapi.json` and an unauthorized write.
+`/ready`, `/health`, `/openapi.json` and an unauthorized write. Smoke-test
+`/openapi.json` against `CONTENTKIT_PUBLIC_URL`, not against a published site
+domain — see below.
+
+## API host vs. site hosts
+
+One deployment serves the admin API and every published site. Contentkit's own
+surface — `/`, `/openapi.json`, `/llms.txt`, `/llms-full.txt` and `/metrics` — is
+served **only** when the request's `Host` matches the hostname of
+`CONTENTKIT_PUBLIC_URL`. On a site domain those paths fall through to the
+gateway, which serves that site's own `llms.txt` and `robots.txt` from the
+release. Set `CONTENTKIT_PUBLIC_URL` to a hostname you do not also publish a site
+on, or the API surface will shadow that site's root and its `llms.txt`.
+
+`/health` and `/ready` stay reachable on every host: supervisors and load
+balancers probe them over the loopback or a pod IP, where `Host` is an address
+rather than the public hostname, and `/health` must not depend on a database
+lookup.
+
+`/metrics` is unauthenticated Prometheus output. Host-gating keeps it off site
+domains, but it still answers to anyone who can reach the API host. Bind the
+service to a private interface and terminate TLS in front of it, or deny
+`/metrics` at the reverse proxy and scrape it over the loopback:
+
+```
+# Caddy
+@metrics path /metrics
+respond @metrics 404
+```
+
+```
+# nginx
+location = /metrics { deny all; }
+```

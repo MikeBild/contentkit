@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { renderMarkdown } from './markdown.mjs'
 import {
   archiveBody,
+  blogBody,
   commentsEnabled,
   contactBody,
   contentBody,
@@ -12,8 +13,10 @@ import {
   layout,
   listingBody,
   searchBody,
+  tagCounts,
+  tagsBody,
 } from './templates.mjs'
-import { escapeXml, json, slugify } from './utils.mjs'
+import { escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
 
 const text = (body, contentType = 'text/html; charset=utf-8', cacheControl = 'public,max-age=60,must-revalidate') => ({
   body: Buffer.from(body),
@@ -57,7 +60,7 @@ async function staticAssets(root) {
     'url(/assets/katex/',
   )
   emit('site.css', `${css}\n${katexCss}`, 'text/css; charset=utf-8')
-  for (const name of ['search.js', 'forms.js', 'mermaid-init.js', 'consent.js']) {
+  for (const name of ['search.js', 'forms.js', 'mermaid-init.js', 'consent.js', 'archive.js']) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
   emit(
@@ -81,22 +84,144 @@ async function staticAssets(root) {
   return { files, assets }
 }
 
-function rss(site, locale, posts) {
+// `<category>` carries the display label, not the slug: it is human-facing.
+// `<atom:link rel="self">` is what feed validators want. No `<lastBuildDate>` —
+// it would make the bytes, and therefore the release hash, change on every build.
+function rss(site, locale, posts, { selfUrl = `/${locale}/feed.xml`, title = site.name } = {}) {
   const items = posts
     .slice(0, 50)
     .map(
       (post) =>
-        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}</item>`,
+        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${(post.tags || []).map((tag) => `<category>${escapeXml(tag)}</category>`).join('')}${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}</item>`,
     )
     .join('')
-  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${escapeXml(site.name)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><description>${escapeXml(site.description || '')}</description><language>${escapeXml(locale)}</language>${items}</channel></rss>`
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, selfUrl))}"/><description>${escapeXml(site.description || '')}</description><language>${escapeXml(locale)}</language>${items}</channel></rss>`
+}
+
+// A total, locale-independent comparator. Array.prototype.sort is stable in V8,
+// but a total comparator means we never have to rely on that — and unlike
+// localeCompare it does not vary with the ICU data compiled into the Node build.
+// Releases are immutable and content-hashed, so ordering must be reproducible.
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
+const tagKeys = (post) => [...new Set((post.tags || []).map(slugify).filter(Boolean))]
+
+// Inverse document frequency per tag slug. A tag carried by every post scores 0:
+// `Software` on 60 of 77 posts says almost nothing about what a post is about,
+// while `Effect-TS` on 2 posts says almost everything.
+export function tagIdf(posts) {
+  const df = new Map()
+  for (const post of posts) for (const key of tagKeys(post)) df.set(key, (df.get(key) || 0) + 1)
+  const idf = new Map()
+  for (const [key, count] of df) idf.set(key, Math.log(posts.length / count))
+  return idf
+}
+
+// Cosine similarity over IDF-weighted binary tag vectors.
+//
+// Not Jaccard: |A∩B|/|A∪B| scores a shared `Software` exactly like a shared
+// `Effect-TS`. Not a raw summed IDF either: that makes the post with eleven tags
+// everyone's neighbour, because more tags means more chances to overlap. Cosine
+// normalises the vector length away and stays bounded in [0,1].
+//
+// Math.log is not required by IEEE 754 to be correctly rounded and is not
+// bit-identical across V8 versions. That can only perturb the ordering of
+// near-equal scores, and the slug tie-break below makes the sort total — so the
+// emitted HTML is stable even when the last ULP of a score is not.
+export function relatedPosts(post, posts, idf, limit = 3) {
+  const own = tagKeys(post)
+  const norm = (keys) => Math.sqrt(keys.reduce((sum, key) => sum + (idf.get(key) ?? 0) ** 2, 0))
+  const ownNorm = norm(own)
+  // A post whose tags are all universal (idf 0) has a zero vector: there is
+  // nothing to be related *on*. Guard before dividing.
+  if (!ownNorm) return []
+  const ownSet = new Set(own)
+  const scored = []
+  for (const other of posts) {
+    if (other.item_id === post.item_id) continue
+    const keys = tagKeys(other)
+    const otherNorm = norm(keys)
+    if (!otherNorm) continue
+    let dot = 0
+    for (const key of keys) if (ownSet.has(key)) dot += (idf.get(key) ?? 0) ** 2
+    if (dot <= 0) continue
+    scored.push({ post: other, score: dot / (ownNorm * otherNorm) })
+  }
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      cmp(String(b.post.published_at), String(a.post.published_at)) || // newer first
+      cmp(a.post.slug, b.post.slug), // unique per locale+kind
+  )
+  return scored.slice(0, limit).map((entry) => entry.post)
+}
+
+// https://llmstxt.org/ — an H1 with the site name, a blockquote summary, then H2
+// "file list" sections of markdown links, each optionally followed by `: notes`.
+//
+// This describes *the site*, not the CMS that built it. contentkit's own
+// /llms.txt is a different file on a different host (see isApiHost in routes.mjs).
+//
+// The `## Optional` heading is specified, not decorative: consumers may skip the
+// URLs beneath it when they need a shorter context. So the archive, the tag index,
+// the full-content dump and the other locales live there. Its name must stay
+// literally "Optional" even on a German site — it is a keyword, not a label.
+const LLMS_OPTIONAL_SECTION = 'Optional'
+
+// Square brackets in a title would terminate the link text early.
+const llmsLink = (title, url, note) =>
+  `- [${String(title).replaceAll('[', '').replaceAll(']', '')}](${url})${note ? `: ${excerpt(note, 200)}` : ''}`
+
+function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
+  const blocks = [`# ${site.name}`, `> ${excerpt(site.description || site.name, 300)}`]
+  const linksFor = (items) => items.map((item) => llmsLink(item.title, item.canonical, item.summary))
+  const section = (heading, links) => {
+    if (links.length) blocks.push(`## ${heading}\n\n${links.join('\n')}`)
+  }
+  section(t.blog, linksFor(posts))
+  section(t.projects, linksFor(projects))
+  section(t.pages, linksFor(pages))
+  section(LLMS_OPTIONAL_SECTION, [
+    llmsLink(t.archive, absolute(site, `/${locale}/archive/`)),
+    llmsLink(t.allTags, absolute(site, `/${locale}/tags/`)),
+    llmsLink(t.llmsFullContent, absolute(site, `/${locale}/llms-full.txt`)),
+    ...locales
+      .filter((other) => other !== locale)
+      .map((other) => llmsLink(other, absolute(site, `/${other}/llms.txt`))),
+  ])
+  return `${blocks.join('\n\n')}\n`
+}
+
+// The whole corpus as Markdown, in one file, for agents that would otherwise fetch
+// every page. contentkit already stores the authored source, so this costs nothing
+// to produce — `item.source` is the document with its frontmatter stripped.
+//
+// Documents are H2 so the file keeps a single H1. Authors conventionally repeat the
+// title as a leading `# Heading` in the body; that duplicate is dropped, because the
+// heading emitted here already carries it.
+//
+// A body's own `## Section` sits at the same level as a document title, so documents
+// are separated by a horizontal rule: without it the boundary between two posts is
+// indistinguishable from a section break inside one.
+const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^\n]*\n+/, '')
+
+function llmsFullTxt(site, items) {
+  const documents = items.map(
+    (item) => `---\n\n## ${item.title}\n\nURL: ${item.canonical}\n\n${stripLeadingH1(item.source).trim()}`,
+  )
+  return `${[`# ${site.name}`, `> ${excerpt(site.description || site.name, 300)}`, ...documents].join('\n\n')}\n`
 }
 
 function sitemap(items) {
   return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">${items.map((item) => `<url><loc>${escapeXml(item.canonical)}</loc>${(item.translations || []).map((alt) => `<xhtml:link rel="alternate" hreflang="${escapeXml(alt.locale)}" href="${escapeXml(alt.canonical)}"/>`).join('')}${item.updated_at ? `<lastmod>${escapeXml(item.updated_at)}</lastmod>` : ''}</url>`).join('')}</urlset>`
 }
 
-export async function buildSite({ root, site, locales, revisions, comments = [] }) {
+// `now` is injectable so builds are testable and reproducible. It drives the
+// post-age notice and the footer's copyright year, which means generated HTML
+// varies with build time even when content does not. That is intended: a release
+// is an immutable snapshot, so a published release keeps the age notice it was
+// built with until the site is published again.
+export async function buildSite({ root, site, locales, revisions, comments = [], now = new Date() }) {
   const { files, assets } = await staticAssets(root)
   const rendered = []
   for (const revision of revisions) {
@@ -108,6 +233,9 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
       html: result.html,
       source: result.source,
       hasMermaid: result.hasMermaid,
+      // Derived, not frontmatter: renderMarkdown's `meta` is the authored
+      // contract and must not grow fields the author never wrote.
+      reading_minutes: result.meta.kind === 'post' ? readingTime(result.source) : 0,
     }
     item.url = route(item)
     item.canonical = absolute(site, item.url)
@@ -141,14 +269,40 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
     const locale = localeConfig.locale
     const t = dictionary(locale)
     const local = rendered.filter((item) => item.locale === locale)
+    // `local` still drives per-item page generation below, so a noindex item keeps
+    // its own page. It must not reach any *listing*, though: blog, archive, tag
+    // pages, the tag index, RSS, related posts and prev/next all read these two
+    // arrays, and a draft has no business being syndicated or recommended.
     const posts = local
-      .filter((item) => item.kind === 'post')
+      .filter((item) => item.kind === 'post' && !item.noindex)
       .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)))
     const projects = local
-      .filter((item) => item.kind === 'project')
+      .filter((item) => item.kind === 'project' && !item.noindex)
       .sort((a, b) => Number(b.featured) - Number(a.featured))
     const pages = local.filter((item) => item.kind === 'page')
-    const base = { site, locale, t, posts, projects, pages, assets }
+
+    // Related posts and prev/next are read off `posts`, which excludes noindex
+    // items — so a draft is never recommended, and a draft's own page gets no
+    // prev/next (its item_id is absent from `order`, both lookups miss).
+    //
+    // Store link projections, not post references: `a.related[0].related[0]`
+    // would otherwise cycle back to `a`, and buildSite returns these items to
+    // its caller as `content`.
+    const link = (post) => (post ? { title: post.title, url: post.url } : null)
+    const idf = tagIdf(posts)
+    const order = new Map(posts.map((post, index) => [post.item_id, index]))
+    const relations = posts.map((post) => {
+      const index = order.get(post.item_id)
+      return {
+        related: relatedPosts(post, posts, idf).map(link),
+        // `posts` is published_at DESC, so the *next* entry is the older one.
+        newer: link(posts[index - 1]),
+        older: link(posts[index + 1]),
+      }
+    })
+    posts.forEach((post, index) => Object.assign(post, relations[index]))
+
+    const base = { site, locale, t, posts, projects, pages, assets, now }
     const personData = {
       '@context': 'https://schema.org',
       '@type': 'Person',
@@ -179,32 +333,59 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
       updated_at: lastUpdated(local),
     })
 
-    const listingPages = [
-      [`${locale}/blog/index.html`, t.blog, posts, `/${locale}/blog/`, 'blog'],
-      [`${locale}/projects/index.html`, t.projects, projects, `/${locale}/projects/`, 'projects'],
-    ]
-    for (const [path, title, items, url, segment] of listingPages) {
-      files.set(
-        path,
-        text(
-          layout(
-            { ...base, title, description: title, canonical: absolute(site, url), currentPath: url },
-            listingBody(title, items),
-          ),
+    // The blog is a feed (capped, with topic chips), the projects listing is a
+    // plain grid — so only the latter still uses listingBody(), which also serves
+    // the tag pages unchanged.
+    const blogPath = `/${locale}/blog/`
+    files.set(
+      `${locale}/blog/index.html`,
+      text(
+        layout(
+          { ...base, title: t.blog, description: t.blog, canonical: absolute(site, blogPath), currentPath: blogPath },
+          blogBody(base),
         ),
-      )
-      sitemapItems.push({
-        canonical: absolute(site, url),
-        translations: staticAlternates((l) => `/${l}/${segment}/`),
-        updated_at: lastUpdated(items),
-      })
-    }
+      ),
+    )
+    sitemapItems.push({
+      canonical: absolute(site, blogPath),
+      translations: staticAlternates((l) => `/${l}/blog/`),
+      updated_at: lastUpdated(posts),
+    })
+
+    const projectsPath = `/${locale}/projects/`
+    files.set(
+      `${locale}/projects/index.html`,
+      text(
+        layout(
+          {
+            ...base,
+            title: t.projects,
+            description: t.projects,
+            canonical: absolute(site, projectsPath),
+            currentPath: projectsPath,
+          },
+          listingBody(t.projects, projects),
+        ),
+      ),
+    )
+    sitemapItems.push({
+      canonical: absolute(site, projectsPath),
+      translations: staticAlternates((l) => `/${l}/projects/`),
+      updated_at: lastUpdated(projects),
+    })
     files.set(
       `${locale}/archive/index.html`,
       text(
         layout(
-          { ...base, title: t.archive, description: t.archive, canonical: absolute(site, `/${locale}/archive/`) },
+          {
+            ...base,
+            title: t.archive,
+            description: t.archive,
+            canonical: absolute(site, `/${locale}/archive/`),
+            currentPath: `/${locale}/archive/`,
+          },
           archiveBody(base),
+          { archive: true },
         ),
       ),
     )
@@ -217,6 +398,7 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
             title: t.search,
             description: t.search,
             canonical: absolute(site, `/${locale}/search/`),
+            currentPath: `/${locale}/search/`,
             noindex: true,
           },
           searchBody(base),
@@ -227,7 +409,13 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
       `${locale}/contact/index.html`,
       text(
         layout(
-          { ...base, title: t.contact, description: t.contact, canonical: absolute(site, `/${locale}/contact/`) },
+          {
+            ...base,
+            title: t.contact,
+            description: t.contact,
+            canonical: absolute(site, `/${locale}/contact/`),
+            currentPath: `/${locale}/contact/`,
+          },
           contactBody(base),
           { forms: true },
         ),
@@ -262,28 +450,105 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
     )
     files.set(`${locale}/feed.xml`, text(rss(site, locale, posts), 'application/rss+xml; charset=utf-8'))
 
-    // Tags are grouped case-insensitively but keep their first-seen spelling
-    // for display; the page URL uses the same slugify() as the card links.
+    // Per-locale llms.txt, plus a copy of the default locale's at the site root —
+    // the spec puts the file at `/llms.txt` but allows subpaths, and a multilingual
+    // site should not have to pick one language for its only entry point.
+    // `posts`/`projects` already exclude noindex; `pages` does not, so filter here.
+    const llmsPages = pages.filter((page) => !page.noindex)
+    const localeCodes = locales.map((entry) => entry.locale)
+    const indexable = [...posts, ...projects, ...llmsPages]
+    const llmsIndex = text(
+      llmsTxt(site, locale, { t, posts, projects, pages: llmsPages }, localeCodes),
+      'text/plain; charset=utf-8',
+    )
+    const llmsFull = text(llmsFullTxt(site, indexable), 'text/plain; charset=utf-8')
+    files.set(`${locale}/llms.txt`, llmsIndex)
+    files.set(`${locale}/llms-full.txt`, llmsFull)
+    if (locale === site.default_locale) {
+      files.set('llms.txt', llmsIndex)
+      files.set('llms-full.txt', llmsFull)
+    }
+
+    // Tags are grouped by their *slug*, not by tag.toLowerCase(), because the slug
+    // is what names the file. Keying on the lowercased label while writing to
+    // slugify(label) let `Node JS` and `Node.js` both target node-js/index.html —
+    // last writer won and the first tag's posts silently vanished. Grouping on the
+    // slug merges them instead. First-seen spelling is kept for display.
+    // Known limit: slugify() maps `C`, `C#` and `C++` all to `c`, so those merge
+    // too. Nothing short of a smarter slugify() can separate them.
     const tags = new Map()
     for (const post of posts)
       for (const tag of post.tags) {
-        const key = tag.toLowerCase()
-        if (!tags.has(key)) tags.set(key, { label: tag, items: [] })
+        const key = slugify(tag)
+        if (!key) continue // e.g. '###' -> '' -> would write `${locale}/tags//index.html`
+        if (!tags.has(key)) tags.set(key, { label: tag, slug: key, items: [] })
         tags.get(key).items.push(post)
       }
-    for (const { label, items } of tags.values()) {
-      const tagSlug = slugify(label)
+    // The tag index. Every card's tag pill has always pointed at
+    // /{locale}/tags/{slug}/ while /{locale}/tags/ itself was a 404. Unlike the
+    // individual tag pages it exists in every locale unconditionally, so it can
+    // carry hreflang alternates.
+    const tagsPath = `/${locale}/tags/`
+    files.set(
+      `${locale}/tags/index.html`,
+      text(
+        layout(
+          {
+            ...base,
+            title: t.allTags,
+            description: t.allTags,
+            canonical: absolute(site, tagsPath),
+            currentPath: tagsPath,
+          },
+          tagsBody(base, tagCounts(posts)),
+        ),
+      ),
+    )
+    sitemapItems.push({
+      canonical: absolute(site, tagsPath),
+      translations: staticAlternates((l) => `/${l}/tags/`),
+      updated_at: lastUpdated(posts),
+    })
+
+    for (const { label, slug: tagSlug, items } of tags.values()) {
       const url = `/${locale}/tags/${tagSlug}/`
+      // A one-post tag page duplicates that post's card, and a long tail of them
+      // dilutes crawl budget. Keep the page (cards link to it; it must not 404),
+      // but noindex it — with `follow`, never `nofollow`, so link equity still
+      // reaches the post it lists. No sitemap entry, and no feed nobody would read.
+      const thin = items.length < 2
+      const feedUrl = thin ? undefined : `${url}feed.xml`
       files.set(
         `${locale}/tags/${tagSlug}/index.html`,
         text(
           layout(
-            { ...base, title: label, description: label, canonical: absolute(site, url) },
+            {
+              ...base,
+              title: label,
+              description: label,
+              canonical: absolute(site, url),
+              currentPath: url,
+              robots: thin ? 'noindex,follow' : '',
+              // Individual tag pages get no hreflang: tag slugs are locale-specific
+              // (`softwarearchitektur` vs `software-architecture`), so alternates
+              // derived from this path would point at URLs that do not exist.
+              feedUrl,
+              feedTitle: feedUrl ? `${site.name} · ${label}` : undefined,
+            },
             listingBody(`#${label}`, items),
           ),
         ),
       )
-      sitemapItems.push({ canonical: absolute(site, url) })
+      if (!thin) {
+        files.set(
+          `${locale}/tags/${tagSlug}/feed.xml`,
+          text(
+            rss(site, locale, items, { selfUrl: feedUrl, title: `${site.name} · ${label}` }),
+            'application/rss+xml; charset=utf-8',
+          ),
+        )
+        sitemapItems.push({ canonical: absolute(site, url), updated_at: lastUpdated(items) })
+      }
     }
 
     for (const item of local) {
@@ -382,6 +647,7 @@ export async function buildSite({ root, site, locales, revisions, comments = [] 
           // Without the asset map layout() falls back to unhashed /assets/site.css,
           // which no release contains — the 404 page would render unstyled.
           assets,
+          now,
           title: '404',
           description: 'Not found',
           canonical: absolute(site, '/404'),
