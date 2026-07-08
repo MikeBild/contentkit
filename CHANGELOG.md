@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-08
+
+### Added
+
+- Cookie consent for GA4 (`assets/consent.js`): when a site configures the
+  `ga4` analytics provider, the Google tag loader is now withheld until the
+  visitor gives explicit opt-in consent (§ 25 TDDDG / Art. 6 Abs. 1 lit. a
+  DSGVO). The banner is localized (de/en), offers an equally prominent
+  "reject all" alongside "accept all", wires up Google Consent Mode, and adds a
+  footer "Cookie settings" control so consent can be withdrawn at any time.
+
+### Changed
+
+- The `ga4` provider no longer emits the `gtag/js` loader directly in the head
+  or a per-site `assets/analytics.js` init file. The head instead references the
+  content-hashed `consent.js`, passing the measurement id via `data-ga-id`, and
+  no request reaches Google before consent. Plausible (cookieless) is unchanged
+  and still needs no banner.
+
 ## [1.0.1] - 2026-07-04
 
 ### Changed
@@ -51,5 +70,6 @@ atomic activation and pointer-based rollback.
 - Tag links on content cards now use the same slug as the generated tag pages;
   multi-word tags previously linked to a non-existent URL.
 
+[1.1.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.0
 [1.0.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.0.1
 [1.0.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.0.0
