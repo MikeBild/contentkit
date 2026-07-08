@@ -106,6 +106,15 @@ own under `/{locale}/`, linked from the other locales' `## Optional` section, wh
 [the spec](https://llmstxt.org/) defines as URLs a consumer may skip when it needs a
 shorter context.
 
+### One h1 per page
+
+The layout renders the frontmatter `title` as the page's `<h1>`. When a document's first
+block is a level-one heading whose text is that same title — the conventional way to write
+Markdown — it is dropped from the rendered HTML, so the page has one `<h1>` and one document
+outline. A body that deliberately opens with a *different* top-level heading keeps it, and a
+heading that is not the first block is never touched. `source` is unaffected, so
+`llms-full.txt` and the reading-time estimate still see the document as authored.
+
 ### Derived, not authored
 
 Reading time, related posts and older/newer links are computed at build time from

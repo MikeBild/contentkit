@@ -28,6 +28,36 @@ function directives() {
   }
 }
 
+// Collapse a heading's inline content to plain text. `# A *b* c` -> `A b c`.
+function headingText(node) {
+  if (typeof node.value === 'string') return node.value
+  return (node.children || []).map(headingText).join('')
+}
+
+const normalizeTitle = (value) =>
+  String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+
+// The layout already renders the frontmatter `title` as the page's <h1>. Authors
+// conventionally repeat it as the document's opening heading, which yields two <h1>
+// on the page and a document outline that starts twice. Drop that heading — but only
+// when it is the first block *and* its text is the title, so a body that deliberately
+// opens with a different top-level heading keeps it.
+//
+// This edits the rendered HTML only. `source` (and therefore llms-full.txt) keeps the
+// document exactly as authored.
+function dropRedundantTitle(title) {
+  return (tree) => {
+    const index = tree.children.findIndex((node) => node.type !== 'yaml')
+    const first = tree.children[index]
+    if (!first || first.type !== 'heading' || first.depth !== 1) return
+    if (normalizeTitle(headingText(first)) !== normalizeTitle(title)) return
+    tree.children.splice(index, 1)
+  }
+}
+
 function mermaidBlocks() {
   return (tree) => {
     visit(tree, 'element', (node) => {
@@ -122,6 +152,7 @@ export async function renderMarkdown(markdown) {
     .use(remarkMath)
     .use(remarkDirective)
     .use(directives)
+    .use(dropRedundantTitle, meta.title)
     .use(remarkRehype)
     .use(mermaidBlocks)
     .use(rehypeSanitize, schema)

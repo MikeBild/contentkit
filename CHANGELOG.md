@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-07-08
+
+### Fixed
+
+- A document whose first block repeats the frontmatter `title` as a level-one heading no
+  longer renders a second `<h1>`. The layout already emits the title, so such pages carried
+  two `<h1>` elements and started their document outline twice — 22 of the 77 posts on
+  www.mikebild.dev did. A body that deliberately opens with a different top-level heading
+  keeps it, and a heading that is not the first block is never touched. The authored source
+  is unchanged, so `llms-full.txt` and the reading-time estimate are unaffected.
+
 ## [1.3.0] - 2026-07-08
 
 ### Added
