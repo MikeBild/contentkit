@@ -46,9 +46,20 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     return providers.get(key)
   }
 
-  async function insertJob({ site, item, revision, speech }) {
-    if (await repo.one('ck_audio_jobs', { item_id: `eq.${item.id}`, speech_sha256: `eq.${speech.sha256}` })) {
-      return false
+  async function insertJob({ site, item, revision, speech, force = false }) {
+    const existing = await repo.one('ck_audio_jobs', { item_id: `eq.${item.id}`, speech_sha256: `eq.${speech.sha256}` })
+    if (existing) {
+      if (!force) return false
+      // Re-render on demand (voice change, provider fix): reset the job instead
+      // of fighting the unique constraint. The previous asset stays referenced
+      // until the worker finishes and swaps it, so a live player never 404s.
+      await db.update(
+        'ck_audio_jobs',
+        { id: `eq.${existing.id}` },
+        { status: 'pending', attempts: 0, error: null, next_attempt_at: new Date().toISOString() },
+        { returning: false },
+      )
+      return true
     }
     try {
       await db.insert(
@@ -98,8 +109,10 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
   // Archive backfill: walk the published posts newest-first, skip everything
   // that already has a job for its current speech text, and stop at the
   // character budget (limit_chars, else settings.audio.monthly_char_budget).
-  // dry_run prices the batch without enqueuing anything.
-  async function backfill({ site, limitChars, dryRun = false }) {
+  // dry_run prices the batch without enqueuing anything. An optional slugs
+  // list narrows the walk to specific posts (still budget- and idempotency-
+  // checked), which is how a single post gets its narration on demand.
+  async function backfill({ site, limitChars, dryRun = false, slugs, force = false }) {
     const settings = site.settings?.audio || {}
     if (settings.enabled !== true) {
       throw Object.assign(new Error('audio is not enabled for this site (settings.audio.enabled)'), {
@@ -117,19 +130,24 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
       ? await db.select('ck_content_revisions', { id: `in.(${revisionIds.join(',')})` })
       : []
     revisions.sort((a, b) => cmp(String(b.published_at || ''), String(a.published_at || '')))
+    const slugFilter = Array.isArray(slugs) && slugs.length ? new Set(slugs.map(String)) : null
+    const selected = slugFilter ? revisions.filter((revision) => slugFilter.has(revision.slug)) : revisions
     const requested = Number(limitChars ?? settings.monthly_char_budget)
     const budget = Number.isFinite(requested) && requested > 0 ? requested : Infinity
     const jobs = []
     let totalChars = 0
     let skipped = 0
-    for (const revision of revisions) {
+    for (const revision of selected) {
       const item = itemsByRevision.get(revision.id)
       const speech = extractSpeechText(revision.markdown, { title: revision.title })
       if (!speech.enabled || !speech.chars) {
         skipped++
         continue
       }
-      if (await repo.one('ck_audio_jobs', { item_id: `eq.${item.id}`, speech_sha256: `eq.${speech.sha256}` })) {
+      if (
+        !force &&
+        (await repo.one('ck_audio_jobs', { item_id: `eq.${item.id}`, speech_sha256: `eq.${speech.sha256}` }))
+      ) {
         skipped++
         continue
       }
@@ -142,7 +160,7 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     let enqueued = 0
     if (!dryRun) {
       for (const job of jobs) {
-        if (await insertJob({ site, ...job })) enqueued++
+        if (await insertJob({ site, ...job, force })) enqueued++
       }
     }
     return {

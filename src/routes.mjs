@@ -456,7 +456,13 @@ export function createRequestHandler(ctx) {
       return sendJson(
         res,
         200,
-        await audio.backfill({ site, limitChars: input.limit_chars, dryRun: input.dry_run === true }),
+        await audio.backfill({
+          site,
+          limitChars: input.limit_chars,
+          dryRun: input.dry_run === true,
+          slugs: Array.isArray(input.slugs) ? input.slugs : undefined,
+          force: input.force === true,
+        }),
       )
     }
     const previewMatch = path.match(/^\/v1\/sites\/([^/]+)\/previews$/)

@@ -225,6 +225,43 @@ test('backfill enqueues newest-first within the character budget and skips exist
   assert.equal(db.tables.ck_audio_jobs.length, 2)
 })
 
+test('backfill with slugs narrows the walk to the named posts', async () => {
+  const { db, repo, worker } = fixture()
+  db.tables.ck_content_items.push({ id: 'item-2', site_id: 'site-1', kind: 'post', published_revision_id: 'rev-2' })
+  db.tables.ck_content_revisions.push({
+    id: 'rev-2',
+    item_id: 'item-2',
+    markdown: markdown('Ein anderer gesprochener Text für den zweiten Beitrag.'),
+    title: 'Neuerer Beitrag',
+    slug: 'neuerer-beitrag',
+    published_at: '2026-07-01T00:00:00Z',
+  })
+  const site = await repo.getSite('site-1')
+  const result = await worker.backfill({ site, slugs: ['neuerer-beitrag'] })
+  assert.equal(result.enqueued, 1)
+  assert.equal(result.jobs.length, 1)
+  assert.equal(result.jobs[0].item_id, 'item-2')
+  assert.equal(db.tables.ck_audio_jobs.length, 1, 'only the named post is enqueued')
+})
+
+test('backfill force re-renders an unchanged post by resetting its job', async () => {
+  const { db, repo, worker } = fixture()
+  const site = await repo.getSite('site-1')
+  const first = await worker.backfill({ site })
+  assert.equal(first.enqueued, 1)
+  db.tables.ck_audio_jobs[0].status = 'done'
+  db.tables.ck_audio_jobs[0].attempts = 3
+  // Without force the unchanged speech text is skipped ...
+  const skipped = await worker.backfill({ site })
+  assert.equal(skipped.enqueued, 0)
+  // ... with force the existing job is reset to pending instead of duplicated.
+  const forced = await worker.backfill({ site, force: true })
+  assert.equal(forced.enqueued, 1)
+  assert.equal(db.tables.ck_audio_jobs.length, 1, 'no duplicate row')
+  assert.equal(db.tables.ck_audio_jobs[0].status, 'pending')
+  assert.equal(db.tables.ck_audio_jobs[0].attempts, 0)
+})
+
 test('backfill refuses a site that has not opted in', async () => {
   const { repo, worker } = fixture({ audioSettings: { enabled: false } })
   const site = await repo.getSite('site-1')
