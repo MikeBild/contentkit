@@ -15,16 +15,19 @@ const site = {
   settings: {},
 }
 
-function post({ slug, title, tags = [], noindex = false, date = '2026-06-01', body = 'Body text.' }) {
+function post({ slug, title, tags = [], noindex = false, date = '2026-06-01', body = 'Body text.', extra = '' }) {
   return {
     id: `rev-${slug}`,
     item_id: `item-${slug}`,
     kind: 'post',
     locale: 'en',
     translation_key: slug,
-    markdown: `---\nkind: post\ntitle: ${title}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: About ${title}\ndate: ${date}\ntags: [${tags.join(', ')}]\n${noindex ? 'noindex: true\n' : ''}---\n# ${title}\n\n${body}`,
+    markdown: `---\nkind: post\ntitle: ${title}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: About ${title}\ndate: ${date}\ntags: [${tags.join(', ')}]\n${noindex ? 'noindex: true\n' : ''}${extra}---\n# ${title}\n\n${body}`,
   }
 }
+
+// Frontmatter for the authored reader aids, reused across the tests below.
+const TLDR_FAQ = 'tldr:\n  - First takeaway.\n  - Second takeaway.\nfaq:\n  - q: What is Alpha?\n    a: A test post.\n'
 
 function project({ slug, title, tags = [], noindex = false }) {
   return {
@@ -457,6 +460,113 @@ test('llms-full.txt carries the authored markdown, minus the duplicated title he
   assert.equal((full.match(/Alpha/g) || []).length, 1)
   // Exactly one H1 in the whole file.
   assert.equal((full.match(/^# /gm) || []).length, 1)
+})
+
+test('every indexable post gets a Markdown twin, advertised from the page head', async () => {
+  const result = await build({
+    revisions: [
+      post({ slug: 'a', title: 'Alpha', extra: TLDR_FAQ, body: 'Body prose.' }),
+      post({ slug: 'secret', title: 'Secret', noindex: true }),
+    ],
+  })
+  const twin = result.files.get('en/blog/a/index.md')
+  assert.ok(twin, 'index.md missing')
+  assert.equal(twin.contentType, 'text/markdown; charset=utf-8')
+  // Same block as llms-full.txt: title heading, canonical URL, TL;DR, body —
+  // with the duplicated leading H1 dropped.
+  assert.match(
+    twin.body.toString(),
+    /^# Alpha\n\nURL: https:\/\/example\.test\/en\/blog\/a\/\n\n- First takeaway\.\n- Second takeaway\.\n\nBody prose\.\n$/,
+  )
+  assert.match(
+    result.files.get('en/blog/a/index.html').body.toString(),
+    /<link rel="alternate" type="text\/markdown" href="\/en\/blog\/a\/index\.md">/,
+  )
+
+  // A draft's HTML page at least carries a robots meta; a bare .md could not.
+  assert.ok(!result.files.has('en/blog/secret/index.md'), 'noindex post must not get a Markdown twin')
+  assert.doesNotMatch(result.files.get('en/blog/secret/index.html').body.toString(), /text\/markdown/)
+})
+
+test('llms-full.txt carries the authored TL;DR bullets', async () => {
+  const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha', extra: TLDR_FAQ })] })
+  assert.match(
+    result.files.get('en/llms-full.txt').body.toString(),
+    /## Alpha\n\nURL: https:\/\/example\.test\/en\/blog\/a\/\n\n- First takeaway\./,
+  )
+})
+
+test('post JSON-LD carries the posting details, breadcrumbs and the authored FAQ', async () => {
+  const audio = [
+    { item_id: 'item-a', url: '/media/a.mp3', content_type: 'audio/mpeg', byte_size: 1, duration_secs: 300 },
+  ]
+  const result = await build({
+    site: { ...site, settings: { audio: { enabled: true } } },
+    revisions: [post({ slug: 'a', title: 'Alpha', tags: ['React'], extra: TLDR_FAQ })],
+    audio,
+  })
+  const html = result.files.get('en/blog/a/index.html').body.toString()
+  const structured = JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1])
+  assert.deepEqual(
+    structured.map((entry) => entry['@type']),
+    ['BlogPosting', 'BreadcrumbList', 'FAQPage'],
+  )
+  const [posting, breadcrumbs, faq] = structured
+  assert.equal(posting.inLanguage, 'en')
+  assert.equal(posting.keywords, 'React')
+  assert.equal(posting.abstract, 'First takeaway. Second takeaway.')
+  assert.equal(posting.mainEntityOfPage, 'https://example.test/en/blog/a/')
+  assert.match(posting.timeRequired, /^PT\d+M$/)
+  assert.equal(posting.audio.contentUrl, 'https://example.test/media/a.mp3')
+  assert.equal(posting.audio.duration, 'PT300S')
+  assert.equal(breadcrumbs.itemListElement.length, 3)
+  assert.equal(breadcrumbs.itemListElement[1].item, 'https://example.test/en/blog/')
+  assert.equal(faq.mainEntity[0].name, 'What is Alpha?')
+  assert.equal(faq.mainEntity[0].acceptedAnswer.text, 'A test post.')
+})
+
+test('the AI share row offers markdown, copy and deep links, and honours the per-site opt-out', async () => {
+  const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha' })] })
+  const html = result.files.get('en/blog/a/index.html').body.toString()
+  assert.match(html, /<a class="tag ai-action" href="\/en\/blog\/a\/index\.md" type="text\/markdown">Markdown<\/a>/)
+  // The copy button ships hidden: without ai-actions.js it could do nothing.
+  assert.match(
+    html,
+    /<button type="button" class="tag ai-action" data-copy-markdown="\/en\/blog\/a\/index\.md" data-copied="Copied" hidden>Copy Markdown<\/button>/,
+  )
+  const prompt = encodeURIComponent(
+    'Read this article and answer my questions about it: https://example.test/en/blog/a/',
+  )
+  assert.ok(html.includes(`href="https://claude.ai/new?q=${prompt}"`), 'Claude deep link missing')
+  assert.ok(html.includes(`href="https://chatgpt.com/?q=${prompt}"`), 'ChatGPT deep link missing')
+  assert.match(html, /assets\/ai-actions-[0-9a-f]{10}\.js/, 'ai-actions.js must load on a page with a copy button')
+  // Pages without the row must not pay for its script.
+  assert.doesNotMatch(result.files.get('en/index.html').body.toString(), /ai-actions-/)
+
+  const optedOut = await build({
+    site: { ...site, settings: { ai: { share_buttons: false } } },
+    revisions: [post({ slug: 'a', title: 'Alpha' })],
+  })
+  const quiet = optedOut.files.get('en/blog/a/index.html').body.toString()
+  assert.doesNotMatch(quiet, /ai-action|claude\.ai|chatgpt\.com/, 'share_buttons: false must hide the row')
+  // The Markdown twin itself stays: it is GEO surface, not UI.
+  assert.ok(optedOut.files.has('en/blog/a/index.md'))
+})
+
+test('authored tldr and faq render as details blocks and reach the search index', async () => {
+  const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha', extra: TLDR_FAQ })] })
+  const html = result.files.get('en/blog/a/index.html').body.toString()
+  assert.match(html, /<details class="post-tldr" open><summary>In short<\/summary><ul><li>First takeaway\.<\/li>/)
+  assert.match(
+    html,
+    /<section class="post-faq"><h2>FAQ<\/h2><details class="post-faq-item"><summary>What is Alpha\?<\/summary><p>A test post\.<\/p><\/details><\/section>/,
+  )
+  const index = JSON.parse(result.files.get('en/search-index.json').body.toString())
+  assert.match(index[0].text, /first takeaway/)
+
+  const plain = await build({ revisions: [post({ slug: 'b', title: 'Beta' })] })
+  const bare = plain.files.get('en/blog/b/index.html').body.toString()
+  assert.doesNotMatch(bare, /post-tldr|post-faq/, 'no empty reader-aid blocks without frontmatter')
 })
 
 test('noindex content stays out of llms.txt and llms-full.txt', async () => {

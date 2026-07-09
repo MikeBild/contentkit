@@ -56,6 +56,36 @@ test('validates required frontmatter', async () => {
   await assert.rejects(() => renderMarkdown('---\nlocale: invalid_locale\n---\n# Missing'), /title is required/)
 })
 
+test('tldr and faq frontmatter are validated, trimmed and default to empty', async () => {
+  const doc = `---\nkind: post\ntitle: T\nlocale: de\nslug: t\nsummary: S\ntldr:\n  - " Erste Kernaussage "\n  - Zweite Kernaussage\nfaq:\n  - q: " Was ist T? "\n    a: Ein Test.\n---\nBody.`
+  const result = await renderMarkdown(doc)
+  assert.deepEqual(result.meta.tldr, ['Erste Kernaussage', 'Zweite Kernaussage'])
+  assert.deepEqual(result.meta.faq, [{ q: 'Was ist T?', a: 'Ein Test.' }])
+
+  const plain = await renderMarkdown(`---\nkind: post\ntitle: T\nlocale: de\nslug: t\nsummary: S\n---\nBody.`)
+  assert.deepEqual(plain.meta.tldr, [])
+  assert.deepEqual(plain.meta.faq, [])
+})
+
+test('malformed tldr and faq frontmatter fail the upload with a clear 422', async () => {
+  const doc = (fields) => `---\nkind: post\ntitle: T\nlocale: de\nslug: t\nsummary: S\n${fields}\n---\nBody.`
+  await assert.rejects(() => renderMarkdown(doc('tldr: not a list')), /tldr must be a list/)
+  await assert.rejects(() => renderMarkdown(doc('tldr:\n  - ok\n  - ""')), /tldr must not contain empty entries/)
+  await assert.rejects(
+    () => renderMarkdown(doc('tldr:\n  - q: nested\n    a: object')),
+    /tldr must be a list of strings/,
+  )
+  await assert.rejects(() => renderMarkdown(doc('faq: not a list')), /faq must be a list/)
+  await assert.rejects(
+    () => renderMarkdown(doc('faq:\n  - q: only a question')),
+    /faq must be a list of \{ q, a \} entries/,
+  )
+  await assert.rejects(
+    () => renderMarkdown(doc('faq:\n  - q: ""\n    a: answer')),
+    /faq entries need a non-empty q and a/,
+  )
+})
+
 test('a leading heading that repeats the title is dropped from the rendered html', async () => {
   // The layout renders the frontmatter title as the page <h1>; the authored copy would
   // make it the second one and start the document outline twice.

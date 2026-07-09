@@ -7,6 +7,12 @@ translationKey: first-post
 summary: Ein vollständiges Beispiel für Contentkit-Markdown.
 date: 2026-06-29T10:00:00+02:00
 tags: [Contentkit, Markdown]
+tldr:
+  - Contentkit rendert GFM, Fußnoten, Mathematik und Mermaid.
+  - Releases sind unveränderlich und atomar.
+faq:
+  - q: Woher kommen TL;DR und FAQ?
+    a: Aus dem Frontmatter — der Autor schreibt sie selbst, Contentkit rendert sie nur.
 ---
 
 # Ein erster Beitrag

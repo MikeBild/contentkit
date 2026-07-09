@@ -70,17 +70,30 @@
     return pending
   }
 
+  // Every term must appear somewhere in the record's text (the AND semantics the
+  // substring search always had); ranking then prefers where it appears: a title
+  // hit outranks a summary hit outranks a body hit, and a title that *starts*
+  // with the term outranks one that merely contains it. Ties keep index order,
+  // which is build order — newest first. The corpus is a personal site, so
+  // scoring every record and sorting is cheaper than any cleverness.
   function match(query) {
     const terms = lower(query).trim().split(/\s+/).filter(Boolean)
     if (!terms.length || !records) return []
-    const found = []
+    const scored = []
     for (const record of records) {
-      if (terms.every((term) => record.text.includes(term))) {
-        found.push(record)
-        if (found.length === LIMIT) break
+      if (!terms.every((term) => record.text.includes(term))) continue
+      const title = lower(record.title || '')
+      const summary = lower(record.summary || '')
+      let score = 0
+      for (const term of terms) {
+        if (title.includes(term)) score += title.startsWith(term) ? 5 : 3
+        else if (summary.includes(term)) score += 2
+        else score += 1
       }
+      scored.push({ record, score })
     }
-    return found
+    scored.sort((a, b) => b.score - a.score)
+    return scored.slice(0, LIMIT).map((entry) => entry.record)
   }
 
   function announce(count) {

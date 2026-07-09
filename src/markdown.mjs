@@ -93,6 +93,42 @@ const schema = {
   },
 }
 
+// Frontmatter-authored reader aids. Validation is strict on shape (a wrong type
+// fails the upload with a 422 the author sees immediately) but tolerant on
+// scalars: YAML happily parses `- 42` as a number, so scalar entries are
+// stringified rather than rejected.
+const scalar = (value) => value != null && typeof value !== 'object'
+
+function validateTldr(value) {
+  if (value == null) return []
+  if (!Array.isArray(value) || !value.every(scalar)) {
+    throw Object.assign(new Error('frontmatter tldr must be a list of strings'), { statusCode: 422 })
+  }
+  const lines = value.map((entry) => String(entry).trim()).filter(Boolean)
+  if (lines.length !== value.length) {
+    throw Object.assign(new Error('frontmatter tldr must not contain empty entries'), { statusCode: 422 })
+  }
+  return lines
+}
+
+function validateFaq(value) {
+  if (value == null) return []
+  const wellFormed =
+    Array.isArray(value) &&
+    value.every((entry) => entry && typeof entry === 'object' && scalar(entry.q) && scalar(entry.a))
+  if (!wellFormed) {
+    throw Object.assign(new Error('frontmatter faq must be a list of { q, a } entries'), { statusCode: 422 })
+  }
+  return value.map((entry) => {
+    const q = String(entry.q).trim()
+    const a = String(entry.a).trim()
+    if (!q || !a) {
+      throw Object.assign(new Error('frontmatter faq entries need a non-empty q and a'), { statusCode: 422 })
+    }
+    return { q, a }
+  })
+}
+
 function validateFrontmatter(data) {
   const kind = data.kind || 'page'
   if (!kinds.has(kind))
@@ -122,6 +158,11 @@ function validateFrontmatter(data) {
     cover: data.cover || data.image ? String(data.cover || data.image) : null,
     cover_alt: data.coverAlt || data.imageAlt ? String(data.coverAlt || data.imageAlt) : '',
     noindex: Boolean(data.noindex),
+    // Authored reader aids: TL;DR bullets and an FAQ, rendered on the page and
+    // exposed to machines (JSON-LD abstract/FAQPage, Markdown export, search
+    // index). Authored content like `summary` — contentkit never generates them.
+    tldr: validateTldr(data.tldr),
+    faq: validateFaq(data.faq),
     // Authored opt-out for the read-aloud feature; absence means eligible.
     audio: data.audio !== false,
     featured: Boolean(data.featured),

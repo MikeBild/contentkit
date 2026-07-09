@@ -303,6 +303,8 @@ Important site fields:
 | `settings.mask_icon` | Safari mask-icon URL |
 | `settings.twitter_handle` | `@handle` for `twitter:site`/`twitter:creator` |
 | `settings.analytics` | `{ "provider": "plausible", "domain": "..." }` or `{ "provider": "ga4", "id": "G-..." }` |
+| `settings.ai.share_buttons` | Default on. `false` hides the AI share row on posts (Markdown link, copy button, "open in Claude/ChatGPT" deep links). The links hand the article to the *reader's own* assistant — the site never talks to an AI provider. The post's Markdown twin (`index.md`) is emitted regardless |
+| `settings.ai.share_targets` | Optional replacement for the default deep-link targets: `[{ "label": "...", "url_template": "https://...?q={q}" }]`; `{q}` receives the URL-encoded localized prompt. Non-http(s) templates are dropped |
 
 Read a site:
 
@@ -361,6 +363,8 @@ Supported YAML frontmatter:
 | `cover` (or `image`) | no | Per-page Open Graph/Twitter image; overrides `settings.og_image` |
 | `coverAlt` (or `imageAlt`) | no | Alt text for the cover image |
 | `noindex` | no | Emit `<meta name="robots" content="noindex,nofollow">` for this page |
+| `tldr` | no | List of strings. Authored key takeaways: rendered as an open "In short" block above the prose, exported to the Markdown twin and llms-full.txt, used as the JSON-LD `abstract` and added to the search index |
+| `faq` | no | List of `{ q, a }` entries. Authored FAQ: rendered as collapsed questions after the prose and emitted as `FAQPage` JSON-LD |
 | `featured` | no | Sort projects ahead of non-featured projects |
 | `technologies` | no | Stored in metadata for project use |
 | `externalUrl` | no | Stored in metadata for project use |
@@ -517,6 +521,7 @@ For each configured locale, Contentkit generates:
 | Tag feeds | `/{locale}/tags/{tag}/feed.xml` (only for tags with two or more posts) |
 | LLM index | `/{locale}/llms.txt` (llmstxt.org format, describing the site) |
 | LLM full text | `/{locale}/llms-full.txt` (every published document's Markdown source) |
+| Post Markdown twin | `/{locale}/blog/{slug}/index.md` (the post as raw Markdown — title, canonical URL, TL;DR, body; not generated for `noindex` posts) |
 | Content pages | by kind-specific route |
 
 Global generated files:

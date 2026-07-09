@@ -550,3 +550,41 @@ test('the blogcast page lists episodes as cards with player markup and a subscri
   assert.match(plain, /Subscribe via RSS/)
   assert.doesNotMatch(plain, /blogcast-cover/)
 })
+
+test('settings.ai.share_targets replaces the default deep links, and unsafe targets are dropped', () => {
+  const item = {
+    kind: 'post',
+    item_id: 'item-a',
+    locale: 'de',
+    url: '/de/blog/a/',
+    canonical: 'https://example.test/de/blog/a/',
+    title: 'A',
+    summary: 'S',
+    tags: [],
+    html: '<p>Body</p>',
+  }
+  const ctx = {
+    site: {
+      id: 'site-1',
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: {
+        ai: {
+          share_targets: [
+            { label: 'Perplexity', url_template: 'https://www.perplexity.ai/search?q={q}' },
+            { label: 'Evil', url_template: 'javascript:alert(1)' },
+          ],
+        },
+      },
+    },
+    t: dictionary('de'),
+    locale: 'de',
+  }
+  const html = contentBody(item, ctx)
+  assert.match(html, /href="https:\/\/www\.perplexity\.ai\/search\?q=[^"]+"[^>]*>In Perplexity öffnen<\/a>/)
+  assert.doesNotMatch(html, /claude\.ai|chatgpt\.com/, 'overridden defaults must not render')
+  assert.doesNotMatch(html, /javascript:/, 'unsafe url_template must be dropped, not escaped')
+  // The localized German prompt rides URL-encoded inside the deep link.
+  assert.match(html, new RegExp(encodeURIComponent('Lies diesen Artikel').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})

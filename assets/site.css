@@ -426,6 +426,34 @@ main {
 .tag-index {
   margin-top: 1.25rem;
 }
+/* The AI share row reuses the tag pill look; the copy button must not betray
+   that it is a <button> among <a>s. */
+button.ai-action {
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+}
+/* Authored reader aids: TL;DR (open) at the top, FAQ (collapsed) at the end. */
+.post-tldr,
+.post-faq-item {
+  background: hsl(var(--muted));
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+.post-tldr summary,
+.post-faq-item summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.post-tldr ul {
+  margin: 0.5rem 0 0;
+}
+.post-faq-item p {
+  margin: 0.5rem 0 0;
+}
 .listing-more {
   margin-top: 2.5rem;
   text-align: center;

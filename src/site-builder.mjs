@@ -64,7 +64,15 @@ async function staticAssets(root) {
   // The audio player's styling stays a separate sheet: layout() links it only on
   // pages that render a player, the same opt-in mechanic as the mermaid scripts.
   emit('audio.css', await readFile(join(root, 'assets/audio.css'), 'utf8'), 'text/css; charset=utf-8')
-  for (const name of ['search.js', 'forms.js', 'mermaid-init.js', 'consent.js', 'archive.js', 'audio.js']) {
+  for (const name of [
+    'search.js',
+    'forms.js',
+    'mermaid-init.js',
+    'consent.js',
+    'archive.js',
+    'audio.js',
+    'ai-actions.js',
+  ]) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
   emit(
@@ -236,11 +244,76 @@ function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
 // indistinguishable from a section break inside one.
 const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^\n]*\n+/, '')
 
+// One document as Markdown: title heading, canonical URL, the authored TL;DR
+// bullets (frontmatter, so they are absent from `source`), then the body. The
+// single builder feeds both llms-full.txt (heading '##', documents joined under
+// one H1) and the standalone per-post index.md (heading '#') — two renderings
+// of the same block, never two implementations.
+function itemMarkdown(item, heading = '#') {
+  const tldr = item.tldr?.length ? `${item.tldr.map((line) => `- ${line}`).join('\n')}\n\n` : ''
+  return `${heading} ${item.title}\n\nURL: ${item.canonical}\n\n${tldr}${stripLeadingH1(item.source).trim()}`
+}
+
 function llmsFullTxt(site, items) {
-  const documents = items.map(
-    (item) => `---\n\n## ${item.title}\n\nURL: ${item.canonical}\n\n${stripLeadingH1(item.source).trim()}`,
-  )
+  const documents = items.map((item) => `---\n\n${itemMarkdown(item, '##')}`)
   return `${[`# ${site.name}`, `> ${excerpt(site.description || site.name, 300)}`, ...documents].join('\n\n')}\n`
+}
+
+// JSON-LD for a post page: BlogPosting (with language, keywords, image, reading
+// time and — when narrated — the audio enclosure), a BreadcrumbList, and, when
+// the author supplied frontmatter `faq`, an FAQPage. Emitted as one JSON array
+// in a single script tag, which is valid JSON-LD and keeps layout() unchanged.
+// The authored `tldr` doubles as the machine-readable abstract.
+function postStructured(site, item, t) {
+  const image = item.cover ? (String(item.cover).startsWith('/') ? absolute(site, item.cover) : item.cover) : null
+  const posting = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: item.title,
+    description: item.summary,
+    ...(item.tldr?.length ? { abstract: item.tldr.join(' ') } : {}),
+    datePublished: item.published_at,
+    dateModified: item.updated_at || item.published_at,
+    url: item.canonical,
+    mainEntityOfPage: item.canonical,
+    inLanguage: item.locale,
+    ...(item.tags?.length ? { keywords: item.tags.join(', ') } : {}),
+    ...(image ? { image } : {}),
+    ...(item.reading_minutes ? { timeRequired: `PT${item.reading_minutes}M` } : {}),
+    author: { '@type': 'Person', name: site.name },
+    ...(item.audio
+      ? {
+          audio: {
+            '@type': 'AudioObject',
+            contentUrl: absolute(site, item.audio.url),
+            encodingFormat: item.audio.content_type || 'audio/mpeg',
+            ...(Number(item.audio.duration_secs) ? { duration: `PT${Number(item.audio.duration_secs)}S` } : {}),
+          },
+        }
+      : {}),
+  }
+  const breadcrumbs = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: site.name, item: absolute(site, `/${item.locale}/`) },
+      { '@type': 'ListItem', position: 2, name: t.blog, item: absolute(site, `/${item.locale}/blog/`) },
+      { '@type': 'ListItem', position: 3, name: item.title, item: item.canonical },
+    ],
+  }
+  const structured = [posting, breadcrumbs]
+  if (item.faq?.length) {
+    structured.push({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: item.faq.map((entry) => ({
+        '@type': 'Question',
+        name: entry.q,
+        acceptedAnswer: { '@type': 'Answer', text: entry.a },
+      })),
+    })
+  }
+  return structured
 }
 
 function sitemap(items) {
@@ -477,7 +550,7 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
             title: item.title,
             summary: item.summary,
             url: item.url,
-            text: `${item.title} ${item.summary} ${item.tags.join(' ')}${includeSearchBody ? ` ${item.source || item.markdown}` : ''}`.toLocaleLowerCase(
+            text: `${item.title} ${item.summary} ${item.tags.join(' ')}${item.tldr?.length ? ` ${item.tldr.join(' ')}` : ''}${includeSearchBody ? ` ${item.source || item.markdown}` : ''}`.toLocaleLowerCase(
               locale,
             ),
           })),
@@ -632,19 +705,15 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
       const itemComments = comments.filter(
         (comment) => comment.content_item_id === item.item_id && comment.status === 'approved',
       )
-      const structured =
-        item.kind === 'post'
-          ? {
-              '@context': 'https://schema.org',
-              '@type': 'BlogPosting',
-              headline: item.title,
-              description: item.summary,
-              datePublished: item.published_at,
-              dateModified: item.updated_at || item.published_at,
-              url: item.canonical,
-              author: { '@type': 'Person', name: site.name },
-            }
-          : null
+      const structured = item.kind === 'post' ? postStructured(site, item, t) : null
+      // The raw-Markdown twin of the post page, for readers feeding an article
+      // into their own AI tools and for agents that prefer Markdown over HTML.
+      // noindex posts get none: their HTML page at least carries a robots meta,
+      // a bare .md file could not ask crawlers for the same restraint.
+      const markdownUrl = item.kind === 'post' && !item.noindex ? `${item.url}index.md` : undefined
+      if (markdownUrl) {
+        files.set(markdownUrl.replace(/^\//, ''), text(`${itemMarkdown(item)}\n`, 'text/markdown; charset=utf-8'))
+      }
       files.set(
         item.url.replace(/^\//, '') + 'index.html',
         text(
@@ -663,6 +732,7 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
               publishedTime: item.published_at,
               modifiedTime: item.updated_at || item.published_at,
               articleTags: item.kind === 'post' ? item.tags : [],
+              markdownUrl,
             },
             contentBody(item, base, itemComments),
             {
@@ -670,6 +740,9 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
               mermaid: item.hasMermaid,
               forms: item.kind === 'post' && commentsEnabled(site),
               audio: Boolean(item.audio),
+              // The copy button only enhances a page that has a Markdown twin,
+              // and only when the share row is not switched off per site.
+              aiActions: Boolean(markdownUrl) && site.settings?.ai?.share_buttons !== false,
             },
           ),
         ),

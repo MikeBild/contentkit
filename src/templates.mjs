@@ -60,6 +60,12 @@ const words = {
     seek: 'Wiedergabeposition',
     back15: '15 Sekunden zurück',
     forward15: '15 Sekunden vor',
+    inShort: 'Kurz zusammengefasst',
+    faqTitle: 'Häufige Fragen',
+    copyMarkdown: 'Markdown kopieren',
+    copied: 'Kopiert',
+    openIn: 'In {name} öffnen',
+    aiPrompt: 'Lies diesen Artikel und beantworte meine Fragen dazu: {url}',
   },
   en: {
     blog: 'Blog',
@@ -120,6 +126,12 @@ const words = {
     seek: 'Playback position',
     back15: 'Back 15 seconds',
     forward15: 'Forward 15 seconds',
+    inShort: 'In short',
+    faqTitle: 'FAQ',
+    copyMarkdown: 'Copy Markdown',
+    copied: 'Copied',
+    openIn: 'Open in {name}',
+    aiPrompt: 'Read this article and answer my questions about it: {url}',
   },
 }
 
@@ -427,6 +439,8 @@ export function layout(ctx, body, options = {}) {
   // Read-aloud pages only: the tempo switch and position memory enhance the
   // player, so neither script nor stylesheet taxes a page without one.
   if (options.audio) scripts.push(`<script src="${asset('audio.js')}" defer></script>`)
+  // Post pages with a Markdown twin only: reveals and drives the copy button.
+  if (options.aiActions) scripts.push(`<script src="${asset('ai-actions.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
@@ -481,6 +495,7 @@ ${iconLinks(settings)}
 <link rel="stylesheet" href="${asset('site.css')}">
 ${options.audio ? `<link rel="stylesheet" href="${asset('audio.css')}">` : ''}
 <link rel="alternate" type="application/rss+xml" title="${escapeHtml(feedTitle || site.name)}" href="${escapeHtml(feedUrl || `/${locale}/feed.xml`)}">
+${ctx.markdownUrl ? `<link rel="alternate" type="text/markdown" href="${escapeHtml(ctx.markdownUrl)}">` : ''}
 ${blogcastLink}
 ${settings.accent ? `<style>:root{--primary:${escapeHtml(accentToHslTriple(settings.accent))}}</style>` : ''}
 ${structured}
@@ -750,6 +765,62 @@ ${description ? `<p class="article-summary">${escapeHtml(description)}</p>` : ''
 <section class="container section blogcast-episodes">${episodes}</section>`
 }
 
+// Deep-link entry points of the major assistants. Protocol, not branding — the
+// same stance as the iTunes namespace URL in site-builder.mjs. `{q}` is replaced
+// with the URL-encoded, localized prompt. Sites can replace the whole list via
+// settings.ai.share_targets = [{ label, url_template }].
+const AI_SHARE_TARGETS = [
+  { label: 'Claude', url_template: 'https://claude.ai/new?q={q}' },
+  { label: 'ChatGPT', url_template: 'https://chatgpt.com/?q={q}' },
+]
+
+// The AI share row on a post: a plain link to the page's Markdown twin (works
+// without JS), a copy button that ai-actions.js reveals, and "open in <AI>"
+// deep links that hand the article to the *reader's own* assistant. Nothing
+// here talks to any AI provider — the reader does, by choice, from their own
+// account. Hidden per site via settings.ai.share_buttons: false.
+function aiActionsBody(item, ctx) {
+  // Without a page URL there is no Markdown twin to link and no canonical to
+  // hand to an assistant — a bare item renders no row rather than "undefined".
+  if (!item.url || !item.canonical) return ''
+  if (ctx.site.settings?.ai?.share_buttons === false) return ''
+  const t = ctx.t
+  const mdUrl = `${item.url}index.md`
+  const prompt = encodeURIComponent(fill(t.aiPrompt, { url: item.canonical }))
+  const targets = (ctx.site.settings?.ai?.share_targets || AI_SHARE_TARGETS)
+    .map((target) => {
+      const href = safeUrl(String(target.url_template || '').replace('{q}', prompt))
+      if (href === '#') return ''
+      return `<a class="tag ai-action" href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(fill(t.openIn, { name: target.label }))}</a>`
+    })
+    .join('')
+  return `<div class="tags ai-actions">
+<a class="tag ai-action" href="${escapeHtml(mdUrl)}" type="text/markdown">Markdown</a>
+<button type="button" class="tag ai-action" data-copy-markdown="${escapeHtml(mdUrl)}" data-copied="${escapeHtml(t.copied)}" hidden>${escapeHtml(t.copyMarkdown)}</button>
+${targets}</div>`
+}
+
+// Authored reader aids from frontmatter. The TL;DR opens the prose as an open
+// <details> — skimmers collapse it, everyone else reads three bullets before
+// committing. The FAQ closes the article as collapsed questions. Both are pure
+// HTML: <details> needs no script, so this works everywhere the page does.
+function tldrBody(item, ctx) {
+  if (!item.tldr?.length) return ''
+  return `<details class="post-tldr" open><summary>${escapeHtml(ctx.t.inShort)}</summary><ul>${item.tldr
+    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .join('')}</ul></details>`
+}
+
+function faqBody(item, ctx) {
+  if (!item.faq?.length) return ''
+  return `<section class="post-faq"><h2>${escapeHtml(ctx.t.faqTitle)}</h2>${item.faq
+    .map(
+      (entry) =>
+        `<details class="post-faq-item"><summary>${escapeHtml(entry.q)}</summary><p>${escapeHtml(entry.a)}</p></details>`,
+    )
+    .join('')}</section>`
+}
+
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
   const locale = item.locale || ctx.locale
@@ -776,10 +847,14 @@ export function contentBody(item, ctx, comments = []) {
   const notice = isPost ? postAgeNotice(item, ctx) : ''
   // The player leads the prose: "listen instead" is an offer made before
   // reading starts, and above the age notice — the notice qualifies the
-  // content, the player is an alternative way to consume it.
+  // content, the player is an alternative way to consume it. The TL;DR follows
+  // the notice: the notice qualifies everything below it, the TL;DR included.
   const player = audioPlayer(item, ctx)
+  // Share row and Markdown twin exist for indexable posts only — a draft's page
+  // has no index.md to link, and a draft is not for sharing.
+  const aiActions = isPost && !item.noindex ? aiActionsBody(item, ctx) : ''
   const footer = isPost ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${commentsBody(item, ctx, comments)}` : ''
-  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}</header><div class="container prose">${player}${notice}${item.html}${footer}</div></article>`
+  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose">${player}${notice}${tldrBody(item, ctx)}${item.html}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {
