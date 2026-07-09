@@ -368,10 +368,10 @@ test('the opted-in podcast also gets a visible footer link', () => {
     default_locale: 'de',
     settings: { audio },
   })
-  const on = render({ site: siteWith({ enabled: true, podcast_link: true }) })
+  const on = render({ site: siteWith({ enabled: true, podcast_link: true }), podcast: true })
   const footer = on.slice(on.indexOf('<footer class="site-footer">'))
   assert.match(footer, />Podcast<\/a>/)
-  const off = render({ site: siteWith({ enabled: true }) })
+  const off = render({ site: siteWith({ enabled: true, podcast_link: true }) })
   assert.doesNotMatch(off.slice(off.indexOf('<footer class="site-footer">')), />Podcast<\/a>/)
 })
 
@@ -386,8 +386,10 @@ test('the podcast feed link needs both enabled audio and the podcast_link opt-in
   assert.doesNotMatch(render({ site: siteWith({ podcast_link: true }) }), /podcast\.xml/)
   // Enabled audio without the opt-in: advertising the feed is the operator's call.
   assert.doesNotMatch(render({ site: siteWith({ enabled: true }) }), /podcast\.xml/)
+  // Opt-in and audio, but no narrated post yet: nothing to advertise.
+  assert.doesNotMatch(render({ site: siteWith({ enabled: true, podcast_link: true }) }), /podcast\.xml/)
   assert.match(
-    render({ site: siteWith({ enabled: true, podcast_link: true, title: 'Mein Podcast' }) }),
+    render({ site: siteWith({ enabled: true, podcast_link: true, title: 'Mein Podcast' }), podcast: true }),
     /<link rel="alternate" type="application\/rss\+xml" title="Mein Podcast" href="\/de\/podcast\.xml">/,
   )
 })

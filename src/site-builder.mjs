@@ -332,7 +332,10 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     })
     posts.forEach((post, index) => Object.assign(post, relations[index]))
 
-    const base = { site, locale, t, posts, projects, pages, assets, now }
+    // Whether this locale's podcast feed will exist at all (same condition as
+    // the podcast.xml emit below) — templates hide every podcast link without it.
+    const podcast = site.settings?.audio?.enabled === true && posts.some((post) => post.audio)
+    const base = { site, locale, t, posts, projects, pages, assets, now, podcast }
     const personData = {
       '@context': 'https://schema.org',
       '@type': 'Person',

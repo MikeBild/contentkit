@@ -262,7 +262,7 @@ function siteFooter(ctx) {
     item([t.rss, `/${locale}/feed.xml`]),
     // The podcast feed only exists when audio is enabled, and stays unlisted
     // until the operator opts in — same gate as the <link rel="alternate">.
-    ...(settings.audio?.enabled === true && settings.audio?.podcast_link === true
+    ...(ctx.podcast === true && settings.audio?.enabled === true && settings.audio?.podcast_link === true
       ? [item(['Podcast', `/${locale}/podcast.xml`])]
       : []),
   ].join('')
@@ -412,10 +412,11 @@ export function layout(ctx, body, options = {}) {
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
   // Advertising the podcast feed is the operator's explicit call
-  // (settings.audio.podcast_link) and only meaningful on a site whose audio is
-  // enabled at all — without the opt-in the feed file does not even exist.
+  // (settings.audio.podcast_link), only meaningful on a site whose audio is
+  // enabled at all, and only when the feed has content (ctx.podcast) — a link
+  // to an empty or non-existent feed helps nobody.
   const podcastLink =
-    settings.audio?.enabled === true && settings.audio?.podcast_link === true
+    ctx.podcast === true && settings.audio?.enabled === true && settings.audio?.podcast_link === true
       ? `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(settings.audio.title || `${site.name} · Podcast`)}" href="/${escapeHtml(locale)}/podcast.xml">`
       : ''
   const articleMeta =

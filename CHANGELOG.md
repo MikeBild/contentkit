@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.6.2
+
+- Podcast links (head alternate + footer) appear only when the feed actually has narrated posts.
+
 ## 1.6.1
 
 - Opted-in podcast feeds get a visible footer link next to RSS.
