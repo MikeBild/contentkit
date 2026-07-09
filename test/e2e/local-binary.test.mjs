@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto'
 import { createServer, request } from 'node:http'
 import { spawn } from 'node:child_process'
 import pg from 'pg'
+import { listEmbeddedMigrations } from '../../src/db/migrate.mjs'
 
 const binary = process.env.CONTENTKIT_E2E_BINARY
 const databaseUrl = process.env.CONTENTKIT_E2E_DATABASE_URL
@@ -423,7 +424,10 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           (SELECT count(*)::int FROM public.ck_outbox_events) AS events
       `)
         assert.deepEqual(state.rows[0], {
-          migrations: 4,
+          // The binary must have applied every embedded migration — derived,
+          // not hardcoded: a literal count silently goes stale with the next
+          // migration (the audio migration broke it once already).
+          migrations: listEmbeddedMigrations().length,
           active_releases: 1,
           events: 3,
         })
