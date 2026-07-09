@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.9.0
+
+GEO and reader aids: every post is now first-class input for AI tools — and
+authors can ship a TL;DR and FAQ without contentkit generating a word.
+
+### Added
+
+- A raw-Markdown twin per indexable post at `/{locale}/blog/{slug}/index.md`
+  (title, canonical URL, TL;DR, body — the same block `llms-full.txt` uses),
+  served as `text/markdown` and advertised via
+  `<link rel="alternate" type="text/markdown">`. `noindex` posts get none.
+- An AI share row on posts: a plain link to the Markdown twin (works without
+  JS), a copy-Markdown button (revealed by the new hashed `ai-actions.js`)
+  and "open in Claude/ChatGPT" deep links that hand the article to the
+  *reader's own* assistant — the site never talks to an AI provider. Targets
+  are overridable via `settings.ai.share_targets`; the row hides behind
+  `settings.ai.share_buttons: false`. Default on, zero configuration.
+- Authored frontmatter `tldr` (list of strings) and `faq` (list of `{q, a}`),
+  validated at upload: rendered as an open "In short" block above the prose
+  and a collapsed FAQ after it, exported to the Markdown twin and
+  `llms-full.txt`, fed into the search index, and emitted as JSON-LD
+  `abstract` and `FAQPage`.
+
+### Changed
+
+- Post JSON-LD grew `inLanguage`, `keywords`, `image`, `timeRequired`,
+  `mainEntityOfPage`, an `AudioObject` for narrated posts and a
+  `BreadcrumbList` (emitted as a JSON array in one script tag).
+- Header search now ranks instead of filtering: title hits beat summary hits
+  beat body hits, title prefixes beat containment; ties stay newest-first.
+
+### Fixed
+
+- The binary e2e test derives the expected migration count from the embedded
+  migrations instead of hardcoding it (stale since the audio migration).
+
 ## 1.8.0
 
 The read-aloud feed is now the **Blogcast** — product-wide rename from
