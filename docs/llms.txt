@@ -83,6 +83,9 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   environment, systemd deployment, release pipeline and required secrets.
 - [Webhooks](docs/WEBHOOKS.md): Outbound webhook events, Standard Webhooks
   signature verification and scheduled publishing.
+- [Read-aloud audio](docs/audio.md): TTS narration lifecycle
+  (publish → job → worker → asset → auto-rebuild), backfill, deletion, job
+  monitoring, character budgets and the podcast feed.
 - [Security](SECURITY.md): Vulnerability reporting and security posture.
 
 ## Development

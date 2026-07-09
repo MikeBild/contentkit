@@ -29,6 +29,21 @@ test('development starts with complete committed defaults and no .env', () => {
   })
 })
 
+test('the audio rebuild debounce defaults to 60s and rejects values outside 1s–1h', () => {
+  const saved = process.env.CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS
+  try {
+    delete process.env.CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS
+    assert.equal(loadConfig().audioRebuildDebounceMs, 60000)
+    process.env.CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS = '500'
+    assert.throws(() => loadConfig(), /CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS/)
+    process.env.CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS = '3600001'
+    assert.throws(() => loadConfig(), /CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS/)
+  } finally {
+    if (saved === undefined) delete process.env.CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS
+    else process.env.CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS = saved
+  }
+})
+
 test('production fails closed when secrets are absent', () => {
   const previous = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'

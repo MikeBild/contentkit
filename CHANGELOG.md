@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-07-09
+
+Read-aloud: lifecycle & operations.
+
+### Added
+
+- Debounced auto-rebuild: after an audio job finishes, the worker schedules one
+  release per site (empty `revision_ids`, reason `audio auto-rebuild`) so the
+  player and podcast feed appear without a manual publish. Debounce via
+  `CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS` (default 60000, 1s–1h); opt out per
+  site with `settings.audio.auto_rebuild: false`. No feedback loop: the enqueue
+  hook only fires for releases that carry revisions.
+- `DELETE /v1/content/{item}/audio` (`release:write`): removes all audio jobs
+  for the item plus the generated MP3s (storage object and `ck_assets` row) and
+  schedules an auto-rebuild. Returns
+  `{item_id, deleted_jobs, deleted_assets, rebuild_scheduled}`.
+- `GET /v1/sites/{site}/audio/jobs` (`content:read`): newest-first job list
+  (optionally filtered by `status`, `limit` default 100/max 500) with a
+  `summary` of per-status counters, `chars_this_month` (UTC calendar month,
+  skipped jobs excluded), `monthly_char_budget` and `budget_remaining`.
+- Monthly budget enforcement on auto-enqueue: publishing no longer creates a
+  job that would push the month's characters past
+  `settings.audio.monthly_char_budget` (logged as `audio budget exhausted`);
+  backfill behaviour is unchanged.
+- Superseded-asset cleanup: when a force re-render finishes, the previous MP3
+  (storage object and asset row) is deleted best-effort at the swap point, so a
+  live player never 404s but old narrations no longer accumulate.
+- Podcast channel polish: optional `itunes:image` (`settings.audio.podcast_image`,
+  absolute URL) and `itunes:category` (`settings.audio.podcast_category`), and
+  an opt-in `<link rel="alternate" type="application/rss+xml">` to
+  `/{locale}/podcast.xml` in the layout via `settings.audio.podcast_link: true`
+  (only on sites with audio enabled).
+- Player download link: a quiet "MP3 herunterladen" / "Download MP3" anchor
+  (`download` attribute) under the player.
+- New guide `docs/audio.md` covering the full read-aloud lifecycle, backfill,
+  deletion, job monitoring, budgets and the podcast feed.
+
 ## 1.5.1
 
 - Read-aloud backfill accepts an optional `slugs` array to narrow the run to specific posts.

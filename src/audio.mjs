@@ -30,6 +30,8 @@ function nextDelaySeconds(attempts) {
 
 const isUniqueViolation = (error) => /duplicate key|unique constraint/i.test(String(error.message || error))
 
+const JOB_STATUSES = ['pending', 'processing', 'done', 'failed', 'skipped']
+
 const estimatedUsd = (chars) => Math.round((chars / 1_000_000) * USD_PER_MILLION_CHARS * 100) / 100
 
 // Total, locale-independent comparator (see site-builder.mjs for the rationale).
@@ -44,6 +46,63 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     const key = name || 'google'
     if (!providers.has(key)) providers.set(key, ttsFactory(config, key))
     return providers.get(key)
+  }
+
+  // The release manager is constructed *with* this worker (its onPublished hook
+  // enqueues jobs here), so the worker cannot receive it in its own constructor.
+  // server.mjs injects the publish function afterwards via setPublisher() —
+  // a late-bound reference instead of an import cycle.
+  let publishRelease = null
+
+  // Debounced auto-rebuild, one timer per site: a finished narration only
+  // reaches visitors through a new release, and a burst of completions (e.g.
+  // a backfill draining) must coalesce into a single build. No loop is
+  // possible: the rebuild publishes with empty revision_ids, and the
+  // onPublished hook only fires when revisionIds is non-empty.
+  const rebuildTimers = new Map()
+
+  function scheduleRebuild(site) {
+    if (!site || site.settings?.audio?.auto_rebuild === false) return false
+    clearTimeout(rebuildTimers.get(site.id))
+    const handle = setTimeout(() => {
+      rebuildTimers.delete(site.id)
+      if (!publishRelease) return
+      Promise.resolve(publishRelease({ siteId: site.id, revisionIds: [], reason: 'audio auto-rebuild' })).catch(
+        (error) => logger.warn('audio auto-rebuild failed', { siteId: site.id, error: String(error.message || error) }),
+      )
+    }, config.audioRebuildDebounceMs ?? 60000)
+    handle.unref?.()
+    rebuildTimers.set(site.id, handle)
+    return true
+  }
+
+  // Characters consumed in the current UTC calendar month. Pending/processing
+  // jobs count — they will be synthesized and billed; skipped ones never are.
+  // Filtered in memory (like maintenance.mjs) because the query builder has no
+  // gte/neq operators, and a site's job count stays small.
+  async function charsThisMonth(siteId, now = new Date()) {
+    const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+    const jobs = await db.select('ck_audio_jobs', { site_id: `eq.${siteId}` })
+    return jobs
+      .filter((job) => job.status !== 'skipped' && new Date(job.created_at).getTime() >= monthStart)
+      .reduce((sum, job) => sum + Number(job.chars || 0), 0)
+  }
+
+  // Best-effort asset removal for superseded or deleted narrations. Audio MP3s
+  // are ordinary content-addressed ck_assets, but nothing except ck_audio_jobs
+  // ever references them — and storage-gc only sweeps release objects (see
+  // maintenance.mjs), so this is the one place their bytes get reclaimed.
+  async function removeAsset(assetId) {
+    try {
+      const asset = await repo.one('ck_assets', { id: `eq.${assetId}` })
+      if (!asset) return false
+      if (storage.remove) await storage.remove([asset.storage_path])
+      if (db.remove) await db.remove('ck_assets', { id: `eq.${assetId}` })
+      return true
+    } catch (error) {
+      logger.warn('audio asset cleanup failed', { assetId, error: String(error.message || error) })
+      return false
+    }
   }
 
   async function insertJob({ site, item, revision, speech, force = false }) {
@@ -92,6 +151,7 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     if (!revisionIds.length) return { enqueued: 0 }
     const site = await repo.getSite(siteId)
     if (!site || site.settings?.audio?.enabled !== true) return { enqueued: 0 }
+    const budget = Number(site.settings?.audio?.monthly_char_budget)
     let enqueued = 0
     for (const revisionId of revisionIds) {
       const revision = await repo.one('ck_content_revisions', { id: `eq.${revisionId}` })
@@ -100,6 +160,13 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
       if (!item || item.kind !== 'post') continue
       const speech = extractSpeechText(revision.markdown, { title: revision.title })
       if (!speech.enabled || !speech.chars) continue
+      // The monthly budget is a hard stop for automatic enqueuing — a publish
+      // must never silently overrun the TTS quota. Backfill keeps its own
+      // explicit budget handling (limit_chars) and is unaffected here.
+      if (Number.isFinite(budget) && budget > 0 && (await charsThisMonth(site.id)) + speech.chars > budget) {
+        logger.warn('audio budget exhausted', { siteId: site.id, itemId: item.id, chars: speech.chars })
+        continue
+      }
       if (await insertJob({ site, item, revision, speech })) enqueued++
     }
     if (enqueued) logger.info('audio jobs enqueued', { siteId: site.id, enqueued })
@@ -212,6 +279,67 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     }
   }
 
+  // DELETE /v1/content/{item}/audio: drop every job for the item and every
+  // narration asset those jobs referenced, then schedule a rebuild so the
+  // player and podcast entry disappear from the live site.
+  async function remove({ site, item }) {
+    const jobs = await db.select('ck_audio_jobs', { item_id: `eq.${item.id}` })
+    const assetIds = [...new Set(jobs.map((job) => job.asset_id).filter(Boolean))]
+    let deletedAssets = 0
+    for (const assetId of assetIds) if (await removeAsset(assetId)) deletedAssets++
+    if (jobs.length && db.remove) await db.remove('ck_audio_jobs', { item_id: `eq.${item.id}` })
+    const rebuildScheduled = jobs.length ? scheduleRebuild(site) : false
+    if (jobs.length) logger.info('audio deleted', { itemId: item.id, jobs: jobs.length, assets: deletedAssets })
+    return {
+      item_id: item.id,
+      deleted_jobs: jobs.length,
+      deleted_assets: deletedAssets,
+      rebuild_scheduled: rebuildScheduled,
+    }
+  }
+
+  // Operations view for GET /v1/sites/{site}/audio/jobs: newest jobs first
+  // (optionally filtered by status), each resolved to its revision's slug and
+  // title, plus a summary with per-status counters and the monthly budget.
+  async function listJobs({ site, status, limit = 100 }) {
+    if (status && !JOB_STATUSES.includes(status)) {
+      throw Object.assign(new Error(`status must be one of ${JOB_STATUSES.join(', ')}`), { statusCode: 422 })
+    }
+    const all = await db.select('ck_audio_jobs', { site_id: `eq.${site.id}`, order: 'created_at.desc' })
+    const counters = Object.fromEntries(JOB_STATUSES.map((name) => [name, 0]))
+    for (const job of all) if (job.status in counters) counters[job.status]++
+    const cap = Math.min(Math.max(Number(limit) || 100, 1), 500)
+    const page = (status ? all.filter((job) => job.status === status) : all).slice(0, cap)
+    const revisionIds = [...new Set(page.map((job) => job.revision_id).filter(Boolean))]
+    const revisions = revisionIds.length
+      ? await db.select('ck_content_revisions', { id: `in.(${revisionIds.join(',')})` })
+      : []
+    const byRevision = new Map(revisions.map((revision) => [revision.id, revision]))
+    const used = await charsThisMonth(site.id)
+    const budget = Number(site.settings?.audio?.monthly_char_budget)
+    const budgeted = Number.isFinite(budget) && budget > 0
+    return {
+      jobs: page.map((job) => ({
+        id: job.id,
+        item_id: job.item_id,
+        slug: byRevision.get(job.revision_id)?.slug || null,
+        title: byRevision.get(job.revision_id)?.title || null,
+        status: job.status,
+        attempts: job.attempts,
+        chars: job.chars,
+        error: job.error,
+        created_at: job.created_at,
+        updated_at: job.updated_at,
+      })),
+      summary: {
+        ...counters,
+        chars_this_month: used,
+        monthly_char_budget: budgeted ? budget : null,
+        budget_remaining: budgeted ? Math.max(0, budget - used) : null,
+      },
+    }
+  }
+
   async function markSkipped(job, reason) {
     await db.update(
       'ck_audio_jobs',
@@ -222,6 +350,10 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
   }
 
   async function process(job) {
+    // Captured before any update: a force-reset job still points at the asset
+    // it is about to replace, and that reference is what gets cleaned up at
+    // the swap point below.
+    const previousAssetId = job.asset_id
     // Claim with a lease: a crash mid-synthesis re-surfaces the job after the
     // lease instead of stranding it in `processing` forever.
     await db.update(
@@ -276,6 +408,10 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
       },
       { returning: false },
     )
+    // The swap point of a force re-render: the job carried the previous asset
+    // until the new one was safely referenced (so a live player never 404ed);
+    // now the superseded MP3 is unreachable and its bytes can go. Best effort.
+    if (previousAssetId && previousAssetId !== asset.id) await removeAsset(previousAssetId)
     logger.info('audio synthesized', {
       jobId: job.id,
       itemId: job.item_id,
@@ -283,6 +419,7 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
       chars: speech.chars,
       durationSecs: Math.round(durationSecs),
     })
+    scheduleRebuild(site)
   }
 
   async function onFailure(job, error) {
@@ -333,7 +470,12 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     enqueueAudioJobs,
     backfill,
     status,
+    remove,
+    listJobs,
     tick,
+    setPublisher(fn) {
+      publishRelease = fn
+    },
     start() {
       timer = setInterval(tick, config.audioPollMs)
       timer.unref?.()
@@ -341,6 +483,8 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     },
     stop() {
       clearInterval(timer)
+      for (const handle of rebuildTimers.values()) clearTimeout(handle)
+      rebuildTimers.clear()
     },
   }
 }

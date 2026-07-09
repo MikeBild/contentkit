@@ -81,8 +81,9 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/v1\/content\/[^/]+\/published$/, methods: ['DELETE'] },
-  { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET'] },
+  { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/backfill$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/audio\/jobs$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
@@ -441,11 +442,33 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 200, { item_id: items[0].id, unpublished: true, release: result })
     }
     const audioStatusMatch = path.match(/^\/v1\/content\/([^/]+)\/audio$/)
-    if (audioStatusMatch && req.method === 'GET') {
+    if (audioStatusMatch && ['GET', 'DELETE'].includes(req.method)) {
       const items = await db.select('ck_content_items', { id: `eq.${audioStatusMatch[1]}`, limit: '1' })
       if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
-      if (!(await requireScope(req, res, 'content:read', items[0].site_id))) return
-      return sendJson(res, 200, await audio.status(items[0].id))
+      if (req.method === 'GET') {
+        if (!(await requireScope(req, res, 'content:read', items[0].site_id))) return
+        return sendJson(res, 200, await audio.status(items[0].id))
+      }
+      // DELETE removes jobs and generated MP3 assets and schedules a rebuild —
+      // it changes the live site, so it takes the publishing scope.
+      if (!(await requireScope(req, res, 'release:write', items[0].site_id))) return
+      const site = await repo.getSite(items[0].site_id)
+      return sendJson(res, 200, await audio.remove({ site, item: items[0] }))
+    }
+    const audioJobsMatch = path.match(/^\/v1\/sites\/([^/]+)\/audio\/jobs$/)
+    if (audioJobsMatch && req.method === 'GET') {
+      const site = await repo.getSite(audioJobsMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      return sendJson(
+        res,
+        200,
+        await audio.listJobs({
+          site,
+          status: url.searchParams.get('status') || undefined,
+          limit: url.searchParams.get('limit') || undefined,
+        }),
+      )
     }
     const audioBackfillMatch = path.match(/^\/v1\/sites\/([^/]+)\/audio\/backfill$/)
     if (audioBackfillMatch && req.method === 'POST') {

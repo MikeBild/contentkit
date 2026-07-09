@@ -104,13 +104,16 @@ function rss(site, locale, posts, { selfUrl = `/${locale}/feed.xml`, title = sit
 // The podcast feed: RSS 2.0 plus the itunes namespace, one <enclosure> per post
 // that has read-aloud audio. Same reproducibility contract as rss(): no
 // <lastBuildDate>, so identical content yields identical bytes. Channel title
-// and description come from settings.audio with the site's own as fallback.
-// Deliberately not linked from the layout — whether and where to advertise the
-// feed is the operator's call.
+// and description come from settings.audio with the site's own as fallback;
+// cover art (podcast_image, an absolute URL — Apple wants ≥1400px square) and
+// itunes:category (podcast_category, verbatim text) are optional. Linked from
+// the layout only when the operator opts in via settings.audio.podcast_link.
 function podcastRss(site, locale, posts) {
   const settings = site.settings?.audio || {}
   const title = settings.title || site.name
   const description = settings.description || site.description || ''
+  const image = settings.podcast_image ? `<itunes:image href="${escapeXml(settings.podcast_image)}"/>` : ''
+  const category = settings.podcast_category ? `<itunes:category text="${escapeXml(settings.podcast_category)}"/>` : ''
   const items = posts
     .slice(0, 50)
     .map(
@@ -118,7 +121,7 @@ function podcastRss(site, locale, posts) {
         `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}<enclosure url="${escapeXml(absolute(site, post.audio.url))}" type="${escapeXml(post.audio.content_type || 'audio/mpeg')}" length="${Number(post.audio.byte_size) || 0}"/><itunes:duration>${Number(post.audio.duration_secs) || 0}</itunes:duration></item>`,
     )
     .join('')
-  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, `/${locale}/podcast.xml`))}"/><description>${escapeXml(description)}</description><language>${escapeXml(locale)}</language><itunes:author>${escapeXml(settings.author || site.name)}</itunes:author>${items}</channel></rss>`
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, `/${locale}/podcast.xml`))}"/><description>${escapeXml(description)}</description><language>${escapeXml(locale)}</language><itunes:author>${escapeXml(settings.author || site.name)}</itunes:author>${image}${category}${items}</channel></rss>`
 }
 
 // A total, locale-independent comparator. Array.prototype.sort is stable in V8,
@@ -478,8 +481,9 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     files.set(`${locale}/feed.xml`, text(rss(site, locale, posts), 'application/rss+xml; charset=utf-8'))
 
     // Podcast feed only where it has something to say: the site opted in and at
-    // least one (indexable) post carries audio. No sitemap entry and no layout
-    // link — podcast apps subscribe by URL, crawlers have the main feed.
+    // least one (indexable) post carries audio. No sitemap entry — podcast apps
+    // subscribe by URL, crawlers have the main feed; a layout <link> appears
+    // only with settings.audio.podcast_link (see layout()).
     const audioPosts = posts.filter((post) => post.audio)
     if (site.settings?.audio?.enabled === true && audioPosts.length) {
       files.set(

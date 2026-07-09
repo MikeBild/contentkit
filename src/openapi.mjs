@@ -219,12 +219,53 @@ export function openApi(config) {
             404: { description: 'Content item not found' },
           },
         },
+        delete: {
+          summary: 'Delete read-aloud audio for a content item',
+          description:
+            'Removes every audio job for the item and every generated MP3 those jobs referenced (storage object and asset row), then schedules a debounced auto-rebuild — unless `settings.audio.auto_rebuild` is `false` — so the player and podcast entry disappear from the live site. Returns `{item_id, deleted_jobs, deleted_assets, rebuild_scheduled}`. Re-enable narration afterwards with the backfill endpoint.',
+          security: secured,
+          parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: { description: 'Audio jobs and assets deleted' },
+            404: { description: 'Content item not found' },
+          },
+        },
+      },
+      '/v1/sites/{site}/audio/jobs': {
+        get: {
+          summary: 'List read-aloud audio jobs with a monthly budget summary',
+          description:
+            'Newest-first list of the site’s TTS jobs (id, item_id, slug, title, status, attempts, chars, error, timestamps) plus a `summary` with per-status counters, `chars_this_month` (characters of all non-skipped jobs created in the current UTC calendar month), `monthly_char_budget` from `settings.audio` and `budget_remaining`. An invalid `status` value is a 422.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            {
+              name: 'status',
+              in: 'query',
+              required: false,
+              description: 'Filter by job status.',
+              schema: { type: 'string', enum: ['pending', 'processing', 'done', 'failed', 'skipped'] },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              description: 'Maximum jobs returned (default 100, capped at 500).',
+              schema: { type: 'integer', default: 100, minimum: 1, maximum: 500 },
+            },
+          ],
+          responses: {
+            200: { description: 'Job list and summary' },
+            404: { description: 'Site not found' },
+            422: { description: 'Invalid status filter' },
+          },
+        },
       },
       '/v1/sites/{site}/audio/backfill': {
         post: {
           summary: 'Enqueue read-aloud audio jobs for published posts',
           description:
-            'Walks the published posts newest-first and enqueues a TTS job for every post whose extracted speech text has no job yet, until the character budget is spent (`limit_chars`, falling back to `settings.audio.monthly_char_budget`, else unlimited). `dry_run: true` returns the selected posts, their character total and a cost estimate without enqueuing anything. An optional `slugs` array narrows the backfill to specific posts. `force: true` re-renders even when the speech text is unchanged (e.g. after a voice change) by resetting the existing job. Requires `settings.audio.enabled` (409 otherwise). Site audio settings: `settings.audio = { enabled, provider, voice, monthly_char_budget }`.',
+            'Walks the published posts newest-first and enqueues a TTS job for every post whose extracted speech text has no job yet, until the character budget is spent (`limit_chars`, falling back to `settings.audio.monthly_char_budget`, else unlimited). `dry_run: true` returns the selected posts, their character total and a cost estimate without enqueuing anything. An optional `slugs` array narrows the backfill to specific posts. `force: true` re-renders even when the speech text is unchanged (e.g. after a voice change) by resetting the existing job. Requires `settings.audio.enabled` (409 otherwise). Site audio settings: `settings.audio = { enabled, provider, voice, monthly_char_budget, auto_rebuild, podcast_link, podcast_image, podcast_category }`.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),

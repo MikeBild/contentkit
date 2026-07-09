@@ -2,6 +2,12 @@
 // release objects that are no longer referenced. Objects are enumerated from
 // ck_release_entries (recorded per file) because storage.remove deletes exact
 // keys, not prefixes. The active release and a rollback window are always kept.
+//
+// Deliberately out of scope: ck_assets and their content-addressed storage
+// objects (uploads and read-aloud MP3s) are never collected here, so an asset
+// referenced by ck_audio_jobs.asset_id — live audio — cannot be swept. Audio
+// bytes are reclaimed at their swap point and via DELETE /v1/content/{item}/audio
+// (both in audio.mjs); uploaded assets are currently kept forever.
 export function createMaintenance(config, db, storage, logger) {
   const KEEP = config.releaseHistoryKeep ?? 5
   const RETENTION_MS = config.releaseRetentionMs ?? 7 * 86400 * 1000

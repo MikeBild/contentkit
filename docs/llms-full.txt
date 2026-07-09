@@ -200,7 +200,9 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
 | DELETE | `/v1/content/{item}/published` | `release:write` | Unpublish a content item from the live site |
 | GET | `/v1/content/{item}/audio` | `content:read` | Read-aloud (TTS) job status and audio asset URL for one item |
-| POST | `/v1/sites/{site}/audio/backfill` | `release:write` | Enqueue read-aloud audio jobs for published posts (`dry_run`, `limit_chars`) |
+| DELETE | `/v1/content/{item}/audio` | `release:write` | Delete all audio jobs and generated MP3 assets for one item; schedules an auto-rebuild |
+| POST | `/v1/sites/{site}/audio/backfill` | `release:write` | Enqueue read-aloud audio jobs for published posts (`dry_run`, `limit_chars`, `slugs`, `force`) |
+| GET | `/v1/sites/{site}/audio/jobs` | `content:read` | List audio jobs (`status`, `limit`) plus per-status counters and monthly budget summary |
 | POST | `/v1/publish-due` | `release:write` | Publish scheduled revisions grouped by site |
 | POST | `/v1/maintenance/storage-gc` | `release:write` (unrestricted) | GC old release objects and reap stuck builds |
 | GET | `/v1/comments` | `moderation:write` | List pending/approved/rejected comments, optionally filtered by site/status |
@@ -440,7 +442,10 @@ site via settings (merge, do not replace — `PATCH` overwrites `settings`):
 
 ```json
 { "audio": { "enabled": true, "provider": "google",
-  "voice": "de-DE-Chirp3-HD-Charon", "monthly_char_budget": 950000 } }
+  "voice": "de-DE-Chirp3-HD-Charon", "monthly_char_budget": 950000,
+  "auto_rebuild": true, "podcast_link": true,
+  "podcast_image": "https://example.com/cover.jpg",
+  "podcast_category": "Technology" } }
 ```
 
 Publishing a release enqueues one job per published post revision in
@@ -453,11 +458,34 @@ headings and list items become sentences), synthesizes it with Google Chirp 3 HD
 `UNIQUE(item_id, speech_sha256)` over the *extracted speech text*, so editing a
 code block or the sources section never re-synthesizes. A post opts out with
 frontmatter `audio: false`. The next release renders a player above the post
-(`preload="none"`, tempo switch, remembered position) and, when at least one post
-has audio, a podcast feed at `/{locale}/podcast.xml` with `<enclosure>` and
-`itunes:` tags. `GET /v1/content/{item}/audio` reports job status;
-`POST /v1/sites/{site}/audio/backfill` fills the archive newest-first within a
-character budget (`dry_run: true` estimates cost without enqueuing).
+(`preload="none"`, tempo switch, remembered position, a small `download` link)
+and, when at least one post has audio, a podcast feed at `/{locale}/podcast.xml`
+with `<enclosure>`, `itunes:author`, optional `itunes:image`/`itunes:category`
+and `<language>` from the locale. The layout advertises the podcast feed with a
+`<link rel="alternate">` only when `settings.audio.podcast_link` is `true`.
+
+Lifecycle and operations (see `docs/audio.md` for the full guide):
+
+- Auto-rebuild: a finished job schedules a debounced release per site (empty
+  `revision_ids`, reason `audio auto-rebuild`,
+  `CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS`, default 60 s) so new narrations go
+  live without a manual publish; opt out via `settings.audio.auto_rebuild:
+  false`. No loop: the enqueue hook only fires for releases with revisions.
+- Budget: auto-enqueue refuses a job that would push the current UTC month's
+  characters (all non-skipped jobs) past `monthly_char_budget` and logs
+  `audio budget exhausted`; backfill keeps its own explicit `limit_chars`.
+- `GET /v1/content/{item}/audio` reports job status;
+  `DELETE /v1/content/{item}/audio` removes the item's jobs and generated MP3
+  assets (storage object + asset row) and schedules an auto-rebuild, returning
+  `{item_id, deleted_jobs, deleted_assets, rebuild_scheduled}`.
+- `POST /v1/sites/{site}/audio/backfill` fills the archive newest-first within
+  a character budget (`dry_run: true` estimates cost without enqueuing;
+  `slugs` narrows to specific posts; `force: true` re-renders unchanged text
+  and deletes the superseded MP3 at the swap point).
+- `GET /v1/sites/{site}/audio/jobs?status=&limit=` lists jobs newest-first
+  (limit default 100, max 500; invalid status is 422) with a `summary` of
+  per-status counters, `chars_this_month`, `monthly_char_budget` and
+  `budget_remaining`.
 
 ---
 
@@ -915,6 +943,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_AUDIO_ENABLED` | start the read-aloud TTS worker; default false |
 | `CONTENTKIT_AUDIO_POLL_MS` | audio job poll interval; default 15000 |
 | `CONTENTKIT_AUDIO_MAX_ATTEMPTS` | attempts before an audio job is marked failed; default 5 |
+| `CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS` | per-site debounce before the audio auto-rebuild release; default 60000 (min 1000, max 3600000) |
 | `CONTENTKIT_FFMPEG` | path to the ffmpeg binary for MP3 encoding; default `ffmpeg` |
 | `CONTENTKIT_TTS_GOOGLE_API_KEY` | Google Cloud TTS API key (sent as `?key=`) |
 | `CONTENTKIT_TTS_GOOGLE_TOKEN` | OAuth bearer token alternative to the API key |

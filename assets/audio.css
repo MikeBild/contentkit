@@ -48,3 +48,18 @@
   border-color: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
 }
+
+/* Deliberately quiet: an offline copy is a secondary affordance next to the
+ * play button, so it reads like a footnote, not a call to action. */
+.audio-player-download {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.audio-player-download:hover {
+  color: hsl(var(--foreground));
+}

@@ -52,6 +52,8 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Reading time, related posts by tag similarity, older/newer navigation and a
   staleness notice on posts older than three years.
 - RSS, per-tag feeds, sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
+- Read-aloud audio: pre-rendered TTS narration per post with player, download
+  link, podcast feed, budgets and automatic rebuilds.
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
 - Expiring preview links and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
@@ -138,6 +140,32 @@ The full live contract is available at `/openapi.json`. A committed canonical
 snapshot lives in [docs/openapi.json](docs/openapi.json); update it with
 `npm run docs:gen-openapi` whenever the HTTP API changes. LLM-friendly docs
 are served at `/llms.txt` and `/llms-full.txt`.
+
+## Read-aloud audio
+
+Every published post can carry a pre-rendered spoken MP3 ("Vorlesen"):
+publishing enqueues a TTS job, a background worker synthesizes the narration,
+files it as a content-addressed asset and schedules a debounced rebuild so the
+player (with tempo switch and download link) and the podcast feed at
+`/{locale}/podcast.xml` go live without a manual publish.
+
+Enable per site (merge into `settings`, `PATCH` replaces it wholesale):
+
+```json
+{ "audio": { "enabled": true, "provider": "google",
+  "voice": "de-DE-Chirp3-HD-Charon", "monthly_char_budget": 950000,
+  "auto_rebuild": true, "podcast_link": true } }
+```
+
+The worker itself starts only with `CONTENTKIT_AUDIO_ENABLED=true` (plus TTS
+credentials and `ffmpeg`); tune it with `CONTENTKIT_AUDIO_POLL_MS`,
+`CONTENTKIT_AUDIO_MAX_ATTEMPTS` and `CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS`.
+API surface: `GET`/`DELETE /v1/content/{item}/audio` (status / remove narration),
+`POST /v1/sites/{site}/audio/backfill` (archive backfill with `dry_run`,
+`limit_chars`, `slugs`, `force`) and `GET /v1/sites/{site}/audio/jobs`
+(job monitoring with a monthly character-budget summary). A post opts out with
+frontmatter `audio: false`. The complete lifecycle is described in
+[docs/audio.md](docs/audio.md).
 
 ## Development
 

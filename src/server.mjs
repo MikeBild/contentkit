@@ -31,6 +31,12 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     createReleaseManager(config, repo, db, storage, logger, {
       onPublished: (published) => audio.enqueueAudioJobs(published),
     })
+  // Worker ↔ releases is mutual: publishing enqueues audio jobs (hook above),
+  // finished audio schedules a debounced rebuild release. The worker exists
+  // first, so its publish reference is bound late — no import or constructor
+  // cycle. No loop either: auto-rebuilds carry empty revision_ids, and the
+  // onPublished hook only fires for releases with revisions.
+  audio.setPublisher?.((input) => releases.publish(input))
   const auth = dependencies.auth || createAuth(config, db)
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)

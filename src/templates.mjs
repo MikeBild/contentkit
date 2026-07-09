@@ -52,6 +52,7 @@ const words = {
     llmsFullContent: 'Vollständiger Inhalt als Markdown',
     listen: 'Diesen Beitrag anhören ({n} Min.)',
     playbackSpeed: 'Wiedergabetempo',
+    downloadMp3: 'MP3 herunterladen',
   },
   en: {
     blog: 'Blog',
@@ -104,6 +105,7 @@ const words = {
     llmsFullContent: 'Full content as Markdown',
     listen: 'Listen to this post ({n} min)',
     playbackSpeed: 'Playback speed',
+    downloadMp3: 'Download MP3',
   },
 }
 
@@ -404,6 +406,13 @@ export function layout(ctx, body, options = {}) {
   const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
+  // Advertising the podcast feed is the operator's explicit call
+  // (settings.audio.podcast_link) and only meaningful on a site whose audio is
+  // enabled at all — without the opt-in the feed file does not even exist.
+  const podcastLink =
+    settings.audio?.enabled === true && settings.audio?.podcast_link === true
+      ? `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(settings.audio.title || `${site.name} · Podcast`)}" href="/${escapeHtml(locale)}/podcast.xml">`
+      : ''
   const articleMeta =
     type === 'article'
       ? [
@@ -444,6 +453,7 @@ ${iconLinks(settings)}
 <link rel="stylesheet" href="${asset('site.css')}">
 ${options.audio ? `<link rel="stylesheet" href="${asset('audio.css')}">` : ''}
 <link rel="alternate" type="application/rss+xml" title="${escapeHtml(feedTitle || site.name)}" href="${escapeHtml(feedUrl || `/${locale}/feed.xml`)}">
+${podcastLink}
 ${settings.accent ? `<style>:root{--primary:${escapeHtml(accentToHslTriple(settings.accent))}}</style>` : ''}
 ${structured}
 ${scripts.join('\n')}
@@ -639,6 +649,7 @@ function audioPlayer(item, ctx) {
 <p class="audio-player-label">${escapeHtml(fill(t.listen, { n: minutes }))}</p>
 <audio controls preload="none" src="${escapeHtml(item.audio.url)}"></audio>
 <div class="audio-player-rates" data-audio-rates role="group" aria-label="${escapeHtml(t.playbackSpeed)}" hidden>${rates}</div>
+<a class="audio-player-download" href="${escapeHtml(item.audio.url)}" download>${escapeHtml(t.downloadMp3)}</a>
 </div>`
 }
 

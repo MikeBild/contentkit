@@ -530,6 +530,89 @@ test('podcast.xml lists only posts with audio, with enclosure and itunes tags, a
   assert.ok(!noAudio.files.has('en/podcast.xml'), 'no podcast feed without a single audio post')
 })
 
+test('the player offers a quiet localized MP3 download link', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const result = await build({
+    site: { ...site, settings: { audio: { enabled: true } } },
+    revisions: [post({ slug: 'a', title: 'A' })],
+    audio,
+  })
+  assert.match(
+    result.files.get('en/blog/a/index.html').body.toString(),
+    /<a class="audio-player-download" href="\/media\/asset-1\/a-vorlesen\.mp3" download>Download MP3<\/a>/,
+  )
+})
+
+test('podcast channel carries optional itunes:image and itunes:category, and language from the locale', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const revisions = [post({ slug: 'a', title: 'A' })]
+  const configured = await build({
+    site: {
+      ...site,
+      settings: {
+        audio: {
+          enabled: true,
+          podcast_image: 'https://example.test/cover-3000.jpg',
+          podcast_category: 'Technology',
+        },
+      },
+    },
+    revisions,
+    audio,
+  })
+  const feed = configured.files.get('en/podcast.xml').body.toString()
+  assert.match(feed, /<itunes:image href="https:\/\/example\.test\/cover-3000\.jpg"\/>/)
+  assert.match(feed, /<itunes:category text="Technology"\/>/)
+  assert.match(feed, /<language>en<\/language>/)
+
+  const plain = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
+  assert.doesNotMatch(
+    plain.files.get('en/podcast.xml').body.toString(),
+    /itunes:image|itunes:category/,
+    'unconfigured channel art must not emit empty tags',
+  )
+})
+
+test('the layout advertises podcast.xml only with the podcast_link opt-in', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const revisions = [post({ slug: 'a', title: 'A' })]
+  const linked = await build({
+    site: { ...site, settings: { audio: { enabled: true, podcast_link: true } } },
+    revisions,
+    audio,
+  })
+  assert.match(
+    linked.files.get('en/index.html').body.toString(),
+    /<link rel="alternate" type="application\/rss\+xml" title="Example · Podcast" href="\/en\/podcast\.xml">/,
+  )
+  const unlinked = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
+  assert.doesNotMatch(unlinked.files.get('en/index.html').body.toString(), /podcast\.xml/)
+})
+
 test('frontmatter audio: false suppresses the player even when an asset exists', async () => {
   const audio = [
     {

@@ -88,6 +88,9 @@ export function loadConfig() {
     audioEnabled: bool('CONTENTKIT_AUDIO_ENABLED', false),
     audioPollMs: integer('CONTENTKIT_AUDIO_POLL_MS', 15000, { min: 1000, max: 300000 }),
     audioMaxAttempts: integer('CONTENTKIT_AUDIO_MAX_ATTEMPTS', 5, { min: 1, max: 20 }),
+    // Debounce for the automatic rebuild after new audio finishes: per site,
+    // a burst of completed jobs (e.g. a backfill) results in one release.
+    audioRebuildDebounceMs: integer('CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS', 60000, { min: 1000, max: 3600000 }),
     ffmpegPath: process.env.CONTENTKIT_FFMPEG || 'ffmpeg',
     ttsGoogleApiKey: process.env.CONTENTKIT_TTS_GOOGLE_API_KEY || '',
     ttsGoogleToken: process.env.CONTENTKIT_TTS_GOOGLE_TOKEN || '',

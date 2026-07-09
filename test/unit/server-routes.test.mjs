@@ -730,6 +730,85 @@ test('POST /v1/sites/{site}/audio/backfill requires release:write and forwards l
   })
 })
 
+test('DELETE /v1/content/{item}/audio requires release:write and forwards item and site to the worker', async () => {
+  const db = {
+    async select(table, query) {
+      if (table === 'ck_content_items' && query.id === 'eq.item-1') return [{ id: 'item-1', site_id: 'site-1' }]
+      return []
+    },
+  }
+  const repo = {
+    async getSite(id) {
+      return id === 'site-1' ? { id: 'site-1', settings: { audio: { enabled: true } } } : null
+    },
+  }
+  const calls = []
+  const audio = {
+    async remove(input) {
+      calls.push(input)
+      return { item_id: input.item.id, deleted_jobs: 2, deleted_assets: 1, rebuild_scheduled: true }
+    },
+  }
+  await withApp({ db, repo, audio, auth: scopedAuth(['release:write']) }, async (request) => {
+    assert.equal((await request('/v1/content/item-1/audio', { method: 'DELETE' })).status, 401)
+    const response = await request('/v1/content/item-1/audio', { method: 'DELETE', headers: { 'x-api-key': 'valid' } })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), {
+      item_id: 'item-1',
+      deleted_jobs: 2,
+      deleted_assets: 1,
+      rebuild_scheduled: true,
+    })
+    assert.equal(calls[0].site.id, 'site-1')
+    assert.equal(calls[0].item.id, 'item-1')
+    const missing = await request('/v1/content/nope/audio', { method: 'DELETE', headers: { 'x-api-key': 'valid' } })
+    assert.equal(missing.status, 404)
+  })
+})
+
+test('GET /v1/sites/{site}/audio/jobs requires content:read and forwards status/limit', async () => {
+  const repo = {
+    async getSite(slug) {
+      return slug === 'my-site' ? { id: 'site-1', slug: 'my-site' } : null
+    },
+  }
+  const calls = []
+  const audio = {
+    async listJobs(input) {
+      calls.push(input)
+      if (input.status && !['pending', 'processing', 'done', 'failed', 'skipped'].includes(input.status)) {
+        throw Object.assign(new Error('status must be one of …'), { statusCode: 422 })
+      }
+      return { jobs: [], summary: { pending: 0, chars_this_month: 0 } }
+    },
+  }
+  await withApp({ repo, audio, auth: scopedAuth(['content:read']) }, async (request) => {
+    assert.equal((await request('/v1/sites/my-site/audio/jobs')).status, 401)
+    assert.equal((await request('/v1/sites/nope/audio/jobs', { headers: { 'x-api-key': 'valid' } })).status, 404)
+    const response = await request('/v1/sites/my-site/audio/jobs?status=failed&limit=5', {
+      headers: { 'x-api-key': 'valid' },
+    })
+    assert.equal(response.status, 200)
+    assert.equal(calls[0].site.id, 'site-1')
+    assert.equal(calls[0].status, 'failed')
+    assert.equal(calls[0].limit, '5')
+    // The worker's status validation surfaces as a 422, not a 500.
+    const invalid = await request('/v1/sites/my-site/audio/jobs?status=nope', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(invalid.status, 422)
+  })
+})
+
+test('OPTIONS advertises GET, DELETE on item audio and GET on the jobs listing', async () => {
+  await withApp({}, async (request) => {
+    const item = await request('/v1/content/item-1/audio', { method: 'OPTIONS' })
+    assert.equal(item.status, 204)
+    assert.equal(item.headers.get('allow'), 'GET, DELETE, OPTIONS')
+    const jobs = await request('/v1/sites/my-site/audio/jobs', { method: 'OPTIONS' })
+    assert.equal(jobs.status, 204)
+    assert.equal(jobs.headers.get('allow'), 'GET, OPTIONS')
+  })
+})
+
 test('publish-due publishes the latest scheduled revision per item and archives the rest', async () => {
   const due = [
     { id: 'r1', item_id: 'itemA', scheduled_at: '2026-01-01T00:00:00Z' },

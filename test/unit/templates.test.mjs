@@ -361,6 +361,23 @@ test('ctx.feedUrl replaces the site feed link rather than adding a second one', 
   assert.match(links[0], /title="Example · React"/)
 })
 
+test('the podcast feed link needs both enabled audio and the podcast_link opt-in', () => {
+  const siteWith = (audio) => ({
+    name: 'Example',
+    base_url: 'https://example.test',
+    default_locale: 'de',
+    settings: { audio },
+  })
+  // Opt-in without enabled audio: the feed file would not exist in the release.
+  assert.doesNotMatch(render({ site: siteWith({ podcast_link: true }) }), /podcast\.xml/)
+  // Enabled audio without the opt-in: advertising the feed is the operator's call.
+  assert.doesNotMatch(render({ site: siteWith({ enabled: true }) }), /podcast\.xml/)
+  assert.match(
+    render({ site: siteWith({ enabled: true, podcast_link: true, title: 'Mein Podcast' }) }),
+    /<link rel="alternate" type="application\/rss\+xml" title="Mein Podcast" href="\/de\/podcast\.xml">/,
+  )
+})
+
 test('rendered dates depend on neither the build machine timezone nor its locale', () => {
   // Two independent sources of build-machine nondeterminism. Without an explicit
   // zone, 2026-01-01T00:00:00Z prints as 31.12.2025 in America/New_York. Without an

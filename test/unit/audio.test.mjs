@@ -67,20 +67,35 @@ function makeDb({ sites = [], items = [], revisions = [], jobs = [], assets = []
       for (const row of rows) Object.assign(row, body)
       return returning ? rows : null
     },
+    async remove(table, filters) {
+      const survivors = tables[table].filter((row) => !matches(row, filters))
+      tables[table].length = 0
+      tables[table].push(...survivors)
+    },
   }
 }
 
 function makeStorage() {
   const uploads = []
+  const removed = []
   return {
     uploads,
+    removed,
     async upload(path, body, contentType) {
       uploads.push({ path, body, contentType })
+    },
+    async remove(paths) {
+      removed.push(...paths)
     },
   }
 }
 
-function fixture({ audioSettings = { enabled: true }, revisionMarkdown = markdown() } = {}) {
+function fixture({
+  audioSettings = { enabled: true },
+  revisionMarkdown = markdown(),
+  workerConfig = config,
+  ttsFactory = () => createTtsProvider(config, 'fake'),
+} = {}) {
   const db = makeDb({
     sites: [{ id: 'site-1', slug: 'site-1', name: 'Site', settings: { audio: audioSettings } }],
     items: [{ id: 'item-1', site_id: 'site-1', kind: 'post', published_revision_id: 'rev-1' }],
@@ -97,9 +112,11 @@ function fixture({ audioSettings = { enabled: true }, revisionMarkdown = markdow
   })
   const storage = makeStorage()
   const repo = createRepository({}, db, storage)
-  const worker = createAudioWorker(config, db, repo, storage, logger, () => createTtsProvider(config, 'fake'))
+  const worker = createAudioWorker(workerConfig, db, repo, storage, logger, ttsFactory)
   return { db, storage, repo, worker }
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 test('enqueue creates a pending job for a published post revision', async () => {
   const { db, worker } = fixture()
@@ -287,4 +304,208 @@ test('status reports the newest job and resolves the /media URL once done', asyn
   assert.ok(done.audio.byte_size > 0)
   assert.equal((await worker.status('item-unknown')).status, 'none')
   void repo
+})
+
+test('a finished job schedules one debounced auto-rebuild with empty revision_ids', async () => {
+  const { worker } = fixture({ workerConfig: { ...config, audioRebuildDebounceMs: 10 } })
+  const published = []
+  worker.setPublisher(async (input) => published.push(input))
+  await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  await worker.tick()
+  assert.equal(published.length, 0, 'the rebuild must be debounced, not immediate')
+  await sleep(50)
+  assert.equal(published.length, 1)
+  assert.deepEqual(published[0], { siteId: 'site-1', revisionIds: [], reason: 'audio auto-rebuild' })
+  worker.stop()
+})
+
+test('a burst of completed jobs collapses into a single rebuild per site', async () => {
+  const { db, worker } = fixture({ workerConfig: { ...config, audioRebuildDebounceMs: 10 } })
+  db.tables.ck_content_items.push({ id: 'item-2', site_id: 'site-1', kind: 'post', published_revision_id: 'rev-2' })
+  db.tables.ck_content_revisions.push({
+    id: 'rev-2',
+    item_id: 'item-2',
+    markdown: markdown('Ein anderer gesprochener Text für den zweiten Beitrag.'),
+    title: 'Neuerer Beitrag',
+    slug: 'neuerer-beitrag',
+    published_at: '2026-07-01T00:00:00Z',
+  })
+  const published = []
+  worker.setPublisher(async (input) => published.push(input))
+  await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1', 'rev-2'] })
+  await worker.tick()
+  assert.equal(db.tables.ck_audio_jobs.filter((job) => job.status === 'done').length, 2)
+  await sleep(50)
+  assert.equal(published.length, 1, 'two completions within the debounce window are one rebuild')
+  worker.stop()
+})
+
+test('auto_rebuild: false gates the rebuild, and stop() cancels a pending timer', async () => {
+  const optedOut = fixture({
+    audioSettings: { enabled: true, auto_rebuild: false },
+    workerConfig: { ...config, audioRebuildDebounceMs: 10 },
+  })
+  const published = []
+  optedOut.worker.setPublisher(async (input) => published.push(input))
+  await optedOut.worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  await optedOut.worker.tick()
+  await sleep(50)
+  assert.equal(published.length, 0, 'settings.audio.auto_rebuild=false must suppress the rebuild')
+  optedOut.worker.stop()
+
+  const stopped = fixture({ workerConfig: { ...config, audioRebuildDebounceMs: 10 } })
+  stopped.worker.setPublisher(async (input) => published.push(input))
+  await stopped.worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  await stopped.worker.tick()
+  stopped.worker.stop()
+  await sleep(50)
+  assert.equal(published.length, 0, 'stop() must clear pending rebuild timers')
+})
+
+test('enqueue refuses a job that would exceed the monthly character budget', async () => {
+  const chars = extractSpeechText(markdown(), { title: 'Testbeitrag' }).chars
+  const warns = []
+  const { db, repo } = fixture({ audioSettings: { enabled: true, monthly_char_budget: chars + 10 } })
+  const consumed = {
+    id: 'job-old',
+    site_id: 'site-1',
+    item_id: 'item-0',
+    revision_id: 'rev-0',
+    speech_sha256: 'other',
+    status: 'done',
+    chars: 11,
+    created_at: new Date().toISOString(),
+  }
+  db.tables.ck_audio_jobs.push(consumed)
+  const worker = createAudioWorker(
+    config,
+    db,
+    repo,
+    makeStorage(),
+    { info() {}, error() {}, warn: (message, data) => warns.push({ message, data }) },
+    () => createTtsProvider(config, 'fake'),
+  )
+  // 11 chars already consumed this month; the post's chars would overrun.
+  assert.equal((await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })).enqueued, 0)
+  assert.equal(db.tables.ck_audio_jobs.length, 1, 'no job past the budget')
+  assert.equal(warns[0].message, 'audio budget exhausted')
+  assert.deepEqual(warns[0].data, { siteId: 'site-1', itemId: 'item-1', chars })
+
+  // Skipped jobs never billed, jobs from earlier months already paid: neither counts.
+  consumed.status = 'skipped'
+  assert.equal((await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })).enqueued, 1)
+})
+
+test('enqueue ignores jobs from earlier months when checking the budget', async () => {
+  const chars = extractSpeechText(markdown(), { title: 'Testbeitrag' }).chars
+  const { db, worker } = fixture({ audioSettings: { enabled: true, monthly_char_budget: chars + 10 } })
+  db.tables.ck_audio_jobs.push({
+    id: 'job-old',
+    site_id: 'site-1',
+    item_id: 'item-0',
+    revision_id: 'rev-0',
+    speech_sha256: 'other',
+    status: 'done',
+    chars: 999999,
+    created_at: '2000-01-01T00:00:00Z',
+  })
+  assert.equal((await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })).enqueued, 1)
+})
+
+test('remove deletes the jobs, the assets and their storage objects, and schedules a rebuild', async () => {
+  const { db, storage, repo, worker } = fixture({ workerConfig: { ...config, audioRebuildDebounceMs: 10 } })
+  const published = []
+  worker.setPublisher(async (input) => published.push(input))
+  await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  await worker.tick()
+  const assetPath = db.tables.ck_assets[0].storage_path
+  const site = await repo.getSite('site-1')
+  const result = await worker.remove({ site, item: db.tables.ck_content_items[0] })
+  assert.deepEqual(result, { item_id: 'item-1', deleted_jobs: 1, deleted_assets: 1, rebuild_scheduled: true })
+  assert.equal(db.tables.ck_audio_jobs.length, 0)
+  assert.equal(db.tables.ck_assets.length, 0)
+  assert.deepEqual(storage.removed, [assetPath])
+  await sleep(50)
+  // One rebuild from the synthesis, debounced into the one from the delete.
+  assert.equal(published.length, 1)
+  worker.stop()
+
+  const untouched = await worker.remove({ site, item: { id: 'item-unknown' } })
+  assert.deepEqual(untouched, { item_id: 'item-unknown', deleted_jobs: 0, deleted_assets: 0, rebuild_scheduled: false })
+})
+
+test('a force re-render deletes the superseded asset at the swap point', async () => {
+  let call = 0
+  const { db, storage, repo, worker } = fixture({
+    ttsFactory: () => ({
+      async synthesize() {
+        call++
+        return { audio: Buffer.from([0xff, call]), contentType: 'audio/mpeg', durationSecs: 60 }
+      },
+    }),
+  })
+  await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  await worker.tick()
+  const oldAsset = db.tables.ck_assets[0]
+  const site = await repo.getSite('site-1')
+  await worker.backfill({ site, force: true })
+  db.tables.ck_audio_jobs[0].next_attempt_at = '2000-01-01T00:00:00Z'
+  await worker.tick()
+  const [job] = db.tables.ck_audio_jobs
+  assert.equal(job.status, 'done')
+  assert.notEqual(job.asset_id, oldAsset.id, 'the job must reference the new asset')
+  assert.equal(db.tables.ck_assets.length, 1, 'the superseded asset row is gone')
+  assert.notEqual(db.tables.ck_assets[0].id, oldAsset.id)
+  assert.deepEqual(storage.removed, [oldAsset.storage_path])
+  worker.stop()
+})
+
+test('listJobs resolves slugs, filters by status and reports the monthly budget summary', async () => {
+  const { db, repo, worker } = fixture({ audioSettings: { enabled: true, monthly_char_budget: 100000 } })
+  await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  const pending = db.tables.ck_audio_jobs[0]
+  pending.created_at = new Date().toISOString()
+  db.tables.ck_audio_jobs.push({
+    id: 'job-failed',
+    site_id: 'site-1',
+    item_id: 'item-9',
+    revision_id: 'rev-gone',
+    speech_sha256: 'x',
+    status: 'failed',
+    attempts: 5,
+    chars: 42,
+    error: 'quota exceeded',
+    created_at: '2000-01-01T00:00:00Z',
+  })
+  const site = await repo.getSite('site-1')
+  const all = await worker.listJobs({ site })
+  assert.equal(all.jobs.length, 2)
+  assert.equal(all.jobs[0].slug, 'testbeitrag', 'newest first, slug joined via the revision')
+  assert.equal(all.jobs[0].title, 'Testbeitrag')
+  assert.equal(all.jobs[1].slug, null, 'a job whose revision is gone still lists')
+  assert.deepEqual(
+    { ...all.summary },
+    {
+      pending: 1,
+      processing: 0,
+      done: 0,
+      failed: 1,
+      skipped: 0,
+      chars_this_month: pending.chars,
+      monthly_char_budget: 100000,
+      budget_remaining: 100000 - pending.chars,
+    },
+  )
+
+  const failed = await worker.listJobs({ site, status: 'failed', limit: 1 })
+  assert.equal(failed.jobs.length, 1)
+  assert.equal(failed.jobs[0].error, 'quota exceeded')
+
+  await assert.rejects(
+    () => worker.listJobs({ site, status: 'nope' }),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      return true
+    },
+  )
 })
