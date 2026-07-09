@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-09
+
+### Added
+
+- `GET /v1/sites/{site}` returns site metadata and settings. `PATCH` replaces
+  `settings` wholesale, so a partial update needs the current object first —
+  until now that read was impossible over HTTP and every partial update
+  silently dropped the unlisted keys. The route accepts `content:read` or
+  `site:admin`, so the key that patches can also read.
+
 ## [1.3.2] - 2026-07-08
 
 ### Fixed
