@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.9.1
+
+### Fixed
+
+- Read-aloud narration no longer speaks the title twice. The extractor
+  prepends the frontmatter title as the opening sentence but kept a leading
+  `# Heading` that repeats it — the same duplicate the rendered page already
+  drops (`dropRedundantTitle`). The speech text now drops it too. Note: this
+  changes the speech hash of affected posts, so their next enqueue counts as
+  new speech text (budget-capped as always).
+
 ## 1.9.0
 
 GEO and reader aids: every post is now first-class input for AI tools — and

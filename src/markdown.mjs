@@ -40,7 +40,7 @@ function headingText(node) {
 // string, still holds that syntax. Strip the inline markers from both sides so the two
 // spellings of the same title compare equal. Applied symmetrically, so a literal
 // underscore inside a word survives on both sides or on neither.
-const normalizeTitle = (value) =>
+export const normalizeTitle = (value) =>
   String(value || '')
     .replace(/[`*_~]/g, '')
     .replace(/\s+/g, ' ')

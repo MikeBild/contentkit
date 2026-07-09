@@ -85,3 +85,22 @@ test('chars counts the extracted text and the hash is stable', () => {
   assert.equal(first.chars, first.text.length)
   assert.equal(first.sha256, second.sha256)
 })
+
+test('a leading heading that repeats the title is spoken once, not twice', () => {
+  // The rendered page drops this duplicate (dropRedundantTitle); the recording
+  // must agree, or the voice reads the title twice in a row.
+  const repeated = extractSpeechText(doc('# Testbeitrag\n\nErster Absatz.'), { title: 'Testbeitrag' })
+  assert.equal(repeated.text, 'Testbeitrag.\n\nErster Absatz.')
+
+  // Normalized matching: casing, spacing and inline markup do not matter.
+  const styled = extractSpeechText(doc('#   test *Beitrag*  \n\nProsa.'), { title: 'Test Beitrag' })
+  assert.equal(styled.text, 'Test Beitrag.\n\nProsa.')
+
+  // A different opening heading is content and stays.
+  const different = extractSpeechText(doc('# Vorwort\n\nProsa.'), { title: 'Testbeitrag' })
+  assert.equal(different.text, 'Testbeitrag.\n\nVorwort.\n\nProsa.')
+
+  // Only a leading H1 is deduplicated; a later repeat is deliberate.
+  const later = extractSpeechText(doc('Intro.\n\n# Testbeitrag\n\nProsa.'), { title: 'Testbeitrag' })
+  assert.match(later.text, /Intro\.\n\nTestbeitrag\.\n\nProsa\./)
+})

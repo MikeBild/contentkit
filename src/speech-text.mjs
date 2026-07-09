@@ -1,4 +1,5 @@
 import { parse as parseYaml } from 'yaml'
+import { normalizeTitle } from './markdown.mjs'
 import { sha256 } from './utils.mjs'
 
 // Turns authored Markdown into the text a TTS voice actually reads aloud.
@@ -56,6 +57,17 @@ export function extractSpeechText(markdown, { title = '' } = {}) {
   // Cut the sources section first: everything from its heading to EOF is links.
   const sourcesAt = content.search(SOURCES_HEADING)
   let text = sourcesAt === -1 ? content : content.slice(0, sourcesAt)
+
+  // The rendered page drops a leading `# Heading` that repeats the frontmatter
+  // title (dropRedundantTitle in markdown.mjs). The recording must drop it too:
+  // the title is prepended as the opening sentence below, so keeping the
+  // heading had the voice read the title twice in a row.
+  if (title) {
+    const heading = text.match(/^\s*#[ \t]+(.+?)[ \t]*#*[ \t]*(?:\n|$)/)
+    if (heading && normalizeTitle(heading[1]) === normalizeTitle(title)) {
+      text = text.slice(heading[0].length)
+    }
+  }
 
   text = text
     // Fenced code (``` and ~~~, any info string incl. mermaid); the second
