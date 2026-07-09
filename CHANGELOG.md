@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-09
+
+### Added
+
+- Read-aloud audio ("Vorlesen"): every published post can carry a pre-rendered
+  spoken MP3. Publishing a release enqueues one job per post revision in the new
+  `ck_audio_jobs` table (additive migration `0004_contentkit_audio`); a
+  background worker — started with `CONTENTKIT_AUDIO_ENABLED=true` — extracts
+  the speech text from the Markdown (frontmatter, code/mermaid fences, the
+  `## Weiterführende Quellen` section, URLs and the italic series line are
+  dropped; headings and list items become sentences), synthesizes it with
+  Google Chirp 3 HD (chunked ≤3800 bytes, LINEAR16 24 kHz, encoded to 64 kbps
+  mono MP3 via the host's `ffmpeg`, path overridable with `CONTENTKIT_FFMPEG`)
+  and files the result as a normal content-addressed asset served from `/media`.
+- Idempotency by speech-text hash: `UNIQUE(item_id, speech_sha256)` covers the
+  *extracted speech text*, not the Markdown source, so editing a code block or
+  the sources section never triggers a paid re-synthesis. Sites opt in via
+  `settings.audio = { enabled, provider, voice, monthly_char_budget }`; a post
+  opts out with frontmatter `audio: false`.
+- Post pages with audio render a native player above the prose
+  (`preload="none"`, "Diesen Beitrag anhören (X min)"), with a tempo switch
+  (1×/1,25×/1,5×) and a remembered listening position per audio URL. The
+  `audio.js`/`audio.css` assets load only on pages that have a player.
+- Podcast feed at `/{locale}/podcast.xml` (RSS 2.0 + `itunes:` namespace, one
+  `<enclosure>` per post with audio), generated only when `settings.audio.enabled`
+  and at least one post carries audio. Not linked from the layout.
+- `GET /v1/content/{item}/audio` reports the newest audio job and asset URL;
+  `POST /v1/sites/{site}/audio/backfill` enqueues jobs for the archive
+  newest-first within a character budget (`limit_chars`, falling back to
+  `settings.audio.monthly_char_budget`); `dry_run: true` returns the selection
+  and a cost estimate without enqueuing.
+
+### Fixed
+
+- `/media` now serves audio content types inline instead of forcing a download;
+  without this the read-aloud `<audio>` element could not play its own asset.
+
 ## [1.4.0] - 2026-07-09
 
 ### Added

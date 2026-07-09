@@ -1,0 +1,50 @@
+/* Read-aloud player. Linked only on pages that render one (layout's audio
+ * option), styled entirely from the theme's existing custom properties so a
+ * site's accent and dark mode apply without any per-site CSS. */
+.audio-player {
+  margin: 0 0 1.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.4);
+}
+
+.audio-player-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.audio-player audio {
+  display: block;
+  width: 100%;
+}
+
+.audio-player-rates {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.audio-player-rate {
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+
+.audio-player-rate:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--muted-foreground));
+}
+
+.audio-player-rate[aria-pressed='true'] {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}

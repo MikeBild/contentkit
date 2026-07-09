@@ -18,6 +18,7 @@ const TABLES = new Set([
   'ck_outbox_events',
   'ck_webhook_endpoints',
   'ck_webhook_deliveries',
+  'ck_audio_jobs',
 ])
 
 function identifier(value) {

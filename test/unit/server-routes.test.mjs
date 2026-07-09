@@ -120,7 +120,7 @@ test('public contact submission is unaffected by disabled comments', async () =>
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 async function withApp(
-  { db = {}, repo = {}, releases = {}, auth = {}, storage = {}, config = {}, maintenance } = {},
+  { db = {}, repo = {}, releases = {}, auth = {}, storage = {}, config = {}, maintenance, audio } = {},
   run,
 ) {
   const app = createApp(
@@ -146,6 +146,7 @@ async function withApp(
       auth,
       outbox: { start() {}, stop() {} },
       ...(maintenance ? { maintenance } : {}),
+      ...(audio ? { audio } : {}),
     },
   )
   await new Promise((resolve, reject) => {
@@ -656,6 +657,76 @@ test('/media forces download for non-image content types', async () => {
     assert.equal(response.status, 200)
     assert.match(response.headers.get('content-disposition') || '', /attachment/)
     assert.equal(response.headers.get('content-security-policy'), "default-src 'none'; sandbox")
+  })
+})
+
+test('/media serves audio inline with a sandbox CSP (the read-aloud player streams from here)', async () => {
+  for (const contentType of ['audio/mpeg', 'audio/mp4']) {
+    const { repo, storage } = mediaFixture({
+      id: 'a3',
+      storage_path: 'p',
+      content_type: contentType,
+      sha256: 'h',
+      filename: 'post-vorlesen.mp3',
+    })
+    await withApp({ repo, storage }, async (request) => {
+      const response = await request('/media/a3/post-vorlesen.mp3')
+      assert.equal(response.status, 200, contentType)
+      assert.equal(response.headers.get('content-disposition'), null, `${contentType} must be inline`)
+      assert.equal(response.headers.get('content-security-policy'), "default-src 'none'; sandbox")
+      assert.equal(response.headers.get('content-type'), contentType)
+    })
+  }
+})
+
+test('GET /v1/content/{item}/audio requires content:read and returns the worker status', async () => {
+  const db = {
+    async select(table) {
+      if (table === 'ck_content_items') return [{ id: 'item-1', site_id: 'site-1' }]
+      return []
+    },
+  }
+  const audio = {
+    async status(itemId) {
+      return { item_id: itemId, status: 'done', audio: { url: '/media/a1/x.mp3' } }
+    },
+  }
+  await withApp({ db, audio, auth: scopedAuth(['content:read']) }, async (request) => {
+    assert.equal((await request('/v1/content/item-1/audio')).status, 401)
+    const response = await request('/v1/content/item-1/audio', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.status, 'done')
+    assert.equal(body.audio.url, '/media/a1/x.mp3')
+  })
+})
+
+test('POST /v1/sites/{site}/audio/backfill requires release:write and forwards limit/dry_run', async () => {
+  const calls = []
+  const repo = {
+    async getSite() {
+      return { id: 'site-1', settings: { audio: { enabled: true } } }
+    },
+  }
+  const audio = {
+    async backfill(input) {
+      calls.push(input)
+      return { dry_run: input.dryRun, jobs: [], total_chars: 0, estimated_usd: 0, skipped: 0 }
+    },
+  }
+  await withApp({ repo, audio, auth: scopedAuth(['release:write']) }, async (request) => {
+    const denied = await request('/v1/sites/site-1/audio/backfill', { method: 'POST', body: '{}' })
+    assert.equal(denied.status, 401)
+    const response = await request('/v1/sites/site-1/audio/backfill', {
+      method: 'POST',
+      headers: { 'x-api-key': 'valid' },
+      body: JSON.stringify({ dry_run: true, limit_chars: 5000 }),
+    })
+    assert.equal(response.status, 200)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].dryRun, true)
+    assert.equal(calls[0].limitChars, 5000)
+    assert.equal(calls[0].site.id, 'site-1')
   })
 })
 

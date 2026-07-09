@@ -25,7 +25,7 @@ export function createSemaphore(limit) {
   }
 }
 
-export function createReleaseManager(config, repo, db, storage, logger) {
+export function createReleaseManager(config, repo, db, storage, logger, hooks = {}) {
   const semaphore = createSemaphore(config.buildConcurrency)
   const acquire = () => semaphore.acquire()
   const release = () => semaphore.release()
@@ -89,6 +89,17 @@ export function createReleaseManager(config, repo, db, storage, logger) {
           if (/stale snapshot/.test(String(error.message || error))) error.stalePublish = true
           throw error
         }
+      }
+
+      // The release is live at this point; anything downstream (e.g. enqueuing
+      // read-aloud audio jobs) is best-effort and must never fail the publish.
+      if (kind === 'release' && revisionIds.length && hooks.onPublished) {
+        Promise.resolve(hooks.onPublished({ siteId: snapshot.site.id, revisionIds })).catch((error) =>
+          logger.warn?.('post-publish hook failed', {
+            siteId: snapshot.site.id,
+            error: String(error.message || error),
+          }),
+        )
       }
 
       if (kind === 'preview') {

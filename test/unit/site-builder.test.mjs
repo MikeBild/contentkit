@@ -472,3 +472,83 @@ test('noindex content stays out of llms.txt and llms-full.txt', async () => {
     assert.match(body, /Public/)
   }
 })
+
+test('a post with read-aloud audio renders the player and loads audio assets; others do not', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const result = await build({
+    site: { ...site, settings: { audio: { enabled: true } } },
+    revisions: [post({ slug: 'a', title: 'A' }), post({ slug: 'b', title: 'B' })],
+    audio,
+  })
+  const withPlayer = result.files.get('en/blog/a/index.html').body.toString()
+  assert.match(withPlayer, /class="audio-player" data-audio="\/media\/asset-1\/a-vorlesen\.mp3"/)
+  assert.match(withPlayer, /<audio controls preload="none" src="\/media\/asset-1\/a-vorlesen\.mp3">/)
+  assert.match(withPlayer, /Listen to this post \(5 min\)/)
+  assert.match(withPlayer, /assets\/audio-[0-9a-f]{10}\.js/, 'audio.js must load on the player page')
+  assert.match(withPlayer, /assets\/audio-[0-9a-f]{10}\.css/, 'audio.css must load on the player page')
+  const withoutPlayer = result.files.get('en/blog/b/index.html').body.toString()
+  assert.doesNotMatch(withoutPlayer, /audio-player|assets\/audio-/, 'a post without audio must not pay for the player')
+})
+
+test('podcast.xml lists only posts with audio, with enclosure and itunes tags, and needs the opt-in', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const revisions = [
+    post({ slug: 'a', title: 'A', date: '2026-06-02' }),
+    post({ slug: 'b', title: 'B', date: '2026-06-01' }),
+  ]
+  const enabled = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
+  const feed = enabled.files.get('en/podcast.xml').body.toString()
+  assert.equal(enabled.files.get('en/podcast.xml').contentType, 'application/rss+xml; charset=utf-8')
+  assert.match(feed, /xmlns:itunes="http:\/\/www\.itunes\.com\/dtds\/podcast-1\.0\.dtd"/)
+  assert.match(
+    feed,
+    /<enclosure url="https:\/\/example\.test\/media\/asset-1\/a-vorlesen\.mp3" type="audio\/mpeg" length="1234"\/>/,
+  )
+  assert.match(feed, /<itunes:duration>300<\/itunes:duration>/)
+  assert.doesNotMatch(feed, /<item><title>B<\/title>/, 'a post without audio must not be a podcast item')
+  assert.doesNotMatch(feed, /lastBuildDate/, 'release bytes must be reproducible')
+
+  const optedOut = await build({ site, revisions, audio })
+  assert.ok(!optedOut.files.has('en/podcast.xml'), 'no podcast feed without settings.audio.enabled')
+  const noAudio = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions })
+  assert.ok(!noAudio.files.has('en/podcast.xml'), 'no podcast feed without a single audio post')
+})
+
+test('frontmatter audio: false suppresses the player even when an asset exists', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const optedOut = {
+    ...post({ slug: 'a', title: 'A' }),
+    markdown: `---\nkind: post\ntitle: A\nlocale: en\nslug: a\ntranslationKey: a\nsummary: About A\ndate: 2026-06-01\naudio: false\n---\nBody text.`,
+  }
+  const result = await build({
+    site: { ...site, settings: { audio: { enabled: true } } },
+    revisions: [optedOut],
+    audio,
+  })
+  assert.doesNotMatch(result.files.get('en/blog/a/index.html').body.toString(), /audio-player/)
+  assert.ok(!result.files.has('en/podcast.xml'))
+})

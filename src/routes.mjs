@@ -32,6 +32,7 @@ export function routeName(path) {
 const RELEASE_CONTENT_TYPES = [
   ['.html', 'text/html; charset=utf-8'],
   ['feed.xml', 'application/rss+xml; charset=utf-8'],
+  ['podcast.xml', 'application/rss+xml; charset=utf-8'],
   ['.xml', 'application/xml; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'],
@@ -80,6 +81,8 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/v1\/content\/[^/]+\/published$/, methods: ['DELETE'] },
+  { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/audio\/backfill$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
@@ -100,7 +103,7 @@ export const API_ROUTES = [
 // Builds the single request handler from the app's composed dependencies.
 // All state (draining/storageReady) and services are owned by createApp.
 export function createRequestHandler(ctx) {
-  const { config, logger, db, storage, repo, releases, auth, maintenance, limiter, metrics, state } = ctx
+  const { config, logger, db, storage, repo, releases, auth, maintenance, limiter, metrics, state, audio } = ctx
 
   async function bodyFor(req) {
     return readBody(req, config.maxBodyBytes)
@@ -315,16 +318,18 @@ export function createRequestHandler(ctx) {
       const response = await storage.download(asset.storage_path, { head: req.method === 'HEAD' })
       const body = req.method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
       // Defence in depth against a hostile/legacy asset content-type: sandbox the
-      // response, and force download for anything that isn't a plain image.
-      const inlineImage = /^image\/(png|jpe?g|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)$/i.test(
-        asset.content_type || '',
-      )
+      // response, and force download for anything that isn't a plain image or a
+      // plain audio type. Audio must be inline — the read-aloud <audio> element
+      // streams it from here, and an attachment disposition would break playback.
+      const inlineMedia =
+        /^image\/(png|jpe?g|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)$/i.test(asset.content_type || '') ||
+        /^audio\/(mpeg|mp4|ogg|wav|aac|flac|webm)$/i.test(asset.content_type || '')
       send(res, 200, body, {
         'content-type': asset.content_type,
         'cache-control': 'public,max-age=31536000,immutable',
         etag: `"${asset.sha256}"`,
         'content-security-policy': "default-src 'none'; sandbox",
-        ...(inlineImage
+        ...(inlineMedia
           ? {}
           : { 'content-disposition': `attachment; filename="${encodeURIComponent(asset.filename || id)}"` }),
       })
@@ -434,6 +439,25 @@ export function createRequestHandler(ctx) {
       })
       metrics.build(Date.now() - started)
       return sendJson(res, 200, { item_id: items[0].id, unpublished: true, release: result })
+    }
+    const audioStatusMatch = path.match(/^\/v1\/content\/([^/]+)\/audio$/)
+    if (audioStatusMatch && req.method === 'GET') {
+      const items = await db.select('ck_content_items', { id: `eq.${audioStatusMatch[1]}`, limit: '1' })
+      if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
+      if (!(await requireScope(req, res, 'content:read', items[0].site_id))) return
+      return sendJson(res, 200, await audio.status(items[0].id))
+    }
+    const audioBackfillMatch = path.match(/^\/v1\/sites\/([^/]+)\/audio\/backfill$/)
+    if (audioBackfillMatch && req.method === 'POST') {
+      const site = await repo.getSite(audioBackfillMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      const input = parseJson(await bodyFor(req))
+      return sendJson(
+        res,
+        200,
+        await audio.backfill({ site, limitChars: input.limit_chars, dryRun: input.dry_run === true }),
+      )
     }
     const previewMatch = path.match(/^\/v1\/sites\/([^/]+)\/previews$/)
     if (previewMatch && req.method === 'POST') {

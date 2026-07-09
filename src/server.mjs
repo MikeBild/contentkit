@@ -8,6 +8,7 @@ import { createRepository } from './repository.mjs'
 import { createReleaseManager } from './releases.mjs'
 import { createAuth } from './auth.mjs'
 import { createOutboxWorker } from './webhooks.mjs'
+import { createAudioWorker } from './audio.mjs'
 import { createMaintenance } from './maintenance.mjs'
 import { createMetrics } from './metrics.mjs'
 import { sendJson } from './http.mjs'
@@ -22,7 +23,14 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const db = database.db
   const storage = dependencies.storage || createStorage(config).storage
   const repo = dependencies.repo || createRepository(config, db, storage)
-  const releases = dependencies.releases || createReleaseManager(config, repo, db, storage, logger)
+  const audio = dependencies.audio || createAudioWorker(config, db, repo, storage, logger)
+  // Publishing enqueues read-aloud jobs fire-and-forget; the hook can never
+  // fail a release (see build() in releases.mjs).
+  const releases =
+    dependencies.releases ||
+    createReleaseManager(config, repo, db, storage, logger, {
+      onPublished: (published) => audio.enqueueAudioJobs(published),
+    })
   const auth = dependencies.auth || createAuth(config, db)
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
@@ -42,6 +50,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     limiter,
     metrics,
     state,
+    audio,
   })
 
   const server = createServer((req, res) => {
@@ -76,6 +85,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     server,
     state,
     outbox,
+    audio,
     limiter,
     releases,
     database,
@@ -118,6 +128,10 @@ export async function start(config = loadConfig()) {
     throw error
   }
   app.outbox.start()
+  // Deployment-level switch: the poller only runs where ffmpeg and TTS
+  // credentials exist. Which sites get audio is decided per site at enqueue
+  // time via settings.audio.enabled.
+  if (config.audioEnabled) app.audio.start()
   logger.info('contentkit listening', {
     url: `http://${config.host}:${config.port}`,
     version: config.version,
@@ -129,6 +143,7 @@ export async function start(config = loadConfig()) {
     stopping = true
     app.state.draining = true
     app.outbox.stop()
+    app.audio.stop()
     app.limiter.stop()
     app.server.close(async () => {
       await app.database.close().catch(() => {})

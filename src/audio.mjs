@@ -1,0 +1,328 @@
+import { extractSpeechText } from './speech-text.mjs'
+import { createTtsProvider } from './tts.mjs'
+import { sha256 } from './utils.mjs'
+
+// Read-aloud audio ("Vorlesen") after the outbox blueprint: publishing enqueues
+// a row in ck_audio_jobs, a setInterval poller synthesizes MP3s minutes later
+// and files them as ordinary ck_assets. The player only renders when an asset
+// exists, so the async gap is invisible — never a broken page state.
+//
+// Idempotency hangs on UNIQUE(item_id, speech_sha256), where the hash covers
+// the extracted speech text: re-publishing a revision, or editing only a code
+// block or the sources section, finds the existing job and enqueues nothing.
+
+// Google prices Chirp 3 HD at 30 USD per million characters; used for the
+// backfill dry-run estimate only, never for billing.
+const USD_PER_MILLION_CHARS = 30
+
+// The `processing` status doubles as a lease: the claim pushes next_attempt_at
+// this far ahead, so a worker crash mid-synthesis re-surfaces the job instead
+// of stranding it.
+const PROCESSING_LEASE_MS = 15 * 60 * 1000
+
+// Exponential backoff (base 60s, doubling, capped 1h) with ±15% jitter, same
+// shape as webhook deliveries but slower: TTS failures are usually quota or
+// upstream outages, not blips.
+function nextDelaySeconds(attempts) {
+  const base = Math.min(60 * 2 ** Math.min(attempts - 1, 6), 3600)
+  return base * (0.85 + Math.random() * 0.3)
+}
+
+const isUniqueViolation = (error) => /duplicate key|unique constraint/i.test(String(error.message || error))
+
+const estimatedUsd = (chars) => Math.round((chars / 1_000_000) * USD_PER_MILLION_CHARS * 100) / 100
+
+// Total, locale-independent comparator (see site-builder.mjs for the rationale).
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
+export function createAudioWorker(config, db, repo, storage, logger, ttsFactory = createTtsProvider) {
+  let timer
+  let running = false
+  // One provider instance per name; sites choose via settings.audio.provider.
+  const providers = new Map()
+  const providerFor = (name) => {
+    const key = name || 'google'
+    if (!providers.has(key)) providers.set(key, ttsFactory(config, key))
+    return providers.get(key)
+  }
+
+  async function insertJob({ site, item, revision, speech }) {
+    if (await repo.one('ck_audio_jobs', { item_id: `eq.${item.id}`, speech_sha256: `eq.${speech.sha256}` })) {
+      return false
+    }
+    try {
+      await db.insert(
+        'ck_audio_jobs',
+        {
+          site_id: site.id,
+          item_id: item.id,
+          revision_id: revision.id,
+          speech_sha256: speech.sha256,
+          status: 'pending',
+          chars: speech.chars,
+          next_attempt_at: new Date().toISOString(),
+        },
+        { returning: false },
+      )
+      return true
+    } catch (error) {
+      // A concurrent enqueue won the race to the same speech hash — that is the
+      // idempotent outcome, not a failure.
+      if (isUniqueViolation(error)) return false
+      throw error
+    }
+  }
+
+  // Fire-and-forget hook target for a successful release: enqueue a job per
+  // published post revision whose speech text is new. Site-level opt-in
+  // (settings.audio.enabled) and the frontmatter override (audio: false) are
+  // both honoured here, so the worker only ever sees intended jobs.
+  async function enqueueAudioJobs({ siteId, revisionIds = [] }) {
+    if (!revisionIds.length) return { enqueued: 0 }
+    const site = await repo.getSite(siteId)
+    if (!site || site.settings?.audio?.enabled !== true) return { enqueued: 0 }
+    let enqueued = 0
+    for (const revisionId of revisionIds) {
+      const revision = await repo.one('ck_content_revisions', { id: `eq.${revisionId}` })
+      if (!revision) continue
+      const item = await repo.one('ck_content_items', { id: `eq.${revision.item_id}`, site_id: `eq.${site.id}` })
+      if (!item || item.kind !== 'post') continue
+      const speech = extractSpeechText(revision.markdown, { title: revision.title })
+      if (!speech.enabled || !speech.chars) continue
+      if (await insertJob({ site, item, revision, speech })) enqueued++
+    }
+    if (enqueued) logger.info('audio jobs enqueued', { siteId: site.id, enqueued })
+    return { enqueued }
+  }
+
+  // Archive backfill: walk the published posts newest-first, skip everything
+  // that already has a job for its current speech text, and stop at the
+  // character budget (limit_chars, else settings.audio.monthly_char_budget).
+  // dry_run prices the batch without enqueuing anything.
+  async function backfill({ site, limitChars, dryRun = false }) {
+    const settings = site.settings?.audio || {}
+    if (settings.enabled !== true) {
+      throw Object.assign(new Error('audio is not enabled for this site (settings.audio.enabled)'), {
+        statusCode: 409,
+      })
+    }
+    const items = await db.select('ck_content_items', {
+      site_id: `eq.${site.id}`,
+      kind: 'eq.post',
+      published_revision_id: 'not.is.null',
+    })
+    const itemsByRevision = new Map(items.map((item) => [item.published_revision_id, item]))
+    const revisionIds = [...itemsByRevision.keys()]
+    const revisions = revisionIds.length
+      ? await db.select('ck_content_revisions', { id: `in.(${revisionIds.join(',')})` })
+      : []
+    revisions.sort((a, b) => cmp(String(b.published_at || ''), String(a.published_at || '')))
+    const requested = Number(limitChars ?? settings.monthly_char_budget)
+    const budget = Number.isFinite(requested) && requested > 0 ? requested : Infinity
+    const jobs = []
+    let totalChars = 0
+    let skipped = 0
+    for (const revision of revisions) {
+      const item = itemsByRevision.get(revision.id)
+      const speech = extractSpeechText(revision.markdown, { title: revision.title })
+      if (!speech.enabled || !speech.chars) {
+        skipped++
+        continue
+      }
+      if (await repo.one('ck_audio_jobs', { item_id: `eq.${item.id}`, speech_sha256: `eq.${speech.sha256}` })) {
+        skipped++
+        continue
+      }
+      // Newest-first until the budget is spent; the next backfill run picks up
+      // where this one stopped, which is how the free tier gets stretched.
+      if (totalChars + speech.chars > budget) break
+      totalChars += speech.chars
+      jobs.push({ item, revision, speech })
+    }
+    let enqueued = 0
+    if (!dryRun) {
+      for (const job of jobs) {
+        if (await insertJob({ site, ...job })) enqueued++
+      }
+    }
+    return {
+      dry_run: dryRun,
+      jobs: jobs.map(({ item, revision, speech }) => ({
+        item_id: item.id,
+        revision_id: revision.id,
+        title: revision.title,
+        chars: speech.chars,
+      })),
+      total_chars: totalChars,
+      estimated_usd: estimatedUsd(totalChars),
+      skipped,
+      ...(dryRun ? {} : { enqueued }),
+    }
+  }
+
+  // Status of the newest job for one content item, with the /media URL once done.
+  async function status(itemId) {
+    const job = await repo.one('ck_audio_jobs', { item_id: `eq.${itemId}`, order: 'created_at.desc' })
+    if (!job) return { item_id: itemId, status: 'none', audio: null }
+    let audio = null
+    if (job.status === 'done' && job.asset_id) {
+      const asset = await repo.one('ck_assets', { id: `eq.${job.asset_id}` })
+      if (asset) {
+        audio = {
+          url: `/media/${asset.id}/${encodeURIComponent(asset.filename)}`,
+          content_type: asset.content_type,
+          byte_size: Number(asset.byte_size),
+          duration_secs: job.duration_secs,
+        }
+      }
+    }
+    return {
+      item_id: itemId,
+      status: job.status,
+      job: {
+        id: job.id,
+        revision_id: job.revision_id,
+        speech_sha256: job.speech_sha256,
+        attempts: job.attempts,
+        chars: job.chars,
+        duration_secs: job.duration_secs,
+        error: job.error,
+        created_at: job.created_at,
+        updated_at: job.updated_at,
+      },
+      audio,
+    }
+  }
+
+  async function markSkipped(job, reason) {
+    await db.update(
+      'ck_audio_jobs',
+      { id: `eq.${job.id}` },
+      { status: 'skipped', error: reason, updated_at: new Date().toISOString() },
+      { returning: false },
+    )
+  }
+
+  async function process(job) {
+    // Claim with a lease: a crash mid-synthesis re-surfaces the job after the
+    // lease instead of stranding it in `processing` forever.
+    await db.update(
+      'ck_audio_jobs',
+      { id: `eq.${job.id}` },
+      {
+        status: 'processing',
+        next_attempt_at: new Date(Date.now() + PROCESSING_LEASE_MS).toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { returning: false },
+    )
+    const site = await repo.getSite(job.site_id)
+    const revision = await repo.one('ck_content_revisions', { id: `eq.${job.revision_id}` })
+    if (!site || !revision) return markSkipped(job, 'site or revision no longer exists')
+    const speech = extractSpeechText(revision.markdown, { title: revision.title })
+    if (!speech.enabled || !speech.text) return markSkipped(job, 'speech text is empty or disabled')
+    const settings = site.settings?.audio || {}
+    const provider = providerFor(settings.provider)
+    const { audio, contentType, durationSecs } = await provider.synthesize(speech.text, { voice: settings.voice })
+    // File the MP3 exactly like an uploaded asset (see repo.ingest): content-
+    // addressed storage path plus a ck_assets row, so /media serves it with
+    // immutable caching and independent of any release.
+    const hash = sha256(audio)
+    const filename = `${revision.slug}-vorlesen.mp3`
+    const storagePath = `sites/${site.id}/assets/${hash}/${filename}`
+    await storage.upload(storagePath, audio, contentType, '31536000', true)
+    const existing = await repo.one('ck_assets', { site_id: `eq.${site.id}`, sha256: `eq.${hash}` })
+    const asset =
+      existing ||
+      (
+        await db.insert('ck_assets', {
+          site_id: site.id,
+          sha256: hash,
+          filename,
+          storage_path: storagePath,
+          content_type: contentType,
+          byte_size: audio.length,
+        })
+      )[0]
+    await db.update(
+      'ck_audio_jobs',
+      { id: `eq.${job.id}` },
+      {
+        status: 'done',
+        asset_id: asset.id,
+        duration_secs: Math.max(1, Math.round(durationSecs)),
+        chars: speech.chars,
+        error: null,
+        attempts: Number(job.attempts || 0) + 1,
+        updated_at: new Date().toISOString(),
+      },
+      { returning: false },
+    )
+    logger.info('audio synthesized', {
+      jobId: job.id,
+      itemId: job.item_id,
+      assetId: asset.id,
+      chars: speech.chars,
+      durationSecs: Math.round(durationSecs),
+    })
+  }
+
+  async function onFailure(job, error) {
+    const attempts = Number(job.attempts || 0) + 1
+    const terminal = attempts >= config.audioMaxAttempts
+    await db
+      .update(
+        'ck_audio_jobs',
+        { id: `eq.${job.id}` },
+        {
+          attempts,
+          status: terminal ? 'failed' : 'pending',
+          error: String(error.message || error).slice(0, 500),
+          next_attempt_at: new Date(Date.now() + nextDelaySeconds(attempts) * 1000).toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { returning: false },
+      )
+      .catch(() => {})
+    logger.warn('audio job failed', { jobId: job.id, attempts, terminal, error: String(error.message || error) })
+  }
+
+  async function tick() {
+    if (running) return
+    running = true
+    try {
+      const jobs = await db.select('ck_audio_jobs', {
+        status: 'in.(pending,processing)',
+        next_attempt_at: `lte.${new Date().toISOString()}`,
+        order: 'created_at.asc',
+        limit: '3',
+      })
+      for (const job of jobs) {
+        try {
+          await process(job)
+        } catch (error) {
+          await onFailure(job, error)
+        }
+      }
+    } catch (error) {
+      logger.error('audio poll failed', { error: String(error.message || error) })
+    } finally {
+      running = false
+    }
+  }
+
+  return {
+    enqueueAudioJobs,
+    backfill,
+    status,
+    tick,
+    start() {
+      timer = setInterval(tick, config.audioPollMs)
+      timer.unref?.()
+      tick()
+    },
+    stop() {
+      clearInterval(timer)
+    },
+  }
+}

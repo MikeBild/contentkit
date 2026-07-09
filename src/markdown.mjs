@@ -122,6 +122,8 @@ function validateFrontmatter(data) {
     cover: data.cover || data.image ? String(data.cover || data.image) : null,
     cover_alt: data.coverAlt || data.imageAlt ? String(data.coverAlt || data.imageAlt) : '',
     noindex: Boolean(data.noindex),
+    // Authored opt-out for the read-aloud feature; absence means eligible.
+    audio: data.audio !== false,
     featured: Boolean(data.featured),
     technologies: Array.isArray(data.technologies) ? data.technologies.map(String) : [],
     external_url: data.externalUrl ? String(data.externalUrl) : null,

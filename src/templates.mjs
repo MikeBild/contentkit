@@ -50,6 +50,8 @@ const words = {
     noMatches: 'Keine Beiträge für diese Auswahl.',
     pages: 'Seiten',
     llmsFullContent: 'Vollständiger Inhalt als Markdown',
+    listen: 'Diesen Beitrag anhören ({n} Min.)',
+    playbackSpeed: 'Wiedergabetempo',
   },
   en: {
     blog: 'Blog',
@@ -100,6 +102,8 @@ const words = {
     noMatches: 'No posts match this selection.',
     pages: 'Pages',
     llmsFullContent: 'Full content as Markdown',
+    listen: 'Listen to this post ({n} min)',
+    playbackSpeed: 'Playback speed',
   },
 }
 
@@ -394,6 +398,9 @@ export function layout(ctx, body, options = {}) {
   }
   // Archive-only: the filter enhances one page, so it must not tax every page view.
   if (options.archive) scripts.push(`<script src="${asset('archive.js')}" defer></script>`)
+  // Read-aloud pages only: the tempo switch and position memory enhance the
+  // player, so neither script nor stylesheet taxes a page without one.
+  if (options.audio) scripts.push(`<script src="${asset('audio.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
@@ -435,6 +442,7 @@ ${twitterHandle ? `<meta name="twitter:site" content="${escapeHtml(twitterHandle
 ${iconLinks(settings)}
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="${asset('site.css')}">
+${options.audio ? `<link rel="stylesheet" href="${asset('audio.css')}">` : ''}
 <link rel="alternate" type="application/rss+xml" title="${escapeHtml(feedTitle || site.name)}" href="${escapeHtml(feedUrl || `/${locale}/feed.xml`)}">
 ${settings.accent ? `<style>:root{--primary:${escapeHtml(accentToHslTriple(settings.accent))}}</style>` : ''}
 ${structured}
@@ -611,6 +619,29 @@ function postNav(item, ctx) {
   return `<nav class="post-nav" aria-label="${escapeHtml(ctx.t.archive)}">${link(older, 'prev', ctx.t.olderPost)}${link(newer, 'next', ctx.t.newerPost)}</nav>`
 }
 
+// The read-aloud player. Native <audio controls> with preload="none", so a page
+// view costs no audio bytes. The tempo buttons ship in the markup but hidden —
+// without audio.js they can do nothing, so showing them would be a lie; the
+// script unhides and drives them (and remembers the listening position).
+// Decimal separators follow the page locale: 1,25× in German, 1.25× elsewhere.
+function audioPlayer(item, ctx) {
+  if (!item.audio?.url) return ''
+  const t = ctx.t
+  const minutes = Math.max(1, Math.round(Number(item.audio.duration_secs || 0) / 60))
+  const decimal = (value) => (String(ctx.locale).startsWith('de') ? String(value).replace('.', ',') : String(value))
+  const rates = [1, 1.25, 1.5]
+    .map(
+      (rate) =>
+        `<button type="button" class="audio-player-rate" data-audio-rate="${rate}" aria-pressed="${rate === 1}">${escapeHtml(decimal(rate))}×</button>`,
+    )
+    .join('')
+  return `<div class="audio-player" data-audio="${escapeHtml(item.audio.url)}" data-duration="${Number(item.audio.duration_secs) || 0}">
+<p class="audio-player-label">${escapeHtml(fill(t.listen, { n: minutes }))}</p>
+<audio controls preload="none" src="${escapeHtml(item.audio.url)}"></audio>
+<div class="audio-player-rates" data-audio-rates role="group" aria-label="${escapeHtml(t.playbackSpeed)}" hidden>${rates}</div>
+</div>`
+}
+
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
   const locale = item.locale || ctx.locale
@@ -635,8 +666,12 @@ export function contentBody(item, ctx, comments = []) {
   // The age notice opens the prose, not the header: under the summary it would
   // read as a subtitle, and above the <h1> it outranks the title and shifts layout.
   const notice = isPost ? postAgeNotice(item, ctx) : ''
+  // The player leads the prose: "listen instead" is an offer made before
+  // reading starts, and above the age notice — the notice qualifies the
+  // content, the player is an alternative way to consume it.
+  const player = audioPlayer(item, ctx)
   const footer = isPost ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${commentsBody(item, ctx, comments)}` : ''
-  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}</header><div class="container prose">${notice}${item.html}${footer}</div></article>`
+  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}</header><div class="container prose">${player}${notice}${item.html}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

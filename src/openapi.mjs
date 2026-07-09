@@ -207,6 +207,33 @@ export function openApi(config) {
           },
         },
       },
+      '/v1/content/{item}/audio': {
+        get: {
+          summary: 'Read-aloud audio status for a content item',
+          description:
+            'Returns the newest read-aloud (TTS) job for the item — status pending/processing/done/failed/skipped, or `none` when no job exists — plus the stable `/media/<asset-id>/<filename>` URL and duration once the MP3 is done.',
+          security: secured,
+          parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: { description: 'Audio job status and asset URL' },
+            404: { description: 'Content item not found' },
+          },
+        },
+      },
+      '/v1/sites/{site}/audio/backfill': {
+        post: {
+          summary: 'Enqueue read-aloud audio jobs for published posts',
+          description:
+            'Walks the published posts newest-first and enqueues a TTS job for every post whose extracted speech text has no job yet, until the character budget is spent (`limit_chars`, falling back to `settings.audio.monthly_char_budget`, else unlimited). `dry_run: true` returns the selected posts, their character total and a cost estimate without enqueuing anything. Requires `settings.audio.enabled` (409 otherwise). Site audio settings: `settings.audio = { enabled, provider, voice, monthly_char_budget }`.',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: jsonBody(),
+          responses: {
+            200: { description: 'Enqueued jobs (or the dry-run estimate)' },
+            409: { description: 'Audio is not enabled for this site' },
+          },
+        },
+      },
       '/v1/sites/{site}/previews': {
         post: {
           summary: 'Build a time-limited preview',

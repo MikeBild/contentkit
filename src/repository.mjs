@@ -419,7 +419,37 @@ export function createRepository(config, db, storage) {
         })
         .filter(Boolean)
       const comments = await db.select('ck_comments', { site_id: `eq.${site.id}`, status: 'eq.approved' })
-      return { site, locales, revisions, comments }
+      // Read-aloud audio rides along as plain data: the newest finished job per
+      // item, resolved to its asset's stable /media URL. The URL is content-
+      // addressed and release-independent, so rebuilding a site never has to
+      // copy or re-reference audio bytes.
+      const audioJobs = await db.select('ck_audio_jobs', {
+        site_id: `eq.${site.id}`,
+        status: 'eq.done',
+        order: 'created_at.desc',
+      })
+      const newestByItem = new Map()
+      for (const job of audioJobs) {
+        if (job.asset_id && !newestByItem.has(job.item_id)) newestByItem.set(job.item_id, job)
+      }
+      const assetIds = [...newestByItem.values()].map((job) => job.asset_id)
+      const assetRows = assetIds.length ? await db.select('ck_assets', { id: inFilter(assetIds) }) : []
+      const assetsById = new Map(assetRows.map((asset) => [asset.id, asset]))
+      const audio = [...newestByItem.values()]
+        .map((job) => {
+          const asset = assetsById.get(job.asset_id)
+          return asset
+            ? {
+                item_id: job.item_id,
+                url: `/media/${asset.id}/${encodeURIComponent(asset.filename)}`,
+                content_type: asset.content_type,
+                byte_size: Number(asset.byte_size),
+                duration_secs: job.duration_secs,
+              }
+            : null
+        })
+        .filter(Boolean)
+      return { site, locales, revisions, comments, audio }
     },
     async listReleases(siteId) {
       const rows = await db.select('ck_releases', { site_id: `eq.${siteId}`, order: 'created_at.desc' })

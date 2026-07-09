@@ -199,6 +199,8 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
 | DELETE | `/v1/content/{item}/published` | `release:write` | Unpublish a content item from the live site |
+| GET | `/v1/content/{item}/audio` | `content:read` | Read-aloud (TTS) job status and audio asset URL for one item |
+| POST | `/v1/sites/{site}/audio/backfill` | `release:write` | Enqueue read-aloud audio jobs for published posts (`dry_run`, `limit_chars`) |
 | POST | `/v1/publish-due` | `release:write` | Publish scheduled revisions grouped by site |
 | POST | `/v1/maintenance/storage-gc` | `release:write` (unrestricted) | GC old release objects and reap stuck builds |
 | GET | `/v1/comments` | `moderation:write` | List pending/approved/rejected comments, optionally filtered by site/status |
@@ -428,7 +430,34 @@ Storage. Markdown references like `](images/hero.jpg)` and `src="images/hero.jpg
 are rewritten to immutable `/media/<asset-id>/<filename>` URLs.
 
 `/media/...` responses use the asset content type, an ETag based on the SHA-256
-hash and immutable cache headers.
+hash and immutable cache headers. Plain image and audio types are served inline;
+anything else is forced to download.
+
+### Read-aloud audio (Vorlesen)
+
+Contentkit can pre-render a spoken MP3 for every published post. Enable it per
+site via settings (merge, do not replace — `PATCH` overwrites `settings`):
+
+```json
+{ "audio": { "enabled": true, "provider": "google",
+  "voice": "de-DE-Chirp3-HD-Charon", "monthly_char_budget": 950000 } }
+```
+
+Publishing a release enqueues one job per published post revision in
+`ck_audio_jobs`; a background worker (started with `CONTENTKIT_AUDIO_ENABLED=true`)
+extracts the speech text from the Markdown (frontmatter, fenced code/mermaid, the
+`## Weiterführende Quellen` section, URLs and the italic series line are dropped;
+headings and list items become sentences), synthesizes it with Google Chirp 3 HD
+(chunked ≤3800 bytes, LINEAR16 24 kHz, encoded to 64 kbps mono MP3 via the host's
+`ffmpeg`), and files the MP3 as a normal content-addressed asset. Idempotency is
+`UNIQUE(item_id, speech_sha256)` over the *extracted speech text*, so editing a
+code block or the sources section never re-synthesizes. A post opts out with
+frontmatter `audio: false`. The next release renders a player above the post
+(`preload="none"`, tempo switch, remembered position) and, when at least one post
+has audio, a podcast feed at `/{locale}/podcast.xml` with `<enclosure>` and
+`itunes:` tags. `GET /v1/content/{item}/audio` reports job status;
+`POST /v1/sites/{site}/audio/backfill` fills the archive newest-first within a
+character budget (`dry_run: true` estimates cost without enqueuing).
 
 ---
 
@@ -446,6 +475,7 @@ For each configured locale, Contentkit generates:
 | Contact page | `/{locale}/contact/` |
 | Search index | `/{locale}/search-index.json` |
 | RSS feed | `/{locale}/feed.xml` |
+| Podcast feed | `/{locale}/podcast.xml` (only when `settings.audio.enabled` and at least one post has audio) |
 | Tag index | `/{locale}/tags/` |
 | Tag pages | `/{locale}/tags/{tag}/` (`noindex,follow` and unlisted when the tag has a single post) |
 | Tag feeds | `/{locale}/tags/{tag}/feed.xml` (only for tags with two or more posts) |
@@ -495,6 +525,9 @@ The layout includes:
 - `search.js` on every page; it fetches `/{locale}/search-index.json` lazily on
   the first interaction with the search field, so a page view costs no extra
   request;
+- `audio.js` and `audio.css` only on pages that render a read-aloud player;
+  the script adds the tempo switch (1×/1.25×/1.5×) and remembers the listening
+  position per audio URL in localStorage;
 - `archive.js` on the archive page only; it filters the server-rendered list in
   place by tag and free text, fetching nothing. Every post is rendered server
   side, and the facet chips are real links to the tag pages, so the archive stays
@@ -879,6 +912,13 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_RELEASE_HISTORY_KEEP` | releases kept per site as a rollback window; default 5 |
 | `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible; default 7 days |
 | `CONTENTKIT_BUILDING_REAP_MS` | age after which a release stuck in building is reaped; default 1 hour |
+| `CONTENTKIT_AUDIO_ENABLED` | start the read-aloud TTS worker; default false |
+| `CONTENTKIT_AUDIO_POLL_MS` | audio job poll interval; default 15000 |
+| `CONTENTKIT_AUDIO_MAX_ATTEMPTS` | attempts before an audio job is marked failed; default 5 |
+| `CONTENTKIT_FFMPEG` | path to the ffmpeg binary for MP3 encoding; default `ffmpeg` |
+| `CONTENTKIT_TTS_GOOGLE_API_KEY` | Google Cloud TTS API key (sent as `?key=`) |
+| `CONTENTKIT_TTS_GOOGLE_TOKEN` | OAuth bearer token alternative to the API key |
+| `CONTENTKIT_TTS_GOOGLE_QUOTA_PROJECT` | `x-goog-user-project` quota project header |
 | `LOG_LEVEL` | structured log verbosity |
 
 Never reuse the Supabase service-role key as a Contentkit, database or webhook

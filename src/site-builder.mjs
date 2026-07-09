@@ -60,7 +60,10 @@ async function staticAssets(root) {
     'url(/assets/katex/',
   )
   emit('site.css', `${css}\n${katexCss}`, 'text/css; charset=utf-8')
-  for (const name of ['search.js', 'forms.js', 'mermaid-init.js', 'consent.js', 'archive.js']) {
+  // The audio player's styling stays a separate sheet: layout() links it only on
+  // pages that render a player, the same opt-in mechanic as the mermaid scripts.
+  emit('audio.css', await readFile(join(root, 'assets/audio.css'), 'utf8'), 'text/css; charset=utf-8')
+  for (const name of ['search.js', 'forms.js', 'mermaid-init.js', 'consent.js', 'archive.js', 'audio.js']) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
   emit(
@@ -96,6 +99,26 @@ function rss(site, locale, posts, { selfUrl = `/${locale}/feed.xml`, title = sit
     )
     .join('')
   return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, selfUrl))}"/><description>${escapeXml(site.description || '')}</description><language>${escapeXml(locale)}</language>${items}</channel></rss>`
+}
+
+// The podcast feed: RSS 2.0 plus the itunes namespace, one <enclosure> per post
+// that has read-aloud audio. Same reproducibility contract as rss(): no
+// <lastBuildDate>, so identical content yields identical bytes. Channel title
+// and description come from settings.audio with the site's own as fallback.
+// Deliberately not linked from the layout — whether and where to advertise the
+// feed is the operator's call.
+function podcastRss(site, locale, posts) {
+  const settings = site.settings?.audio || {}
+  const title = settings.title || site.name
+  const description = settings.description || site.description || ''
+  const items = posts
+    .slice(0, 50)
+    .map(
+      (post) =>
+        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}<enclosure url="${escapeXml(absolute(site, post.audio.url))}" type="${escapeXml(post.audio.content_type || 'audio/mpeg')}" length="${Number(post.audio.byte_size) || 0}"/><itunes:duration>${Number(post.audio.duration_secs) || 0}</itunes:duration></item>`,
+    )
+    .join('')
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, `/${locale}/podcast.xml`))}"/><description>${escapeXml(description)}</description><language>${escapeXml(locale)}</language><itunes:author>${escapeXml(settings.author || site.name)}</itunes:author>${items}</channel></rss>`
 }
 
 // A total, locale-independent comparator. Array.prototype.sort is stable in V8,
@@ -221,8 +244,9 @@ function sitemap(items) {
 // varies with build time even when content does not. That is intended: a release
 // is an immutable snapshot, so a published release keeps the age notice it was
 // built with until the site is published again.
-export async function buildSite({ root, site, locales, revisions, comments = [], now = new Date() }) {
+export async function buildSite({ root, site, locales, revisions, comments = [], audio = [], now = new Date() }) {
   const { files, assets } = await staticAssets(root)
+  const audioByItem = new Map(audio.map((entry) => [entry.item_id, entry]))
   const rendered = []
   for (const revision of revisions) {
     const result = await renderMarkdown(revision.markdown)
@@ -236,6 +260,9 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
       // Derived, not frontmatter: renderMarkdown's `meta` is the authored
       // contract and must not grow fields the author never wrote.
       reading_minutes: result.meta.kind === 'post' ? readingTime(result.source) : 0,
+      // The read-aloud asset for this item, if one exists — the frontmatter
+      // opt-out (audio: false) wins even over an already-generated asset.
+      audio: result.meta.audio === false ? null : audioByItem.get(revision.item_id) || null,
     }
     item.url = route(item)
     item.canonical = absolute(site, item.url)
@@ -450,6 +477,17 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     )
     files.set(`${locale}/feed.xml`, text(rss(site, locale, posts), 'application/rss+xml; charset=utf-8'))
 
+    // Podcast feed only where it has something to say: the site opted in and at
+    // least one (indexable) post carries audio. No sitemap entry and no layout
+    // link — podcast apps subscribe by URL, crawlers have the main feed.
+    const audioPosts = posts.filter((post) => post.audio)
+    if (site.settings?.audio?.enabled === true && audioPosts.length) {
+      files.set(
+        `${locale}/podcast.xml`,
+        text(podcastRss(site, locale, audioPosts), 'application/rss+xml; charset=utf-8'),
+      )
+    }
+
     // Per-locale llms.txt, plus a copy of the default locale's at the site root —
     // the spec puts the file at `/llms.txt` but allows subpaths, and a multilingual
     // site should not have to pick one language for its only entry point.
@@ -588,7 +626,12 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
               articleTags: item.kind === 'post' ? item.tags : [],
             },
             contentBody(item, base, itemComments),
-            { structured, mermaid: item.hasMermaid, forms: item.kind === 'post' && commentsEnabled(site) },
+            {
+              structured,
+              mermaid: item.hasMermaid,
+              forms: item.kind === 'post' && commentsEnabled(site),
+              audio: Boolean(item.audio),
+            },
           ),
         ),
       )
