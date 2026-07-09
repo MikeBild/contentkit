@@ -1,9 +1,9 @@
 # Read-aloud audio (Vorlesen)
 
 Contentkit pre-renders a spoken MP3 for every published post: a visitor gets a
-native player above the prose, podcast apps get an RSS feed with enclosures,
-and the whole pipeline runs asynchronously so publishing never waits for a TTS
-provider. This guide covers the full lifecycle and its operational surface.
+native player above the prose, podcast apps get the blogcast — an RSS feed with
+enclosures — and the whole pipeline runs asynchronously so publishing never
+waits for a TTS provider. This guide covers the full lifecycle and its operational surface.
 
 ## Lifecycle
 
@@ -17,7 +17,7 @@ publish release ──▶ ck_audio_jobs row (pending)
                 content-addressed ck_assets row, served from /media/...
                       │  debounced per site (CONTENTKIT_AUDIO_REBUILD_DEBOUNCE_MS)
                       ▼
-                auto-rebuild release ──▶ player + podcast feed live
+                auto-rebuild release ──▶ player + blogcast feed live
 ```
 
 1. **Publish → job.** A successful release with revisions enqueues one job per
@@ -53,12 +53,12 @@ Merge into `settings` (a `PATCH` replaces the object wholesale — read first):
     "voice": "de-DE-Chirp3-HD-Charon",
     "monthly_char_budget": 950000,
     "auto_rebuild": true,
-    "title": "My Podcast",
+    "title": "My Blogcast",
     "description": "Narrated posts",
     "author": "Jane Doe",
-    "podcast_link": true,
-    "podcast_image": "https://example.com/cover-3000.jpg",
-    "podcast_category": "Technology"
+    "blogcast_link": true,
+    "blogcast_image": "https://example.com/cover-3000.jpg",
+    "blogcast_category": "Technology"
   }
 }
 ```
@@ -66,6 +66,19 @@ Merge into `settings` (a `PATCH` replaces the object wholesale — read first):
 Only `enabled` is required; everything else has sensible fallbacks (site name,
 site description). A single post opts out with frontmatter `audio: false` —
 that wins even over an already-generated asset.
+
+| Setting             | Purpose                                                | Deprecated alias                       |
+| ------------------- | ------------------------------------------------------ | -------------------------------------- |
+| `blogcast_link`     | Advertise the feed (head `<link>` + footer item)       | `podcast_link` (pre-1.8, still read)   |
+| `blogcast_image`    | Channel cover, absolute URL, ≥1400×1400                | `podcast_image` (pre-1.8, still read)  |
+| `blogcast_category` | `itunes:category` text                                 | `podcast_category` (pre-1.8, still read) |
+| `title`             | Channel title (falls back to the site name)            | —                                      |
+| `description`       | Channel description (falls back to the site's)         | —                                      |
+
+The deprecated `podcast_*` spellings keep working as fallbacks: contentkit
+reads `blogcast_link ?? podcast_link` (and likewise for image and category), so
+an explicitly set `blogcast_*` key always wins. Prefer the `blogcast_*` names —
+the aliases exist only for settings written before 1.8.0.
 
 ## Backfill the archive
 
@@ -137,34 +150,36 @@ on publish refuses a job that would exceed the budget and logs
 next month or a manual backfill, whose explicit `limit_chars` remains in your
 hands.
 
-## Podcast feed
+## Blogcast feed
 
 When audio is enabled and at least one indexable post carries a narration, each
-locale gets `/{locale}/podcast.xml`: RSS 2.0 with the `itunes:` namespace, one
+locale gets `/{locale}/blogcast.xml`: RSS 2.0 with the `itunes:` namespace, one
 `<enclosure>` per narrated post, `<language>` from the locale, `itunes:author`,
-and — when configured — `itunes:image` (`podcast_image`, an absolute URL;
-Apple expects ≥1400×1400) and `itunes:category` (`podcast_category`). The
+and — when configured — `itunes:image` (`blogcast_image`, an absolute URL;
+Apple expects ≥1400×1400) and `itunes:category` (`blogcast_category`). The
 layout advertises the feed with a `<link rel="alternate">` only when
-`settings.audio.podcast_link` is `true`; otherwise you share the URL yourself.
+`settings.audio.blogcast_link` is `true`; otherwise you share the URL yourself.
+(The `itunes:` namespace and tags are the podcast RSS protocol every podcast
+app speaks — they keep their name.)
 
-## Podcast page
+## Blogcast page
 
 Under the same gate as the feed (audio enabled + at least one narrated
 indexable post), each locale also gets a human-facing page at
-`/{locale}/podcast/`: the channel cover (`podcast_image`), title and
+`/{locale}/blogcast/`: the channel cover (`blogcast_image`), title and
 description (`audio.title`/`audio.description`, falling back to the site's
-own), a "Subscribe via RSS" link to `/{locale}/podcast.xml`, and one card per
+own), a "Subscribe via RSS" link to `/{locale}/blogcast.xml`, and one card per
 episode — title linking to the post, date, duration, summary and the same
 player the article pages use. The page is indexable and listed in the sitemap.
 
-Deliberately independent of `podcast_link`: that flag only controls the
+Deliberately independent of `blogcast_link`: that flag only controls the
 _advertising_ — the head `<link rel="alternate">` to the feed and the footer's
-Podcast item, which targets the page. The page itself is content and always
+Blogcast item, which targets the page. The page itself is content and always
 exists alongside the feed.
 
 ## Player
 
-Article pages and the podcast page share one player. The markup ships a native
+Article pages and the blogcast page share one player. The markup ships a native
 `<audio controls preload="none">` (no JS still plays, and a page view costs no
 audio bytes) plus a hidden custom control bar; `audio.js` swaps the native
 controls for the bar: round play/pause button, ±15 s skip, seek slider with
@@ -184,4 +199,4 @@ audio: false
 ```
 
 `audio: false` excludes the post from enqueuing, backfill and rendering — no
-job, no player, no podcast item — even if an asset already exists.
+job, no player, no blogcast episode — even if an asset already exists.

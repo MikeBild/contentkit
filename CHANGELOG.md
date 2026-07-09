@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.8.0
+
+The read-aloud feed is now the **Blogcast** — product-wide rename from
+"Podcast".
+
+### Changed
+
+- URLs: the feed moved from `/{locale}/podcast.xml` to `/{locale}/blogcast.xml`
+  and the page from `/{locale}/podcast/` to `/{locale}/blogcast/`. The old URLs
+  are gone from new releases — there is no redirect; update subscriptions and
+  links.
+- Visible labels: the footer item and the head `<link rel="alternate">` title
+  fallback now say "Blogcast" (`{site name} · Blogcast`).
+- Settings: `settings.audio.blogcast_link`, `blogcast_image` and
+  `blogcast_category` replace the `podcast_*` keys. The old spellings are
+  deprecated but still read as fallbacks (`blogcast_* ?? podcast_*`);
+  `title`/`description` are unchanged.
+- Code identifiers and CSS classes follow the rename (`blogcastRss`,
+  `blogcastPage`, `ctx.blogcast`, `.blogcast-*`). The `xmlns:itunes` podcast
+  RSS namespace and the `<itunes:*>` tags are protocol, not branding, and stay.
+
 ## 1.7.0
 
 Podcast page & custom player.

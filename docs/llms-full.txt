@@ -443,9 +443,9 @@ site via settings (merge, do not replace — `PATCH` overwrites `settings`):
 ```json
 { "audio": { "enabled": true, "provider": "google",
   "voice": "de-DE-Chirp3-HD-Charon", "monthly_char_budget": 950000,
-  "auto_rebuild": true, "podcast_link": true,
-  "podcast_image": "https://example.com/cover.jpg",
-  "podcast_category": "Technology" } }
+  "auto_rebuild": true, "blogcast_link": true,
+  "blogcast_image": "https://example.com/cover.jpg",
+  "blogcast_category": "Technology" } }
 ```
 
 Publishing a release enqueues one job per published post revision in
@@ -460,14 +460,16 @@ code block or the sources section never re-synthesizes. A post opts out with
 frontmatter `audio: false`. The next release renders a player above the post
 (native `<audio preload="none">` fallback plus a custom control bar:
 play/pause, ±15 s, seek slider, tempo switch, remembered position, a small
-`download` link) and, when at least one post has audio, a podcast feed at
-`/{locale}/podcast.xml` with `<enclosure>`, `itunes:author`, optional
+`download` link) and, when at least one post has audio, a blogcast feed at
+`/{locale}/blogcast.xml` with `<enclosure>`, `itunes:author`, optional
 `itunes:image`/`itunes:category` and `<language>` from the locale — plus a
-human-facing podcast page at `/{locale}/podcast/` (cover, channel
+human-facing blogcast page at `/{locale}/blogcast/` (cover, channel
 title/description, subscribe-via-RSS link, one card per episode with the same
-player; indexable, in the sitemap). The layout advertises the podcast feed with
-a `<link rel="alternate">` and a footer link to the podcast page only when
-`settings.audio.podcast_link` is `true`; the page itself exists regardless.
+player; indexable, in the sitemap). The layout advertises the blogcast feed with
+a `<link rel="alternate">` and a footer link to the blogcast page only when
+`settings.audio.blogcast_link` is `true`; the page itself exists regardless.
+The deprecated pre-1.8 `podcast_link`/`podcast_image`/`podcast_category`
+spellings are still read as fallbacks; explicit `blogcast_*` keys win.
 
 Lifecycle and operations (see `docs/audio.md` for the full guide):
 
@@ -508,8 +510,8 @@ For each configured locale, Contentkit generates:
 | Contact page | `/{locale}/contact/` |
 | Search index | `/{locale}/search-index.json` |
 | RSS feed | `/{locale}/feed.xml` |
-| Podcast feed | `/{locale}/podcast.xml` (only when `settings.audio.enabled` and at least one post has audio) |
-| Podcast page | `/{locale}/podcast/` (same gate as the podcast feed; episode list with players, in the sitemap) |
+| Blogcast feed | `/{locale}/blogcast.xml` (only when `settings.audio.enabled` and at least one post has audio) |
+| Blogcast page | `/{locale}/blogcast/` (same gate as the blogcast feed; episode list with players, in the sitemap) |
 | Tag index | `/{locale}/tags/` |
 | Tag pages | `/{locale}/tags/{tag}/` (`noindex,follow` and unlisted when the tag has a single post) |
 | Tag feeds | `/{locale}/tags/{tag}/feed.xml` (only for tags with two or more posts) |

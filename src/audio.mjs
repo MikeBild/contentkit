@@ -281,7 +281,7 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
 
   // DELETE /v1/content/{item}/audio: drop every job for the item and every
   // narration asset those jobs referenced, then schedule a rebuild so the
-  // player and podcast entry disappear from the live site.
+  // player and blogcast entry disappear from the live site.
   async function remove({ site, item }) {
     const jobs = await db.select('ck_audio_jobs', { item_id: `eq.${item.id}` })
     const assetIds = [...new Set(jobs.map((job) => job.asset_id).filter(Boolean))]

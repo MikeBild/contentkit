@@ -178,16 +178,16 @@
   margin-top: 0;
 }
 
-/* The podcast page: cover + title/description/subscribe in the header, then
+/* The blogcast page: cover + title/description/subscribe in the header, then
  * one card per episode. Same card grammar as the listing grids. */
-.podcast-header {
+.blogcast-header {
   display: flex;
   align-items: flex-start;
   gap: 1.75rem;
   flex-wrap: wrap;
 }
 
-.podcast-cover {
+.blogcast-cover {
   width: 180px;
   height: 180px;
   flex: none;
@@ -197,16 +197,16 @@
   box-shadow: 0 0.5rem 1.5rem hsl(var(--foreground) / 0.12);
 }
 
-.podcast-header-text {
+.blogcast-header-text {
   flex: 1 1 20rem;
 }
 
-.podcast-subscribe-row {
+.blogcast-subscribe-row {
   margin: 1rem 0 0;
 }
 
 /* Outline button: the subscribe link is an offer, not the page's action. */
-.podcast-subscribe {
+.blogcast-subscribe {
   display: inline-flex;
   padding: 0.55rem 1rem;
   border: 1px solid hsl(var(--border));
@@ -217,17 +217,17 @@
   text-decoration: none;
 }
 
-.podcast-subscribe:hover {
+.blogcast-subscribe:hover {
   border-color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / 0.4);
 }
 
-.podcast-episodes {
+.blogcast-episodes {
   display: grid;
   gap: 1rem;
 }
 
-.podcast-episode {
+.blogcast-episode {
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) + 0.2rem);
   padding: 1.35rem;
@@ -237,25 +237,25 @@
     border-color 0.15s ease;
 }
 
-.podcast-episode:hover {
+.blogcast-episode:hover {
   transform: translateY(-2px);
   border-color: hsl(var(--muted-foreground));
 }
 
-.podcast-episode-title {
+.blogcast-episode-title {
   margin: 0;
   font-size: 1.25rem;
 }
 
-.podcast-episode-title a {
+.blogcast-episode-title a {
   text-decoration: none;
 }
 
-.podcast-episode-meta {
+.blogcast-episode-meta {
   margin: 0.4rem 0 0;
 }
 
-.podcast-episode-duration {
+.blogcast-episode-duration {
   display: inline-flex;
   align-items: center;
   padding: 0.05rem 0.55rem;
@@ -266,11 +266,11 @@
   color: hsl(var(--muted-foreground));
 }
 
-.podcast-episode-summary {
+.blogcast-episode-summary {
   margin: 0.5rem 0 0;
   color: hsl(var(--muted-foreground));
 }
 
-.podcast-episode .audio-player {
+.blogcast-episode .audio-player {
   margin: 0.9rem 0 0;
 }

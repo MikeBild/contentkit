@@ -498,7 +498,7 @@ test('a post with read-aloud audio renders the player and loads audio assets; ot
   assert.doesNotMatch(withoutPlayer, /audio-player|assets\/audio-/, 'a post without audio must not pay for the player')
 })
 
-test('podcast.xml lists only posts with audio, with enclosure and itunes tags, and needs the opt-in', async () => {
+test('blogcast.xml lists only posts with audio, with enclosure and itunes tags, and needs the opt-in', async () => {
   const audio = [
     {
       item_id: 'item-a',
@@ -513,21 +513,21 @@ test('podcast.xml lists only posts with audio, with enclosure and itunes tags, a
     post({ slug: 'b', title: 'B', date: '2026-06-01' }),
   ]
   const enabled = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
-  const feed = enabled.files.get('en/podcast.xml').body.toString()
-  assert.equal(enabled.files.get('en/podcast.xml').contentType, 'application/rss+xml; charset=utf-8')
+  const feed = enabled.files.get('en/blogcast.xml').body.toString()
+  assert.equal(enabled.files.get('en/blogcast.xml').contentType, 'application/rss+xml; charset=utf-8')
   assert.match(feed, /xmlns:itunes="http:\/\/www\.itunes\.com\/dtds\/podcast-1\.0\.dtd"/)
   assert.match(
     feed,
     /<enclosure url="https:\/\/example\.test\/media\/asset-1\/a-vorlesen\.mp3" type="audio\/mpeg" length="1234"\/>/,
   )
   assert.match(feed, /<itunes:duration>300<\/itunes:duration>/)
-  assert.doesNotMatch(feed, /<item><title>B<\/title>/, 'a post without audio must not be a podcast item')
+  assert.doesNotMatch(feed, /<item><title>B<\/title>/, 'a post without audio must not be a blogcast item')
   assert.doesNotMatch(feed, /lastBuildDate/, 'release bytes must be reproducible')
 
   const optedOut = await build({ site, revisions, audio })
-  assert.ok(!optedOut.files.has('en/podcast.xml'), 'no podcast feed without settings.audio.enabled')
+  assert.ok(!optedOut.files.has('en/blogcast.xml'), 'no blogcast feed without settings.audio.enabled')
   const noAudio = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions })
-  assert.ok(!noAudio.files.has('en/podcast.xml'), 'no podcast feed without a single audio post')
+  assert.ok(!noAudio.files.has('en/blogcast.xml'), 'no blogcast feed without a single audio post')
 })
 
 test('the player offers a quiet localized MP3 download link', async () => {
@@ -551,7 +551,7 @@ test('the player offers a quiet localized MP3 download link', async () => {
   )
 })
 
-test('podcast channel carries optional itunes:image and itunes:category, and language from the locale', async () => {
+test('blogcast channel carries optional itunes:image and itunes:category, and language from the locale', async () => {
   const audio = [
     {
       item_id: 'item-a',
@@ -568,28 +568,28 @@ test('podcast channel carries optional itunes:image and itunes:category, and lan
       settings: {
         audio: {
           enabled: true,
-          podcast_image: 'https://example.test/cover-3000.jpg',
-          podcast_category: 'Technology',
+          blogcast_image: 'https://example.test/cover-3000.jpg',
+          blogcast_category: 'Technology',
         },
       },
     },
     revisions,
     audio,
   })
-  const feed = configured.files.get('en/podcast.xml').body.toString()
+  const feed = configured.files.get('en/blogcast.xml').body.toString()
   assert.match(feed, /<itunes:image href="https:\/\/example\.test\/cover-3000\.jpg"\/>/)
   assert.match(feed, /<itunes:category text="Technology"\/>/)
   assert.match(feed, /<language>en<\/language>/)
 
   const plain = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
   assert.doesNotMatch(
-    plain.files.get('en/podcast.xml').body.toString(),
+    plain.files.get('en/blogcast.xml').body.toString(),
     /itunes:image|itunes:category/,
     'unconfigured channel art must not emit empty tags',
   )
 })
 
-test('the layout advertises podcast.xml only with the podcast_link opt-in', async () => {
+test('the layout advertises blogcast.xml only with the blogcast_link opt-in', async () => {
   const audio = [
     {
       item_id: 'item-a',
@@ -601,16 +601,16 @@ test('the layout advertises podcast.xml only with the podcast_link opt-in', asyn
   ]
   const revisions = [post({ slug: 'a', title: 'A' })]
   const linked = await build({
-    site: { ...site, settings: { audio: { enabled: true, podcast_link: true } } },
+    site: { ...site, settings: { audio: { enabled: true, blogcast_link: true } } },
     revisions,
     audio,
   })
   assert.match(
     linked.files.get('en/index.html').body.toString(),
-    /<link rel="alternate" type="application\/rss\+xml" title="Example · Podcast" href="\/en\/podcast\.xml">/,
+    /<link rel="alternate" type="application\/rss\+xml" title="Example · Blogcast" href="\/en\/blogcast\.xml">/,
   )
   const unlinked = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
-  assert.doesNotMatch(unlinked.files.get('en/index.html').body.toString(), /podcast\.xml/)
+  assert.doesNotMatch(unlinked.files.get('en/index.html').body.toString(), /blogcast\.xml/)
 })
 
 test('frontmatter audio: false suppresses the player even when an asset exists', async () => {
@@ -633,10 +633,10 @@ test('frontmatter audio: false suppresses the player even when an asset exists',
     audio,
   })
   assert.doesNotMatch(result.files.get('en/blog/a/index.html').body.toString(), /audio-player/)
-  assert.ok(!result.files.has('en/podcast.xml'))
+  assert.ok(!result.files.has('en/blogcast.xml'))
 })
 
-test('the podcast page is built under the same gate as podcast.xml and listed in the sitemap', async () => {
+test('the blogcast page is built under the same gate as blogcast.xml and listed in the sitemap', async () => {
   const audio = [
     {
       item_id: 'item-a',
@@ -650,30 +650,30 @@ test('the podcast page is built under the same gate as podcast.xml and listed in
     post({ slug: 'a', title: 'A', date: '2026-06-02' }),
     post({ slug: 'b', title: 'B', date: '2026-06-01' }),
   ]
-  // No podcast_link: the page is content, only the *advertising* is opt-in.
+  // No blogcast_link: the page is content, only the *advertising* is opt-in.
   const enabled = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
-  assert.ok(enabled.files.has('en/podcast/index.html'), 'podcast page missing despite a narrated post')
-  const page = enabled.files.get('en/podcast/index.html').body.toString()
-  assert.match(page, /<link rel="canonical" href="https:\/\/example\.test\/en\/podcast\/">/)
-  assert.doesNotMatch(page, /<meta name="robots"/, 'the podcast page must stay indexable')
-  assert.match(page, /href="\/en\/podcast\.xml"/, 'the page must offer the RSS subscribe link')
+  assert.ok(enabled.files.has('en/blogcast/index.html'), 'blogcast page missing despite a narrated post')
+  const page = enabled.files.get('en/blogcast/index.html').body.toString()
+  assert.match(page, /<link rel="canonical" href="https:\/\/example\.test\/en\/blogcast\/">/)
+  assert.doesNotMatch(page, /<meta name="robots"/, 'the blogcast page must stay indexable')
+  assert.match(page, /href="\/en\/blogcast\.xml"/, 'the page must offer the RSS subscribe link')
   assert.match(page, /class="audio-player" data-audio="\/media\/asset-1\/a-vorlesen\.mp3"/)
   assert.match(page, /<audio controls preload="none" src="\/media\/asset-1\/a-vorlesen\.mp3">/)
   assert.match(page, /data-audio-ui/, 'the custom control bar must ship in the markup')
-  assert.match(page, /assets\/audio-[0-9a-f]{10}\.js/, 'audio.js must load on the podcast page')
-  assert.match(page, /assets\/audio-[0-9a-f]{10}\.css/, 'audio.css must load on the podcast page')
+  assert.match(page, /assets\/audio-[0-9a-f]{10}\.js/, 'audio.js must load on the blogcast page')
+  assert.match(page, /assets\/audio-[0-9a-f]{10}\.css/, 'audio.css must load on the blogcast page')
   assert.match(page, /<a href="\/en\/blog\/a\/">A<\/a>/, 'episode titles link to the post')
   assert.doesNotMatch(page, /\/en\/blog\/b\//, 'a post without audio is not an episode')
-  assert.match(enabled.files.get('sitemap.xml').body.toString(), /<loc>https:\/\/example\.test\/en\/podcast\/<\/loc>/)
+  assert.match(enabled.files.get('sitemap.xml').body.toString(), /<loc>https:\/\/example\.test\/en\/blogcast\/<\/loc>/)
 
   const optedOut = await build({ site, revisions, audio })
-  assert.ok(!optedOut.files.has('en/podcast/index.html'), 'no podcast page without settings.audio.enabled')
+  assert.ok(!optedOut.files.has('en/blogcast/index.html'), 'no blogcast page without settings.audio.enabled')
   const noAudio = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions })
-  assert.ok(!noAudio.files.has('en/podcast/index.html'), 'no podcast page without a single audio post')
-  assert.doesNotMatch(noAudio.files.get('sitemap.xml').body.toString(), /\/en\/podcast\//)
+  assert.ok(!noAudio.files.has('en/blogcast/index.html'), 'no blogcast page without a single audio post')
+  assert.doesNotMatch(noAudio.files.get('sitemap.xml').body.toString(), /\/en\/blogcast\//)
 })
 
-test('the podcast page header uses the channel settings, and the footer links the page with the opt-in', async () => {
+test('the blogcast page header uses the channel settings, and the footer links the page with the opt-in', async () => {
   const audio = [
     {
       item_id: 'item-a',
@@ -690,30 +690,33 @@ test('the podcast page header uses the channel settings, and the footer links th
       settings: {
         audio: {
           enabled: true,
-          podcast_link: true,
-          title: 'My Podcast',
+          blogcast_link: true,
+          title: 'My Blogcast',
           description: 'Narrated posts',
-          podcast_image: 'https://example.test/cover-3000.jpg',
+          blogcast_image: 'https://example.test/cover-3000.jpg',
         },
       },
     },
     revisions,
     audio,
   })
-  const page = configured.files.get('en/podcast/index.html').body.toString()
-  assert.match(page, /<h1>My Podcast<\/h1>/)
+  const page = configured.files.get('en/blogcast/index.html').body.toString()
+  assert.match(page, /<h1>My Blogcast<\/h1>/)
   assert.match(page, /Narrated posts/)
-  assert.match(page, /<img class="podcast-cover" src="https:\/\/example\.test\/cover-3000\.jpg" alt="My Podcast"/)
-  assert.match(page, /<title>My Podcast · Example<\/title>/)
-  // The footer's Podcast item now targets the page; the head <link> keeps
+  assert.match(page, /<img class="blogcast-cover" src="https:\/\/example\.test\/cover-3000\.jpg" alt="My Blogcast"/)
+  assert.match(page, /<title>My Blogcast · Example<\/title>/)
+  // The footer's Blogcast item now targets the page; the head <link> keeps
   // advertising the feed itself.
   const footer = page.slice(page.indexOf('<footer class="site-footer">'))
-  assert.match(footer, /<a href="\/en\/podcast\/">Podcast<\/a>/)
-  assert.match(page, /<link rel="alternate" type="application\/rss\+xml" title="My Podcast" href="\/en\/podcast\.xml">/)
+  assert.match(footer, /<a href="\/en\/blogcast\/">Blogcast<\/a>/)
+  assert.match(
+    page,
+    /<link rel="alternate" type="application\/rss\+xml" title="My Blogcast" href="\/en\/blogcast\.xml">/,
+  )
 
   // Without the opt-in the page still exists but stays unadvertised.
   const unlinked = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
-  assert.ok(unlinked.files.has('en/podcast/index.html'))
+  assert.ok(unlinked.files.has('en/blogcast/index.html'))
   const home = unlinked.files.get('en/index.html').body.toString()
-  assert.doesNotMatch(home, /\/en\/podcast\//, 'no footer link without podcast_link')
+  assert.doesNotMatch(home, /\/en\/blogcast\//, 'no footer link without blogcast_link')
 })

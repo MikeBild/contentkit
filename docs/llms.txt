@@ -85,7 +85,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   signature verification and scheduled publishing.
 - [Read-aloud audio](docs/audio.md): TTS narration lifecycle
   (publish → job → worker → asset → auto-rebuild), backfill, deletion, job
-  monitoring, character budgets and the podcast feed.
+  monitoring, character budgets and the blogcast feed.
 - [Security](SECURITY.md): Vulnerability reporting and security posture.
 
 ## Development

@@ -32,7 +32,7 @@ export function routeName(path) {
 const RELEASE_CONTENT_TYPES = [
   ['.html', 'text/html; charset=utf-8'],
   ['feed.xml', 'application/rss+xml; charset=utf-8'],
-  ['podcast.xml', 'application/rss+xml; charset=utf-8'],
+  ['blogcast.xml', 'application/rss+xml; charset=utf-8'],
   ['.xml', 'application/xml; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'],

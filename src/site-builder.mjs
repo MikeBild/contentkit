@@ -12,7 +12,7 @@ import {
   homeBody,
   layout,
   listingBody,
-  podcastPage,
+  blogcastPage,
   searchBody,
   tagCounts,
   tagsBody,
@@ -102,19 +102,23 @@ function rss(site, locale, posts, { selfUrl = `/${locale}/feed.xml`, title = sit
   return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, selfUrl))}"/><description>${escapeXml(site.description || '')}</description><language>${escapeXml(locale)}</language>${items}</channel></rss>`
 }
 
-// The podcast feed: RSS 2.0 plus the itunes namespace, one <enclosure> per post
+// The blogcast feed: RSS 2.0 plus the itunes namespace, one <enclosure> per post
 // that has read-aloud audio. Same reproducibility contract as rss(): no
 // <lastBuildDate>, so identical content yields identical bytes. Channel title
 // and description come from settings.audio with the site's own as fallback;
-// cover art (podcast_image, an absolute URL — Apple wants ≥1400px square) and
-// itunes:category (podcast_category, verbatim text) are optional. Linked from
-// the layout only when the operator opts in via settings.audio.podcast_link.
-function podcastRss(site, locale, posts) {
+// cover art (blogcast_image, an absolute URL — Apple wants ≥1400px square) and
+// itunes:category (blogcast_category, verbatim text) are optional. Linked from
+// the layout only when the operator opts in via settings.audio.blogcast_link.
+// The podcast_* keys are the deprecated pre-1.8 spellings, still honoured as
+// fallbacks. The xmlns:itunes namespace URL is protocol, not branding.
+function blogcastRss(site, locale, posts) {
   const settings = site.settings?.audio || {}
   const title = settings.title || site.name
   const description = settings.description || site.description || ''
-  const image = settings.podcast_image ? `<itunes:image href="${escapeXml(settings.podcast_image)}"/>` : ''
-  const category = settings.podcast_category ? `<itunes:category text="${escapeXml(settings.podcast_category)}"/>` : ''
+  const coverUrl = settings.blogcast_image ?? settings.podcast_image
+  const categoryText = settings.blogcast_category ?? settings.podcast_category
+  const image = coverUrl ? `<itunes:image href="${escapeXml(coverUrl)}"/>` : ''
+  const category = categoryText ? `<itunes:category text="${escapeXml(categoryText)}"/>` : ''
   const items = posts
     .slice(0, 50)
     .map(
@@ -122,7 +126,7 @@ function podcastRss(site, locale, posts) {
         `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}<enclosure url="${escapeXml(absolute(site, post.audio.url))}" type="${escapeXml(post.audio.content_type || 'audio/mpeg')}" length="${Number(post.audio.byte_size) || 0}"/><itunes:duration>${Number(post.audio.duration_secs) || 0}</itunes:duration></item>`,
     )
     .join('')
-  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, `/${locale}/podcast.xml`))}"/><description>${escapeXml(description)}</description><language>${escapeXml(locale)}</language><itunes:author>${escapeXml(settings.author || site.name)}</itunes:author>${image}${category}${items}</channel></rss>`
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, `/${locale}/blogcast.xml`))}"/><description>${escapeXml(description)}</description><language>${escapeXml(locale)}</language><itunes:author>${escapeXml(settings.author || site.name)}</itunes:author>${image}${category}${items}</channel></rss>`
 }
 
 // A total, locale-independent comparator. Array.prototype.sort is stable in V8,
@@ -333,10 +337,10 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     })
     posts.forEach((post, index) => Object.assign(post, relations[index]))
 
-    // Whether this locale's podcast feed will exist at all (same condition as
-    // the podcast.xml emit below) — templates hide every podcast link without it.
-    const podcast = site.settings?.audio?.enabled === true && posts.some((post) => post.audio)
-    const base = { site, locale, t, posts, projects, pages, assets, now, podcast }
+    // Whether this locale's blogcast feed will exist at all (same condition as
+    // the blogcast.xml emit below) — templates hide every blogcast link without it.
+    const blogcast = site.settings?.audio?.enabled === true && posts.some((post) => post.audio)
+    const base = { site, locale, t, posts, projects, pages, assets, now, blogcast }
     const personData = {
       '@context': 'https://schema.org',
       '@type': 'Person',
@@ -484,13 +488,13 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     )
     files.set(`${locale}/feed.xml`, text(rss(site, locale, posts), 'application/rss+xml; charset=utf-8'))
 
-    // Podcast feed only where it has something to say: the site opted in and at
+    // Blogcast feed only where it has something to say: the site opted in and at
     // least one (indexable) post carries audio. The XML itself gets no sitemap
     // entry — podcast apps subscribe by URL, crawlers have the main feed; a
-    // layout <link> appears only with settings.audio.podcast_link (see layout()).
+    // layout <link> appears only with settings.audio.blogcast_link (see layout()).
     //
-    // The same gate also builds the human-facing page at /{locale}/podcast/ —
-    // header, episode list, players. Deliberately NOT gated on podcast_link:
+    // The same gate also builds the human-facing page at /{locale}/blogcast/ —
+    // header, episode list, players. Deliberately NOT gated on blogcast_link:
     // that flag only controls the *advertising* (head link, footer item), the
     // page is content. It is indexable and goes into the sitemap, but — like
     // the individual tag pages, and unlike the blog listing — without hreflang
@@ -499,28 +503,28 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     const audioPosts = posts.filter((post) => post.audio)
     if (site.settings?.audio?.enabled === true && audioPosts.length) {
       files.set(
-        `${locale}/podcast.xml`,
-        text(podcastRss(site, locale, audioPosts), 'application/rss+xml; charset=utf-8'),
+        `${locale}/blogcast.xml`,
+        text(blogcastRss(site, locale, audioPosts), 'application/rss+xml; charset=utf-8'),
       )
-      const podcastPath = `/${locale}/podcast/`
+      const blogcastPath = `/${locale}/blogcast/`
       const audioSettings = site.settings.audio
       files.set(
-        `${locale}/podcast/index.html`,
+        `${locale}/blogcast/index.html`,
         text(
           layout(
             {
               ...base,
               title: audioSettings.title || site.name,
               description: audioSettings.description || site.description,
-              canonical: absolute(site, podcastPath),
-              currentPath: podcastPath,
+              canonical: absolute(site, blogcastPath),
+              currentPath: blogcastPath,
             },
-            podcastPage(base, audioPosts),
+            blogcastPage(base, audioPosts),
             { audio: true },
           ),
         ),
       )
-      sitemapItems.push({ canonical: absolute(site, podcastPath), updated_at: lastUpdated(audioPosts) })
+      sitemapItems.push({ canonical: absolute(site, blogcastPath), updated_at: lastUpdated(audioPosts) })
     }
 
     // Per-locale llms.txt, plus a copy of the default locale's at the site root —

@@ -274,12 +274,15 @@ function siteFooter(ctx) {
   const social = [
     ...Object.entries(settings.socials || {}).map(([name, url]) => item([name, safeUrl(url)], ' rel="me"')),
     item([t.rss, `/${locale}/feed.xml`]),
-    // The podcast page only exists when audio is enabled and a narrated post
+    // The blogcast page only exists when audio is enabled and a narrated post
     // exists, and stays unlisted until the operator opts in — same gate as the
     // <link rel="alternate">. The link targets the human-facing page; the raw
-    // feed stays the head link's job.
-    ...(ctx.podcast === true && settings.audio?.enabled === true && settings.audio?.podcast_link === true
-      ? [item(['Podcast', `/${locale}/podcast/`])]
+    // feed stays the head link's job. podcast_link is the deprecated pre-1.8
+    // spelling, still honoured as a fallback.
+    ...(ctx.blogcast === true &&
+    settings.audio?.enabled === true &&
+    (settings.audio?.blogcast_link ?? settings.audio?.podcast_link) === true
+      ? [item(['Blogcast', `/${locale}/blogcast/`])]
       : []),
   ].join('')
   return `<footer class="site-footer"><div class="container">
@@ -427,13 +430,16 @@ export function layout(ctx, body, options = {}) {
   const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
-  // Advertising the podcast feed is the operator's explicit call
-  // (settings.audio.podcast_link), only meaningful on a site whose audio is
-  // enabled at all, and only when the feed has content (ctx.podcast) — a link
-  // to an empty or non-existent feed helps nobody.
-  const podcastLink =
-    ctx.podcast === true && settings.audio?.enabled === true && settings.audio?.podcast_link === true
-      ? `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(settings.audio.title || `${site.name} · Podcast`)}" href="/${escapeHtml(locale)}/podcast.xml">`
+  // Advertising the blogcast feed is the operator's explicit call
+  // (settings.audio.blogcast_link, with the deprecated podcast_link as
+  // fallback), only meaningful on a site whose audio is enabled at all, and
+  // only when the feed has content (ctx.blogcast) — a link to an empty or
+  // non-existent feed helps nobody.
+  const blogcastLink =
+    ctx.blogcast === true &&
+    settings.audio?.enabled === true &&
+    (settings.audio?.blogcast_link ?? settings.audio?.podcast_link) === true
+      ? `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(settings.audio.title || `${site.name} · Blogcast`)}" href="/${escapeHtml(locale)}/blogcast.xml">`
       : ''
   const articleMeta =
     type === 'article'
@@ -475,7 +481,7 @@ ${iconLinks(settings)}
 <link rel="stylesheet" href="${asset('site.css')}">
 ${options.audio ? `<link rel="stylesheet" href="${asset('audio.css')}">` : ''}
 <link rel="alternate" type="application/rss+xml" title="${escapeHtml(feedTitle || site.name)}" href="${escapeHtml(feedUrl || `/${locale}/feed.xml`)}">
-${podcastLink}
+${blogcastLink}
 ${settings.accent ? `<style>:root{--primary:${escapeHtml(accentToHslTriple(settings.accent))}}</style>` : ''}
 ${structured}
 ${scripts.join('\n')}
@@ -671,7 +677,7 @@ const skipIcon = (mirror) =>
 const ICON_BACK_15 = skipIcon(true)
 const ICON_FORWARD_15 = skipIcon(false)
 
-// The read-aloud player, shared between the article page and the podcast page.
+// The read-aloud player, shared between the article page and the blogcast page.
 // Progressive enhancement: the markup ships a native <audio controls
 // preload="none"> (no JS -> playback still works, no audio bytes per page
 // view) plus a complete custom control bar — round play button, ±15 s, seek
@@ -707,39 +713,41 @@ ${label ? `<p class="audio-player-label">${escapeHtml(fill(t.listen, { n: minute
 </div>`
 }
 
-// The podcast page: the feed's human face at /{locale}/podcast/. Built under
-// the same gate as podcast.xml (audio enabled + at least one narrated
-// indexable post) and deliberately independent of podcast_link — that flag
+// The blogcast page: the feed's human face at /{locale}/blogcast/. Built under
+// the same gate as blogcast.xml (audio enabled + at least one narrated
+// indexable post) and deliberately independent of blogcast_link — that flag
 // only controls whether layout() and the footer *advertise* the feed; the
 // page itself is content. Episodes come in newest-first (audioPosts derives
 // from the already-sorted posts array), each as a card with the shared player.
-export function podcastPage(ctx, audioPosts) {
+// podcast_image is the deprecated pre-1.8 spelling, still honoured as a fallback.
+export function blogcastPage(ctx, audioPosts) {
   const { site, locale, t } = ctx
   const settings = site.settings?.audio || {}
   const title = settings.title || site.name
   const description = settings.description || site.description || ''
-  const cover = settings.podcast_image
-    ? `<img class="podcast-cover" src="${escapeHtml(safeUrl(settings.podcast_image, { relative: true }))}" alt="${escapeHtml(title)}" width="180" height="180">`
+  const coverUrl = settings.blogcast_image ?? settings.podcast_image
+  const cover = coverUrl
+    ? `<img class="blogcast-cover" src="${escapeHtml(safeUrl(coverUrl, { relative: true }))}" alt="${escapeHtml(title)}" width="180" height="180">`
     : ''
   const episodes = audioPosts
     .map(
-      (post) => `<article class="podcast-episode">
-<h2 class="podcast-episode-title"><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></h2>
-<div class="meta podcast-episode-meta">${post.published_at ? `<time datetime="${escapeHtml(post.published_at)}">${escapeHtml(formatDate(post.published_at, locale))}</time>` : ''}<span class="podcast-episode-duration">${escapeHtml(fill(t.durationMinutes, { n: Math.max(1, Math.round(Number(post.audio?.duration_secs || 0) / 60)) }))}</span></div>
-${post.summary ? `<p class="podcast-episode-summary">${escapeHtml(post.summary)}</p>` : ''}
+      (post) => `<article class="blogcast-episode">
+<h2 class="blogcast-episode-title"><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></h2>
+<div class="meta blogcast-episode-meta">${post.published_at ? `<time datetime="${escapeHtml(post.published_at)}">${escapeHtml(formatDate(post.published_at, locale))}</time>` : ''}<span class="blogcast-episode-duration">${escapeHtml(fill(t.durationMinutes, { n: Math.max(1, Math.round(Number(post.audio?.duration_secs || 0) / 60)) }))}</span></div>
+${post.summary ? `<p class="blogcast-episode-summary">${escapeHtml(post.summary)}</p>` : ''}
 ${audioPlayer(post, ctx, { label: false })}
 </article>`,
     )
     .join('\n')
-  return `<section class="container article-header podcast-header">
+  return `<section class="container article-header blogcast-header">
 ${cover}
-<div class="podcast-header-text">
+<div class="blogcast-header-text">
 <h1>${escapeHtml(title)}</h1>
 ${description ? `<p class="article-summary">${escapeHtml(description)}</p>` : ''}
-<p class="podcast-subscribe-row"><a class="podcast-subscribe" href="/${escapeHtml(locale)}/podcast.xml">${escapeHtml(t.subscribeRss)}</a></p>
+<p class="blogcast-subscribe-row"><a class="blogcast-subscribe" href="/${escapeHtml(locale)}/blogcast.xml">${escapeHtml(t.subscribeRss)}</a></p>
 </div>
 </section>
-<section class="container section podcast-episodes">${episodes}</section>`
+<section class="container section blogcast-episodes">${episodes}</section>`
 }
 
 export function contentBody(item, ctx, comments = []) {

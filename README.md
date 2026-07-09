@@ -53,8 +53,8 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   staleness notice on posts older than three years.
 - RSS, per-tag feeds, sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
 - Read-aloud audio: pre-rendered TTS narration per post with a custom player,
-  download link, podcast feed, a per-locale podcast page at
-  `/{locale}/podcast/`, budgets and automatic rebuilds.
+  download link, blogcast feed, a per-locale blogcast page at
+  `/{locale}/blogcast/`, budgets and automatic rebuilds.
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
 - Expiring preview links and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
@@ -147,8 +147,8 @@ are served at `/llms.txt` and `/llms-full.txt`.
 Every published post can carry a pre-rendered spoken MP3 ("Vorlesen"):
 publishing enqueues a TTS job, a background worker synthesizes the narration,
 files it as a content-addressed asset and schedules a debounced rebuild so the
-player (play/pause, ±15 s, seek, tempo switch, download link), the podcast
-feed at `/{locale}/podcast.xml` and the podcast page at `/{locale}/podcast/`
+player (play/pause, ±15 s, seek, tempo switch, download link), the blogcast
+feed at `/{locale}/blogcast.xml` and the blogcast page at `/{locale}/blogcast/`
 go live without a manual publish.
 
 Enable per site (merge into `settings`, `PATCH` replaces it wholesale):
@@ -156,7 +156,7 @@ Enable per site (merge into `settings`, `PATCH` replaces it wholesale):
 ```json
 { "audio": { "enabled": true, "provider": "google",
   "voice": "de-DE-Chirp3-HD-Charon", "monthly_char_budget": 950000,
-  "auto_rebuild": true, "podcast_link": true } }
+  "auto_rebuild": true, "blogcast_link": true } }
 ```
 
 The worker itself starts only with `CONTENTKIT_AUDIO_ENABLED=true` (plus TTS

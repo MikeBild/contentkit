@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { audioPlayer, contentBody, dictionary, layout, podcastPage, searchBody } from '../../src/templates.mjs'
+import { audioPlayer, blogcastPage, contentBody, dictionary, layout, searchBody } from '../../src/templates.mjs'
 import { contentCsp } from '../../src/security.mjs'
 
 function render(ctxOverrides = {}, options = {}) {
@@ -361,25 +361,25 @@ test('ctx.feedUrl replaces the site feed link rather than adding a second one', 
   assert.match(links[0], /title="Example · React"/)
 })
 
-test('the opted-in podcast also gets a visible footer link', () => {
+test('the opted-in blogcast also gets a visible footer link', () => {
   const siteWith = (audio) => ({
     name: 'Example',
     base_url: 'https://example.test',
     default_locale: 'de',
     settings: { audio },
   })
-  const on = render({ site: siteWith({ enabled: true, podcast_link: true }), podcast: true })
+  const on = render({ site: siteWith({ enabled: true, blogcast_link: true }), blogcast: true })
   const footer = on.slice(on.indexOf('<footer class="site-footer">'))
-  assert.match(footer, />Podcast<\/a>/)
+  assert.match(footer, />Blogcast<\/a>/)
   // The footer targets the human-facing page; the raw feed stays the head
   // <link rel="alternate">'s job.
-  assert.match(footer, /<a href="\/de\/podcast\/">Podcast<\/a>/)
-  assert.doesNotMatch(footer, /podcast\.xml/)
-  const off = render({ site: siteWith({ enabled: true, podcast_link: true }) })
-  assert.doesNotMatch(off.slice(off.indexOf('<footer class="site-footer">')), />Podcast<\/a>/)
+  assert.match(footer, /<a href="\/de\/blogcast\/">Blogcast<\/a>/)
+  assert.doesNotMatch(footer, /blogcast\.xml/)
+  const off = render({ site: siteWith({ enabled: true, blogcast_link: true }) })
+  assert.doesNotMatch(off.slice(off.indexOf('<footer class="site-footer">')), />Blogcast<\/a>/)
 })
 
-test('the podcast feed link needs both enabled audio and the podcast_link opt-in', () => {
+test('the blogcast feed link needs both enabled audio and the blogcast_link opt-in', () => {
   const siteWith = (audio) => ({
     name: 'Example',
     base_url: 'https://example.test',
@@ -387,15 +387,47 @@ test('the podcast feed link needs both enabled audio and the podcast_link opt-in
     settings: { audio },
   })
   // Opt-in without enabled audio: the feed file would not exist in the release.
-  assert.doesNotMatch(render({ site: siteWith({ podcast_link: true }) }), /podcast\.xml/)
+  assert.doesNotMatch(render({ site: siteWith({ blogcast_link: true }) }), /blogcast\.xml/)
   // Enabled audio without the opt-in: advertising the feed is the operator's call.
-  assert.doesNotMatch(render({ site: siteWith({ enabled: true }) }), /podcast\.xml/)
+  assert.doesNotMatch(render({ site: siteWith({ enabled: true }) }), /blogcast\.xml/)
   // Opt-in and audio, but no narrated post yet: nothing to advertise.
-  assert.doesNotMatch(render({ site: siteWith({ enabled: true, podcast_link: true }) }), /podcast\.xml/)
+  assert.doesNotMatch(render({ site: siteWith({ enabled: true, blogcast_link: true }) }), /blogcast\.xml/)
   assert.match(
-    render({ site: siteWith({ enabled: true, podcast_link: true, title: 'Mein Podcast' }), podcast: true }),
-    /<link rel="alternate" type="application\/rss\+xml" title="Mein Podcast" href="\/de\/podcast\.xml">/,
+    render({ site: siteWith({ enabled: true, blogcast_link: true, title: 'Mein Blogcast' }), blogcast: true }),
+    /<link rel="alternate" type="application\/rss\+xml" title="Mein Blogcast" href="\/de\/blogcast\.xml">/,
   )
+})
+
+test('the deprecated podcast_* settings still work as fallbacks for the blogcast_* keys', () => {
+  const siteWith = (audio) => ({
+    name: 'Example',
+    base_url: 'https://example.test',
+    default_locale: 'de',
+    settings: { audio },
+  })
+  // podcast_link opts the advertising in when blogcast_link is absent…
+  const legacy = render({ site: siteWith({ enabled: true, podcast_link: true }), blogcast: true })
+  assert.match(legacy, /<a href="\/de\/blogcast\/">Blogcast<\/a>/)
+  assert.match(
+    legacy,
+    /<link rel="alternate" type="application\/rss\+xml" title="Example · Blogcast" href="\/de\/blogcast\.xml">/,
+  )
+  // …but an explicit blogcast_link wins over the deprecated key.
+  const overridden = render({
+    site: siteWith({ enabled: true, blogcast_link: false, podcast_link: true }),
+    blogcast: true,
+  })
+  assert.doesNotMatch(overridden, /blogcast\.xml|>Blogcast<\/a>/)
+  // podcast_image still provides the page cover when blogcast_image is absent.
+  const page = blogcastPage(
+    {
+      site: { id: 's', name: 'Example', settings: { audio: { enabled: true, podcast_image: '/media/old-cover.jpg' } } },
+      t: dictionary('de'),
+      locale: 'de',
+    },
+    [audioPost()],
+  )
+  assert.match(page, /<img class="blogcast-cover" src="\/media\/old-cover\.jpg"/)
 })
 
 test('rendered dates depend on neither the build machine timezone nor its locale', () => {
@@ -460,12 +492,12 @@ test('the shared player ships a native fallback plus the hidden custom control b
   // The tempo group and download link survive unchanged.
   assert.match(html, /data-audio-rate="1.25" aria-pressed="false">1,25×/)
   assert.match(html, /<a class="audio-player-download" href="\/media\/asset-1\/a\.mp3" download>MP3 herunterladen<\/a>/)
-  // The article page keeps its label; the podcast page opts out of it.
+  // The article page keeps its label; the blogcast page opts out of it.
   assert.match(html, /Diesen Beitrag anhören \(20 Min\.\)/)
   assert.doesNotMatch(audioPlayer(audioPost(), ctx, { label: false }), /audio-player-label/)
 })
 
-test('the podcast page lists episodes as cards with player markup and a subscribe link', () => {
+test('the blogcast page lists episodes as cards with player markup and a subscribe link', () => {
   const ctx = {
     site: {
       id: 's',
@@ -473,31 +505,31 @@ test('the podcast page lists episodes as cards with player markup and a subscrib
       settings: {
         audio: {
           enabled: true,
-          title: 'Mein Podcast',
+          title: 'Mein Blogcast',
           description: 'Vorgelesene Beiträge',
-          podcast_image: 'https://example.test/cover.jpg',
+          blogcast_image: 'https://example.test/cover.jpg',
         },
       },
     },
     t: dictionary('de'),
     locale: 'de',
   }
-  const html = podcastPage(ctx, [
+  const html = blogcastPage(ctx, [
     audioPost(),
     audioPost({ item_id: 'item-b', title: 'Folge B', url: '/de/blog/b/', published_at: '2026-06-01T00:00:00Z' }),
   ])
-  assert.match(html, /<h1>Mein Podcast<\/h1>/)
+  assert.match(html, /<h1>Mein Blogcast<\/h1>/)
   assert.match(html, /Vorgelesene Beiträge/)
   assert.match(
     html,
-    /<img class="podcast-cover" src="https:\/\/example\.test\/cover\.jpg" alt="Mein Podcast" width="180" height="180">/,
+    /<img class="blogcast-cover" src="https:\/\/example\.test\/cover\.jpg" alt="Mein Blogcast" width="180" height="180">/,
   )
-  assert.match(html, /<a class="podcast-subscribe" href="\/de\/podcast\.xml">Per RSS abonnieren<\/a>/)
+  assert.match(html, /<a class="blogcast-subscribe" href="\/de\/blogcast\.xml">Per RSS abonnieren<\/a>/)
   // Episodes: title links to the post, formatted date, duration chip, summary,
   // and the same shared player markup audio.js drives on article pages.
-  assert.match(html, /<h2 class="podcast-episode-title"><a href="\/de\/blog\/a\/">Folge A<\/a><\/h2>/)
+  assert.match(html, /<h2 class="blogcast-episode-title"><a href="\/de\/blog\/a\/">Folge A<\/a><\/h2>/)
   assert.match(html, /<time datetime="2026-06-02T00:00:00Z">2\.6\.2026<\/time>/)
-  assert.match(html, /<span class="podcast-episode-duration">20 Min\.<\/span>/)
+  assert.match(html, /<span class="blogcast-episode-duration">20 Min\.<\/span>/)
   assert.match(html, /Worum es geht/)
   assert.equal(html.match(/class="audio-player" data-audio="/g).length, 2, 'one player per episode')
   assert.match(html, /data-audio-ui/)
@@ -505,7 +537,7 @@ test('the podcast page lists episodes as cards with player markup and a subscrib
 
   // Fallbacks: without channel settings the site's own name/description serve,
   // and without a cover no broken <img> is emitted.
-  const plain = podcastPage(
+  const plain = blogcastPage(
     {
       site: { id: 's', name: 'Example', description: 'Personal site', settings: { audio: { enabled: true } } },
       t: dictionary('en'),
@@ -516,5 +548,5 @@ test('the podcast page lists episodes as cards with player markup and a subscrib
   assert.match(plain, /<h1>Example<\/h1>/)
   assert.match(plain, /Personal site/)
   assert.match(plain, /Subscribe via RSS/)
-  assert.doesNotMatch(plain, /podcast-cover/)
+  assert.doesNotMatch(plain, /blogcast-cover/)
 })
