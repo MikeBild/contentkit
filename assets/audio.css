@@ -63,3 +63,214 @@
 .audio-player-download:hover {
   color: hsl(var(--foreground));
 }
+
+/* Custom control bar (shadcn-style, tokens only). Ships hidden; audio.js swaps
+ * it in for the native controls. One quiet row, wrapping on narrow screens. */
+.audio-ui {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-height: 3rem;
+}
+
+.audio-ui-play,
+.audio-ui-skip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.audio-ui-play {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.audio-ui-play:hover {
+  background: hsl(var(--primary) / 0.85);
+}
+
+.audio-ui-play svg {
+  display: block;
+}
+
+.audio-ui-skip {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+}
+
+.audio-ui-skip:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--muted-foreground));
+}
+
+.audio-ui-time {
+  flex: none;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The seek slider: a thin track in the border color, a primary-colored thumb.
+ * Vendor pseudo-elements must stay in separate rules — one unknown selector
+ * would invalidate a shared rule in the other engine. */
+.audio-ui-seek {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  height: 1.2rem;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.audio-ui-seek::-webkit-slider-runnable-track {
+  height: 0.3rem;
+  border-radius: 999px;
+  background: hsl(var(--border));
+}
+
+.audio-ui-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-top: -0.275rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.audio-ui-seek::-moz-range-track {
+  height: 0.3rem;
+  border-radius: 999px;
+  background: hsl(var(--border));
+}
+
+.audio-ui-seek::-moz-range-progress {
+  height: 0.3rem;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.audio-ui-seek::-moz-range-thumb {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.audio-ui .audio-player-rates {
+  margin-top: 0;
+}
+
+/* The podcast page: cover + title/description/subscribe in the header, then
+ * one card per episode. Same card grammar as the listing grids. */
+.podcast-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.75rem;
+  flex-wrap: wrap;
+}
+
+.podcast-cover {
+  width: 180px;
+  height: 180px;
+  flex: none;
+  object-fit: cover;
+  border-radius: calc(var(--radius) + 0.2rem);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 0.5rem 1.5rem hsl(var(--foreground) / 0.12);
+}
+
+.podcast-header-text {
+  flex: 1 1 20rem;
+}
+
+.podcast-subscribe-row {
+  margin: 1rem 0 0;
+}
+
+/* Outline button: the subscribe link is an offer, not the page's action. */
+.podcast-subscribe {
+  display: inline-flex;
+  padding: 0.55rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.podcast-subscribe:hover {
+  border-color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.4);
+}
+
+.podcast-episodes {
+  display: grid;
+  gap: 1rem;
+}
+
+.podcast-episode {
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) + 0.2rem);
+  padding: 1.35rem;
+  background: hsl(var(--background));
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.podcast-episode:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--muted-foreground));
+}
+
+.podcast-episode-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.podcast-episode-title a {
+  text-decoration: none;
+}
+
+.podcast-episode-meta {
+  margin: 0.4rem 0 0;
+}
+
+.podcast-episode-duration {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.55rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.podcast-episode-summary {
+  margin: 0.5rem 0 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.podcast-episode .audio-player {
+  margin: 0.9rem 0 0;
+}

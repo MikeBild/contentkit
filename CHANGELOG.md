@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.7.0
+
+Podcast page & custom player.
+
+### Added
+
+- A built podcast page per locale at `/{locale}/podcast/` — channel cover,
+  title/description from `settings.audio`, a subscribe-via-RSS link and one
+  card per narrated post (title, date, duration, summary, player). Emitted
+  under the same gate as `podcast.xml` (audio enabled + at least one narrated
+  indexable post), independent of `podcast_link`; indexable and in the sitemap.
+- A custom audio player (shadcn-style, theme tokens only), shared between
+  article pages and the podcast page: round play/pause button, ±15 s skip,
+  seek slider with time readout, the existing tempo buttons and download link.
+  Progressive enhancement — the native `<audio controls preload="none">` ships
+  as the no-JS fallback and audio.js swaps it for the custom bar; the
+  remembered listening position stays.
+
+### Changed
+
+- The footer's Podcast item now targets the page (`/{locale}/podcast/`) instead
+  of the raw feed; the head `<link rel="alternate">` keeps pointing at
+  `podcast.xml`. Gate unchanged (`podcast_link` opt-in + narrated posts).
+
 ## 1.6.2
 
 - Podcast links (head alternate + footer) appear only when the feed actually has narrated posts.

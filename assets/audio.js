@@ -1,10 +1,14 @@
-// Read-aloud player enhancements: playback-tempo buttons (1×/1.25×/1.5×) and a
+// Read-aloud player enhancements: a custom control bar (play/pause, ±15 s,
+// seek slider, time readout), playback-tempo buttons (1×/1.25×/1.5×) and a
 // remembered listening position per audio URL.
 //
 // Ships only on pages that render a player (layout() adds it behind
-// options.audio), so it never taxes a page view without one. The <audio
-// controls> element itself works without this script; the tempo buttons ship
-// hidden and are unhidden here, because without JS they could do nothing.
+// options.audio), so it never taxes a page view without one. Progressive
+// enhancement: the native <audio controls> works without this script; the
+// custom bar and the tempo buttons ship in the markup but hidden, because
+// without JS they could do nothing. This script swaps the native controls for
+// the bar and drives it — all markup is server-rendered, JS only toggles
+// attributes and textContent.
 //
 // CSP-safe: no inline script, no inline handlers, no innerHTML. localStorage is
 // wrapped — private-mode browsers throw on access, and losing the resume
@@ -28,6 +32,12 @@
     } catch {
       /* private mode: playback works, resume does not */
     }
+  }
+
+  // m:ss, mirroring the server-rendered initial readout in templates.mjs.
+  const clock = (secs) => {
+    const total = Math.max(0, Math.round(Number(secs) || 0))
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
   }
 
   for (const player of players) {
@@ -65,15 +75,94 @@
 
     // Tempo switch. aria-pressed carries the visual state, so no extra class.
     const rates = player.querySelector('[data-audio-rates]')
-    if (!rates) continue
-    const buttons = [...rates.querySelectorAll('[data-audio-rate]')]
-    for (const button of buttons) {
-      button.addEventListener('click', () => {
-        const rate = Number(button.dataset.audioRate) || 1
-        audio.playbackRate = rate
-        for (const other of buttons) other.setAttribute('aria-pressed', String(other === button))
+    if (rates) {
+      const buttons = [...rates.querySelectorAll('[data-audio-rate]')]
+      for (const button of buttons) {
+        button.addEventListener('click', () => {
+          const rate = Number(button.dataset.audioRate) || 1
+          audio.playbackRate = rate
+          for (const other of buttons) other.setAttribute('aria-pressed', String(other === button))
+        })
+      }
+      rates.hidden = false
+    }
+
+    // The custom control bar. Only once everything is wired does it replace
+    // the native controls — if any of this throws, the player stays native.
+    const ui = player.querySelector('[data-audio-ui]')
+    if (!ui) continue
+    // preload="none": until metadata arrives the only known duration is the
+    // build-time one the markup carries.
+    const duration = () =>
+      Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(player.dataset.duration) || 0
+
+    const playButton = ui.querySelector('[data-audio-play]')
+    const iconPlay = ui.querySelector('[data-audio-icon="play"]')
+    const iconPause = ui.querySelector('[data-audio-icon="pause"]')
+    const seek = ui.querySelector('[data-audio-seek]')
+    const time = ui.querySelector('[data-audio-time]')
+
+    const renderTime = (current) => {
+      if (time) time.textContent = `${clock(current)} / ${clock(duration())}`
+    }
+    let scrubbing = false
+    const render = () => {
+      renderTime(audio.currentTime)
+      if (seek && !scrubbing) {
+        seek.max = String(Math.max(1, Math.round(duration())))
+        seek.value = String(Math.floor(audio.currentTime))
+      }
+    }
+
+    if (playButton) {
+      const setState = (playing) => {
+        if (iconPlay) iconPlay.hidden = playing
+        if (iconPause) iconPause.hidden = !playing
+        const label = playing ? playButton.dataset.labelPause : playButton.dataset.labelPlay
+        if (label) playButton.setAttribute('aria-label', label)
+      }
+      playButton.addEventListener('click', () => {
+        if (audio.paused) audio.play()
+        else audio.pause()
+      })
+      audio.addEventListener('play', () => setState(true))
+      audio.addEventListener('pause', () => setState(false))
+      audio.addEventListener('ended', () => setState(false))
+    }
+
+    for (const skip of ui.querySelectorAll('[data-audio-skip]')) {
+      skip.addEventListener('click', () => {
+        // Before any fetch (readyState 0) there is nothing to seek within.
+        if (!audio.readyState) return
+        const step = Number(skip.dataset.audioSkip) || 0
+        audio.currentTime = Math.min(Math.max(0, audio.currentTime + step), duration() || Infinity)
+        render()
       })
     }
-    rates.hidden = false
+
+    if (seek) {
+      // While dragging, preview the target time but leave playback alone;
+      // commit the position on release ('change'). timeupdate must not fight
+      // the thumb mid-drag, hence the scrubbing flag.
+      seek.addEventListener('input', () => {
+        scrubbing = true
+        renderTime(Number(seek.value) || 0)
+      })
+      seek.addEventListener('change', () => {
+        scrubbing = false
+        if (audio.readyState) audio.currentTime = Number(seek.value) || 0
+        render()
+      })
+    }
+
+    audio.addEventListener('timeupdate', render)
+    audio.addEventListener('loadedmetadata', render)
+    audio.addEventListener('ended', render)
+    render()
+
+    // Swap: hide the native controls (an <audio> without them renders no box)
+    // and reveal the bar.
+    audio.controls = false
+    ui.hidden = false
   }
 })()

@@ -458,11 +458,16 @@ headings and list items become sentences), synthesizes it with Google Chirp 3 HD
 `UNIQUE(item_id, speech_sha256)` over the *extracted speech text*, so editing a
 code block or the sources section never re-synthesizes. A post opts out with
 frontmatter `audio: false`. The next release renders a player above the post
-(`preload="none"`, tempo switch, remembered position, a small `download` link)
-and, when at least one post has audio, a podcast feed at `/{locale}/podcast.xml`
-with `<enclosure>`, `itunes:author`, optional `itunes:image`/`itunes:category`
-and `<language>` from the locale. The layout advertises the podcast feed with a
-`<link rel="alternate">` only when `settings.audio.podcast_link` is `true`.
+(native `<audio preload="none">` fallback plus a custom control bar:
+play/pause, ±15 s, seek slider, tempo switch, remembered position, a small
+`download` link) and, when at least one post has audio, a podcast feed at
+`/{locale}/podcast.xml` with `<enclosure>`, `itunes:author`, optional
+`itunes:image`/`itunes:category` and `<language>` from the locale — plus a
+human-facing podcast page at `/{locale}/podcast/` (cover, channel
+title/description, subscribe-via-RSS link, one card per episode with the same
+player; indexable, in the sitemap). The layout advertises the podcast feed with
+a `<link rel="alternate">` and a footer link to the podcast page only when
+`settings.audio.podcast_link` is `true`; the page itself exists regardless.
 
 Lifecycle and operations (see `docs/audio.md` for the full guide):
 
@@ -504,6 +509,7 @@ For each configured locale, Contentkit generates:
 | Search index | `/{locale}/search-index.json` |
 | RSS feed | `/{locale}/feed.xml` |
 | Podcast feed | `/{locale}/podcast.xml` (only when `settings.audio.enabled` and at least one post has audio) |
+| Podcast page | `/{locale}/podcast/` (same gate as the podcast feed; episode list with players, in the sitemap) |
 | Tag index | `/{locale}/tags/` |
 | Tag pages | `/{locale}/tags/{tag}/` (`noindex,follow` and unlisted when the tag has a single post) |
 | Tag feeds | `/{locale}/tags/{tag}/feed.xml` (only for tags with two or more posts) |

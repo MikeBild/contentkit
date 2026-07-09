@@ -53,6 +53,13 @@ const words = {
     listen: 'Diesen Beitrag anhören ({n} Min.)',
     playbackSpeed: 'Wiedergabetempo',
     downloadMp3: 'MP3 herunterladen',
+    subscribeRss: 'Per RSS abonnieren',
+    durationMinutes: '{n} Min.',
+    play: 'Abspielen',
+    pause: 'Pause',
+    seek: 'Wiedergabeposition',
+    back15: '15 Sekunden zurück',
+    forward15: '15 Sekunden vor',
   },
   en: {
     blog: 'Blog',
@@ -106,6 +113,13 @@ const words = {
     listen: 'Listen to this post ({n} min)',
     playbackSpeed: 'Playback speed',
     downloadMp3: 'Download MP3',
+    subscribeRss: 'Subscribe via RSS',
+    durationMinutes: '{n} min',
+    play: 'Play',
+    pause: 'Pause',
+    seek: 'Playback position',
+    back15: 'Back 15 seconds',
+    forward15: 'Forward 15 seconds',
   },
 }
 
@@ -260,10 +274,12 @@ function siteFooter(ctx) {
   const social = [
     ...Object.entries(settings.socials || {}).map(([name, url]) => item([name, safeUrl(url)], ' rel="me"')),
     item([t.rss, `/${locale}/feed.xml`]),
-    // The podcast feed only exists when audio is enabled, and stays unlisted
-    // until the operator opts in — same gate as the <link rel="alternate">.
+    // The podcast page only exists when audio is enabled and a narrated post
+    // exists, and stays unlisted until the operator opts in — same gate as the
+    // <link rel="alternate">. The link targets the human-facing page; the raw
+    // feed stays the head link's job.
     ...(ctx.podcast === true && settings.audio?.enabled === true && settings.audio?.podcast_link === true
-      ? [item(['Podcast', `/${locale}/podcast.xml`])]
+      ? [item(['Podcast', `/${locale}/podcast/`])]
       : []),
   ].join('')
   return `<footer class="site-footer"><div class="container">
@@ -635,15 +651,41 @@ function postNav(item, ctx) {
   return `<nav class="post-nav" aria-label="${escapeHtml(ctx.t.archive)}">${link(older, 'prev', ctx.t.olderPost)}${link(newer, 'next', ctx.t.newerPost)}</nav>`
 }
 
-// The read-aloud player. Native <audio controls> with preload="none", so a page
-// view costs no audio bytes. The tempo buttons ship in the markup but hidden —
-// without audio.js they can do nothing, so showing them would be a lie; the
-// script unhides and drives them (and remembers the listening position).
-// Decimal separators follow the page locale: 1,25× in German, 1.25× elsewhere.
-function audioPlayer(item, ctx) {
+// m:ss for the player's time readout. Minutes are not wrapped into hours — a
+// narrated post is minutes long, and "72:15" stays unambiguous if one is not.
+const formatClock = (secs) => {
+  const total = Math.max(0, Math.round(Number(secs) || 0))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+// Inline SVG icons for the custom control bar. currentColor only, so the
+// buttons inherit their color from the theme tokens like any text would.
+const svg = (body) =>
+  `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">${body}</svg>`
+const ICON_PLAY = svg('<path d="M4.5 2.5v11l9-5.5z" fill="currentColor"/>')
+const ICON_PAUSE = svg('<path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/>')
+const skipIcon = (mirror) =>
+  svg(
+    `<g${mirror ? ' transform="scale(-1,1) translate(-16,0)"' : ''}><path d="M8 2.8a5.2 5.2 0 1 1-5 3.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8.3 0.9 5.9 2.8l2.4 1.9z" fill="currentColor"/></g><text x="8" y="11.2" text-anchor="middle" font-size="6.5" font-family="inherit" fill="currentColor">15</text>`,
+  )
+const ICON_BACK_15 = skipIcon(true)
+const ICON_FORWARD_15 = skipIcon(false)
+
+// The read-aloud player, shared between the article page and the podcast page.
+// Progressive enhancement: the markup ships a native <audio controls
+// preload="none"> (no JS -> playback still works, no audio bytes per page
+// view) plus a complete custom control bar — round play button, ±15 s, seek
+// slider, time readout, tempo buttons — that ships hidden, because without
+// audio.js none of it could do anything. The script swaps the native controls
+// for the bar, drives it, and remembers the listening position. Localized
+// strings ride on aria-label/data-* (the forms.js contract), so `words` stays
+// the single source of translation truth. Decimal separators follow the page
+// locale: 1,25× in German, 1.25× elsewhere.
+export function audioPlayer(item, ctx, { label = true } = {}) {
   if (!item.audio?.url) return ''
   const t = ctx.t
-  const minutes = Math.max(1, Math.round(Number(item.audio.duration_secs || 0) / 60))
+  const duration = Number(item.audio.duration_secs) || 0
+  const minutes = Math.max(1, Math.round(duration / 60))
   const decimal = (value) => (String(ctx.locale).startsWith('de') ? String(value).replace('.', ',') : String(value))
   const rates = [1, 1.25, 1.5]
     .map(
@@ -651,12 +693,53 @@ function audioPlayer(item, ctx) {
         `<button type="button" class="audio-player-rate" data-audio-rate="${rate}" aria-pressed="${rate === 1}">${escapeHtml(decimal(rate))}×</button>`,
     )
     .join('')
-  return `<div class="audio-player" data-audio="${escapeHtml(item.audio.url)}" data-duration="${Number(item.audio.duration_secs) || 0}">
-<p class="audio-player-label">${escapeHtml(fill(t.listen, { n: minutes }))}</p>
-<audio controls preload="none" src="${escapeHtml(item.audio.url)}"></audio>
+  return `<div class="audio-player" data-audio="${escapeHtml(item.audio.url)}" data-duration="${duration}">
+${label ? `<p class="audio-player-label">${escapeHtml(fill(t.listen, { n: minutes }))}</p>\n` : ''}<audio controls preload="none" src="${escapeHtml(item.audio.url)}"></audio>
+<div class="audio-ui" data-audio-ui hidden>
+<button type="button" class="audio-ui-play" data-audio-play data-label-play="${escapeHtml(t.play)}" data-label-pause="${escapeHtml(t.pause)}" aria-label="${escapeHtml(t.play)}"><span data-audio-icon="play">${ICON_PLAY}</span><span data-audio-icon="pause" hidden>${ICON_PAUSE}</span></button>
+<button type="button" class="audio-ui-skip" data-audio-skip="-15" aria-label="${escapeHtml(t.back15)}">${ICON_BACK_15}</button>
+<button type="button" class="audio-ui-skip" data-audio-skip="15" aria-label="${escapeHtml(t.forward15)}">${ICON_FORWARD_15}</button>
+<input class="audio-ui-seek" type="range" min="0" max="${Math.max(1, Math.round(duration))}" step="1" value="0" data-audio-seek aria-label="${escapeHtml(t.seek)}">
+<span class="audio-ui-time" data-audio-time>0:00 / ${formatClock(duration)}</span>
 <div class="audio-player-rates" data-audio-rates role="group" aria-label="${escapeHtml(t.playbackSpeed)}" hidden>${rates}</div>
+</div>
 <a class="audio-player-download" href="${escapeHtml(item.audio.url)}" download>${escapeHtml(t.downloadMp3)}</a>
 </div>`
+}
+
+// The podcast page: the feed's human face at /{locale}/podcast/. Built under
+// the same gate as podcast.xml (audio enabled + at least one narrated
+// indexable post) and deliberately independent of podcast_link — that flag
+// only controls whether layout() and the footer *advertise* the feed; the
+// page itself is content. Episodes come in newest-first (audioPosts derives
+// from the already-sorted posts array), each as a card with the shared player.
+export function podcastPage(ctx, audioPosts) {
+  const { site, locale, t } = ctx
+  const settings = site.settings?.audio || {}
+  const title = settings.title || site.name
+  const description = settings.description || site.description || ''
+  const cover = settings.podcast_image
+    ? `<img class="podcast-cover" src="${escapeHtml(safeUrl(settings.podcast_image, { relative: true }))}" alt="${escapeHtml(title)}" width="180" height="180">`
+    : ''
+  const episodes = audioPosts
+    .map(
+      (post) => `<article class="podcast-episode">
+<h2 class="podcast-episode-title"><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></h2>
+<div class="meta podcast-episode-meta">${post.published_at ? `<time datetime="${escapeHtml(post.published_at)}">${escapeHtml(formatDate(post.published_at, locale))}</time>` : ''}<span class="podcast-episode-duration">${escapeHtml(fill(t.durationMinutes, { n: Math.max(1, Math.round(Number(post.audio?.duration_secs || 0) / 60)) }))}</span></div>
+${post.summary ? `<p class="podcast-episode-summary">${escapeHtml(post.summary)}</p>` : ''}
+${audioPlayer(post, ctx, { label: false })}
+</article>`,
+    )
+    .join('\n')
+  return `<section class="container article-header podcast-header">
+${cover}
+<div class="podcast-header-text">
+<h1>${escapeHtml(title)}</h1>
+${description ? `<p class="article-summary">${escapeHtml(description)}</p>` : ''}
+<p class="podcast-subscribe-row"><a class="podcast-subscribe" href="/${escapeHtml(locale)}/podcast.xml">${escapeHtml(t.subscribeRss)}</a></p>
+</div>
+</section>
+<section class="container section podcast-episodes">${episodes}</section>`
 }
 
 export function contentBody(item, ctx, comments = []) {

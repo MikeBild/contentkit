@@ -52,8 +52,9 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Reading time, related posts by tag similarity, older/newer navigation and a
   staleness notice on posts older than three years.
 - RSS, per-tag feeds, sitemap, robots, canonical metadata, OpenGraph and JSON-LD.
-- Read-aloud audio: pre-rendered TTS narration per post with player, download
-  link, podcast feed, budgets and automatic rebuilds.
+- Read-aloud audio: pre-rendered TTS narration per post with a custom player,
+  download link, podcast feed, a per-locale podcast page at
+  `/{locale}/podcast/`, budgets and automatic rebuilds.
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
 - Expiring preview links and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
@@ -146,8 +147,9 @@ are served at `/llms.txt` and `/llms-full.txt`.
 Every published post can carry a pre-rendered spoken MP3 ("Vorlesen"):
 publishing enqueues a TTS job, a background worker synthesizes the narration,
 files it as a content-addressed asset and schedules a debounced rebuild so the
-player (with tempo switch and download link) and the podcast feed at
-`/{locale}/podcast.xml` go live without a manual publish.
+player (play/pause, ±15 s, seek, tempo switch, download link), the podcast
+feed at `/{locale}/podcast.xml` and the podcast page at `/{locale}/podcast/`
+go live without a manual publish.
 
 Enable per site (merge into `settings`, `PATCH` replaces it wholesale):
 

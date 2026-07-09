@@ -12,6 +12,7 @@ import {
   homeBody,
   layout,
   listingBody,
+  podcastPage,
   searchBody,
   tagCounts,
   tagsBody,
@@ -484,15 +485,42 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     files.set(`${locale}/feed.xml`, text(rss(site, locale, posts), 'application/rss+xml; charset=utf-8'))
 
     // Podcast feed only where it has something to say: the site opted in and at
-    // least one (indexable) post carries audio. No sitemap entry — podcast apps
-    // subscribe by URL, crawlers have the main feed; a layout <link> appears
-    // only with settings.audio.podcast_link (see layout()).
+    // least one (indexable) post carries audio. The XML itself gets no sitemap
+    // entry — podcast apps subscribe by URL, crawlers have the main feed; a
+    // layout <link> appears only with settings.audio.podcast_link (see layout()).
+    //
+    // The same gate also builds the human-facing page at /{locale}/podcast/ —
+    // header, episode list, players. Deliberately NOT gated on podcast_link:
+    // that flag only controls the *advertising* (head link, footer item), the
+    // page is content. It is indexable and goes into the sitemap, but — like
+    // the individual tag pages, and unlike the blog listing — without hreflang
+    // alternates: the page only exists in locales that have narrated posts, so
+    // alternates derived from the locale list could point at 404s.
     const audioPosts = posts.filter((post) => post.audio)
     if (site.settings?.audio?.enabled === true && audioPosts.length) {
       files.set(
         `${locale}/podcast.xml`,
         text(podcastRss(site, locale, audioPosts), 'application/rss+xml; charset=utf-8'),
       )
+      const podcastPath = `/${locale}/podcast/`
+      const audioSettings = site.settings.audio
+      files.set(
+        `${locale}/podcast/index.html`,
+        text(
+          layout(
+            {
+              ...base,
+              title: audioSettings.title || site.name,
+              description: audioSettings.description || site.description,
+              canonical: absolute(site, podcastPath),
+              currentPath: podcastPath,
+            },
+            podcastPage(base, audioPosts),
+            { audio: true },
+          ),
+        ),
+      )
+      sitemapItems.push({ canonical: absolute(site, podcastPath), updated_at: lastUpdated(audioPosts) })
     }
 
     // Per-locale llms.txt, plus a copy of the default locale's at the site root —

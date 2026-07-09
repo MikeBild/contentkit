@@ -147,6 +147,32 @@ Apple expects ≥1400×1400) and `itunes:category` (`podcast_category`). The
 layout advertises the feed with a `<link rel="alternate">` only when
 `settings.audio.podcast_link` is `true`; otherwise you share the URL yourself.
 
+## Podcast page
+
+Under the same gate as the feed (audio enabled + at least one narrated
+indexable post), each locale also gets a human-facing page at
+`/{locale}/podcast/`: the channel cover (`podcast_image`), title and
+description (`audio.title`/`audio.description`, falling back to the site's
+own), a "Subscribe via RSS" link to `/{locale}/podcast.xml`, and one card per
+episode — title linking to the post, date, duration, summary and the same
+player the article pages use. The page is indexable and listed in the sitemap.
+
+Deliberately independent of `podcast_link`: that flag only controls the
+_advertising_ — the head `<link rel="alternate">` to the feed and the footer's
+Podcast item, which targets the page. The page itself is content and always
+exists alongside the feed.
+
+## Player
+
+Article pages and the podcast page share one player. The markup ships a native
+`<audio controls preload="none">` (no JS still plays, and a page view costs no
+audio bytes) plus a hidden custom control bar; `audio.js` swaps the native
+controls for the bar: round play/pause button, ±15 s skip, seek slider with
+time readout, tempo buttons (1×/1.25×/1.5×), a quiet MP3 download link, and a
+remembered listening position per audio URL (localStorage). Styling uses only
+the theme's existing custom properties, so accent and dark mode apply per site
+without extra CSS.
+
 ## Frontmatter override
 
 ```yaml

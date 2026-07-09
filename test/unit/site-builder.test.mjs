@@ -635,3 +635,85 @@ test('frontmatter audio: false suppresses the player even when an asset exists',
   assert.doesNotMatch(result.files.get('en/blog/a/index.html').body.toString(), /audio-player/)
   assert.ok(!result.files.has('en/podcast.xml'))
 })
+
+test('the podcast page is built under the same gate as podcast.xml and listed in the sitemap', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const revisions = [
+    post({ slug: 'a', title: 'A', date: '2026-06-02' }),
+    post({ slug: 'b', title: 'B', date: '2026-06-01' }),
+  ]
+  // No podcast_link: the page is content, only the *advertising* is opt-in.
+  const enabled = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
+  assert.ok(enabled.files.has('en/podcast/index.html'), 'podcast page missing despite a narrated post')
+  const page = enabled.files.get('en/podcast/index.html').body.toString()
+  assert.match(page, /<link rel="canonical" href="https:\/\/example\.test\/en\/podcast\/">/)
+  assert.doesNotMatch(page, /<meta name="robots"/, 'the podcast page must stay indexable')
+  assert.match(page, /href="\/en\/podcast\.xml"/, 'the page must offer the RSS subscribe link')
+  assert.match(page, /class="audio-player" data-audio="\/media\/asset-1\/a-vorlesen\.mp3"/)
+  assert.match(page, /<audio controls preload="none" src="\/media\/asset-1\/a-vorlesen\.mp3">/)
+  assert.match(page, /data-audio-ui/, 'the custom control bar must ship in the markup')
+  assert.match(page, /assets\/audio-[0-9a-f]{10}\.js/, 'audio.js must load on the podcast page')
+  assert.match(page, /assets\/audio-[0-9a-f]{10}\.css/, 'audio.css must load on the podcast page')
+  assert.match(page, /<a href="\/en\/blog\/a\/">A<\/a>/, 'episode titles link to the post')
+  assert.doesNotMatch(page, /\/en\/blog\/b\//, 'a post without audio is not an episode')
+  assert.match(enabled.files.get('sitemap.xml').body.toString(), /<loc>https:\/\/example\.test\/en\/podcast\/<\/loc>/)
+
+  const optedOut = await build({ site, revisions, audio })
+  assert.ok(!optedOut.files.has('en/podcast/index.html'), 'no podcast page without settings.audio.enabled')
+  const noAudio = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions })
+  assert.ok(!noAudio.files.has('en/podcast/index.html'), 'no podcast page without a single audio post')
+  assert.doesNotMatch(noAudio.files.get('sitemap.xml').body.toString(), /\/en\/podcast\//)
+})
+
+test('the podcast page header uses the channel settings, and the footer links the page with the opt-in', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const revisions = [post({ slug: 'a', title: 'A' })]
+  const configured = await build({
+    site: {
+      ...site,
+      settings: {
+        audio: {
+          enabled: true,
+          podcast_link: true,
+          title: 'My Podcast',
+          description: 'Narrated posts',
+          podcast_image: 'https://example.test/cover-3000.jpg',
+        },
+      },
+    },
+    revisions,
+    audio,
+  })
+  const page = configured.files.get('en/podcast/index.html').body.toString()
+  assert.match(page, /<h1>My Podcast<\/h1>/)
+  assert.match(page, /Narrated posts/)
+  assert.match(page, /<img class="podcast-cover" src="https:\/\/example\.test\/cover-3000\.jpg" alt="My Podcast"/)
+  assert.match(page, /<title>My Podcast · Example<\/title>/)
+  // The footer's Podcast item now targets the page; the head <link> keeps
+  // advertising the feed itself.
+  const footer = page.slice(page.indexOf('<footer class="site-footer">'))
+  assert.match(footer, /<a href="\/en\/podcast\/">Podcast<\/a>/)
+  assert.match(page, /<link rel="alternate" type="application\/rss\+xml" title="My Podcast" href="\/en\/podcast\.xml">/)
+
+  // Without the opt-in the page still exists but stays unadvertised.
+  const unlinked = await build({ site: { ...site, settings: { audio: { enabled: true } } }, revisions, audio })
+  assert.ok(unlinked.files.has('en/podcast/index.html'))
+  const home = unlinked.files.get('en/index.html').body.toString()
+  assert.doesNotMatch(home, /\/en\/podcast\//, 'no footer link without podcast_link')
+})

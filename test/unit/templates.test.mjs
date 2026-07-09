@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { contentBody, dictionary, layout, searchBody } from '../../src/templates.mjs'
+import { audioPlayer, contentBody, dictionary, layout, podcastPage, searchBody } from '../../src/templates.mjs'
 import { contentCsp } from '../../src/security.mjs'
 
 function render(ctxOverrides = {}, options = {}) {
@@ -371,6 +371,10 @@ test('the opted-in podcast also gets a visible footer link', () => {
   const on = render({ site: siteWith({ enabled: true, podcast_link: true }), podcast: true })
   const footer = on.slice(on.indexOf('<footer class="site-footer">'))
   assert.match(footer, />Podcast<\/a>/)
+  // The footer targets the human-facing page; the raw feed stays the head
+  // <link rel="alternate">'s job.
+  assert.match(footer, /<a href="\/de\/podcast\/">Podcast<\/a>/)
+  assert.doesNotMatch(footer, /podcast\.xml/)
   const off = render({ site: siteWith({ enabled: true, podcast_link: true }) })
   assert.doesNotMatch(off.slice(off.indexOf('<footer class="site-footer">')), />Podcast<\/a>/)
 })
@@ -425,4 +429,92 @@ test('formatting a date without any locale is a hard error, not a system-locale 
     () => contentBody(item, { site: { id: 's', settings: {} }, t: dictionary('de') }, []),
     /formatDate requires an explicit locale/,
   )
+})
+
+const audioPost = (overrides = {}) => ({
+  kind: 'post',
+  item_id: 'item-a',
+  locale: 'de',
+  title: 'Folge A',
+  summary: 'Worum es geht',
+  url: '/de/blog/a/',
+  published_at: '2026-06-02T00:00:00Z',
+  audio: { url: '/media/asset-1/a.mp3', content_type: 'audio/mpeg', byte_size: 1234, duration_secs: 1177 },
+  ...overrides,
+})
+
+test('the shared player ships a native fallback plus the hidden custom control bar', () => {
+  const ctx = { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de' }
+  const html = audioPlayer(audioPost(), ctx)
+  // No-JS fallback: real native controls, no preloaded bytes.
+  assert.match(html, /<audio controls preload="none" src="\/media\/asset-1\/a\.mp3"><\/audio>/)
+  // The custom bar ships complete but hidden — audio.js swaps it in.
+  assert.match(html, /<div class="audio-ui" data-audio-ui hidden>/)
+  assert.match(html, /data-audio-play data-label-play="Abspielen" data-label-pause="Pause" aria-label="Abspielen"/)
+  assert.match(html, /data-audio-skip="-15" aria-label="15 Sekunden zurück"/)
+  assert.match(html, /data-audio-skip="15" aria-label="15 Sekunden vor"/)
+  assert.match(html, /<input class="audio-ui-seek" type="range" min="0" max="1177" step="1" value="0" data-audio-seek/)
+  assert.match(html, /data-audio-time>0:00 \/ 19:37</, 'the readout starts at the build-time duration')
+  assert.match(html, /<svg /, 'icons are inline SVG')
+  assert.doesNotMatch(html, /onclick|innerHTML/, 'CSP-safe markup: no inline handlers')
+  // The tempo group and download link survive unchanged.
+  assert.match(html, /data-audio-rate="1.25" aria-pressed="false">1,25×/)
+  assert.match(html, /<a class="audio-player-download" href="\/media\/asset-1\/a\.mp3" download>MP3 herunterladen<\/a>/)
+  // The article page keeps its label; the podcast page opts out of it.
+  assert.match(html, /Diesen Beitrag anhören \(20 Min\.\)/)
+  assert.doesNotMatch(audioPlayer(audioPost(), ctx, { label: false }), /audio-player-label/)
+})
+
+test('the podcast page lists episodes as cards with player markup and a subscribe link', () => {
+  const ctx = {
+    site: {
+      id: 's',
+      name: 'Example',
+      settings: {
+        audio: {
+          enabled: true,
+          title: 'Mein Podcast',
+          description: 'Vorgelesene Beiträge',
+          podcast_image: 'https://example.test/cover.jpg',
+        },
+      },
+    },
+    t: dictionary('de'),
+    locale: 'de',
+  }
+  const html = podcastPage(ctx, [
+    audioPost(),
+    audioPost({ item_id: 'item-b', title: 'Folge B', url: '/de/blog/b/', published_at: '2026-06-01T00:00:00Z' }),
+  ])
+  assert.match(html, /<h1>Mein Podcast<\/h1>/)
+  assert.match(html, /Vorgelesene Beiträge/)
+  assert.match(
+    html,
+    /<img class="podcast-cover" src="https:\/\/example\.test\/cover\.jpg" alt="Mein Podcast" width="180" height="180">/,
+  )
+  assert.match(html, /<a class="podcast-subscribe" href="\/de\/podcast\.xml">Per RSS abonnieren<\/a>/)
+  // Episodes: title links to the post, formatted date, duration chip, summary,
+  // and the same shared player markup audio.js drives on article pages.
+  assert.match(html, /<h2 class="podcast-episode-title"><a href="\/de\/blog\/a\/">Folge A<\/a><\/h2>/)
+  assert.match(html, /<time datetime="2026-06-02T00:00:00Z">2\.6\.2026<\/time>/)
+  assert.match(html, /<span class="podcast-episode-duration">20 Min\.<\/span>/)
+  assert.match(html, /Worum es geht/)
+  assert.equal(html.match(/class="audio-player" data-audio="/g).length, 2, 'one player per episode')
+  assert.match(html, /data-audio-ui/)
+  assert.doesNotMatch(html, /audio-player-label/, 'episode cards carry the title already — no player label')
+
+  // Fallbacks: without channel settings the site's own name/description serve,
+  // and without a cover no broken <img> is emitted.
+  const plain = podcastPage(
+    {
+      site: { id: 's', name: 'Example', description: 'Personal site', settings: { audio: { enabled: true } } },
+      t: dictionary('en'),
+      locale: 'en',
+    },
+    [audioPost({ locale: 'en' })],
+  )
+  assert.match(plain, /<h1>Example<\/h1>/)
+  assert.match(plain, /Personal site/)
+  assert.match(plain, /Subscribe via RSS/)
+  assert.doesNotMatch(plain, /podcast-cover/)
 })
