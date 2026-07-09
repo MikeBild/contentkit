@@ -125,8 +125,8 @@ admin-only endpoint returns `403 insufficient_scope` with `"scope":"site:admin"`
 
 | Scope | Allows |
 |---|---|
-| `site:admin` | Create/update sites and create scoped API keys |
-| `content:read` | List content items and revisions |
+| `site:admin` | Create/read/update sites and create scoped API keys |
+| `content:read` | List content items and revisions, read site metadata |
 | `content:write` | Upload Markdown/assets and create immutable revisions |
 | `release:write` | Build previews, publish releases, run scheduled publish and roll back |
 | `moderation:write` | List/moderate comments and contact submissions |
@@ -140,7 +140,7 @@ Recommended key split:
 
 | Key | Scopes | Use |
 |---|---|---|
-| Site admin key | `site:admin` | Create/update sites and create additional scoped keys |
+| Site admin key | `site:admin` | Create/read/update sites and create additional scoped keys |
 | Publishing key | `content:read content:write release:write` | Upload Markdown, build previews, publish releases and roll back |
 | Moderation key | `moderation:write` | Review comments and contact submissions |
 | Scheduler key | `content:read content:write release:write moderation:write` if needed by workflow design | Scheduled publish automation |
@@ -188,6 +188,7 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | Method | Path | Scope | Function |
 |---|---|---|---|
 | POST | `/v1/sites` | `site:admin` | Create a site, locales and optional hostnames |
+| GET | `/v1/sites/{site}` | `content:read` or `site:admin` | Read site metadata and settings |
 | PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings |
 | GET | `/v1/sites/{site}/content` | `content:read` | List content items for a site |
 | POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
@@ -299,14 +300,26 @@ Important site fields:
 | `settings.twitter_handle` | `@handle` for `twitter:site`/`twitter:creator` |
 | `settings.analytics` | `{ "provider": "plausible", "domain": "..." }` or `{ "provider": "ga4", "id": "G-..." }` |
 
+Read a site:
+
+```bash
+curl "$CONTENTKIT_URL/v1/sites/<site-id>" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY"
+```
+
 Update a site:
 
 ```bash
 curl -X PATCH "$CONTENTKIT_URL/v1/sites/<site-id>" \
   -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"description":"Updated description","settings":{"accent":"#0f766e"}}'
+  -d '{"description":"Updated description","settings":{"accent":"#0f766e","eyebrow":"...","socials":{}}}'
 ```
+
+`settings` is replaced in full, not merged. A `PATCH` carrying only `accent` drops
+every other key — analytics, socials, the Turnstile site key. Read the site first,
+merge into the object you get back, then send the whole thing. `GET` accepts either
+`content:read` or `site:admin`, so the key that patches can also read.
 
 Updating site settings affects future previews/releases. Existing active release
 files remain unchanged until a new release is built.

@@ -76,7 +76,7 @@ export const API_ROUTES = [
   { pattern: /^\/public\/v1\/contact$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/comments$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
-  { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['PATCH'] },
+  { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/v1\/content\/[^/]+\/published$/, methods: ['DELETE'] },
@@ -131,6 +131,28 @@ export function createRequestHandler(ctx) {
     if (!auth.authorize(principal, scope, siteId)) {
       logger.warn('insufficient scope', { scope, siteId, key: keyFingerprint(req.headers.authorization) })
       sendJson(res, 403, { error: 'insufficient_scope', scope, ...(siteId ? { site: siteId } : {}) })
+      return null
+    }
+    return principal
+  }
+
+  // authorize() has no scope hierarchy, so a site:admin key holds none of the
+  // read scopes. Reading a site before patching it would otherwise be impossible
+  // with the very key that is allowed to patch.
+  async function requireAnyScope(req, res, scopes, siteId = null) {
+    const principal = await auth.authenticate(req.headers)
+    if (!principal) {
+      logger.warn('unauthorized', { scope: scopes.join('|'), siteId, key: keyFingerprint(req.headers.authorization) })
+      sendJson(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' })
+      return null
+    }
+    if (!scopes.some((scope) => auth.authorize(principal, scope, siteId))) {
+      logger.warn('insufficient scope', {
+        scope: scopes.join('|'),
+        siteId,
+        key: keyFingerprint(req.headers.authorization),
+      })
+      sendJson(res, 403, { error: 'insufficient_scope', scope: scopes, ...(siteId ? { site: siteId } : {}) })
       return null
     }
     return principal
@@ -359,9 +381,16 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 201, await repo.createSite(parseJson(await bodyFor(req))))
     }
     const siteMatch = path.match(/^\/v1\/sites\/([^/]+)$/)
-    if (siteMatch && req.method === 'PATCH') {
+    if (siteMatch && ['GET', 'PATCH'].includes(req.method)) {
       const site = await repo.getSite(siteMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (req.method === 'GET') {
+        // PATCH replaces `settings` wholesale, so a caller that means to change one
+        // key must first read the whole object. Without this route that read is
+        // impossible over HTTP and every partial update silently drops the rest.
+        if (!(await requireAnyScope(req, res, ['content:read', 'site:admin'], site.id))) return
+        return sendJson(res, 200, site)
+      }
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
     }

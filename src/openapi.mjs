@@ -147,8 +147,17 @@ export function openApi(config) {
         },
       },
       '/v1/sites/{site}': {
+        get: {
+          summary: 'Read site metadata and settings',
+          description:
+            'Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object.',
+          security: secured,
+          parameters: [siteParameter],
+          responses: { 200: { description: 'Site' }, 404: { description: 'Site not found' } },
+        },
         patch: {
           summary: 'Update site metadata and settings',
+          description: 'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),

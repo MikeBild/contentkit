@@ -252,6 +252,42 @@ test('DELETE /v1/content/{item}/published retires a published item via a release
   })
 })
 
+// PATCH replaces `settings` wholesale, so a partial update is only safe if the
+// caller can read the current object first. Both the reader and the patcher must
+// get through, even though site:admin holds no read scope.
+test('GET /v1/sites/{site} returns the site for content:read and for site:admin', async () => {
+  const site = { id: 'site-1', slug: 'my-site', description: 'Docs', settings: { accent: '221 83% 53%' } }
+  const repo = {
+    async getSite(slug) {
+      return slug === 'my-site' ? site : null
+    },
+  }
+  for (const scopes of [['content:read'], ['site:admin']]) {
+    await withApp({ repo, auth: scopedAuth(scopes) }, async (request) => {
+      const response = await request('/v1/sites/my-site', { headers: { 'x-api-key': 'valid' } })
+      assert.equal(response.status, 200, scopes.join())
+      assert.deepEqual(await response.json(), site)
+    })
+  }
+})
+
+test('GET /v1/sites/{site} is 403 without a read scope and 404 for an unknown site', async () => {
+  const repo = {
+    async getSite(slug) {
+      return slug === 'my-site' ? { id: 'site-1' } : null
+    },
+  }
+  await withApp({ repo, auth: scopedAuth(['release:write']) }, async (request) => {
+    const forbidden = await request('/v1/sites/my-site', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(forbidden.status, 403)
+    assert.deepEqual((await forbidden.json()).scope, ['content:read', 'site:admin'])
+
+    // The site lookup precedes the scope check, so an unknown slug is a 404.
+    const missing = await request('/v1/sites/nope', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(missing.status, 404)
+  })
+})
+
 test('GET /v1/sites/{site}/releases lists releases for rollback discovery', async () => {
   const repo = {
     async getSite(slug) {

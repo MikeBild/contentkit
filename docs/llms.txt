@@ -47,7 +47,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 
 ## Complete feature map
 
-- Site administration: create/update sites, locales, domains and design/content
+- Site administration: create/read/update sites, locales, domains and design/content
   settings such as hero text, accent color, socials, profile image and Turnstile
   site key.
 - Content authoring: immutable revisions for `page`, `post` and `project`
