@@ -362,6 +362,12 @@ test('ctx.feedUrl replaces the site feed link rather than adding a second one', 
 })
 
 test('the opted-in podcast also gets a visible footer link', () => {
+  const siteWith = (audio) => ({
+    name: 'Example',
+    base_url: 'https://example.test',
+    default_locale: 'de',
+    settings: { audio },
+  })
   const on = render({ site: siteWith({ enabled: true, podcast_link: true }) })
   const footer = on.slice(on.indexOf('<footer class="site-footer">'))
   assert.match(footer, />Podcast<\/a>/)
