@@ -361,6 +361,14 @@ test('ctx.feedUrl replaces the site feed link rather than adding a second one', 
   assert.match(links[0], /title="Example · React"/)
 })
 
+test('the opted-in podcast also gets a visible footer link', () => {
+  const on = render({ site: siteWith({ enabled: true, podcast_link: true }) })
+  const footer = on.slice(on.indexOf('<footer class="site-footer">'))
+  assert.match(footer, />Podcast<\/a>/)
+  const off = render({ site: siteWith({ enabled: true }) })
+  assert.doesNotMatch(off.slice(off.indexOf('<footer class="site-footer">')), />Podcast<\/a>/)
+})
+
 test('the podcast feed link needs both enabled audio and the podcast_link opt-in', () => {
   const siteWith = (audio) => ({
     name: 'Example',

@@ -260,6 +260,11 @@ function siteFooter(ctx) {
   const social = [
     ...Object.entries(settings.socials || {}).map(([name, url]) => item([name, safeUrl(url)], ' rel="me"')),
     item([t.rss, `/${locale}/feed.xml`]),
+    // The podcast feed only exists when audio is enabled, and stays unlisted
+    // until the operator opts in — same gate as the <link rel="alternate">.
+    ...(settings.audio?.enabled === true && settings.audio?.podcast_link === true
+      ? [item(['Podcast', `/${locale}/podcast.xml`])]
+      : []),
   ].join('')
   return `<footer class="site-footer"><div class="container">
 <div class="footer-grid">
