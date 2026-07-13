@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.9.3
+
+### Fixed
+
+- Long German compounds in article titles and full URLs in source lists now
+  wrap on narrow screens instead of being clipped outside the viewport.
+
 ## 1.9.2
 
 ### Fixed
