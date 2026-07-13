@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.9.2
+
+### Fixed
+
+- The read-aloud player is seekable again. `/media` served every asset as one
+  indivisible `200`, ignoring `Range` — so a browser would not seek within it,
+  and Chrome's media loader (which opens audio with `Range: bytes=0-`) stalled
+  at `readyState 0` without ever reporting a duration. The result was a player
+  whose scrubber, ±15 s buttons and play button all appeared dead. `/media` now
+  advertises `Accept-Ranges: bytes` and answers byte ranges with a `206` and a
+  `Content-Range` (`416` when unsatisfiable), forwarding the range to the object
+  store and slicing locally when the store ignores it. `HEAD` reports the real
+  length instead of `0`.
+- The player's ±15 s buttons and seek slider no longer refuse to act before
+  playback starts. Both bailed out on `readyState === 0`, which with
+  `preload="none"` is every fresh page view — but assigning `currentTime` in
+  that state is honoured by the browser as the default playback start position.
+  Seeking before pressing play now works, and a deliberate seek takes precedence
+  over the remembered listening position instead of being overridden by it.
+
 ## 1.9.1
 
 ### Fixed
