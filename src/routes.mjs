@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { keyFingerprint } from './auth.mjs'
 import { canonicalRequestPath, cleanPath, sha256 } from './utils.mjs'
-import { parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
+import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
 import { clientIp, contentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
 
@@ -317,8 +317,6 @@ export function createRequestHandler(ctx) {
       const id = url.pathname.split('/')[2]
       const asset = await repo.asset(id)
       if (!asset) return sendJson(res, 404, { error: 'asset not found' })
-      const response = await storage.download(asset.storage_path, { head: req.method === 'HEAD' })
-      const body = req.method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
       // Defence in depth against a hostile/legacy asset content-type: sandbox the
       // response, and force download for anything that isn't a plain image or a
       // plain audio type. Audio must be inline — the read-aloud <audio> element
@@ -326,15 +324,55 @@ export function createRequestHandler(ctx) {
       const inlineMedia =
         /^image\/(png|jpe?g|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)$/i.test(asset.content_type || '') ||
         /^audio\/(mpeg|mp4|ogg|wav|aac|flac|webm)$/i.test(asset.content_type || '')
-      send(res, 200, body, {
+      const headers = {
         'content-type': asset.content_type,
         'cache-control': 'public,max-age=31536000,immutable',
         etag: `"${asset.sha256}"`,
+        // Without this a browser treats the resource as one indivisible stream:
+        // it will play an <audio> from the top but refuse to seek within it, so
+        // the read-aloud player's scrubber and ±15 s buttons do nothing.
+        'accept-ranges': 'bytes',
         'content-security-policy': "default-src 'none'; sandbox",
         ...(inlineMedia
           ? {}
           : { 'content-disposition': `attachment; filename="${encodeURIComponent(asset.filename || id)}"` }),
+      }
+
+      // byte_size is the authoritative length; only fall back to asking the store
+      // for rows that predate the column.
+      const declared = Number(asset.byte_size)
+      let total = Number.isFinite(declared) && declared > 0 ? declared : 0
+      if (!total) {
+        const probe = await storage.download(asset.storage_path, { head: true })
+        total = Number(probe.headers.get('content-length')) || 0
+      }
+
+      if (req.method === 'HEAD') {
+        send(res, 200, Buffer.alloc(0), { ...headers, 'content-length': String(total) })
+        return true
+      }
+
+      const range = parseByteRange(req.headers.range, total)
+      if (range === 'unsatisfiable') {
+        send(res, 416, '', { ...headers, 'content-range': `bytes */${total}` })
+        return true
+      }
+      if (!range) {
+        const response = await storage.download(asset.storage_path)
+        send(res, 200, Buffer.from(await response.arrayBuffer()), headers)
+        return true
+      }
+
+      // Ask the store for just the slice. A store that honours the range answers
+      // 206 with exactly those bytes; one that ignores it answers 200 with the
+      // whole object, which we then slice ourselves — so seeking works on every
+      // backend, at worst costing a full fetch.
+      const response = await storage.download(asset.storage_path, {
+        range: `bytes=${range.start}-${range.end}`,
       })
+      const payload = Buffer.from(await response.arrayBuffer())
+      const body = response.status === 206 ? payload : payload.subarray(range.start, range.end + 1)
+      send(res, 206, body, { ...headers, 'content-range': `bytes ${range.start}-${range.end}/${total}` })
       return true
     }
     const site = await repo.getSiteByHost(req.headers.host || '')

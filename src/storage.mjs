@@ -74,11 +74,15 @@ export function createStorage(config, fetchImpl = fetch) {
       )
       return response.json()
     },
-    async download(path, { head = false } = {}) {
+    // `range` is a raw byte-range header value ("bytes=0-1023"). Object stores
+    // answer it with a 206 and a content-range; a store that ignores it answers
+    // 200 with the whole object, which callers must be ready to slice themselves.
+    async download(path, { head = false, range = '' } = {}) {
       return request(
         `/storage/v1/object/authenticated/${encodeURIComponent(config.storageBucket)}/${path.split('/').map(encodeURIComponent).join('/')}`,
         {
           method: head ? 'HEAD' : 'GET',
+          ...(range ? { headers: { range } } : {}),
         },
       )
     },

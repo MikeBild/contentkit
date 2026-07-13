@@ -47,11 +47,15 @@
 
     // Resume where the listener left off. Seek on first play, not on load:
     // preload="none" means there is no duration to seek within until the
-    // element actually starts fetching.
+    // element actually starts fetching. A listener who scrubbed or skipped
+    // before pressing play has already said where they want to be, so their
+    // choice wins over the stored position.
     let resumed = false
+    let userSeeked = false
     audio.addEventListener('play', () => {
       if (resumed) return
       resumed = true
+      if (userSeeked) return
       const position = read(key)
       // Near-the-end positions restart from zero — resuming into the last
       // seconds of a post is never what a returning listener wants.
@@ -109,9 +113,25 @@
     const render = () => {
       renderTime(audio.currentTime)
       if (seek && !scrubbing) {
-        seek.max = String(Math.max(1, Math.round(duration())))
+        // Only overwrite the server-rendered max once a real duration is known —
+        // clamping it to 1 while the duration is still unknown would pin the
+        // thumb to the far end and make the whole track a one-second range.
+        const limit = Math.round(duration())
+        if (limit > 0) seek.max = String(limit)
         seek.value = String(Math.floor(audio.currentTime))
       }
+    }
+
+    // Seeking before the audio has loaded is legitimate. With preload="none"
+    // readyState stays 0 until the first play, and assigning currentTime in that
+    // state is not ignored — it sets the default playback start position, which
+    // the browser applies as soon as it has metadata. Refusing to seek on
+    // readyState 0 is what left ±15 s and the scrubber dead on a fresh page.
+    const seekTo = (seconds) => {
+      const limit = duration()
+      userSeeked = true
+      audio.currentTime = Math.max(0, limit ? Math.min(seconds, limit) : seconds)
+      render()
     }
 
     if (playButton) {
@@ -122,7 +142,9 @@
         if (label) playButton.setAttribute('aria-label', label)
       }
       playButton.addEventListener('click', () => {
-        if (audio.paused) audio.play()
+        // play() rejects on the autoplay policy and on a failed load; neither is
+        // worth an unhandled rejection in the console.
+        if (audio.paused) audio.play().catch(() => {})
         else audio.pause()
       })
       audio.addEventListener('play', () => setState(true))
@@ -132,11 +154,8 @@
 
     for (const skip of ui.querySelectorAll('[data-audio-skip]')) {
       skip.addEventListener('click', () => {
-        // Before any fetch (readyState 0) there is nothing to seek within.
-        if (!audio.readyState) return
         const step = Number(skip.dataset.audioSkip) || 0
-        audio.currentTime = Math.min(Math.max(0, audio.currentTime + step), duration() || Infinity)
-        render()
+        seekTo(audio.currentTime + step)
       })
     }
 
@@ -150,8 +169,7 @@
       })
       seek.addEventListener('change', () => {
         scrubbing = false
-        if (audio.readyState) audio.currentTime = Number(seek.value) || 0
-        render()
+        seekTo(Number(seek.value) || 0)
       })
     }
 

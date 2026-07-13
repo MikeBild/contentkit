@@ -606,21 +606,34 @@ test('API-key minting allows an in-scope subset', async () => {
   })
 })
 
-function mediaFixture(asset) {
+const MEDIA_BODY = Buffer.from('0123456789abcdefghijklmnopqrstuvwxyz')
+
+// Models an object store behind /media. `honoursRange` picks which of the two
+// backends we have to survive: one that answers a range with a 206 (Supabase),
+// and one that ignores the header and hands back the whole object, which the
+// route then has to slice itself.
+function mediaFixture(asset, { honoursRange = false, body = MEDIA_BODY } = {}) {
+  const downloads = []
   return {
+    downloads,
     repo: {
       async getSiteByHost() {
         return null
       },
       async asset(id) {
-        return id === asset.id ? asset : null
+        return id === asset.id ? { byte_size: body.length, ...asset } : null
       },
     },
     storage: {
-      async download() {
+      async download(path, { head = false, range = '' } = {}) {
+        downloads.push({ head, range })
+        const spec = honoursRange && range ? /^bytes=(\d+)-(\d+)$/.exec(range) : null
+        const slice = spec ? body.subarray(Number(spec[1]), Number(spec[2]) + 1) : body
         return {
+          status: spec ? 206 : 200,
+          headers: { get: (name) => (name === 'content-length' ? String(slice.length) : null) },
           async arrayBuffer() {
-            return Buffer.from('bytes')
+            return head ? Buffer.alloc(0) : slice
           },
         }
       },
@@ -677,6 +690,103 @@ test('/media serves audio inline with a sandbox CSP (the read-aloud player strea
       assert.equal(response.headers.get('content-type'), contentType)
     })
   }
+})
+
+// Without ranges a browser will play an <audio> from the top but refuse to seek
+// inside it, which is what left the read-aloud player's scrubber and ±15 s
+// buttons dead. These pin the range contract down on both kinds of backend.
+const audioAsset = {
+  id: 'a4',
+  storage_path: 'p',
+  content_type: 'audio/mpeg',
+  sha256: 'h',
+  filename: 'post-vorlesen.mp3',
+}
+
+test('/media advertises range support and serves the whole entity when no range is asked for', async () => {
+  const { repo, storage } = mediaFixture(audioAsset)
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3')
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('accept-ranges'), 'bytes')
+    assert.equal(response.headers.get('content-range'), null)
+    assert.equal(response.headers.get('content-length'), String(MEDIA_BODY.length))
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), MEDIA_BODY.toString())
+  })
+})
+
+test('/media answers a byte range with a 206 slice when the store ignores the range header', async () => {
+  const { repo, storage, downloads } = mediaFixture(audioAsset, { honoursRange: false })
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3', { headers: { range: 'bytes=10-19' } })
+    assert.equal(response.status, 206)
+    assert.equal(response.headers.get('content-range'), `bytes 10-19/${MEDIA_BODY.length}`)
+    assert.equal(response.headers.get('content-length'), '10')
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'abcdefghij')
+    assert.equal(downloads.at(-1).range, 'bytes=10-19')
+  })
+})
+
+test('/media passes a store-honoured 206 straight through without re-slicing', async () => {
+  const { repo, storage } = mediaFixture(audioAsset, { honoursRange: true })
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3', { headers: { range: 'bytes=10-19' } })
+    assert.equal(response.status, 206)
+    assert.equal(response.headers.get('content-range'), `bytes 10-19/${MEDIA_BODY.length}`)
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'abcdefghij')
+  })
+})
+
+test('/media serves an open-ended range to the end (this is the request Chrome opens media with)', async () => {
+  const { repo, storage } = mediaFixture(audioAsset)
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3', { headers: { range: 'bytes=0-' } })
+    assert.equal(response.status, 206)
+    assert.equal(response.headers.get('content-range'), `bytes 0-${MEDIA_BODY.length - 1}/${MEDIA_BODY.length}`)
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), MEDIA_BODY.toString())
+  })
+})
+
+test('/media serves a suffix range', async () => {
+  const { repo, storage } = mediaFixture(audioAsset)
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3', { headers: { range: 'bytes=-6' } })
+    assert.equal(response.status, 206)
+    assert.equal(response.headers.get('content-range'), `bytes 30-35/${MEDIA_BODY.length}`)
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'uvwxyz')
+  })
+})
+
+test('/media rejects a range that starts past the end with a 416', async () => {
+  const { repo, storage } = mediaFixture(audioAsset)
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3', { headers: { range: 'bytes=999-1200' } })
+    assert.equal(response.status, 416)
+    assert.equal(response.headers.get('content-range'), `bytes */${MEDIA_BODY.length}`)
+  })
+})
+
+test('/media falls back to the whole entity for a range it cannot serve', async () => {
+  const { repo, storage } = mediaFixture(audioAsset)
+  await withApp({ repo, storage }, async (request) => {
+    // Multi-range would mean multipart/byteranges; serving the full entity is a
+    // legal answer and no media element asks for it.
+    for (const range of ['bytes=0-9,20-29', 'pages=1-2', 'bytes=abc']) {
+      const response = await request('/media/a4/post-vorlesen.mp3', { headers: { range } })
+      assert.equal(response.status, 200, range)
+      assert.equal(Buffer.from(await response.arrayBuffer()).toString(), MEDIA_BODY.toString(), range)
+    }
+  })
+})
+
+test('HEAD /media reports the real length, not an empty body length', async () => {
+  const { repo, storage } = mediaFixture(audioAsset)
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/media/a4/post-vorlesen.mp3', { method: 'HEAD' })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-length'), String(MEDIA_BODY.length))
+    assert.equal(response.headers.get('accept-ranges'), 'bytes')
+  })
 })
 
 test('GET /v1/content/{item}/audio requires content:read and returns the worker status', async () => {

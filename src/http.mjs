@@ -79,6 +79,37 @@ export function parseMultipart(buffer, contentType) {
   return parts
 }
 
+// RFC 9110 byte ranges, single-range only. Returns null when the header is
+// absent or unusable (the caller then serves the whole thing with a 200 — a
+// malformed Range must never fail the request), 'unsatisfiable' for a range
+// that starts past the end (416), or the resolved inclusive {start, end}.
+//
+// Multi-range ("bytes=0-9,20-29") is deliberately declined: answering it means
+// multipart/byteranges, and no media element asks for it. Serving the full
+// entity instead is a valid response to any range request.
+export function parseByteRange(header, total) {
+  if (!header || !Number.isFinite(total) || total <= 0) return null
+  const spec = String(header)
+    .trim()
+    .match(/^bytes=(\d*)-(\d*)$/)
+  if (!spec) return null
+  const [, rawStart, rawEnd] = spec
+  if (!rawStart && !rawEnd) return null
+
+  // "bytes=-500" is a suffix: the last 500 bytes, clamped to the whole entity.
+  if (!rawStart) {
+    const length = Number(rawEnd)
+    if (!length) return 'unsatisfiable'
+    return { start: Math.max(0, total - length), end: total - 1 }
+  }
+
+  const start = Number(rawStart)
+  if (start >= total) return 'unsatisfiable'
+  const end = rawEnd ? Math.min(Number(rawEnd), total - 1) : total - 1
+  if (end < start) return 'unsatisfiable'
+  return { start, end }
+}
+
 export function send(res, status, body = '', headers = {}) {
   const payload = Buffer.isBuffer(body) ? body : Buffer.from(String(body))
   res.writeHead(status, {
