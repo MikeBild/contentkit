@@ -951,9 +951,7 @@ test('a stored revision with malformed extra/related builds with a warning, neve
 })
 
 test('extra fields surface in HTML, the Markdown twin and llms-full.txt only behind show_extra', async () => {
-  const revisions = () => [
-    post({ slug: 'a', title: 'Alpha', extra: 'extra:\n  series: effect-ts\n  level: 3\n' }),
-  ]
+  const revisions = () => [post({ slug: 'a', title: 'Alpha', extra: 'extra:\n  series: effect-ts\n  level: 3\n' })]
   // Default off: the authored fields stay data, invisible on every surface.
   const quiet = await build({ revisions: revisions() })
   assert.doesNotMatch(quiet.files.get('en/blog/a/index.html').body.toString(), /extra-fields|effect-ts/)
@@ -971,7 +969,10 @@ test('extra fields surface in HTML, the Markdown twin and llms-full.txt only beh
   assert.match(shown.files.get('en/blog/a/index.md').body.toString(), /- series: effect-ts\n- level: 3\n/)
   assert.match(shown.files.get('en/llms-full.txt').body.toString(), /- series: effect-ts\n- level: 3\n/)
   // Never in JSON-LD, never in the search index — extra is not a typed vocabulary.
-  const structured = shown.files.get('en/blog/a/index.html').body.toString().match(/application\/ld\+json">(.*?)<\/script>/s)
+  const structured = shown.files
+    .get('en/blog/a/index.html')
+    .body.toString()
+    .match(/application\/ld\+json">(.*?)<\/script>/s)
   if (structured) assert.doesNotMatch(structured[1], /effect-ts/)
   assert.doesNotMatch(shown.files.get('en/search-index.json').body.toString(), /effect-ts/)
 })

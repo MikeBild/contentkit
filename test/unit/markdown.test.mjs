@@ -153,7 +153,10 @@ test('malformed extra frontmatter fails the upload with a clear 422', async () =
   const doc = (fields) => `---\nkind: post\ntitle: T\nlocale: de\nslug: t\nsummary: S\n${fields}\n---\nBody.`
   await assert.rejects(() => renderMarkdown(doc('extra: not a map')), /extra must be a map of custom fields/)
   await assert.rejects(() => renderMarkdown(doc('extra:\n  - a\n  - b')), /extra must be a map of custom fields/)
-  await assert.rejects(() => renderMarkdown(doc('extra:\n  BadKey: 1')), /extra keys must match \[a-z\]\[a-z0-9_\]\{0,63\}/)
+  await assert.rejects(
+    () => renderMarkdown(doc('extra:\n  BadKey: 1')),
+    /extra keys must match \[a-z\]\[a-z0-9_\]\{0,63\}/,
+  )
   await assert.rejects(
     () => renderMarkdown(doc('extra:\n  nested:\n    BadKey: 1')),
     /extra keys must match/,

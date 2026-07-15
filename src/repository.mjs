@@ -679,7 +679,8 @@ export function createRepository(config, db, storage) {
         source_sha256: `eq.${sourceHash}`,
         slug: `eq.${meta.slug}`,
       })
-      if (existingRevision) return { item, revision: stripSearchVector(existingRevision), assets: [...assetMap.values()] }
+      if (existingRevision)
+        return { item, revision: stripSearchVector(existingRevision), assets: [...assetMap.values()] }
       const [revision] = await db.insert('ck_content_revisions', {
         item_id: item.id,
         status: meta.scheduled_at ? 'scheduled' : 'draft',

@@ -275,8 +275,7 @@ function themeStyles(settings) {
   const dark = []
   for (const [key, value] of Object.entries(tokens)) {
     const property = `--${key.replace(/_/g, '-')}`
-    const convert = (raw) =>
-      String(THEME_COLOR_TOKENS.includes(key) ? accentToHslTriple(raw) : raw).replace(/</g, '')
+    const convert = (raw) => String(THEME_COLOR_TOKENS.includes(key) ? accentToHslTriple(raw) : raw).replace(/</g, '')
     if (value !== null && typeof value === 'object') {
       light.push(`${property}:${convert(value.light)}`)
       dark.push(`${property}:${convert(value.dark)}`)

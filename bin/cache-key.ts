@@ -1,1 +1,1 @@
-export default 'd0377674ae5b5a3d'
+export default '27b92802fdccf52b'

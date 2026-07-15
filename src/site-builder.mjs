@@ -336,7 +336,16 @@ function sitemap(items) {
 // varies with build time even when content does not. That is intended: a release
 // is an immutable snapshot, so a published release keeps the age notice it was
 // built with until the site is published again.
-export async function buildSite({ root, site, locales, revisions, comments = [], audio = [], now = new Date(), logger }) {
+export async function buildSite({
+  root,
+  site,
+  locales,
+  revisions,
+  comments = [],
+  audio = [],
+  now = new Date(),
+  logger,
+}) {
   const { files, assets } = await staticAssets(root)
   const audioByItem = new Map(audio.map((entry) => [entry.item_id, entry]))
   const rendered = []

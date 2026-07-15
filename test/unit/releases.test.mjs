@@ -17,7 +17,15 @@ const snapshotSite = {
 }
 
 function makeSnapshot(overrides = {}) {
-  return { site: snapshotSite, locales: [{ locale: 'en' }], revisions: [], comments: [], items: [], overlay: [], ...overrides }
+  return {
+    site: snapshotSite,
+    locales: [{ locale: 'en' }],
+    revisions: [],
+    comments: [],
+    items: [],
+    overlay: [],
+    ...overrides,
+  }
 }
 
 function makeDb({ rpcError, selectRows = {} } = {}) {
