@@ -10,6 +10,7 @@ import {
   contactBody,
   contentBody,
   dictionary,
+  extraFieldText,
   homeBody,
   layout,
   listingBody,
@@ -251,13 +252,21 @@ const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^
 // single builder feeds both llms-full.txt (heading '##', documents joined under
 // one H1) and the standalone per-post index.md (heading '#') — two renderings
 // of the same block, never two implementations.
-function itemMarkdown(item, heading = '#') {
+function itemMarkdown(item, heading = '#', showExtra = false) {
   const tldr = item.tldr?.length ? `${item.tldr.map((line) => `- ${line}`).join('\n')}\n\n` : ''
-  return `${heading} ${item.title}\n\nURL: ${item.canonical}\n\n${tldr}${stripLeadingH1(item.source).trim()}`
+  // Authored custom fields, one bullet per field — same per-site opt-in
+  // (settings.content.show_extra) as the HTML rendering, so the Markdown twin
+  // and llms-full.txt never say more than the page does.
+  const extraEntries = showExtra ? Object.entries(item.extra || {}) : []
+  const extra = extraEntries.length
+    ? `${extraEntries.map(([key, value]) => `- ${key}: ${extraFieldText(value)}`).join('\n')}\n\n`
+    : ''
+  return `${heading} ${item.title}\n\nURL: ${item.canonical}\n\n${tldr}${extra}${stripLeadingH1(item.source).trim()}`
 }
 
 function llmsFullTxt(site, items) {
-  const documents = items.map((item) => `---\n\n${itemMarkdown(item, '##')}`)
+  const showExtra = site.settings?.content?.show_extra === true
+  const documents = items.map((item) => `---\n\n${itemMarkdown(item, '##', showExtra)}`)
   return `${[`# ${site.name}`, `> ${excerpt(site.description || site.name, 300)}`, ...documents].join('\n\n')}\n`
 }
 
@@ -327,12 +336,18 @@ function sitemap(items) {
 // varies with build time even when content does not. That is intended: a release
 // is an immutable snapshot, so a published release keeps the age notice it was
 // built with until the site is published again.
-export async function buildSite({ root, site, locales, revisions, comments = [], audio = [], now = new Date() }) {
+export async function buildSite({ root, site, locales, revisions, comments = [], audio = [], now = new Date(), logger }) {
   const { files, assets } = await staticAssets(root)
   const audioByItem = new Map(audio.map((entry) => [entry.item_id, entry]))
   const rendered = []
   for (const revision of revisions) {
-    const result = await renderMarkdown(revision.markdown)
+    // Lenient: a stored revision predating today's frontmatter rules (e.g. a
+    // malformed `extra:`) renders without the offending field instead of
+    // failing the release — write-time validation stays strict.
+    const result = await renderMarkdown(revision.markdown, { lenient: true })
+    for (const warning of result.warnings) {
+      logger?.warn?.(warning, { siteId: site.id, itemId: revision.item_id, slug: result.meta.slug })
+    }
     const item = {
       ...revision,
       ...result.meta,
@@ -401,10 +416,31 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
     const link = (post) => (post ? { title: post.title, url: post.url } : null)
     const idf = tagIdf(posts)
     const order = new Map(posts.map((post, index) => [post.item_id, index]))
+    // Authored `related:` references lead the list in the author's order; tag
+    // similarity fills up to three. `posts` excludes noindex items, so a
+    // reference to a draft resolves to nothing — dropped with a warning, never
+    // a build failure: the referenced post may simply not be published yet.
+    const bySlug = new Map(posts.map((post) => [post.slug, post]))
+    const authoredRelated = (post) => {
+      const targets = []
+      for (const slug of post.related_slugs || []) {
+        const target = bySlug.get(slug)
+        if (target) targets.push(target)
+        else logger?.warn?.('related reference not found', { siteId: site.id, locale, slug: post.slug, related: slug })
+      }
+      return targets
+    }
     const relations = posts.map((post) => {
       const index = order.get(post.item_id)
+      const authored = authoredRelated(post)
+      const authoredIds = new Set(authored.map((entry) => entry.item_id))
+      // Over-fetch by the authored count so filtering them out cannot leave
+      // the fill short of candidates.
+      const fill = relatedPosts(post, posts, idf, 3 + authored.length)
+        .filter((entry) => !authoredIds.has(entry.item_id))
+        .slice(0, Math.max(0, 3 - authored.length))
       return {
-        related: relatedPosts(post, posts, idf).map(link),
+        related: [...authored, ...fill].map(link),
         // `posts` is published_at DESC, so the *next* entry is the older one.
         newer: link(posts[index - 1]),
         older: link(posts[index + 1]),
@@ -717,7 +753,13 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
       // a bare .md file could not ask crawlers for the same restraint.
       const markdownUrl = item.kind === 'post' && !item.noindex ? `${item.url}index.md` : undefined
       if (markdownUrl) {
-        files.set(markdownUrl.replace(/^\//, ''), text(`${itemMarkdown(item)}\n`, 'text/markdown; charset=utf-8'))
+        files.set(
+          markdownUrl.replace(/^\//, ''),
+          text(
+            `${itemMarkdown(item, '#', site.settings?.content?.show_extra === true)}\n`,
+            'text/markdown; charset=utf-8',
+          ),
+        )
       }
       files.set(
         item.url.replace(/^\//, '') + 'index.html',

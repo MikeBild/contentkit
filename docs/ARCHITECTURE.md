@@ -17,8 +17,43 @@
 Unpublishing never destroys data: revisions are immutable, so a retired item
 returns as soon as one of its revisions is published again.
 
+Content webhook events ride the activation transaction: `ck_activate_release()`
+and the outbox rows for `contentkit.content.published`,
+`contentkit.content.unpublished` and `contentkit.release.published` commit
+together, so a delivery can only exist for a pointer switch that actually
+happened. Events fire per real transition — a no-op republish stays silent, and
+a rollback (which moves the site pointer, not item pointers) emits only
+`release.published`.
+
 An upload or render failure cannot change the public site. Rollback activates a
 known release without rendering or copying files.
+
+The read API (`GET /v1/sites/{site}/published` and
+`.../published/{kind}/{locale}/{slug}`) exposes the same published state as
+JSON. It lives on the management API behind `content:read` scoped keys —
+headless consumers are servers and build pipelines, exactly what scoped keys
+exist for — so no second, anonymous delivery path appears and site delivery
+stays static. The single document's HTML is rendered on demand and never
+stored: revisions remain immutable Markdown, and caching rides existing
+versions (a weak ETag over the site's publish epoch for the list, a strong
+ETag over the revision source hash for the document).
+
+Server-side search (`GET /v1/sites/{site}/search`) is an API-host feature on
+the same read API: PostgreSQL full-text vectors are filled by an insert
+trigger on the immutable revisions and queried only through the whitelisted
+`ck_search_published` function, which joins exclusively over
+`published_revision_id` — drafts are invisible by construction. Published
+sites keep their static client-side search (`search-index.json`); nothing
+about site delivery changes, and no anonymous search path appears.
+
+A theme is a token assignment, never a different DOM: `settings.theme.tokens`
+fills the custom properties the shared stylesheet already consumes (validated
+against an allowlist on write, light/dark aware), `settings.accent` stays the
+shorthand for the primary token, and the size-capped
+`settings.theme.custom_css` escape hatch is appended as the last `<style>`
+element. The generated inline block rides each page while `site.css` itself
+stays shared and content-hashed — deliberately no template or layout overrides,
+which would be a plugin system through the back door.
 
 ## Migration ownership
 
@@ -126,6 +161,18 @@ tag vectors: a tag on every post has an IDF of zero and contributes nothing, so 
 post whose only tags are universal has no related section at all. Sort comparators
 avoid `localeCompare`, whose behaviour follows the ICU data compiled into the Node
 build.
+
+Two frontmatter keys extend the authored contract without becoming a schema builder:
+`extra:` is an author-owned map of custom fields stored verbatim in the revision
+metadata (rendered in HTML and the Markdown surfaces only behind
+`settings.content.show_extra`, never in JSON-LD or the search index), and
+`related: [slug, …]` names same-locale posts to recommend. Authored references lead the
+related-posts block in the author's order; tag similarity fills the list up to three,
+and a reference that resolves to no published post is dropped with a warning at build
+time — never a release failure, because the referenced post may simply not be published
+yet. There are no custom content kinds: a dedicated collection is `kind: post` plus a
+dedicated tag plus `extra` fields — the tag page supplies the listing and feed for free;
+one-off pages are `kind: page`.
 
 ### Build time is an input
 

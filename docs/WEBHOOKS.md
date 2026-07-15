@@ -14,9 +14,47 @@ only shares a signing secret with Contentkit.
 | `contentkit.comment.submitted` | A comment was submitted for moderation |
 | `contentkit.comment.approved` | A comment was approved |
 | `contentkit.release.failed` | A release or preview build failed |
+| `contentkit.content.published` | An item's published revision changed during release activation |
+| `contentkit.content.unpublished` | A published item was retired by a release |
+| `contentkit.release.published` | A release was activated (including rollbacks and empty releases) |
 
 Every payload contains `event_id`, `type`, `site`, `occurred_at`, `summary`,
 `resource` and event-specific `data`.
+
+Content events are enqueued in the same database transaction that switches the
+published pointers, and only for real transitions — republishing an already
+published revision emits nothing. A `contentkit.content.published` payload:
+
+```json
+{
+  "event_id": "<uuid>",
+  "type": "contentkit.content.published",
+  "site": { "id": "<uuid>", "name": "Example" },
+  "occurred_at": "2026-07-15T12:00:00.000Z",
+  "data": {
+    "item_id": "<uuid>",
+    "kind": "post",
+    "locale": "de",
+    "translation_key": "hello-world",
+    "slug": "hello-world",
+    "title": "Hello World",
+    "revision_id": "<uuid>",
+    "release_id": "<uuid>"
+  },
+  "resource": { "kind": "content", "id": "<item uuid>" },
+  "summary": "Content published"
+}
+```
+
+`contentkit.content.unpublished` carries the same `data` shape with
+`revision_id` set to the until-now published (retired) revision. Payloads
+deliberately contain no absolute URLs — the URL layout belongs to the site
+builder, not the CMS.
+
+Boundary: a rollback and a release with empty `revision_ids` move no item
+pointers, so they emit no `content.*` events — only
+`contentkit.release.published` (with `published_count`/`unpublished_count`
+of the activation, `0`/`0` and reason `rollback` for rollbacks).
 
 ## Registering endpoints
 

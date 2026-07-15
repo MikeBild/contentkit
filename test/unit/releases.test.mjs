@@ -16,13 +16,13 @@ const snapshotSite = {
   publish_epoch: 3,
 }
 
-function makeSnapshot() {
-  return { site: snapshotSite, locales: [{ locale: 'en' }], revisions: [], comments: [] }
+function makeSnapshot(overrides = {}) {
+  return { site: snapshotSite, locales: [{ locale: 'en' }], revisions: [], comments: [], items: [], overlay: [], ...overrides }
 }
 
-function makeDb({ rpcError } = {}) {
+function makeDb({ rpcError, selectRows = {} } = {}) {
   let rpcFailures = rpcError ? 1 : 0
-  const calls = { inserts: [], updates: [], rpcs: [], removed: [] }
+  const calls = { inserts: [], updates: [], rpcs: [], removed: [], selects: [] }
   return {
     calls,
     async insert(table, body) {
@@ -32,6 +32,10 @@ function makeDb({ rpcError } = {}) {
     async update(table, filters, body) {
       calls.updates.push({ table, filters, body })
       return [body]
+    },
+    async select(table, query) {
+      calls.selects.push({ table, query })
+      return selectRows[table] || []
     },
     async rpc(name, params) {
       calls.rpcs.push({ name, params })
@@ -43,6 +47,9 @@ function makeDb({ rpcError } = {}) {
     },
     async remove(table, filters) {
       calls.removed.push({ table, filters })
+    },
+    async tx(fn) {
+      return fn(this)
     },
   }
 }
@@ -65,17 +72,26 @@ function makeStorage({ failOnUpload = 0 } = {}) {
   }
 }
 
-function makeRepo() {
+function makeRepo(snapshot) {
   const outbox = []
+  const enqueued = []
   return {
     outbox,
+    enqueued,
     snapshots: 0,
     async buildSnapshot() {
       this.snapshots++
-      return makeSnapshot()
+      return snapshot || makeSnapshot()
     },
     async createOutbox(...args) {
       outbox.push(args)
+    },
+    async enqueueContentEvents(exec, site, events) {
+      enqueued.push({ exec, site, events })
+      return events.map((event) => event.type)
+    },
+    async getSite() {
+      return snapshotSite
     },
     async getRelease() {
       return null
@@ -200,4 +216,143 @@ test('rollback rejects unknown or foreign releases and activates known ones', as
   const result = await releases.rollback('site-1', 'release-1')
   assert.deepEqual(result, { release_id: 'release-1', active: true })
   assert.equal(db.calls.rpcs.at(-1).name, 'ck_activate_release')
+})
+
+test('activation enqueues content.published for changed pointers plus one release.published', async () => {
+  const db = makeDb()
+  const repo = makeRepo(
+    makeSnapshot({
+      items: [
+        { id: 'item-1', kind: 'post', locale: 'en', translation_key: 'hello', published_revision_id: null },
+        { id: 'item-2', kind: 'page', locale: 'en', translation_key: 'about', published_revision_id: 'rev-old' },
+      ],
+      overlay: [{ id: 'rev-1', item_id: 'item-1', slug: 'hello', title: 'Hello' }],
+    }),
+  )
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  const result = await releases.publish({ siteId: 'site-1', revisionIds: ['rev-1'], reason: 'first publish' })
+  assert.equal(repo.enqueued.length, 1)
+  const { exec, site, events } = repo.enqueued[0]
+  assert.equal(exec, db, 'events must be enqueued through the activation transaction')
+  assert.equal(site, snapshotSite)
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['contentkit.content.published', 'contentkit.release.published'],
+  )
+  assert.deepEqual(events[0], {
+    type: 'contentkit.content.published',
+    resourceKind: 'content',
+    resourceId: 'item-1',
+    summary: 'Content published',
+    data: {
+      item_id: 'item-1',
+      kind: 'post',
+      locale: 'en',
+      translation_key: 'hello',
+      slug: 'hello',
+      title: 'Hello',
+      revision_id: 'rev-1',
+      release_id: result.release_id,
+    },
+  })
+  assert.deepEqual(events[1].data, {
+    release_id: result.release_id,
+    reason: 'first publish',
+    published_count: 1,
+    unpublished_count: 0,
+  })
+})
+
+test('a no-op republish emits only release.published', async () => {
+  const db = makeDb()
+  const repo = makeRepo(
+    makeSnapshot({
+      items: [{ id: 'item-1', kind: 'post', locale: 'en', translation_key: 'hello', published_revision_id: 'rev-1' }],
+      overlay: [{ id: 'rev-1', item_id: 'item-1', slug: 'hello', title: 'Hello' }],
+    }),
+  )
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  await releases.publish({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  const { events } = repo.enqueued[0]
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['contentkit.release.published'],
+  )
+  assert.equal(events[0].data.published_count, 0)
+})
+
+test('retiring a published item emits content.unpublished with the retired revision', async () => {
+  const db = makeDb({
+    selectRows: { ck_content_revisions: [{ id: 'rev-old', item_id: 'item-1', slug: 'bye', title: 'Bye' }] },
+  })
+  const repo = makeRepo(
+    makeSnapshot({
+      items: [
+        { id: 'item-1', kind: 'post', locale: 'en', translation_key: 'bye', published_revision_id: 'rev-old' },
+        { id: 'item-2', kind: 'page', locale: 'en', translation_key: 'never', published_revision_id: null },
+      ],
+    }),
+  )
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  const result = await releases.publish({ siteId: 'site-1', revisionIds: [], retireItemIds: ['item-1', 'item-2'] })
+  const { events } = repo.enqueued[0]
+  // item-2 had no published pointer, so retiring it is a no-op and stays silent.
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['contentkit.content.unpublished', 'contentkit.release.published'],
+  )
+  assert.deepEqual(events[0].data, {
+    item_id: 'item-1',
+    kind: 'post',
+    locale: 'en',
+    translation_key: 'bye',
+    slug: 'bye',
+    title: 'Bye',
+    revision_id: 'rev-old',
+    release_id: result.release_id,
+  })
+  assert.deepEqual(events[1].data, {
+    release_id: result.release_id,
+    reason: '',
+    published_count: 0,
+    unpublished_count: 1,
+  })
+})
+
+test('a stale-epoch first attempt enqueues nothing; only the retry attempt emits events', async () => {
+  const db = makeDb({ rpcError: true })
+  const repo = makeRepo()
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  await releases.publish({ siteId: 'site-1', revisionIds: [] })
+  assert.equal(repo.snapshots, 2)
+  assert.equal(repo.enqueued.length, 1, 'the failed activation must not enqueue events')
+  assert.deepEqual(
+    repo.enqueued[0].events.map((event) => event.type),
+    ['contentkit.release.published'],
+  )
+})
+
+test('rollback emits only release.published with reason rollback and zero counts', async () => {
+  const db = makeDb()
+  const repo = makeRepo()
+  repo.getRelease = async () => ({ id: 'release-1', site_id: 'site-1', status: 'superseded' })
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  await releases.rollback('site-1', 'release-1')
+  assert.equal(repo.enqueued.length, 1)
+  const { events } = repo.enqueued[0]
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['contentkit.release.published'],
+  )
+  assert.deepEqual(events[0].data, {
+    release_id: 'release-1',
+    reason: 'rollback',
+    published_count: 0,
+    unpublished_count: 0,
+  })
 })

@@ -22,6 +22,27 @@ const TABLES = new Set([
   'ck_audio_jobs',
 ])
 
+// Whitelisted SQL functions rpc() may call. Each entry pins the exact statement
+// and parameter order, so callers can never influence the SQL shape — an
+// unknown name throws, exactly like an unknown table.
+const FUNCTIONS = {
+  ck_activate_release: {
+    sql: 'SELECT public.ck_activate_release($1, $2, $3, $4)',
+    values: (body) => [
+      body.p_release_id,
+      body.p_revision_ids || [],
+      body.p_retire_item_ids || [],
+      body.p_expected_epoch ?? null,
+    ],
+    result: () => null,
+  },
+  ck_search_published: {
+    sql: 'SELECT * FROM public.ck_search_published($1, $2, $3, $4, $5)',
+    values: (body) => [body.p_site_id, body.p_query, body.p_locale ?? null, body.p_kind ?? null, body.p_limit],
+    result: (response) => response.rows,
+  },
+}
+
 function identifier(value) {
   if (!/^[a-z][a-z0-9_]*$/.test(value)) throw new Error(`invalid SQL identifier: ${value}`)
   return `"${value}"`
@@ -141,14 +162,9 @@ function makeApi(exec) {
     },
 
     async rpc(name, body = {}) {
-      if (name !== 'ck_activate_release') throw new Error(`unknown Contentkit function: ${name}`)
-      await exec('SELECT public.ck_activate_release($1, $2, $3, $4)', [
-        body.p_release_id,
-        body.p_revision_ids || [],
-        body.p_retire_item_ids || [],
-        body.p_expected_epoch ?? null,
-      ])
-      return null
+      const fn = FUNCTIONS[name]
+      if (!fn) throw new Error(`unknown Contentkit function: ${name}`)
+      return fn.result(await exec(fn.sql, fn.values(body)))
     },
   }
 }

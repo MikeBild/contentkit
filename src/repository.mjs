@@ -45,6 +45,152 @@ function validBaseUrl(value) {
   }
 }
 
+// Published read API paging. The cursor is keyset-based: it encodes the last
+// entry's sort position (updated_at DESC, item_id ASC as the tiebreak) as
+// base64url("<updated_at>|<item_id>") and is opaque to clients.
+const PUBLISHED_PAGE_DEFAULT = 50
+const PUBLISHED_PAGE_MAX = 200
+
+// Server-side full-text search over published content. The query is bounded so
+// websearch_to_tsquery never chews on arbitrarily long input; limits mirror the
+// read-API paging pattern (default page, hard cap).
+const SEARCH_QUERY_MAX_CHARS = 200
+const SEARCH_LIMIT_DEFAULT = 20
+const SEARCH_LIMIT_MAX = 100
+
+const invalidQuery = (message) => Object.assign(new Error(message), { statusCode: 422 })
+
+const publishedCursor = (entry) =>
+  Buffer.from(`${new Date(entry.updated_at).toISOString()}|${entry.item_id}`).toString('base64url')
+
+function parsePublishedCursor(value) {
+  const decoded = Buffer.from(String(value), 'base64url').toString('utf8')
+  const separator = decoded.indexOf('|')
+  const updatedAt = separator > 0 ? Date.parse(decoded.slice(0, separator)) : NaN
+  const itemId = decoded.slice(separator + 1)
+  if (Number.isNaN(updatedAt) || !itemId) throw invalidQuery('cursor is invalid')
+  return { updatedAt, itemId }
+}
+
+// A read-API entry: the item's identity merged with its published revision.
+// `metadata` is the revision jsonb verbatim — the full frontmatter contract,
+// including author-owned `extra` fields — deliberately unfiltered.
+function publishedEntry(item, revision) {
+  return {
+    item_id: item.id,
+    kind: item.kind,
+    locale: item.locale,
+    translation_key: item.translation_key,
+    slug: revision.slug,
+    title: revision.title,
+    summary: revision.summary,
+    tags: revision.tags,
+    metadata: revision.metadata,
+    revision_id: revision.id,
+    published_at: revision.published_at,
+    updated_at: item.updated_at,
+  }
+}
+
+// search_vector (migration 0006) is a search-index internal roughly the size
+// of the document. Raw revision rows travel into API responses (the revision
+// listing, ingest's 201), so the column is shed before a row leaves the
+// repository — publishedEntry and search results already project explicitly.
+function stripSearchVector({ search_vector, ...revision }) {
+  return revision
+}
+
+// settings.theme.tokens may only name custom properties that site.css actually
+// consumes (plus font_family) — a theme is a token assignment, not a schema, so
+// an unknown key is a typo and fails the write instead of silently doing
+// nothing. Values are one string for both color schemes or { light, dark }.
+const THEME_TOKEN_ALLOWLIST = [
+  'background',
+  'foreground',
+  'muted',
+  'muted_foreground',
+  'border',
+  'primary',
+  'primary_foreground',
+  'radius',
+  'font_family',
+]
+
+// settings.theme.custom_css is the escape hatch for whatever tokens do not
+// cover. The site owner authors it, so the guard is type + size plus rejecting
+// "</style" (which would break out of the emitted <style> element) — not a CSS
+// sanitizer.
+const THEME_CUSTOM_CSS_MAX_BYTES = 8192
+
+// A token value is one CSS declaration value (a color, a radius, a font
+// stack), so 256 bytes is generous. Capped for the same reason as custom_css:
+// themeStyles() inlines every value into each generated page.
+const THEME_TOKEN_VALUE_MAX_BYTES = 256
+
+// Settings are one jsonb blob and unknown keys pass through untouched — but
+// keys the builder reads are validated on every write (create and PATCH), so
+// a typo fails the request with a 422 instead of silently changing rendering.
+// A failure rejects the whole write; nothing is dropped or partially applied.
+function validateSiteSettings(settings) {
+  if (settings == null) return
+  const showExtra = settings.content?.show_extra
+  if (showExtra !== undefined && typeof showExtra !== 'boolean') {
+    throw Object.assign(new Error('settings.content.show_extra must be a boolean'), { statusCode: 422 })
+  }
+  const tokens = settings.theme?.tokens
+  if (tokens !== undefined) {
+    if (typeof tokens !== 'object' || tokens === null || Array.isArray(tokens)) {
+      throw Object.assign(new Error('settings.theme.tokens must be a map of design tokens'), { statusCode: 422 })
+    }
+    for (const [key, value] of Object.entries(tokens)) {
+      if (!THEME_TOKEN_ALLOWLIST.includes(key)) {
+        throw Object.assign(new Error(`settings.theme.tokens: unknown token "${key}"`), { statusCode: 422 })
+      }
+      const schemePair =
+        value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        typeof value.light === 'string' &&
+        typeof value.dark === 'string' &&
+        Object.keys(value).every((scheme) => scheme === 'light' || scheme === 'dark')
+      if (typeof value !== 'string' && !schemePair) {
+        throw Object.assign(new Error('settings.theme.tokens values must be strings or { light, dark } objects'), {
+          statusCode: 422,
+        })
+      }
+      // themeStyles() emits token values verbatim inside a <style> element —
+      // raw text, entities are never decoded — so "<" (the only character
+      // that could terminate the element) is rejected on write, mirroring the
+      // "</style" guard on custom_css.
+      for (const entry of typeof value === 'string' ? [value] : [value.light, value.dark]) {
+        if (Buffer.byteLength(entry) > THEME_TOKEN_VALUE_MAX_BYTES) {
+          throw Object.assign(
+            new Error(`settings.theme.tokens values must not exceed ${THEME_TOKEN_VALUE_MAX_BYTES} bytes`),
+            { statusCode: 422 },
+          )
+        }
+        if (entry.includes('<')) {
+          throw Object.assign(new Error('settings.theme.tokens values must not contain "<"'), { statusCode: 422 })
+        }
+      }
+    }
+  }
+  const customCss = settings.theme?.custom_css
+  if (customCss !== undefined) {
+    if (typeof customCss !== 'string') {
+      throw Object.assign(new Error('settings.theme.custom_css must be a string'), { statusCode: 422 })
+    }
+    if (Buffer.byteLength(customCss) > THEME_CUSTOM_CSS_MAX_BYTES) {
+      throw Object.assign(new Error(`settings.theme.custom_css must not exceed ${THEME_CUSTOM_CSS_MAX_BYTES} bytes`), {
+        statusCode: 422,
+      })
+    }
+    if (customCss.toLowerCase().includes('</style')) {
+      throw Object.assign(new Error('settings.theme.custom_css must not contain "</style"'), { statusCode: 422 })
+    }
+  }
+}
+
 export function createRepository(config, db, storage) {
   async function one(table, query) {
     const rows = await db.select(table, { ...query, limit: '1' })
@@ -101,10 +247,64 @@ export function createRepository(config, db, storage) {
     return eventId
   }
 
+  // Bulk companion to enqueueEvent for release activation: loads the endpoint
+  // list once and writes all outbox rows and delivery rows as two array
+  // inserts, so a release with many content transitions stays a handful of
+  // statements inside the activation transaction.
+  async function enqueueContentEvents(exec, site, events) {
+    if (!events.length) return []
+    const occurredAt = new Date().toISOString()
+    const bodies = events.map(({ type, resourceKind, resourceId, data = {}, summary }) => ({
+      event_id: randomUUID(),
+      type,
+      site: { id: site.id, name: site.name ?? null },
+      occurred_at: occurredAt,
+      data,
+      resource: { kind: resourceKind, id: resourceId },
+      summary: summary || type,
+    }))
+    await exec.insert(
+      'ck_outbox_events',
+      bodies.map((body) => ({
+        id: body.event_id,
+        site_id: site.id,
+        type: body.type,
+        resource_kind: body.resource.kind,
+        resource_id: body.resource.id,
+        payload: body,
+        status: 'pending',
+      })),
+      { returning: false },
+    )
+    const endpoints = await exec.select('ck_webhook_endpoints', { site_id: `eq.${site.id}`, disabled_at: 'is.null' })
+    const deliveries = []
+    for (const body of bodies) {
+      const targets = endpoints
+        .filter((endpoint) => matchesEvent(endpoint.events, body.type))
+        .map((endpoint) => endpoint.id)
+      if (config.webhookUrl) targets.push(null)
+      for (const endpointId of targets) {
+        deliveries.push({
+          id: randomUUID(),
+          endpoint_id: endpointId,
+          site_id: site.id,
+          event_id: body.event_id,
+          type: body.type,
+          payload: body,
+          status: 'pending',
+          next_attempt_at: occurredAt,
+        })
+      }
+    }
+    if (deliveries.length) await exec.insert('ck_webhook_deliveries', deliveries, { returning: false })
+    return bodies.map((body) => body.event_id)
+  }
+
   const publicEndpoint = ({ secret_encrypted, ...rest }) => rest
 
   return {
     enqueueEvent,
+    enqueueContentEvents,
     async createWebhookEndpoint(siteId, input) {
       const url = await assertDeliverableUrl(input.url, { allowInsecure: config.webhookAllowPrivateTargets })
       const secret = generateWebhookSecret()
@@ -208,6 +408,7 @@ export function createRepository(config, db, storage) {
       if (!slug || !input.name || !input.base_url || !input.default_locale) {
         throw Object.assign(new Error('name, base_url and default_locale are required'), { statusCode: 422 })
       }
+      validateSiteSettings(input.settings)
       const [site] = await db.insert('ck_sites', {
         slug,
         name: input.name,
@@ -240,6 +441,7 @@ export function createRepository(config, db, storage) {
         ),
       )
       if (allowed.base_url) allowed.base_url = validBaseUrl(allowed.base_url)
+      if ('settings' in allowed) validateSiteSettings(allowed.settings)
       if ('default_locale' in allowed) {
         // The root redirect and 404 target default_locale, so it must be a locale
         // the site actually builds — otherwise `/` would redirect to a 404. Guard
@@ -283,8 +485,119 @@ export function createRepository(config, db, storage) {
         order: 'created_at.desc',
       })
     },
+    // Headless read API over what is currently published. Two-query join like
+    // buildSnapshot; filtering and keyset paging happen in JS at blog scale
+    // (precedent: the /v1/feedback aggregation).
+    async listPublished(siteId, query = {}) {
+      if (query.kind && !['page', 'post', 'project'].includes(query.kind)) {
+        throw invalidQuery('kind must be page, post or project')
+      }
+      let updatedSince = null
+      if (query.updated_since) {
+        updatedSince = Date.parse(query.updated_since)
+        if (Number.isNaN(updatedSince)) throw invalidQuery('updated_since must be an ISO 8601 timestamp')
+      }
+      let limit = PUBLISHED_PAGE_DEFAULT
+      if (query.limit !== undefined) {
+        if (!/^\d+$/.test(String(query.limit)) || Number(query.limit) < 1) {
+          throw invalidQuery('limit must be a positive integer')
+        }
+        limit = Math.min(Number(query.limit), PUBLISHED_PAGE_MAX)
+      }
+      const cursor = query.cursor ? parsePublishedCursor(query.cursor) : null
+      const items = await db.select('ck_content_items', {
+        site_id: `eq.${siteId}`,
+        ...(query.kind ? { kind: `eq.${query.kind}` } : {}),
+        ...(query.locale ? { locale: `eq.${query.locale}` } : {}),
+      })
+      const published = items.filter((item) => item.published_revision_id)
+      const revisionIds = published.map((item) => item.published_revision_id)
+      const revisions = revisionIds.length ? await db.select('ck_content_revisions', { id: inFilter(revisionIds) }) : []
+      const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]))
+      // updated_since is strictly greater: ck_activate_release bumps the item's
+      // updated_at exactly when the published revision changes, so a client can
+      // pass the newest updated_at it has seen without re-reading that entry.
+      const entries = published
+        .map((item) => {
+          const revision = revisionsById.get(item.published_revision_id)
+          return revision ? publishedEntry(item, revision) : null
+        })
+        .filter(Boolean)
+        .filter((entry) => !query.tag || (entry.tags || []).includes(query.tag))
+        .filter((entry) => updatedSince === null || new Date(entry.updated_at).getTime() > updatedSince)
+        .sort((a, b) => {
+          const byUpdated = new Date(b.updated_at) - new Date(a.updated_at)
+          return byUpdated || (a.item_id < b.item_id ? -1 : a.item_id > b.item_id ? 1 : 0)
+        })
+      const after = cursor
+        ? entries.filter((entry) => {
+            const updatedAt = new Date(entry.updated_at).getTime()
+            return updatedAt < cursor.updatedAt || (updatedAt === cursor.updatedAt && entry.item_id > cursor.itemId)
+          })
+        : entries
+      const page = after.slice(0, limit)
+      return { items: page, next_cursor: after.length > limit ? publishedCursor(page.at(-1)) : null }
+    },
+    async getPublished(siteId, kind, locale, slug) {
+      const items = await db.select('ck_content_items', {
+        site_id: `eq.${siteId}`,
+        kind: `eq.${kind}`,
+        locale: `eq.${locale}`,
+      })
+      const published = items.filter((item) => item.published_revision_id)
+      if (!published.length) return null
+      const revisions = await db.select('ck_content_revisions', {
+        id: inFilter(published.map((item) => item.published_revision_id)),
+        slug: `eq.${slug}`,
+      })
+      const revision = revisions[0]
+      const item = revision && published.find((candidate) => candidate.published_revision_id === revision.id)
+      if (!item) return null
+      // HTML is rendered on demand and never stored — revisions stay immutable
+      // Markdown exactly as authored; source_sha256 rides along for the ETag.
+      // Lenient like the site build: a published document must stay readable
+      // even when it predates today's frontmatter rules.
+      const rendered = await renderMarkdown(revision.markdown, { lenient: true })
+      return {
+        ...publishedEntry(item, revision),
+        markdown: revision.markdown,
+        html: rendered.html,
+        source_sha256: revision.source_sha256,
+      }
+    },
+    // Full-text search over what is currently published. Validation lives here
+    // (like listPublished); the ranking, stemming and <mark> headlines live in
+    // the whitelisted ck_search_published SQL function. Without a locale the
+    // query is stemmed with `simple` against locale-stemmed vectors — cross-
+    // locale search is best-effort; with a locale the stemming matches exactly.
+    async searchPublished(siteId, query = {}) {
+      const q = String(query.q ?? '').trim()
+      if (!q) throw invalidQuery('q is required')
+      if (q.length > SEARCH_QUERY_MAX_CHARS) {
+        throw invalidQuery(`q must be at most ${SEARCH_QUERY_MAX_CHARS} characters`)
+      }
+      if (query.kind && !['page', 'post', 'project'].includes(query.kind)) {
+        throw invalidQuery('kind must be page, post or project')
+      }
+      let limit = SEARCH_LIMIT_DEFAULT
+      if (query.limit !== undefined) {
+        if (!/^\d+$/.test(String(query.limit)) || Number(query.limit) < 1) {
+          throw invalidQuery('limit must be a positive integer')
+        }
+        limit = Math.min(Number(query.limit), SEARCH_LIMIT_MAX)
+      }
+      const results = await db.rpc('ck_search_published', {
+        p_site_id: siteId,
+        p_query: q,
+        p_locale: query.locale || null,
+        p_kind: query.kind || null,
+        p_limit: limit,
+      })
+      return { query: q, results }
+    },
     async revisions(itemId) {
-      return db.select('ck_content_revisions', { item_id: `eq.${itemId}`, order: 'created_at.desc' })
+      const rows = await db.select('ck_content_revisions', { item_id: `eq.${itemId}`, order: 'created_at.desc' })
+      return rows.map(stripSearchVector)
     },
     async ingest(siteId, markdown, assets = [], expectedItemId = null) {
       let rendered = await renderMarkdown(markdown)
@@ -366,7 +679,7 @@ export function createRepository(config, db, storage) {
         source_sha256: `eq.${sourceHash}`,
         slug: `eq.${meta.slug}`,
       })
-      if (existingRevision) return { item, revision: existingRevision, assets: [...assetMap.values()] }
+      if (existingRevision) return { item, revision: stripSearchVector(existingRevision), assets: [...assetMap.values()] }
       const [revision] = await db.insert('ck_content_revisions', {
         item_id: item.id,
         status: meta.scheduled_at ? 'scheduled' : 'draft',
@@ -379,7 +692,7 @@ export function createRepository(config, db, storage) {
         metadata: meta,
         scheduled_at: meta.scheduled_at,
       })
-      return { item, revision, assets: [...assetMap.values()] }
+      return { item, revision: stripSearchVector(revision), assets: [...assetMap.values()] }
     },
     async createApiKey(input) {
       if (!config.keyPepper)
@@ -407,6 +720,13 @@ export function createRepository(config, db, storage) {
       const siteItemIds = new Set(items.map((item) => item.id))
       if (overlay.length !== requested.size || overlay.some((revision) => !siteItemIds.has(revision.item_id))) {
         throw Object.assign(new Error('one or more revisions do not belong to this site'), { statusCode: 422 })
+      }
+      // Two revisions of one item would make the activation nondeterministic
+      // (ck_activate_release sets the published pointer to only one of them)
+      // and would emit a content.published event for a pointer switch that
+      // never happened — rejected like the other impossible release shapes.
+      if (new Set(overlay.map((revision) => revision.item_id)).size !== overlay.length) {
+        throw Object.assign(new Error('a release allows only one revision per content item'), { statusCode: 422 })
       }
       const retired = new Set(retireItemIds)
       if (retireItemIds.some((itemId) => !siteItemIds.has(itemId))) {
@@ -471,7 +791,10 @@ export function createRepository(config, db, storage) {
             : null
         })
         .filter(Boolean)
-      return { site, locales, revisions, comments, audio }
+      // items and overlay ride along for the release manager, which derives the
+      // content.published/unpublished webhook events from the pointer
+      // transitions the activation is about to make.
+      return { site, locales, revisions, comments, audio, items, overlay }
     },
     async listReleases(siteId) {
       const rows = await db.select('ck_releases', { site_id: `eq.${siteId}`, order: 'created_at.desc' })

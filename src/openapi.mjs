@@ -68,6 +68,9 @@ export function openApi(config) {
         'Note: the HMAC key is the **entire secret string including the `whsec_` prefix**, used as raw UTF-8',
         'bytes — do not strip `whsec_` or base64-decode it (this differs from the reference Standard',
         'Webhooks libraries). Also reject deliveries whose timestamp is outside your tolerance window.',
+        'Release activation additionally emits `contentkit.content.published`,',
+        '`contentkit.content.unpublished` and `contentkit.release.published` events in the same',
+        'transaction as the pointer switch.',
       ].join('\n'),
     },
     servers: [{ url: config.publicUrl }],
@@ -158,7 +161,7 @@ export function openApi(config) {
         patch: {
           summary: 'Update site metadata, settings and domains',
           description:
-            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone.',
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. Builder-read settings are validated on write and reject the whole PATCH with 422: `settings.theme.tokens` accepts only the allowlisted design tokens (`background`, `foreground`, `muted`, `muted_foreground`, `border`, `primary`, `primary_foreground`, `radius`, `font_family`; values are strings or `{ light, dark }` string pairs of at most 256 bytes each without `<`, `settings.accent` stays the shorthand for `primary`), `settings.theme.custom_css` must be a string of at most 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),
@@ -174,10 +177,114 @@ export function openApi(config) {
         },
         post: {
           summary: 'Create content and its first draft revision',
+          description:
+            'Frontmatter may carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in the revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference) that lead the related-posts block at build time. Malformed values fail with 422.',
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
           responses: { 201: { description: 'Draft created' } },
+        },
+      },
+      '/v1/sites/{site}/published': {
+        get: {
+          summary: 'List published content as JSON (read API)',
+          description:
+            'Headless read access to everything currently published. Entries carry the item identity, the published revision fields and the revision `metadata` verbatim — the full frontmatter contract including author-owned `extra` fields. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            {
+              name: 'kind',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['page', 'post', 'project'] },
+            },
+            { name: 'locale', in: 'query', required: false, schema: { type: 'string' } },
+            { name: 'tag', in: 'query', required: false, description: 'Exact tag match.', schema: { type: 'string' } },
+            {
+              name: 'updated_since',
+              in: 'query',
+              required: false,
+              description: 'ISO 8601 timestamp; returns entries whose `updated_at` is strictly greater.',
+              schema: { type: 'string', format: 'date-time' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              description: 'Page size (default 50; values above 200 are clamped).',
+              schema: { type: 'integer', default: 50, minimum: 1, maximum: 200 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              required: false,
+              description: 'Opaque keyset cursor from a previous response’s `next_cursor`.',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: { description: 'Published entries and `next_cursor` (null on the last page)' },
+            304: { description: 'Not modified (If-None-Match matched the publish-epoch ETag)' },
+            404: { description: 'Site not found' },
+            422: { description: 'Invalid kind, updated_since, limit or cursor' },
+          },
+        },
+      },
+      '/v1/sites/{site}/published/{kind}/{locale}/{slug}': {
+        get: {
+          summary: 'Read one published document as JSON (read API)',
+          description:
+            'The list entry shape plus `markdown` (the immutable revision source verbatim) and `html` (rendered on demand — HTML is never stored). Responds with a strong ETag over the revision source hash and the service version; honours `If-None-Match` with 304. Unknown, unpublished or mismatched kind/locale/slug is a 404.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'kind', in: 'path', required: true, schema: { type: 'string', enum: ['page', 'post', 'project'] } },
+            { name: 'locale', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+          ],
+          responses: {
+            200: { description: 'Published document with markdown and rendered html' },
+            304: { description: 'Not modified' },
+            404: { description: 'Published content not found' },
+          },
+        },
+      },
+      '/v1/sites/{site}/search': {
+        get: {
+          summary: 'Full-text search over published content (read API)',
+          description:
+            'PostgreSQL full-text search across everything currently published: title, summary and tags weigh highest, body text lowest; drafts and archived revisions are invisible by construction. Results carry a relevance `rank` and a `headline` snippet with `<mark>` highlights. Locale-aware stemming (de → german, en → english, otherwise simple) — without `locale` the query is stemmed with `simple` against locale-stemmed vectors, so cross-locale search is best-effort while a locale-scoped query matches exactly. Responses are uncached (no ETag): they depend on the query text, not on a stored artifact. Published sites keep their static client-side search; this route is an API-host feature for headless consumers.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            {
+              name: 'q',
+              in: 'query',
+              required: true,
+              description: 'Search terms (websearch syntax; trimmed, 1–200 characters).',
+              schema: { type: 'string', minLength: 1, maxLength: 200 },
+            },
+            { name: 'locale', in: 'query', required: false, schema: { type: 'string' } },
+            {
+              name: 'kind',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['page', 'post', 'project'] },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              description: 'Maximum results (default 20; values above 100 are clamped).',
+              schema: { type: 'integer', default: 20, minimum: 1, maximum: 100 },
+            },
+          ],
+          responses: {
+            200: { description: 'Ranked results with `<mark>` headlines' },
+            404: { description: 'Site not found' },
+            422: { description: 'Missing/overlong q, invalid kind or limit' },
+          },
         },
       },
       '/v1/content/{item}/revisions': {
@@ -189,6 +296,8 @@ export function openApi(config) {
         },
         put: {
           summary: 'Create another immutable revision',
+          description:
+            'Accepts the same frontmatter contract as content creation, including the author-owned `extra:` custom-field map and `related: [slug, ...]` post references — both validated on write (422 on malformed values) and stored verbatim in the revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,

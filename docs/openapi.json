@@ -3,7 +3,7 @@
   "info": {
     "title": "Contentkit API",
     "version": "1.10.0",
-    "description": "API-first Markdown CMS publishing immutable multilingual static-site releases.\n\n## Authentication\n\nManagement endpoints accept a scoped API key as either `Authorization: Bearer <key>`\nor `X-API-Key: <key>`. Keys look like `ck_<43-char base64url>` and the raw value is\nreturned only once, by `POST /v1/api-keys` (and never listed or recoverable again).\nKeys are stored as `HMAC-SHA256(key = CONTENTKIT_KEY_PEPPER, message = raw key)` in hex;\nonly a short `key_prefix` (the first 11 characters, e.g. `ck_A1b2C3d4`) is kept in clear\nfor identification.\n\n### 401 vs 403 — these mean different things\n\n- **401 `{\"error\":\"unauthorized\"}`** — the key was missing, malformed, revoked, expired,\n  or its HMAC hash did not match any stored key. The credential itself was not accepted.\n  A `WWW-Authenticate: Bearer` header is returned. Do **not** re-scope the key; check that\n  you sent the exact raw key and that the server's `CONTENTKIT_KEY_PEPPER` matches the one\n  in force when the key was created.\n- **403 `{\"error\":\"insufficient_scope\",\"scope\":\"<required>\",\"site\":\"<site-id>\"}`** — the key\n  is valid and recognized, but lacks the scope (or the per-site grant) that the endpoint\n  requires. The `scope` field names the scope you need; `site` appears when the check was\n  site-scoped. Fix by using a key that carries that scope for that site.\n\n### Scopes\n\n| Scope | Grants |\n|---|---|\n| `content:read` | List content items and immutable revisions |\n| `content:write` | Upload Markdown/assets and create revisions |\n| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |\n| `site:admin` | Create/update sites, manage API keys and webhook endpoints |\n| `moderation:write` | List/moderate comments and contact submissions |\n| `*` | Global wildcard; held only by the bootstrap key, never grantable via `/v1/api-keys` |\n\nA key may also be restricted to specific `site_ids`. An empty `site_ids` is global for the\nkey's scopes; a non-empty list authorizes only those sites (a mismatch yields 403).\n\n## Webhooks\n\n`POST /v1/sites/{site}/webhooks` registers a delivery endpoint and returns a `whsec_<base64url>`\nsigning secret **once** (also on `/rotate`); it is encrypted at rest and never listed again.\nDeliveries are signed with Standard Webhooks headers: `webhook-id` (unique per delivery — dedupe\non it), `webhook-timestamp` (unix seconds), `webhook-type`, and\n`webhook-signature: v1,<base64 HMAC-SHA256 of \"{webhook-id}.{webhook-timestamp}.{raw-body}\">`.\nConsumers verify by recomputing that HMAC with the endpoint secret and comparing in constant time.\nNote: the HMAC key is the **entire secret string including the `whsec_` prefix**, used as raw UTF-8\nbytes — do not strip `whsec_` or base64-decode it (this differs from the reference Standard\nWebhooks libraries). Also reject deliveries whose timestamp is outside your tolerance window."
+    "description": "API-first Markdown CMS publishing immutable multilingual static-site releases.\n\n## Authentication\n\nManagement endpoints accept a scoped API key as either `Authorization: Bearer <key>`\nor `X-API-Key: <key>`. Keys look like `ck_<43-char base64url>` and the raw value is\nreturned only once, by `POST /v1/api-keys` (and never listed or recoverable again).\nKeys are stored as `HMAC-SHA256(key = CONTENTKIT_KEY_PEPPER, message = raw key)` in hex;\nonly a short `key_prefix` (the first 11 characters, e.g. `ck_A1b2C3d4`) is kept in clear\nfor identification.\n\n### 401 vs 403 — these mean different things\n\n- **401 `{\"error\":\"unauthorized\"}`** — the key was missing, malformed, revoked, expired,\n  or its HMAC hash did not match any stored key. The credential itself was not accepted.\n  A `WWW-Authenticate: Bearer` header is returned. Do **not** re-scope the key; check that\n  you sent the exact raw key and that the server's `CONTENTKIT_KEY_PEPPER` matches the one\n  in force when the key was created.\n- **403 `{\"error\":\"insufficient_scope\",\"scope\":\"<required>\",\"site\":\"<site-id>\"}`** — the key\n  is valid and recognized, but lacks the scope (or the per-site grant) that the endpoint\n  requires. The `scope` field names the scope you need; `site` appears when the check was\n  site-scoped. Fix by using a key that carries that scope for that site.\n\n### Scopes\n\n| Scope | Grants |\n|---|---|\n| `content:read` | List content items and immutable revisions |\n| `content:write` | Upload Markdown/assets and create revisions |\n| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |\n| `site:admin` | Create/update sites, manage API keys and webhook endpoints |\n| `moderation:write` | List/moderate comments and contact submissions |\n| `*` | Global wildcard; held only by the bootstrap key, never grantable via `/v1/api-keys` |\n\nA key may also be restricted to specific `site_ids`. An empty `site_ids` is global for the\nkey's scopes; a non-empty list authorizes only those sites (a mismatch yields 403).\n\n## Webhooks\n\n`POST /v1/sites/{site}/webhooks` registers a delivery endpoint and returns a `whsec_<base64url>`\nsigning secret **once** (also on `/rotate`); it is encrypted at rest and never listed again.\nDeliveries are signed with Standard Webhooks headers: `webhook-id` (unique per delivery — dedupe\non it), `webhook-timestamp` (unix seconds), `webhook-type`, and\n`webhook-signature: v1,<base64 HMAC-SHA256 of \"{webhook-id}.{webhook-timestamp}.{raw-body}\">`.\nConsumers verify by recomputing that HMAC with the endpoint secret and comparing in constant time.\nNote: the HMAC key is the **entire secret string including the `whsec_` prefix**, used as raw UTF-8\nbytes — do not strip `whsec_` or base64-decode it (this differs from the reference Standard\nWebhooks libraries). Also reject deliveries whose timestamp is outside your tolerance window.\nRelease activation additionally emits `contentkit.content.published`,\n`contentkit.content.unpublished` and `contentkit.release.published` events in the same\ntransaction as the pointer switch."
   },
   "servers": [
     {
@@ -239,7 +239,7 @@
       },
       "patch": {
         "summary": "Update site metadata, settings and domains",
-        "description": "Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone.",
+        "description": "Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. Builder-read settings are validated on write and reject the whole PATCH with 422: `settings.theme.tokens` accepts only the allowlisted design tokens (`background`, `foreground`, `muted`, `muted_foreground`, `border`, `primary`, `primary_foreground`, `radius`, `font_family`; values are strings or `{ light, dark }` string pairs of at most 256 bytes each without `<`, `settings.accent` stays the shorthand for `primary`), `settings.theme.custom_css` must be a string of at most 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.",
         "security": [
           {
             "bearerAuth": []
@@ -317,6 +317,7 @@
       },
       "post": {
         "summary": "Create content and its first draft revision",
+        "description": "Frontmatter may carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in the revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference) that lead the related-posts block at build time. Malformed values fail with 422.",
         "security": [
           {
             "bearerAuth": []
@@ -369,6 +370,266 @@
         }
       }
     },
+    "/v1/sites/{site}/published": {
+      "get": {
+        "summary": "List published content as JSON (read API)",
+        "description": "Headless read access to everything currently published. Entries carry the item identity, the published revision fields and the revision `metadata` verbatim — the full frontmatter contract including author-owned `extra` fields. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "page",
+                "post",
+                "project"
+              ]
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Exact tag match.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "required": false,
+            "description": "ISO 8601 timestamp; returns entries whose `updated_at` is strictly greater.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size (default 50; values above 200 are clamped).",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque keyset cursor from a previous response’s `next_cursor`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published entries and `next_cursor` (null on the last page)"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the publish-epoch ETag)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Site not found"
+          },
+          "422": {
+            "description": "Invalid kind, updated_since, limit or cursor"
+          }
+        }
+      }
+    },
+    "/v1/sites/{site}/published/{kind}/{locale}/{slug}": {
+      "get": {
+        "summary": "Read one published document as JSON (read API)",
+        "description": "The list entry shape plus `markdown` (the immutable revision source verbatim) and `html` (rendered on demand — HTML is never stored). Responds with a strong ETag over the revision source hash and the service version; honours `If-None-Match` with 304. Unknown, unpublished or mismatched kind/locale/slug is a 404.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "page",
+                "post",
+                "project"
+              ]
+            }
+          },
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published document with markdown and rendered html"
+          },
+          "304": {
+            "description": "Not modified"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Published content not found"
+          }
+        }
+      }
+    },
+    "/v1/sites/{site}/search": {
+      "get": {
+        "summary": "Full-text search over published content (read API)",
+        "description": "PostgreSQL full-text search across everything currently published: title, summary and tags weigh highest, body text lowest; drafts and archived revisions are invisible by construction. Results carry a relevance `rank` and a `headline` snippet with `<mark>` highlights. Locale-aware stemming (de → german, en → english, otherwise simple) — without `locale` the query is stemmed with `simple` against locale-stemmed vectors, so cross-locale search is best-effort while a locale-scoped query matches exactly. Responses are uncached (no ETag): they depend on the query text, not on a stored artifact. Published sites keep their static client-side search; this route is an API-host feature for headless consumers.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search terms (websearch syntax; trimmed, 1–200 characters).",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "page",
+                "post",
+                "project"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum results (default 20; values above 100 are clamped).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked results with `<mark>` headlines"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Site not found"
+          },
+          "422": {
+            "description": "Missing/overlong q, invalid kind or limit"
+          }
+        }
+      }
+    },
     "/v1/content/{item}/revisions": {
       "get": {
         "summary": "List immutable revisions",
@@ -405,6 +666,7 @@
       },
       "put": {
         "summary": "Create another immutable revision",
+        "description": "Accepts the same frontmatter contract as content creation, including the author-owned `extra:` custom-field map and `related: [slug, ...]` post references — both validated on write (422 on malformed values) and stored verbatim in the revision metadata.",
         "security": [
           {
             "bearerAuth": []

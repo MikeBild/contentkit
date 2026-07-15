@@ -66,6 +66,11 @@ function harness({ failUpload = false, staleUntil = 0 } = {}) {
       calls.push(['rpc', name, body])
       if (++rpcCount <= staleUntil) throw new Error('stale snapshot: site changed since build (epoch 9 <> 8)')
     },
+    // The real db.tx hands fn a transaction-bound API of the same shape; the
+    // harness records through itself, so ordering assertions keep working.
+    async tx(fn) {
+      return fn(this)
+    },
   }
   const repo = {
     async buildSnapshot(...args) {
@@ -74,6 +79,9 @@ function harness({ failUpload = false, staleUntil = 0 } = {}) {
     },
     async createOutbox(...args) {
       calls.push(['outbox', ...args])
+    },
+    async enqueueContentEvents(exec, site, events) {
+      calls.push(['events', site.id, events.map((event) => event.type)])
     },
   }
   const storage = {
@@ -172,6 +180,9 @@ test('serializes builds at buildConcurrency 1', async () => {
       return [{}]
     },
     async rpc() {},
+    async tx(fn) {
+      return fn(this)
+    },
   }
   const repo = {
     async buildSnapshot() {
@@ -182,6 +193,7 @@ test('serializes builds at buildConcurrency 1', async () => {
       return snapshot
     },
     async createOutbox() {},
+    async enqueueContentEvents() {},
   }
   const manager = createReleaseManager(
     { root, publicUrl: 'x', buildConcurrency: 1 },

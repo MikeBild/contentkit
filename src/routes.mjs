@@ -81,6 +81,9 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/published$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/search$/, methods: ['GET'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/v1\/content\/[^/]+\/published$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET', 'DELETE'] },
@@ -480,6 +483,46 @@ export function createRequestHandler(ctx) {
         const { markdown, assets } = await markdownRequest(req)
         return sendJson(res, 201, await repo.ingest(site.id, markdown, assets))
       }
+    }
+    // Optional headless read API: published content as JSON, on the management
+    // API behind content:read scoped keys — site delivery itself stays static.
+    const publishedListMatch = path.match(/^\/v1\/sites\/([^/]+)\/published$/)
+    if (publishedListMatch && req.method === 'GET') {
+      const site = await repo.getSite(publishedListMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      // publish_epoch bumps on every activation, so it versions exactly "what
+      // is published" — a weak ETag over the whole list, matched before the
+      // query work happens.
+      const etag = `W/"${site.publish_epoch}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      return sendJson(res, 200, await repo.listPublished(site.id, Object.fromEntries(url.searchParams)), { etag })
+    }
+    const publishedDocMatch = path.match(/^\/v1\/sites\/([^/]+)\/published\/([^/]+)\/([^/]+)\/([^/]+)$/)
+    if (publishedDocMatch && req.method === 'GET') {
+      const site = await repo.getSite(publishedDocMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      const record = await repo.getPublished(site.id, publishedDocMatch[2], publishedDocMatch[3], publishedDocMatch[4])
+      if (!record) return sendJson(res, 404, { error: 'published content not found' })
+      // Strong ETag: the source hash names the revision bytes, the service
+      // version covers renderer changes that alter the on-demand HTML.
+      const { source_sha256: sourceHash, ...body } = record
+      const etag = `"${sourceHash}:${config.version}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      return sendJson(res, 200, body, { etag })
+    }
+    // Server-side full-text search over published content — an API-host feature
+    // for headless consumers. Published sites keep their static client-side
+    // search (search-index.json); nothing here is wired into site delivery.
+    const searchMatch = path.match(/^\/v1\/sites\/([^/]+)\/search$/)
+    if (searchMatch && req.method === 'GET') {
+      const site = await repo.getSite(searchMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      // No ETag or cache headers: ranking and headlines depend on the query
+      // text, not on a stored artifact a version could name.
+      return sendJson(res, 200, await repo.searchPublished(site.id, Object.fromEntries(url.searchParams)))
     }
     const revisionsMatch = path.match(/^\/v1\/content\/([^/]+)\/revisions$/)
     if (revisionsMatch && ['GET', 'PUT'].includes(req.method)) {

@@ -102,6 +102,7 @@ function snapshotRepo() {
   ]
   const revisions = [
     { id: 'rev-a', item_id: 'item-a', markdown: '# a' },
+    { id: 'rev-a2', item_id: 'item-a', markdown: '# a v2' },
     { id: 'rev-b', item_id: 'item-b', markdown: '# b' },
     { id: 'rev-c', item_id: 'item-c', markdown: '# c' },
   ]
@@ -143,6 +144,20 @@ test('buildSnapshot rejects retired items from another site', async () => {
     (error) => {
       assert.equal(error.statusCode, 422)
       assert.match(error.message, /retired items do not belong/)
+      return true
+    },
+  )
+})
+
+test('buildSnapshot rejects two revisions of the same item in one release', async () => {
+  // Activation would set the published pointer to only one of them
+  // (nondeterministically) while the event derivation would announce both.
+  const repo = snapshotRepo()
+  await assert.rejects(
+    () => repo.buildSnapshot('site-1', ['rev-a', 'rev-a2']),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /one revision per content item/)
       return true
     },
   )
@@ -217,6 +232,90 @@ test('enqueueEvent skips disabled endpoints and omits env fallback when unconfig
   assert.equal(deliveryInsert, undefined)
 })
 
+test('enqueueContentEvents loads endpoints once and fans out per event with filter matching', async () => {
+  const selects = []
+  const inserts = []
+  const db = {
+    async insert(table, body) {
+      inserts.push({ table, body })
+      return Array.isArray(body) ? body : [body]
+    },
+    async select(table, query = {}) {
+      selects.push({ table, query })
+      return [
+        { id: 'ep-all', events: [], disabled_at: null },
+        { id: 'ep-content', events: ['content.published'], disabled_at: null },
+        { id: 'ep-contact', events: ['contact.submitted'], disabled_at: null },
+      ]
+    },
+  }
+  const repo = createRepository({ webhookUrl: 'https://env.example/hook' }, db, {})
+  const eventIds = await repo.enqueueContentEvents(db, { id: 'site-1', name: 'Site' }, [
+    {
+      type: 'contentkit.content.published',
+      resourceKind: 'content',
+      resourceId: 'item-1',
+      summary: 'Content published',
+      data: { item_id: 'item-1', slug: 'hello' },
+    },
+    {
+      type: 'contentkit.release.published',
+      resourceKind: 'release',
+      resourceId: 'release-1',
+      summary: 'Site release published',
+      data: { release_id: 'release-1' },
+    },
+  ])
+  assert.equal(selects.filter((call) => call.table === 'ck_webhook_endpoints').length, 1)
+
+  const outbox = inserts.find((call) => call.table === 'ck_outbox_events').body
+  assert.equal(outbox.length, 2)
+  assert.deepEqual(
+    eventIds,
+    outbox.map((row) => row.id),
+  )
+  assert.equal(outbox[0].payload.data.slug, 'hello')
+  assert.deepEqual(outbox[0].payload.resource, { kind: 'content', id: 'item-1' })
+  assert.deepEqual(outbox[0].payload.site, { id: 'site-1', name: 'Site' })
+
+  // content.published: ep-all + ep-content + env; release.published: ep-all + env.
+  const deliveries = inserts.find((call) => call.table === 'ck_webhook_deliveries').body
+  const byType = (type) => deliveries.filter((row) => row.type === type).map((row) => row.endpoint_id)
+  assert.deepEqual(new Set(byType('contentkit.content.published')), new Set(['ep-all', 'ep-content', null]))
+  assert.deepEqual(new Set(byType('contentkit.release.published')), new Set(['ep-all', null]))
+  assert.ok(deliveries.every((row) => row.event_id && row.payload && row.status === 'pending'))
+})
+
+test('enqueueContentEvents with no events writes nothing and returns an empty list', async () => {
+  const calls = []
+  const db = {
+    async insert(...args) {
+      calls.push(args)
+      return []
+    },
+    async select(...args) {
+      calls.push(args)
+      return []
+    },
+  }
+  const repo = createRepository({ webhookUrl: '' }, db, {})
+  assert.deepEqual(await repo.enqueueContentEvents(db, { id: 'site-1', name: 'Site' }, []), [])
+  assert.equal(calls.length, 0)
+})
+
+test('buildSnapshot returns the item list and overlay revisions alongside the rendered set', async () => {
+  const repo = snapshotRepo()
+  const snapshot = await repo.buildSnapshot('site-1', ['rev-c'], ['item-b'])
+  assert.deepEqual(
+    snapshot.items.map((item) => item.id),
+    ['item-a', 'item-b', 'item-c'],
+  )
+  assert.deepEqual(
+    snapshot.overlay.map((revision) => revision.id),
+    ['rev-c'],
+  )
+})
+
 test('ingest rejects every browser-executable asset content type', async () => {
   const db = {
     async select() {
@@ -270,6 +369,37 @@ test('ingest accepts a normal image content type', async () => {
     { name: 'asset:img.png', contentType: 'image/png', body: Buffer.from('PNG') },
   ])
   assert.equal(result.assets.length, 1)
+})
+
+test('revision reads shed the search_vector index internal (SELECT * / RETURNING *)', async () => {
+  // Migration 0006 adds search_vector to ck_content_revisions; a serialized
+  // tsvector is roughly document-sized and no API consumer expects it.
+  const db = {
+    async select(table) {
+      if (table === 'ck_content_revisions')
+        return [{ id: 'rev-1', item_id: 'item-1', markdown: '# a', search_vector: "'a':1" }]
+      return []
+    },
+    async insert(table, body) {
+      const rows = Array.isArray(body) ? body : [body]
+      return rows.map((row, i) => ({ id: `id-${i}`, ...row, search_vector: "'t':1" }))
+    },
+  }
+  const repo = createRepository({}, db, { async upload() {} })
+  const revisions = await repo.revisions('item-1')
+  assert.ok(!('search_vector' in revisions[0]))
+  assert.equal(revisions[0].id, 'rev-1')
+
+  const md = '---\nkind: post\ntitle: T\nlocale: de\nslug: t\ntranslationKey: t\n---\n# T\n\nBody.'
+  const dbEmpty = {
+    async select() {
+      return []
+    },
+    insert: db.insert,
+  }
+  const ingested = await createRepository({}, dbEmpty, { async upload() {} }).ingest('site-1', md)
+  assert.ok(!('search_vector' in ingested.revision))
+  assert.equal(ingested.revision.title, 'T')
 })
 
 test('updateSite rejects a default_locale not among the site locales', async () => {
@@ -382,4 +512,202 @@ test('updateSite rejects an empty-string default_locale (guard on presence, not 
       return true
     },
   )
+})
+
+// Published read API fixture: three published posts (two sharing an
+// updated_at so the item-id tiebreak is observable), one draft-only post and
+// one published page.
+function publishedRepo() {
+  const items = [
+    {
+      id: 'item-1',
+      site_id: 'site-1',
+      kind: 'post',
+      locale: 'de',
+      translation_key: 'one',
+      published_revision_id: 'rev-1',
+      updated_at: '2026-07-03T10:00:00.000Z',
+    },
+    {
+      id: 'item-2',
+      site_id: 'site-1',
+      kind: 'post',
+      locale: 'de',
+      translation_key: 'two',
+      published_revision_id: 'rev-2',
+      updated_at: '2026-07-02T10:00:00.000Z',
+    },
+    {
+      id: 'item-3',
+      site_id: 'site-1',
+      kind: 'post',
+      locale: 'de',
+      translation_key: 'three',
+      published_revision_id: 'rev-3',
+      updated_at: '2026-07-02T10:00:00.000Z',
+    },
+    {
+      id: 'item-4',
+      site_id: 'site-1',
+      kind: 'post',
+      locale: 'de',
+      translation_key: 'draft',
+      published_revision_id: null,
+      updated_at: '2026-07-04T10:00:00.000Z',
+    },
+    {
+      id: 'item-5',
+      site_id: 'site-1',
+      kind: 'page',
+      locale: 'de',
+      translation_key: 'five',
+      published_revision_id: 'rev-5',
+      updated_at: '2026-07-01T10:00:00.000Z',
+    },
+  ]
+  const revision = (id, slug, title, tags, markdown = `# ${title}`) => ({
+    id,
+    item_id: `item-${id.slice(4)}`,
+    slug,
+    title,
+    summary: `${title} summary`,
+    tags,
+    metadata: { kind: 'post', title, extra: { series: slug } },
+    markdown,
+    source_sha256: `sha-${id}`,
+    published_at: '2026-07-01T00:00:00.000Z',
+  })
+  const revisions = [
+    revision(
+      'rev-1',
+      'one',
+      'One',
+      ['a', 'b'],
+      '---\nkind: post\ntitle: One\nlocale: de\nslug: one\n---\n\n**Hello** read API.',
+    ),
+    revision('rev-2', 'two', 'Two', ['a']),
+    revision('rev-3', 'three', 'Three', ['b']),
+    revision('rev-5', 'five', 'Five', []),
+  ]
+  const db = {
+    async select(table, query = {}) {
+      if (table === 'ck_content_items') {
+        return items.filter(
+          (item) =>
+            (!query.site_id || query.site_id === `eq.${item.site_id}`) &&
+            (!query.kind || query.kind === `eq.${item.kind}`) &&
+            (!query.locale || query.locale === `eq.${item.locale}`),
+        )
+      }
+      if (table === 'ck_content_revisions') {
+        const wanted = query.id?.match(/^in\.\((.*)\)$/)?.[1].split(',') || []
+        return revisions.filter((row) => wanted.includes(row.id) && (!query.slug || query.slug === `eq.${row.slug}`))
+      }
+      return []
+    },
+  }
+  return createRepository({}, db, {})
+}
+
+test('listPublished merges items with their published revisions and skips drafts', async () => {
+  const repo = publishedRepo()
+  const { items, next_cursor } = await repo.listPublished('site-1', {})
+  assert.deepEqual(
+    items.map((entry) => entry.item_id),
+    ['item-1', 'item-2', 'item-3', 'item-5'],
+  )
+  assert.equal(next_cursor, null)
+  // The entry shape: item identity + revision fields, metadata verbatim.
+  assert.deepEqual(items[0], {
+    item_id: 'item-1',
+    kind: 'post',
+    locale: 'de',
+    translation_key: 'one',
+    slug: 'one',
+    title: 'One',
+    summary: 'One summary',
+    tags: ['a', 'b'],
+    metadata: { kind: 'post', title: 'One', extra: { series: 'one' } },
+    revision_id: 'rev-1',
+    published_at: '2026-07-01T00:00:00.000Z',
+    updated_at: '2026-07-03T10:00:00.000Z',
+  })
+})
+
+test('listPublished filters by kind, tag and updated_since (strictly greater)', async () => {
+  const repo = publishedRepo()
+  const posts = await repo.listPublished('site-1', { kind: 'post' })
+  assert.deepEqual(
+    posts.items.map((entry) => entry.item_id),
+    ['item-1', 'item-2', 'item-3'],
+  )
+  const tagged = await repo.listPublished('site-1', { tag: 'a' })
+  assert.deepEqual(
+    tagged.items.map((entry) => entry.item_id),
+    ['item-1', 'item-2'],
+  )
+  // Strictly greater: the entry carrying exactly this updated_at is excluded.
+  const since = await repo.listPublished('site-1', { updated_since: '2026-07-02T10:00:00.000Z' })
+  assert.deepEqual(
+    since.items.map((entry) => entry.item_id),
+    ['item-1'],
+  )
+})
+
+test('listPublished pages stably through an updated_at tie via the cursor', async () => {
+  const repo = publishedRepo()
+  const first = await repo.listPublished('site-1', { limit: '2' })
+  assert.deepEqual(
+    first.items.map((entry) => entry.item_id),
+    ['item-1', 'item-2'],
+  )
+  assert.ok(first.next_cursor)
+  // The tie (item-2/item-3 share updated_at) is split across pages; the item-id
+  // tiebreak in the cursor must resume at item-3 without repeating item-2.
+  const second = await repo.listPublished('site-1', { limit: '2', cursor: first.next_cursor })
+  assert.deepEqual(
+    second.items.map((entry) => entry.item_id),
+    ['item-3', 'item-5'],
+  )
+  assert.equal(second.next_cursor, null)
+})
+
+test('listPublished rejects malformed query parameters with 422 and clamps oversized limits', async () => {
+  const repo = publishedRepo()
+  const rejects = async (query, message) =>
+    assert.rejects(
+      () => repo.listPublished('site-1', query),
+      (error) => {
+        assert.equal(error.statusCode, 422)
+        assert.equal(error.message, message)
+        return true
+      },
+    )
+  await rejects({ kind: 'article' }, 'kind must be page, post or project')
+  await rejects({ updated_since: 'not-a-date' }, 'updated_since must be an ISO 8601 timestamp')
+  await rejects({ limit: 'abc' }, 'limit must be a positive integer')
+  await rejects({ limit: '0' }, 'limit must be a positive integer')
+  await rejects({ cursor: '%%%' }, 'cursor is invalid')
+  // Values above the cap are clamped silently, not rejected.
+  const clamped = await repo.listPublished('site-1', { limit: '999' })
+  assert.equal(clamped.items.length, 4)
+})
+
+test('getPublished returns the merged document with markdown verbatim and on-demand html', async () => {
+  const repo = publishedRepo()
+  const doc = await repo.getPublished('site-1', 'post', 'de', 'one')
+  assert.equal(doc.item_id, 'item-1')
+  assert.equal(doc.revision_id, 'rev-1')
+  assert.equal(doc.markdown, '---\nkind: post\ntitle: One\nlocale: de\nslug: one\n---\n\n**Hello** read API.')
+  assert.match(doc.html, /<strong>Hello<\/strong>/)
+  assert.equal(doc.source_sha256, 'sha-rev-1')
+  assert.deepEqual(doc.metadata, { kind: 'post', title: 'One', extra: { series: 'one' } })
+})
+
+test('getPublished is null for drafts and for a kind/locale/slug mismatch', async () => {
+  const repo = publishedRepo()
+  assert.equal(await repo.getPublished('site-1', 'post', 'de', 'draft'), null)
+  assert.equal(await repo.getPublished('site-1', 'page', 'de', 'one'), null)
+  assert.equal(await repo.getPublished('site-1', 'post', 'en', 'one'), null)
+  assert.equal(await repo.getPublished('site-1', 'post', 'de', 'nope'), null)
 })

@@ -887,3 +887,126 @@ test('the blogcast page header uses the channel settings, and the footer links t
   const home = unlinked.files.get('en/index.html').body.toString()
   assert.doesNotMatch(home, /\/en\/blogcast\//, 'no footer link without blogcast_link')
 })
+
+test('authored related references lead the block and tag similarity fills up to three', async () => {
+  const result = await build({
+    revisions: [
+      // `standalone` shares no tag with `target`: similarity alone would never
+      // recommend it, so its position proves the authored reference.
+      post({ slug: 'target', title: 'Target', tags: ['Shared', 'Rare'], extra: 'related: [standalone]\n' }),
+      post({ slug: 'standalone', title: 'Standalone', tags: ['Elsewhere'] }),
+      post({ slug: 'similar', title: 'Similar', tags: ['Shared', 'Rare'] }),
+    ],
+  })
+  const page = result.files.get('en/blog/target/index.html').body.toString()
+  const related = page.match(/<nav class="related"[\s\S]*?<\/nav>/)[0]
+  assert.match(related, /\/en\/blog\/standalone\//, 'the authored reference must be related')
+  assert.match(related, /\/en\/blog\/similar\//, 'tag similarity must fill the remaining slots')
+  assert.ok(
+    related.indexOf('/en/blog/standalone/') < related.indexOf('/en/blog/similar/'),
+    'authored references come first, in the author’s order',
+  )
+})
+
+test('a related reference that resolves to no published post is dropped with a warning, never a failure', async () => {
+  const warnings = []
+  const result = await build({
+    logger: { warn: (message, meta) => warnings.push({ message, meta }) },
+    revisions: [
+      post({ slug: 'target', title: 'Target', tags: ['Shared'], extra: 'related: [missing-post, hidden]\n' }),
+      post({ slug: 'hidden', title: 'Hidden', noindex: true }),
+      post({ slug: 'other', title: 'Other', tags: ['Shared'] }),
+    ],
+  })
+  const page = result.files.get('en/blog/target/index.html').body.toString()
+  assert.doesNotMatch(page, /missing-post/, 'a broken reference must not render')
+  assert.doesNotMatch(page, /\/en\/blog\/hidden\//, 'a noindex post must never be recommended')
+  // Both unresolvable references warn: the never-published one and the draft.
+  assert.equal(warnings.length, 2)
+  assert.equal(warnings[0].message, 'related reference not found')
+  assert.deepEqual(
+    warnings.map((entry) => entry.meta.related),
+    ['missing-post', 'hidden'],
+  )
+})
+
+test('a stored revision with malformed extra/related builds with a warning, never a failed release', async () => {
+  // Pre-WP2 documents could carry these keys in any shape (they were silently
+  // dropped then, so the revision is published) — a later release replays them
+  // through renderMarkdown and must not fail.
+  const warnings = []
+  const result = await build({
+    logger: { warn: (message, meta) => warnings.push({ message, meta }) },
+    revisions: [
+      post({ slug: 'legacy', title: 'Legacy', extra: 'extra: yes\nrelated: see-also\n' }),
+      post({ slug: 'other', title: 'Other' }),
+    ],
+  })
+  assert.ok(result.files.get('en/blog/legacy/index.html'), 'the document still builds')
+  assert.deepEqual(
+    warnings.map((entry) => entry.message.split(':')[0]),
+    ['frontmatter extra dropped', 'frontmatter related dropped'],
+  )
+  assert.equal(warnings[0].meta.slug, 'legacy')
+})
+
+test('extra fields surface in HTML, the Markdown twin and llms-full.txt only behind show_extra', async () => {
+  const revisions = () => [
+    post({ slug: 'a', title: 'Alpha', extra: 'extra:\n  series: effect-ts\n  level: 3\n' }),
+  ]
+  // Default off: the authored fields stay data, invisible on every surface.
+  const quiet = await build({ revisions: revisions() })
+  assert.doesNotMatch(quiet.files.get('en/blog/a/index.html').body.toString(), /extra-fields|effect-ts/)
+  assert.doesNotMatch(quiet.files.get('en/blog/a/index.md').body.toString(), /series/)
+  assert.doesNotMatch(quiet.files.get('en/llms-full.txt').body.toString(), /series/)
+
+  const shown = await build({
+    site: { ...site, settings: { content: { show_extra: true } } },
+    revisions: revisions(),
+  })
+  assert.match(
+    shown.files.get('en/blog/a/index.html').body.toString(),
+    /<dl class="extra-fields"><dt>series<\/dt><dd>effect-ts<\/dd><dt>level<\/dt><dd>3<\/dd><\/dl>/,
+  )
+  assert.match(shown.files.get('en/blog/a/index.md').body.toString(), /- series: effect-ts\n- level: 3\n/)
+  assert.match(shown.files.get('en/llms-full.txt').body.toString(), /- series: effect-ts\n- level: 3\n/)
+  // Never in JSON-LD, never in the search index — extra is not a typed vocabulary.
+  const structured = shown.files.get('en/blog/a/index.html').body.toString().match(/application\/ld\+json">(.*?)<\/script>/s)
+  if (structured) assert.doesNotMatch(structured[1], /effect-ts/)
+  assert.doesNotMatch(shown.files.get('en/search-index.json').body.toString(), /effect-ts/)
+})
+
+test('builds with extra and related stay reproducible, and plain posts carry no new markup', async () => {
+  const now = new Date('2026-07-08T00:00:00Z')
+  const revisions = () => [
+    post({ slug: 'a', title: 'A', tags: ['React'], extra: 'related: [b]\nextra:\n  series: s\n' }),
+    post({ slug: 'b', title: 'B', tags: ['React'] }),
+  ]
+  const first = await build({ revisions: revisions(), now })
+  const second = await build({ revisions: revisions(), now })
+  for (const path of ['en/blog/a/index.html', 'en/blog/a/index.md', 'en/llms-full.txt']) {
+    assert.equal(first.files.get(path).body.toString(), second.files.get(path).body.toString(), `${path} is unstable`)
+  }
+  // A post without the new frontmatter, on a site without the setting, renders
+  // exactly as before the feature existed.
+  assert.doesNotMatch(first.files.get('en/blog/b/index.html').body.toString(), /extra-fields/)
+})
+
+test('a site without theme settings builds byte-identically and carries no theme <style> block', async () => {
+  const now = new Date('2026-07-08T00:00:00Z')
+  const revisions = () => [post({ slug: 'a', title: 'A' })]
+  const first = await build({ revisions: revisions(), now })
+  const second = await build({ revisions: revisions(), now })
+  const page = first.files.get('en/blog/a/index.html').body.toString()
+  assert.equal(page, second.files.get('en/blog/a/index.html').body.toString(), 'build bytes must stay stable')
+  assert.doesNotMatch(page, /:root\{--/, 'no theme block without settings.theme or settings.accent')
+
+  // With tokens set, the generated block reaches every rendered page.
+  const themed = await build({
+    site: { ...site, settings: { theme: { tokens: { primary: '#dc2626' }, custom_css: '.x{color:red}' } } },
+    revisions: revisions(),
+  })
+  const themedPage = themed.files.get('en/blog/a/index.html').body.toString()
+  assert.match(themedPage, /<style>:root\{--primary:0 72% 51%\}<\/style>/)
+  assert.match(themedPage, /<style>\.x\{color:red\}<\/style>/)
+})

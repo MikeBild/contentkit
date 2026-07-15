@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.11.0
+
+### Added
+
+- **Content lifecycle webhook events.** Release activation now emits
+  `contentkit.content.published` (per item whose published revision actually
+  changed — no-op republishes stay silent), `contentkit.content.unpublished`
+  (per retired item that was published) and one `contentkit.release.published`
+  per activation, enqueued in the same database transaction as the pointer
+  switch. Rollbacks and empty releases move no item pointers and emit only
+  `release.published`. No new settings or scopes — the per-endpoint `events`
+  filter is the opt-in.
+- **Content modeling light.** Frontmatter gains an author-owned `extra:` map
+  of custom fields (max 32 keys `[a-z][a-z0-9_]{0,63}`, scalar/list/flat-map
+  values, 16 KiB, validated with a 422 on write) stored verbatim in the
+  revision metadata, and `related: [slug, …]` references to same-locale posts
+  (max 8, no duplicates or self-reference, stored as `related_slugs`).
+  Authored references lead the related-posts block in the author's order, tag
+  similarity fills up to three, and a broken reference is dropped with a
+  warning instead of failing the release. The new
+  `settings.content.show_extra` setting (default off, validated on
+  create/PATCH) renders the extra fields as a definition list on the page and
+  as a bullet block in the Markdown twin and per-site `llms-full.txt`;
+  JSON-LD and the search index never carry them. Deliberately no custom
+  content kinds: a dedicated collection is `kind: post` + a dedicated tag +
+  `extra` fields.
+- **JSON read API ("optional headless").** `GET /v1/sites/{site}/published`
+  lists currently published content as JSON — filters `kind`, `locale`, exact
+  `tag` and `updated_since` (strictly greater than the item's `updated_at`),
+  keyset pagination via an opaque `cursor` (default 50 entries, cap 200) —
+  and `GET /v1/sites/{site}/published/{kind}/{locale}/{slug}` returns one
+  document plus the immutable Markdown source verbatim and on-demand rendered
+  HTML (never stored). Revision `metadata` is served verbatim, so `extra`
+  fields ride along automatically. Both routes live on the management API
+  behind `content:read` scoped keys — no anonymous delivery path, static site
+  delivery unchanged — and honour `If-None-Match`/304: the list with a weak
+  ETag over the site's publish epoch, the document with a strong ETag over
+  the revision source hash and service version.
+- **Server-side full-text search.** `GET /v1/sites/{site}/search?q=` runs
+  PostgreSQL full-text search over currently published content (`content:read`
+  scope): locale-aware stemming (de → german, en → english, otherwise simple),
+  title/summary/tags weighted above body text, relevance `rank` and a
+  `headline` snippet with `<mark>` highlights. Search vectors are filled by an
+  insert trigger on the immutable revisions (migration
+  `0006_contentkit_search`, backfill included) and queried only through the
+  whitelisted `ck_search_published` function joining over
+  `published_revision_id`, so drafts stay invisible. The frontmatter block is
+  stripped before indexing — author-owned `extra` fields never land in the
+  index. Published sites keep their static client-side search; no anonymous
+  search path appears.
+- **Theming as design tokens.** `settings.theme.tokens` generalizes the
+  single-token accent injection: every allowlisted token (`background`,
+  `foreground`, `muted`, `muted_foreground`, `border`, `primary`,
+  `primary_foreground`, `radius`, `font_family`) fills the custom property of
+  the same name in the shared stylesheet, as one value or a
+  `{ light, dark }` pair emitted behind `prefers-color-scheme`. Hex colors
+  are converted to the `H S% L%` triples the stylesheet expects, unknown
+  token keys fail the write with 422, and `settings.accent` stays the
+  shorthand for `primary` (the explicit token wins). The new size-capped
+  `settings.theme.custom_css` (8 KiB, no `</style`) is appended as the last
+  `<style>` element as the escape hatch — deliberately no template or layout
+  overrides, and `site.css` stays shared and content-hashed.
+
 ## 1.10.0
 
 ### Added

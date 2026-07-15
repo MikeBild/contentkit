@@ -129,7 +129,100 @@ function validateFaq(value) {
   })
 }
 
-function validateFrontmatter(data) {
+// Author-owned custom fields (`extra:`), passed through to the revision's
+// metadata verbatim with their YAML types preserved. There is no schema
+// builder: the shape rules below are the whole contract, and consumers (the
+// Read API, per-site tooling) interpret the fields themselves. Bounded so a
+// single document cannot turn the metadata column into a blob store.
+const EXTRA_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
+const EXTRA_MAX_FIELDS = 32
+const EXTRA_MAX_LIST_ENTRIES = 64
+const EXTRA_MAX_MAP_ENTRIES = 32
+const EXTRA_MAX_BYTES = 16384
+
+function validateExtra(value) {
+  if (value == null) return null
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new Error('frontmatter extra must be a map of custom fields'), { statusCode: 422 })
+  }
+  const entries = Object.entries(value)
+  if (!entries.length) return null
+  if (entries.length > EXTRA_MAX_FIELDS) {
+    throw Object.assign(new Error(`frontmatter extra allows at most ${EXTRA_MAX_FIELDS} fields`), { statusCode: 422 })
+  }
+  const assertKey = (key) => {
+    if (!EXTRA_KEY_PATTERN.test(key)) {
+      throw Object.assign(new Error('frontmatter extra keys must match [a-z][a-z0-9_]{0,63}'), { statusCode: 422 })
+    }
+  }
+  const badValue = () =>
+    Object.assign(new Error('frontmatter extra values must be scalars, lists of scalars or flat maps of scalars'), {
+      statusCode: 422,
+    })
+  for (const [key, entry] of entries) {
+    assertKey(key)
+    if (scalar(entry)) continue
+    if (Array.isArray(entry)) {
+      if (entry.length > EXTRA_MAX_LIST_ENTRIES) {
+        throw Object.assign(new Error(`frontmatter extra lists allow at most ${EXTRA_MAX_LIST_ENTRIES} entries`), {
+          statusCode: 422,
+        })
+      }
+      if (!entry.every(scalar)) throw badValue()
+      continue
+    }
+    if (entry && typeof entry === 'object') {
+      const nested = Object.entries(entry)
+      if (nested.length > EXTRA_MAX_MAP_ENTRIES) {
+        throw Object.assign(new Error(`frontmatter extra maps allow at most ${EXTRA_MAX_MAP_ENTRIES} entries`), {
+          statusCode: 422,
+        })
+      }
+      for (const [nestedKey, nestedValue] of nested) {
+        assertKey(nestedKey)
+        if (!scalar(nestedValue)) throw badValue()
+      }
+      continue
+    }
+    throw badValue() // null entries: an absent value is expressed by omitting the key
+  }
+  if (Buffer.byteLength(JSON.stringify(value)) > EXTRA_MAX_BYTES) {
+    throw Object.assign(new Error('frontmatter extra must not exceed 16 KiB'), { statusCode: 422 })
+  }
+  return value
+}
+
+// Authored references (`related:`), a list of same-locale post slugs. Stored
+// as `related_slugs` so it cannot collide with the derived `related` link
+// projection the site builder attaches at build time. Validation is
+// write-time only — whether a slug resolves is decided at build time, where
+// a broken reference is dropped with a warning instead of failing a release.
+const RELATED_MAX_REFERENCES = 8
+
+function validateRelated(value, slug) {
+  if (value == null) return null
+  if (!Array.isArray(value)) {
+    throw Object.assign(new Error('frontmatter related must be a list of slugs'), { statusCode: 422 })
+  }
+  // YAML parses `- 42` as a number; assertSlug accepts it (its regex coerces),
+  // so normalize to strings for stable comparisons against post slugs.
+  const slugs = value.map((entry) => String(assertSlug(entry, 'related')))
+  if (!slugs.length) return null
+  if (slugs.length > RELATED_MAX_REFERENCES) {
+    throw Object.assign(new Error(`frontmatter related allows at most ${RELATED_MAX_REFERENCES} references`), {
+      statusCode: 422,
+    })
+  }
+  if (new Set(slugs).size !== slugs.length) {
+    throw Object.assign(new Error('frontmatter related must not contain duplicates'), { statusCode: 422 })
+  }
+  if (slugs.includes(slug)) {
+    throw Object.assign(new Error('frontmatter related must not reference the document itself'), { statusCode: 422 })
+  }
+  return slugs
+}
+
+function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   const kind = data.kind || 'page'
   if (!kinds.has(kind))
     throw Object.assign(new Error('frontmatter kind must be page, post or project'), { statusCode: 422 })
@@ -144,7 +237,7 @@ function validateFrontmatter(data) {
   const slug = assertSlug(data.slug || slugify(title))
   const translationKey = assertSlug(data.translationKey || data.translation_key || slug, 'translationKey')
   const tags = Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
-  return {
+  const meta = {
     kind,
     title,
     locale,
@@ -170,6 +263,26 @@ function validateFrontmatter(data) {
     external_url: data.externalUrl ? String(data.externalUrl) : null,
     nav_order: Number.isFinite(Number(data.navOrder)) ? Number(data.navOrder) : null,
   }
+  // Content modeling light: both keys are additive and omitted entirely when
+  // absent or empty, so revisions written before they existed keep
+  // byte-identical metadata. The write path validates strictly (422 the author
+  // sees immediately); the lenient render paths that replay stored revisions
+  // (site builds, the Read API) instead drop a malformed value with a warning —
+  // a document that was valid when written must never fail a future release.
+  const dropWhenLenient = (key, validate) => {
+    try {
+      return validate()
+    } catch (error) {
+      if (!lenient || error.statusCode !== 422) throw error
+      warnings.push(`frontmatter ${key} dropped: ${error.message}`)
+      return null
+    }
+  }
+  const extra = dropWhenLenient('extra', () => validateExtra(data.extra))
+  if (extra) meta.extra = extra
+  const relatedSlugs = dropWhenLenient('related', () => validateRelated(data.related, slug))
+  if (relatedSlugs) meta.related_slugs = relatedSlugs
+  return meta
 }
 
 function parseFrontmatter(markdown) {
@@ -190,9 +303,10 @@ function parseFrontmatter(markdown) {
   return { data, content: markdown.slice(match[0].length) }
 }
 
-export async function renderMarkdown(markdown) {
+export async function renderMarkdown(markdown, { lenient = false } = {}) {
   const parsed = parseFrontmatter(markdown)
-  const meta = validateFrontmatter(parsed.data)
+  const warnings = []
+  const meta = validateFrontmatter(parsed.data, { lenient, warnings })
   if (!meta.summary) meta.summary = excerpt(parsed.content.replace(/[`#>*_[\]()!-]/g, ' '))
 
   const processor = unified()
@@ -213,5 +327,5 @@ export async function renderMarkdown(markdown) {
     .use(rehypeStringify)
 
   const html = String(await processor.process(parsed.content))
-  return { meta, html, source: parsed.content, hasMermaid: /class="mermaid"/.test(html) }
+  return { meta, html, source: parsed.content, hasMermaid: /class="mermaid"/.test(html), warnings }
 }

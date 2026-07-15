@@ -194,6 +194,9 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
 | GET | `/v1/content/{item}/revisions` | `content:read` | List immutable revisions for one content item |
 | PUT | `/v1/content/{item}/revisions` | `content:write` | Create another immutable revision for an existing content item |
+| GET | `/v1/sites/{site}/published` | `content:read` | List published content as JSON (read API): `kind`, `locale`, exact `tag`, `updated_since`, keyset `limit`/`cursor` |
+| GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}` | `content:read` | Read one published document as JSON incl. `markdown` source and on-demand rendered `html` |
+| GET | `/v1/sites/{site}/search` | `content:read` | Full-text search over published content: required `q`, optional `locale`, `kind`, `limit`; ranked results with `<mark>` headlines |
 | POST | `/v1/sites/{site}/previews` | `release:write` | Build an expiring preview release and return a preview URL |
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
@@ -245,6 +248,61 @@ The same service also serves published static sites:
 
 Extensionless public paths redirect to trailing-slash directory routes. Missing
 release objects fall back to `/404.html`.
+
+### Read API
+
+`GET /v1/sites/{site}/published` and
+`GET /v1/sites/{site}/published/{kind}/{locale}/{slug}` serve currently
+published content as JSON for headless consumers (build pipelines, other
+renderers). They live on the management API behind `content:read` scoped keys —
+there is no anonymous delivery path, and static site delivery is unaffected.
+
+- List entries: `{ item_id, kind, locale, translation_key, slug, title,
+  summary, tags, metadata, revision_id, published_at, updated_at }` plus a
+  top-level `next_cursor` (null on the last page). `metadata` is the revision's
+  frontmatter contract verbatim, including author-owned `extra` fields.
+- List filters: `kind`, `locale`, exact `tag` and `updated_since` (ISO 8601;
+  strictly greater than the item's `updated_at`, which release activation bumps
+  exactly when the published revision changes — so a poller can pass the newest
+  `updated_at` it has seen). Sorted by `updated_at` descending, item id as the
+  tiebreak. Pages default to 50 entries (values above 200 are clamped);
+  `cursor` is opaque — pass `next_cursor` back verbatim.
+- The single document adds `markdown` (the immutable revision source verbatim)
+  and `html` (rendered on demand; HTML is never stored). An unknown,
+  unpublished or mismatched kind/locale/slug answers
+  `404 {"error":"published content not found"}`.
+- Caching: the list responds with a weak ETag over the site's publish epoch,
+  the single document with a strong ETag over the revision source hash plus the
+  service version; both honour `If-None-Match` with `304`.
+
+### Search
+
+`GET /v1/sites/{site}/search?q=` runs PostgreSQL full-text search over
+currently published content, behind the same `content:read` scoped keys.
+Published sites keep their static client-side search (`search-index.json`);
+this route is an API-host feature for headless consumers and changes nothing
+about site delivery.
+
+- Query parameters: `q` (required; websearch syntax, trimmed, 1–200
+  characters), `locale`, `kind` (`page`/`post`/`project`) and `limit`
+  (default 20; values above 100 are clamped). Missing or overlong `q`,
+  an unknown `kind` or a non-numeric `limit` answer `422`.
+- Response: `{ "query": "<q>", "results": [ { item_id, kind, locale, slug,
+  title, summary, tags, rank, headline, published_at, updated_at } ] }`,
+  ranked by relevance. `headline` is a snippet with `<mark>…</mark>`
+  highlights around the matched terms.
+- Weighting: title (A), summary and tags (B), body text (D). The frontmatter
+  block is stripped before indexing, so author-owned `extra` fields never
+  land in the search index. Vectors are filled by an insert trigger on the
+  immutable revisions; the query joins exclusively over
+  `published_revision_id`, so drafts, scheduled and archived revisions are
+  invisible by construction.
+- Locale-aware stemming: `de` stems with `german`, `en` with `english`,
+  anything else with `simple`. Without `locale` the query is stemmed with
+  `simple` against locale-stemmed vectors — cross-locale search is
+  best-effort; with `locale` the stemming matches the indexed side exactly.
+- No ETag or cache headers: results depend on the query text, not on a
+  stored artifact a version could name.
 
 ---
 
@@ -313,6 +371,8 @@ Important site fields:
 | `settings.blog.subscribe_targets` | Optional replacement for the blog row's reader targets: `[{ "label": "...", "url_template": "..." }]` with `{feed}` (absolute feed URL), `{feed_encoded}` and `{feed_no_scheme}` placeholders. Templates outside http(s) and the podcast-app protocols (`podcast:`, `overcast:`, `pktc:`) are dropped |
 | `settings.audio.subscribe_targets` | Same shape, for the blogcast page's subscribe row. Defaults to Apple Podcasts, Overcast and Pocket Casts deep links |
 | `settings.feedback.enabled` | Default off (opt-in). `true` renders a one-click "Was this post helpful?" thumbs-up/down widget under each post, posting to `/public/v1/posts/{post}/feedback`. Votes are anonymous (no reader data), deduplicated per device via localStorage |
+| `settings.theme.tokens` | Per-site design tokens injected as an inline `<style>` on every page. Allowlisted keys only (`background`, `foreground`, `muted`, `muted_foreground`, `border`, `primary`, `primary_foreground`, `radius`, `font_family`) — an unknown key fails the write with 422 so typos surface. Each key maps onto the stylesheet custom property of the same name (underscores become hyphens, e.g. `muted_foreground` → `--muted-foreground`). A value is one string for both color schemes or `{ "light": "...", "dark": "..." }` for a `prefers-color-scheme` override; color values accept hex (converted to the `H S% L%` triple like `settings.accent`) or a triple verbatim. Each value is at most 256 bytes and must not contain `<` (422 otherwise) — values are emitted verbatim into the `<style>` element, so quoted font stacks like `"Helvetica Neue", Arial, sans-serif` work. `settings.accent` remains the shorthand for the `primary` token; the explicit token wins on conflict. `font_family` additionally applies `body{font-family:var(--font-family)}`. A theme is a token assignment — there are no template or layout overrides |
+| `settings.theme.custom_css` | Escape hatch for whatever tokens do not cover: a raw CSS string appended as the last `<style>` element on every page. Must be a string of at most 8192 bytes and must not contain `</style` (422 otherwise); the site owner authors it, so there is no further sanitizing |
 
 Read a site:
 
@@ -377,6 +437,12 @@ Supported YAML frontmatter:
 | `technologies` | no | Stored in metadata for project use |
 | `externalUrl` | no | Stored in metadata for project use |
 | `navOrder` | no | Includes pages in the header navigation, sorted ascending. Values above 60 place the page in the footer's legal column instead |
+| `extra` | no | Author-owned map of custom fields, stored verbatim in the revision metadata with YAML types preserved. Max 32 keys matching `[a-z][a-z0-9_]{0,63}` (nested map keys too); values are scalars, lists of up to 64 scalars or flat maps of up to 32 scalars; 16 KiB total. Rendered as a definition list on the page and as a bullet block in the Markdown twin and per-site llms-full.txt only when `settings.content.show_extra` is `true`; never in JSON-LD or the search index |
+| `related` | no | List of same-locale post slugs (max 8, no duplicates, no self-reference), stored as `related_slugs` in the revision metadata. Authored references lead the related-posts block in the author's order; tag similarity fills up to three. A reference that resolves to no published post is dropped at build time with a warning, never a release failure |
+
+There are no custom content kinds. A dedicated collection is `kind: post` plus
+a dedicated tag plus `extra` fields — the tag page supplies the listing and its
+feed for free; one-off pages are `kind: page`.
 
 Example post:
 
@@ -823,6 +889,13 @@ Events emitted:
 | `contentkit.comment.submitted` | A comment was submitted for moderation | `post_id`, `author_name`, `author_email`, `body`, `status` |
 | `contentkit.comment.approved` | A comment was approved | `post_id`, `author_name`, `body` |
 | `contentkit.release.failed` | A release/preview build failed | — |
+| `contentkit.content.published` | An item's published revision changed during release activation (a no-op republish emits nothing) | `item_id`, `kind`, `locale`, `translation_key`, `slug`, `title`, `revision_id`, `release_id` |
+| `contentkit.content.unpublished` | A published item was retired by a release | same as `content.published`; `revision_id` is the retired revision |
+| `contentkit.release.published` | A release was activated (also for rollbacks and empty releases, which move no item pointers and emit no `content.*` events) | `release_id`, `reason`, `published_count`, `unpublished_count` |
+
+Content events are enqueued in the same database transaction as the
+`ck_activate_release()` pointer switch and carry no absolute URLs (the URL
+layout is the site builder's contract).
 
 ### Payload and signing
 

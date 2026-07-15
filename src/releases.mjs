@@ -25,6 +25,66 @@ export function createSemaphore(limit) {
   }
 }
 
+// Derives the content.* webhook events for a release activation from the
+// pointer transitions it is about to make: published fires only when an
+// overlay revision actually changes an item's published pointer (a no-op
+// republish stays silent), unpublished only for retired items whose pointer
+// was set. Payloads carry no absolute URLs — the URL layout is the site
+// builder's contract, not the CMS's.
+async function contentTransitionEvents(db, snapshot, retireItemIds, releaseId) {
+  const itemsById = new Map((snapshot.items || []).map((item) => [item.id, item]))
+  const events = []
+  for (const revision of snapshot.overlay || []) {
+    const item = itemsById.get(revision.item_id)
+    if (!item || item.published_revision_id === revision.id) continue
+    events.push({
+      type: 'contentkit.content.published',
+      resourceKind: 'content',
+      resourceId: item.id,
+      summary: 'Content published',
+      data: {
+        item_id: item.id,
+        kind: item.kind,
+        locale: item.locale,
+        translation_key: item.translation_key,
+        slug: revision.slug,
+        title: revision.title,
+        revision_id: revision.id,
+        release_id: releaseId,
+      },
+    })
+  }
+  // Retired items are excluded from the snapshot's rendered set, so their
+  // until-now published revisions (for slug/title) are loaded separately.
+  const retiring = retireItemIds.map((itemId) => itemsById.get(itemId)).filter((item) => item?.published_revision_id)
+  if (retiring.length) {
+    const revisions = await db.select('ck_content_revisions', {
+      id: `in.(${retiring.map((item) => item.published_revision_id).join(',')})`,
+    })
+    const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]))
+    for (const item of retiring) {
+      const revision = revisionsById.get(item.published_revision_id)
+      events.push({
+        type: 'contentkit.content.unpublished',
+        resourceKind: 'content',
+        resourceId: item.id,
+        summary: 'Content unpublished',
+        data: {
+          item_id: item.id,
+          kind: item.kind,
+          locale: item.locale,
+          translation_key: item.translation_key,
+          slug: revision?.slug ?? null,
+          title: revision?.title ?? null,
+          revision_id: item.published_revision_id,
+          release_id: releaseId,
+        },
+      })
+    }
+  }
+  return events
+}
+
 export function createReleaseManager(config, repo, db, storage, logger, hooks = {}) {
   const semaphore = createSemaphore(config.buildConcurrency)
   const acquire = () => semaphore.acquire()
@@ -52,7 +112,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         reason,
         revision_ids: revisionIds,
       })
-      const built = await buildSite({ root: config.root, ...snapshot })
+      const built = await buildSite({ root: config.root, logger, ...snapshot })
       prefix = `sites/${snapshot.site.id}/releases/${releaseId}`
       for (const [path, file] of built.files) {
         await storage.upload(`${prefix}/${path}`, file.body, file.contentType, file.cacheControl, false)
@@ -77,12 +137,31 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         },
       )
       if (kind === 'release') {
+        const events = await contentTransitionEvents(db, snapshot, retireItemIds, releaseId)
+        const publishedCount = events.filter((event) => event.type === 'contentkit.content.published').length
+        events.push({
+          type: 'contentkit.release.published',
+          resourceKind: 'release',
+          resourceId: releaseId,
+          summary: 'Site release published',
+          data: {
+            release_id: releaseId,
+            reason,
+            published_count: publishedCount,
+            unpublished_count: events.length - publishedCount,
+          },
+        })
         try {
-          await db.rpc('ck_activate_release', {
-            p_release_id: releaseId,
-            p_revision_ids: revisionIds,
-            p_retire_item_ids: retireItemIds,
-            p_expected_epoch: snapshot.site.publish_epoch ?? null,
+          // Activation and event enqueue commit atomically: a delivery can only
+          // exist for a pointer switch that actually happened, and vice versa.
+          await db.tx(async (tx) => {
+            await tx.rpc('ck_activate_release', {
+              p_release_id: releaseId,
+              p_revision_ids: revisionIds,
+              p_retire_item_ids: retireItemIds,
+              p_expected_epoch: snapshot.site.publish_epoch ?? null,
+            })
+            await repo.enqueueContentEvents(tx, snapshot.site, events)
           })
         } catch (error) {
           // Another publish activated between our snapshot and this activation.
@@ -170,7 +249,21 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       if (!target || target.site_id !== siteId || !['ready', 'active', 'superseded'].includes(target.status)) {
         throw Object.assign(new Error('release not found or not activatable'), { statusCode: 404 })
       }
-      await db.rpc('ck_activate_release', { p_release_id: releaseId, p_revision_ids: [] })
+      // Rollback moves the site pointer, not item pointers — so it emits only
+      // release.published, never content.* events.
+      const site = (await repo.getSite(siteId)) || { id: siteId, name: null }
+      await db.tx(async (tx) => {
+        await tx.rpc('ck_activate_release', { p_release_id: releaseId, p_revision_ids: [] })
+        await repo.enqueueContentEvents(tx, site, [
+          {
+            type: 'contentkit.release.published',
+            resourceKind: 'release',
+            resourceId: releaseId,
+            summary: 'Site release published',
+            data: { release_id: releaseId, reason: 'rollback', published_count: 0, unpublished_count: 0 },
+          },
+        ])
+      })
       return { release_id: releaseId, active: true }
     },
   }

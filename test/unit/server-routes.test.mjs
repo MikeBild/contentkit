@@ -1,8 +1,9 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from '../../src/server.mjs'
+import { createRepository } from '../../src/repository.mjs'
 import { releaseContentType } from '../../src/routes.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
@@ -1204,4 +1205,342 @@ test('feed.xml is served as RSS while other xml stays application/xml', () => {
   assert.equal(releaseContentType('de/llms-full.txt'), 'text/plain; charset=utf-8')
   assert.equal(releaseContentType('robots.txt'), 'text/plain; charset=utf-8')
   assert.equal(releaseContentType('assets/logo.woff2'), undefined)
+})
+
+describe('published read API', () => {
+  const PUBLISHED_DOC = {
+    item_id: 'item-1',
+    kind: 'post',
+    locale: 'de',
+    translation_key: 'hello',
+    slug: 'hello',
+    title: 'Hello',
+    summary: 'Hi',
+    tags: ['a'],
+    metadata: { kind: 'post', title: 'Hello' },
+    revision_id: 'rev-1',
+    published_at: '2026-07-01T00:00:00.000Z',
+    updated_at: '2026-07-02T00:00:00.000Z',
+    markdown: '# Hello',
+    html: '<h1>Hello</h1>',
+    source_sha256: 'abc123',
+  }
+
+  function publishedApiRepo(calls = []) {
+    return {
+      async getSite(slug) {
+        return slug === 'my-site' ? { id: 'site-1', slug: 'my-site', publish_epoch: 7 } : null
+      },
+      async listPublished(siteId, query) {
+        calls.push(['list', siteId, query])
+        return { items: [{ item_id: 'item-1', slug: 'hello' }], next_cursor: null }
+      },
+      async getPublished(siteId, kind, locale, slug) {
+        calls.push(['doc', siteId, kind, locale, slug])
+        return slug === 'hello' && kind === 'post' && locale === 'de' ? { ...PUBLISHED_DOC } : null
+      },
+    }
+  }
+
+  test('both routes require content:read (401/403) and 404 an unknown site first', async () => {
+    await withApp({ repo: publishedApiRepo(), auth: scopedAuth(['release:write']) }, async (request) => {
+      for (const path of ['/v1/sites/my-site/published', '/v1/sites/my-site/published/post/de/hello']) {
+        assert.equal((await request(path)).status, 401, path)
+        const forbidden = await request(path, { headers: { 'x-api-key': 'valid' } })
+        assert.equal(forbidden.status, 403, path)
+        assert.deepEqual(await forbidden.json(), {
+          error: 'insufficient_scope',
+          scope: 'content:read',
+          site: 'site-1',
+        })
+      }
+      // The site lookup precedes the scope check, exactly like /content.
+      assert.equal((await request('/v1/sites/nope/published', { headers: { 'x-api-key': 'valid' } })).status, 404)
+    })
+  })
+
+  test('the list forwards filters, answers with the publish-epoch weak ETag and honours 304', async () => {
+    const calls = []
+    await withApp({ repo: publishedApiRepo(calls), auth: scopedAuth(['content:read']) }, async (request) => {
+      const response = await request(
+        '/v1/sites/my-site/published?kind=post&locale=de&tag=a&updated_since=2026-07-01T00:00:00Z&limit=2&cursor=abc',
+        { headers: { 'x-api-key': 'valid' } },
+      )
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('etag'), 'W/"7"')
+      assert.deepEqual(await response.json(), { items: [{ item_id: 'item-1', slug: 'hello' }], next_cursor: null })
+      assert.deepEqual(calls, [
+        [
+          'list',
+          'site-1',
+          { kind: 'post', locale: 'de', tag: 'a', updated_since: '2026-07-01T00:00:00Z', limit: '2', cursor: 'abc' },
+        ],
+      ])
+
+      // A matching If-None-Match answers before any query work happens.
+      calls.length = 0
+      const cached = await request('/v1/sites/my-site/published', {
+        headers: { 'x-api-key': 'valid', 'if-none-match': 'W/"7"' },
+      })
+      assert.equal(cached.status, 304)
+      assert.equal(cached.headers.get('etag'), 'W/"7"')
+      assert.equal(await cached.text(), '')
+      assert.deepEqual(calls, [])
+    })
+  })
+
+  test('the single document carries markdown and html, a strong ETag and a dedicated 404', async () => {
+    await withApp({ repo: publishedApiRepo(), auth: scopedAuth(['content:read']) }, async (request) => {
+      const response = await request('/v1/sites/my-site/published/post/de/hello', {
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(response.status, 200)
+      // config.version is 'test' in withApp.
+      assert.equal(response.headers.get('etag'), '"abc123:test"')
+      const body = await response.json()
+      assert.equal(body.markdown, '# Hello')
+      assert.equal(body.html, '<h1>Hello</h1>')
+      assert.equal(body.source_sha256, undefined, 'the ETag ingredient must not leak into the body')
+
+      const cached = await request('/v1/sites/my-site/published/post/de/hello', {
+        headers: { 'x-api-key': 'valid', 'if-none-match': '"abc123:test"' },
+      })
+      assert.equal(cached.status, 304)
+      assert.equal(cached.headers.get('etag'), '"abc123:test"')
+
+      const missing = await request('/v1/sites/my-site/published/post/de/nope', {
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(missing.status, 404)
+      assert.deepEqual(await missing.json(), { error: 'published content not found' })
+    })
+  })
+
+  test('a repository 422 (malformed query) surfaces as a 422 response', async () => {
+    const repo = {
+      ...publishedApiRepo(),
+      async listPublished() {
+        throw Object.assign(new Error('limit must be a positive integer'), { statusCode: 422 })
+      },
+    }
+    await withApp({ repo, auth: scopedAuth(['content:read']) }, async (request) => {
+      const response = await request('/v1/sites/my-site/published?limit=abc', { headers: { 'x-api-key': 'valid' } })
+      assert.equal(response.status, 422)
+      assert.match((await response.json()).error, /positive integer/)
+    })
+  })
+
+  test('OPTIONS advertises GET on both read-API routes', async () => {
+    await withApp({}, async (request) => {
+      for (const path of ['/v1/sites/my-site/published', '/v1/sites/my-site/published/post/de/hello']) {
+        const response = await request(path, { method: 'OPTIONS' })
+        assert.equal(response.status, 204, path)
+        assert.equal(response.headers.get('allow'), 'GET, OPTIONS', path)
+      }
+    })
+  })
+})
+
+describe('published search', () => {
+  // The real repository over a stub db, so the route tests exercise the actual
+  // query validation and the parameter forwarding into ck_search_published.
+  function searchRepo(rpcCalls = [], rows = []) {
+    return createRepository(
+      {},
+      {
+        async select(table, query) {
+          if (table === 'ck_sites' && query.slug === 'eq.my-site') {
+            return [{ id: 'site-1', slug: 'my-site' }]
+          }
+          return []
+        },
+        async rpc(name, body) {
+          rpcCalls.push([name, body])
+          return rows
+        },
+      },
+      {},
+    )
+  }
+
+  test('the route requires content:read (401/403) and 404s an unknown site first', async () => {
+    await withApp({ repo: searchRepo(), auth: scopedAuth(['release:write']) }, async (request) => {
+      assert.equal((await request('/v1/sites/my-site/search?q=hallo')).status, 401)
+      const forbidden = await request('/v1/sites/my-site/search?q=hallo', { headers: { 'x-api-key': 'valid' } })
+      assert.equal(forbidden.status, 403)
+      assert.deepEqual(await forbidden.json(), {
+        error: 'insufficient_scope',
+        scope: 'content:read',
+        site: 'site-1',
+      })
+      // The site lookup precedes the scope check, exactly like the read API.
+      assert.equal((await request('/v1/sites/nope/search?q=hallo', { headers: { 'x-api-key': 'valid' } })).status, 404)
+    })
+  })
+
+  test('forwards q, locale, kind and limit into ck_search_published and returns uncached results', async () => {
+    const rpcCalls = []
+    const rows = [{ item_id: 'item-1', slug: 'hallo', rank: 0.5, headline: '<mark>Hallo</mark> Welt' }]
+    await withApp({ repo: searchRepo(rpcCalls, rows), auth: scopedAuth(['content:read']) }, async (request) => {
+      const response = await request('/v1/sites/my-site/search?q=+hallo+welt+&locale=de&kind=post&limit=5', {
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('etag'), null, 'search responses carry no ETag')
+      // The query lands trimmed in both the SQL call and the response envelope.
+      assert.deepEqual(await response.json(), { query: 'hallo welt', results: rows })
+      assert.deepEqual(rpcCalls, [
+        [
+          'ck_search_published',
+          { p_site_id: 'site-1', p_query: 'hallo welt', p_locale: 'de', p_kind: 'post', p_limit: 5 },
+        ],
+      ])
+
+      // Absent filters become nulls, the limit defaults to 20 and caps at 100.
+      rpcCalls.length = 0
+      await request('/v1/sites/my-site/search?q=hallo', { headers: { 'x-api-key': 'valid' } })
+      assert.deepEqual(rpcCalls[0][1], {
+        p_site_id: 'site-1',
+        p_query: 'hallo',
+        p_locale: null,
+        p_kind: null,
+        p_limit: 20,
+      })
+      await request('/v1/sites/my-site/search?q=hallo&limit=500', { headers: { 'x-api-key': 'valid' } })
+      assert.equal(rpcCalls[1][1].p_limit, 100)
+    })
+  })
+
+  test('malformed queries are 422 with the documented messages', async () => {
+    const rpcCalls = []
+    await withApp({ repo: searchRepo(rpcCalls), auth: scopedAuth(['content:read']) }, async (request) => {
+      const expect422 = async (query, message) => {
+        const response = await request(`/v1/sites/my-site/search${query}`, { headers: { 'x-api-key': 'valid' } })
+        assert.equal(response.status, 422, query)
+        assert.equal((await response.json()).error, message, query)
+      }
+      await expect422('', 'q is required')
+      await expect422('?q=+++', 'q is required')
+      await expect422(`?q=${'a'.repeat(201)}`, 'q must be at most 200 characters')
+      await expect422('?q=hallo&kind=article', 'kind must be page, post or project')
+      await expect422('?q=hallo&limit=abc', 'limit must be a positive integer')
+      await expect422('?q=hallo&limit=0', 'limit must be a positive integer')
+      assert.deepEqual(rpcCalls, [], 'no search runs for a rejected query')
+    })
+  })
+
+  test('OPTIONS advertises GET on the search route', async () => {
+    await withApp({}, async (request) => {
+      const response = await request('/v1/sites/my-site/search', { method: 'OPTIONS' })
+      assert.equal(response.status, 204)
+      assert.equal(response.headers.get('allow'), 'GET, OPTIONS')
+    })
+  })
+})
+
+describe('theme settings', () => {
+  // The real repository over a stub db, so the PATCH exercises the actual
+  // settings validation; `updates` records whether a write got through.
+  function siteRepo(updates = []) {
+    return createRepository(
+      {},
+      {
+        async select(table, query) {
+          if (table === 'ck_sites' && query.slug === 'eq.my-site') {
+            return [{ id: 'site-1', slug: 'my-site' }]
+          }
+          return []
+        },
+        async update(table, filters, patch) {
+          updates.push([table, filters, patch])
+          return [{ id: 'site-1', slug: 'my-site', settings: patch.settings }]
+        },
+      },
+      {},
+    )
+  }
+
+  const patchSettings = (request, settings) =>
+    request('/v1/sites/my-site', {
+      method: 'PATCH',
+      headers: { 'x-api-key': 'valid', 'content-type': 'application/json' },
+      body: JSON.stringify({ settings }),
+    })
+
+  test('an unknown theme token 422s the whole PATCH instead of silently doing nothing', async () => {
+    const updates = []
+    await withApp({ repo: siteRepo(updates), auth: scopedAuth(['site:admin']) }, async (request) => {
+      const response = await patchSettings(request, { theme: { tokens: { primry: '#dc2626' } } })
+      assert.equal(response.status, 422)
+      assert.equal((await response.json()).error, 'settings.theme.tokens: unknown token "primry"')
+
+      const badValue = await patchSettings(request, { theme: { tokens: { primary: { light: '#fff' } } } })
+      assert.equal(badValue.status, 422)
+      assert.equal(
+        (await badValue.json()).error,
+        'settings.theme.tokens values must be strings or { light, dark } objects',
+      )
+      assert.deepEqual(updates, [], 'a rejected settings write must not reach the database')
+    })
+  })
+
+  test('token values are capped at 256 bytes and must not contain "<"', async () => {
+    const updates = []
+    await withApp({ repo: siteRepo(updates), auth: scopedAuth(['site:admin']) }, async (request) => {
+      // themeStyles() inlines every value into each generated page, so an
+      // uncapped token would bloat the whole site the way custom_css could.
+      const oversized = await patchSettings(request, { theme: { tokens: { font_family: 'x'.repeat(257) } } })
+      assert.equal(oversized.status, 422)
+      assert.equal((await oversized.json()).error, 'settings.theme.tokens values must not exceed 256 bytes')
+
+      // Token values are emitted verbatim into a raw-text <style> element.
+      const breakout = await patchSettings(request, {
+        theme: { tokens: { primary: { light: '#fff', dark: '</style><script>' } } },
+      })
+      assert.equal(breakout.status, 422)
+      assert.equal((await breakout.json()).error, 'settings.theme.tokens values must not contain "<"')
+
+      // Quoted font stacks stay legal — the reason values are not HTML-escaped.
+      const quoted = await patchSettings(request, {
+        theme: { tokens: { font_family: '"Helvetica Neue", Arial, sans-serif' } },
+      })
+      assert.equal(quoted.status, 200)
+      assert.deepEqual(updates.length, 1, 'only the valid write reaches the database')
+    })
+  })
+
+  test('custom_css is capped at 8192 bytes, must be a string and must not contain "</style"', async () => {
+    const updates = []
+    await withApp({ repo: siteRepo(updates), auth: scopedAuth(['site:admin']) }, async (request) => {
+      const oversized = await patchSettings(request, { theme: { custom_css: 'x'.repeat(8193) } })
+      assert.equal(oversized.status, 422)
+      assert.equal((await oversized.json()).error, 'settings.theme.custom_css must not exceed 8192 bytes')
+
+      const nonString = await patchSettings(request, { theme: { custom_css: ['body{}'] } })
+      assert.equal(nonString.status, 422)
+      assert.equal((await nonString.json()).error, 'settings.theme.custom_css must be a string')
+
+      const breakout = await patchSettings(request, { theme: { custom_css: 'body{}</STYLE><script>' } })
+      assert.equal(breakout.status, 422)
+      assert.equal((await breakout.json()).error, 'settings.theme.custom_css must not contain "</style"')
+      assert.deepEqual(updates, [], 'a rejected settings write must not reach the database')
+    })
+  })
+
+  test('valid theme settings pass validation and land in the update', async () => {
+    const updates = []
+    await withApp({ repo: siteRepo(updates), auth: scopedAuth(['site:admin']) }, async (request) => {
+      const settings = {
+        accent: '#2563eb',
+        theme: {
+          tokens: { background: { light: '#ffffff', dark: '#0b0b0c' }, radius: '0.75rem' },
+          custom_css: '.hero{border:1px solid}',
+        },
+      }
+      const response = await patchSettings(request, settings)
+      assert.equal(response.status, 200)
+      assert.equal(updates.length, 1)
+      assert.deepEqual(updates[0][2].settings, settings)
+    })
+  })
 })

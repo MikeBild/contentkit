@@ -6,6 +6,7 @@ import {
   blogcastPage,
   contentBody,
   dictionary,
+  extraFieldText,
   layout,
   searchBody,
 } from '../../src/templates.mjs'
@@ -699,4 +700,190 @@ test('settings.ai.share_targets replaces the default deep links, and unsafe targ
   assert.doesNotMatch(html, /javascript:/, 'unsafe url_template must be dropped, not escaped')
   // The localized German prompt rides URL-encoded inside the deep link.
   assert.match(html, new RegExp(encodeURIComponent('Lies diesen Artikel').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})
+
+test('extra fields render as a definition list only behind settings.content.show_extra', () => {
+  const item = {
+    kind: 'post',
+    item_id: 'item-a',
+    locale: 'de',
+    url: '/de/blog/a/',
+    canonical: 'https://example.test/de/blog/a/',
+    title: 'A',
+    summary: 'S',
+    tags: [],
+    html: '<p>Body</p>',
+    extra: { series: 'effect-ts', level: 3, audiences: ['devs', 'ops'], ratings: { stars: 4.5 } },
+  }
+  const ctx = (settings = {}) => ({
+    site: { id: 'site-1', name: 'Example', base_url: 'https://example.test', default_locale: 'de', settings },
+    t: dictionary('de'),
+    locale: 'de',
+  })
+
+  // Default off: authored extra fields are data, not page content.
+  assert.doesNotMatch(contentBody(item, ctx()), /extra-fields|effect-ts/)
+
+  const html = contentBody(item, ctx({ content: { show_extra: true } }))
+  assert.match(
+    html,
+    /<dl class="extra-fields"><dt>series<\/dt><dd>effect-ts<\/dd><dt>level<\/dt><dd>3<\/dd><dt>audiences<\/dt><dd>devs, ops<\/dd><dt>ratings<\/dt><dd>stars: 4\.5<\/dd><\/dl>/,
+  )
+
+  // An item without extra renders no empty list even when the site opts in.
+  const bare = contentBody({ ...item, extra: undefined }, ctx({ content: { show_extra: true } }))
+  assert.doesNotMatch(bare, /extra-fields/)
+})
+
+test('extra field values are HTML-escaped', () => {
+  const item = {
+    kind: 'post',
+    item_id: 'item-a',
+    locale: 'de',
+    url: '/de/blog/a/',
+    canonical: 'https://example.test/de/blog/a/',
+    title: 'A',
+    summary: 'S',
+    tags: [],
+    html: '<p>Body</p>',
+    extra: { note: '<script>alert(1)</script>', quote: 'a "b" & c' },
+  }
+  const ctx = {
+    site: {
+      id: 'site-1',
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { content: { show_extra: true } },
+    },
+    t: dictionary('de'),
+    locale: 'de',
+  }
+  const html = contentBody(item, ctx)
+  const list = html.match(/<dl class="extra-fields">.*?<\/dl>/s)[0]
+  assert.doesNotMatch(list, /<script>/, 'values must not pass through as markup')
+  assert.match(list, /&lt;script&gt;/)
+  assert.match(list, /a "b" &amp; c|a &quot;b&quot; &amp; c/)
+})
+
+test('extraFieldText collapses newlines — a block scalar stays one display line', () => {
+  // A multi-line value would otherwise break out of the Markdown twin's
+  // `- key: value` bullet (and could even fake a heading in llms-full.txt).
+  assert.equal(extraFieldText('Zeile 1\n## sieht aus wie Heading'), 'Zeile 1 ## sieht aus wie Heading')
+  assert.equal(extraFieldText('a\r\nb'), 'a b')
+  assert.equal(extraFieldText(['x\ny', 'z']), 'x y, z')
+  assert.equal(extraFieldText({ note: 'x\ny' }), 'note: x y')
+})
+
+test('theme tokens emit :root custom properties and a dark override behind prefers-color-scheme', () => {
+  const html = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: {
+        theme: {
+          tokens: {
+            background: { light: '#ffffff', dark: '#000000' },
+            muted_foreground: '215 16% 47%',
+            radius: '0.75rem',
+          },
+        },
+      },
+    },
+  })
+  // Hex colors convert to HSL triples exactly like settings.accent always has.
+  assert.match(html, /:root\{--background:0 0% 100%;--muted-foreground:215 16% 47%;--radius:0\.75rem\}/)
+  assert.match(html, /@media \(prefers-color-scheme: dark\)\{:root\{--background:0 0% 0%\}\}/)
+  // One generated block, not one <style> per token.
+  const styles = html.match(/<style>[^<]*<\/style>/g) || []
+  assert.equal(styles.length, 1)
+})
+
+test('settings.accent stays the shorthand for tokens.primary, and the explicit token wins', () => {
+  const shorthand = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { accent: '#2563eb', theme: { tokens: { radius: '1rem' } } },
+    },
+  })
+  assert.match(shorthand, /:root\{--primary:221 83% 53%;--radius:1rem\}/)
+
+  const overridden = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { accent: '#2563eb', theme: { tokens: { primary: '#dc2626' } } },
+    },
+  })
+  assert.match(overridden, /:root\{--primary:0 72% 51%\}/, 'the explicit token must win over accent')
+  assert.doesNotMatch(overridden, /221 83% 53%/, 'the accent shorthand must not emit a second value')
+})
+
+test('font_family emits --font-family plus the body rule, with quotes kept verbatim', () => {
+  const html = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { theme: { tokens: { font_family: '"Helvetica Neue", Arial, sans-serif' } } },
+    },
+  })
+  // <style> is raw text: entities are never decoded, so an HTML-escaped quote
+  // (&quot;) would invalidate the declaration and drop the whole font stack.
+  assert.match(html, /--font-family:"Helvetica Neue", Arial, sans-serif/)
+  assert.doesNotMatch(html, /&quot;/)
+  assert.match(html, /body\{font-family:var\(--font-family\)\}/)
+})
+
+test('a "<" in a token value never reaches the style element (legacy accent defense)', () => {
+  // Token writes reject "<" since the value cap landed, but settings.accent
+  // predates that validation — the emit side strips the one character that
+  // could terminate the raw-text <style> element.
+  const html = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { accent: '</style><script>alert(1)</script>' },
+    },
+  })
+  assert.doesNotMatch(html, /<script>alert/)
+  assert.match(html, /--primary:\/style>/, 'only "<" is stripped; the rest stays inert inside the style element')
+})
+
+test('custom_css is appended as its own last <style> element after the token block', () => {
+  const html = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: {
+        accent: '#2563eb',
+        theme: { custom_css: '.hero{border:3px dashed hotpink}' },
+      },
+    },
+  })
+  const styles = html.match(/<style>[^<]*<\/style>/g) || []
+  assert.equal(styles.length, 2)
+  assert.equal(styles[1], '<style>.hero{border:3px dashed hotpink}</style>')
+  assert.ok(
+    html.indexOf(':root{--primary:') < html.indexOf('.hero{'),
+    'custom_css must come last so it can override the tokens',
+  )
+
+  // custom_css alone works without any token block.
+  const bare = render({
+    site: {
+      name: 'Example',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { theme: { custom_css: 'main{opacity:.99}' } },
+    },
+  })
+  assert.match(bare, /<style>main\{opacity:\.99\}<\/style>/)
+  assert.doesNotMatch(bare, /:root\{/)
 })

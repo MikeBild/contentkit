@@ -64,6 +64,27 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   `/v1/publish-due`, and pointer rollback to an existing release.
 - Public interaction: contact form, post comments, Turnstile, honeypot, rate
   limit, moderation queue and signed webhook notifications.
+- Content lifecycle webhooks: `contentkit.content.published`,
+  `contentkit.content.unpublished` and `contentkit.release.published` events
+  emitted transactionally with release activation. See llms-full section 13.
+- Content modeling light: author-owned `extra:` custom fields and `related:`
+  post references in frontmatter, validated on write and stored verbatim in
+  the revision metadata; page rendering is a per-site opt-in via
+  `settings.content.show_extra`. See llms-full section 6.
+- Headless JSON read API: `GET /v1/sites/{site}/published` (filters, keyset
+  pagination, weak ETag) and `GET /v1/sites/{site}/published/{kind}/{locale}/{slug}`
+  (Markdown source verbatim plus on-demand rendered HTML, strong ETag/304)
+  behind `content:read` scoped keys — delivery stays static. See llms-full
+  section 4.
+- Server-side full-text search: `GET /v1/sites/{site}/search?q=` ranks
+  published content with locale-aware PostgreSQL stemming (de/en) and returns
+  `<mark>`-highlighted headlines, behind `content:read` scoped keys — published
+  sites keep their static client-side search. See llms-full section 4.
+- Theming: per-site design tokens via `settings.theme.tokens` (allowlisted
+  stylesheet custom properties, scalar or `{ light, dark }` values,
+  `settings.accent` stays the primary shorthand) plus a size-capped
+  `settings.theme.custom_css` escape hatch — a theme is a token assignment,
+  never a template override. See llms-full section 5.
 
 ## Content model and publishing
 

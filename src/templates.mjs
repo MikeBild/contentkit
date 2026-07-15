@@ -238,6 +238,62 @@ function accentToHslTriple(value) {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`
 }
 
+// Color tokens run through accentToHslTriple (site.css consumes them via
+// `hsl(var(--…))`); radius and font_family are not colors and pass verbatim.
+const THEME_COLOR_TOKENS = [
+  'background',
+  'foreground',
+  'muted',
+  'muted_foreground',
+  'border',
+  'primary',
+  'primary_foreground',
+]
+
+// Generalizes the old single-token accent injection: every settings.theme.tokens
+// entry (allowlisted on write, see repository.mjs) maps onto the site.css custom
+// property of the same name — underscores become hyphens — so a theme is a token
+// assignment, never a different DOM. settings.accent stays as the shorthand for
+// tokens.primary; the explicit token wins on conflict. A scalar value lands in
+// :root only, which still covers dark mode: this <style> follows the site.css
+// <link>, so at equal specificity it beats the stylesheet's dark-scheme block.
+// { light, dark } values add a prefers-color-scheme override in the same block.
+// custom_css is emitted raw as its own last <style> element — validation already
+// rejected "</style", so it cannot break out of the element.
+//
+// Values are NOT HTML-escaped: <style> is raw text, the browser never decodes
+// entities inside it, so escaping would turn `"Inter"` into `&quot;Inter&quot;`
+// and invalidate the declaration. Write validation rejects "<" in token values;
+// stripping it again here keeps values that never saw that validation
+// (settings.accent) unable to terminate the element.
+function themeStyles(settings) {
+  const tokens = {
+    ...(settings.accent ? { primary: settings.accent } : {}),
+    ...(settings.theme?.tokens || {}),
+  }
+  const light = []
+  const dark = []
+  for (const [key, value] of Object.entries(tokens)) {
+    const property = `--${key.replace(/_/g, '-')}`
+    const convert = (raw) =>
+      String(THEME_COLOR_TOKENS.includes(key) ? accentToHslTriple(raw) : raw).replace(/</g, '')
+    if (value !== null && typeof value === 'object') {
+      light.push(`${property}:${convert(value.light)}`)
+      dark.push(`${property}:${convert(value.dark)}`)
+    } else {
+      light.push(`${property}:${convert(value)}`)
+    }
+  }
+  const rules = []
+  if (light.length) rules.push(`:root{${light.join(';')}}`)
+  if (dark.length) rules.push(`@media (prefers-color-scheme: dark){:root{${dark.join(';')}}}`)
+  if ('font_family' in tokens) rules.push('body{font-family:var(--font-family)}')
+  const blocks = []
+  if (rules.length) blocks.push(`<style>${rules.join('')}</style>`)
+  if (settings.theme?.custom_css) blocks.push(`<style>${settings.theme.custom_css}</style>`)
+  return blocks.join('\n')
+}
+
 export function dictionary(locale) {
   return words[locale.split('-')[0]] || words.en
 }
@@ -513,7 +569,7 @@ ${options.audio ? `<link rel="stylesheet" href="${asset('audio.css')}">` : ''}
 <link rel="alternate" type="application/rss+xml" title="${escapeHtml(feedTitle || site.name)}" href="${escapeHtml(feedUrl || `/${locale}/feed.xml`)}">
 ${ctx.markdownUrl ? `<link rel="alternate" type="text/markdown" href="${escapeHtml(ctx.markdownUrl)}">` : ''}
 ${blogcastLink}
-${settings.accent ? `<style>:root{--primary:${escapeHtml(accentToHslTriple(settings.accent))}}</style>` : ''}
+${themeStyles(settings)}
 ${structured}
 ${scripts.join('\n')}
 </head>
@@ -884,6 +940,38 @@ function faqBody(item, ctx) {
     .join('')}</section>`
 }
 
+// One display line per authored extra field: scalars print as-is, lists
+// comma-joined, flat maps as `key: value` pairs. This is the human rendering
+// only — the typed contract is the metadata jsonb, which the Read API serves
+// verbatim. Shared with the site builder's Markdown surfaces so both print
+// a field identically.
+export function extraFieldText(value) {
+  const text = Array.isArray(value)
+    ? value.map(String).join(', ')
+    : value && typeof value === 'object'
+      ? Object.entries(value)
+          .map(([key, entry]) => `${key}: ${entry}`)
+          .join(', ')
+      : String(value)
+  // YAML block scalars are valid values and may carry newlines; this is one
+  // display line (an HTML <dd>, a Markdown bullet), and a raw newline would
+  // break out of the Markdown twin's bullet — collapse to spaces.
+  return text.replace(/\s*\n\s*/g, ' ')
+}
+
+// Authored custom fields (`extra:` frontmatter) as a definition list. A
+// per-site opt-in — settings.content.show_extra — because the fields are
+// untyped passthrough data: most sites carry them for machines (Read API,
+// metadata), not for the page.
+function extraBody(item, ctx) {
+  if (ctx.site.settings?.content?.show_extra !== true) return ''
+  const entries = Object.entries(item.extra || {})
+  if (!entries.length) return ''
+  return `<dl class="extra-fields">${entries
+    .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(extraFieldText(value))}</dd>`)
+    .join('')}</dl>`
+}
+
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
   const locale = item.locale || ctx.locale
@@ -919,7 +1007,7 @@ export function contentBody(item, ctx, comments = []) {
   const footer = isPost
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
-  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose">${player}${notice}${tldrBody(item, ctx)}${item.html}${faqBody(item, ctx)}${footer}</div></article>`
+  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

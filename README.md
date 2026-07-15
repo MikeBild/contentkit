@@ -61,6 +61,21 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Cloudflare Turnstile, honeypot and rate limits on public writes.
 - Signed Standard Webhooks notifications for contact, comment and release events.
 - One self-contained Linux binary and hardened systemd deployment.
+- Content lifecycle webhook events (`content.published`, `content.unpublished`,
+  `release.published`) emitted transactionally on release activation.
+- Content modeling light: author-owned `extra:` custom fields and `related:`
+  post references in frontmatter — no schema builder; page rendering of the
+  extra fields is a per-site opt-in via `settings.content.show_extra`.
+- Optional headless JSON read API: list and fetch published content (metadata
+  verbatim, Markdown source, on-demand rendered HTML, ETag/304 caching) via
+  scoped `content:read` keys — site delivery itself stays static.
+- Server-side full-text search over published content with locale-aware
+  PostgreSQL stemming (de/en), relevance ranking and `<mark>` headlines via
+  `GET /v1/sites/{site}/search` — published sites keep their client-side search.
+- Per-site theming as structured design tokens: `settings.theme.tokens` fills
+  the shared stylesheet's custom properties (allowlisted, light/dark aware,
+  `settings.accent` stays the primary shorthand) and a size-capped
+  `settings.theme.custom_css` escape hatch — no template overrides.
 
 ## How it works
 
