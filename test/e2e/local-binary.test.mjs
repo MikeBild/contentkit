@@ -380,14 +380,24 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       const afterGc = await requestWithHost(origin, '/de/blog/lokaler-e2e-beitrag/', 'e2e.local')
       assert.equal(afterGc.status, 200, 'active release still served after GC')
 
-      // The built-in env endpoint receives all 3 events; the managed endpoint,
-      // filtered to contact.submitted, receives exactly 1 (fan-out) — 4 total.
-      const webhooks = await waitForWebhooks(webhookEvents, 4)
+      // The built-in env endpoint receives every event: contact, comment
+      // submit + approve, and the content lifecycle of this flow — publish,
+      // comment-approval republish, unpublish, republish give 4 release.published,
+      // 2 content.published and 1 content.unpublished — 10 in total. The managed
+      // endpoint, filtered to contact.submitted, receives exactly 1 (fan-out) — 11.
+      const webhooks = await waitForWebhooks(webhookEvents, 11)
       const envHooks = webhooks.filter((event) => event.path === '/hooks/contentkit-notifications')
       const managedHooks = webhooks.filter((event) => event.path === '/hooks/managed')
       assert.deepEqual(
         new Set(envHooks.map((event) => event.headers['webhook-type'])),
-        new Set(['contentkit.contact.submitted', 'contentkit.comment.submitted', 'contentkit.comment.approved']),
+        new Set([
+          'contentkit.contact.submitted',
+          'contentkit.comment.submitted',
+          'contentkit.comment.approved',
+          'contentkit.content.published',
+          'contentkit.content.unpublished',
+          'contentkit.release.published',
+        ]),
       )
       for (const webhook of envHooks) {
         const expected = createHmac('sha256', webhookSecret)
@@ -414,7 +424,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           delivered = (
             await pool.query("SELECT count(*)::int AS n FROM public.ck_webhook_deliveries WHERE status = 'delivered'")
           ).rows[0].n
-          if (delivered >= 4) break
+          if (delivered >= 11) break
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
         const state = await pool.query(`
@@ -429,9 +439,9 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           // migration (the audio migration broke it once already).
           migrations: listEmbeddedMigrations().length,
           active_releases: 1,
-          events: 3,
+          events: 10,
         })
-        assert.equal(delivered, 4, 'all fan-out deliveries succeed')
+        assert.equal(delivered, 11, 'all fan-out deliveries succeed')
       } finally {
         await pool.end()
       }
