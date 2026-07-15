@@ -326,8 +326,8 @@ Read-aloud: lifecycle & operations.
 
 - A document whose first block repeats the frontmatter `title` as a level-one heading no
   longer renders a second `<h1>`. The layout already emits the title, so such pages carried
-  two `<h1>` elements and started their document outline twice — 22 of the 77 posts on
-  www.mikebild.dev did. A body that deliberately opens with a different top-level heading
+  two `<h1>` elements and started their document outline twice — a meaningful share of the
+  posts on a production site did. A body that deliberately opens with a different top-level heading
   keeps it, and a heading that is not the first block is never touched. The authored source
   is unchanged, so `llms-full.txt` and the reading-time estimate are unaffected.
 
