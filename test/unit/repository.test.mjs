@@ -308,6 +308,63 @@ test('updateSite accepts and lowercases a valid default_locale', async () => {
   assert.equal(updated[0].default_locale, 'de')
 })
 
+test('updateSite replaces domains in full, lowercased; absent domains leave mappings alone', async () => {
+  const calls = []
+  const txApi = {
+    async remove(table, filters) {
+      calls.push(['remove', table, filters])
+    },
+    async insert(table, rows) {
+      calls.push(['insert', table, rows])
+      return rows
+    },
+  }
+  const db = {
+    async select(table) {
+      return table === 'ck_site_locales' ? [{ locale: 'de' }] : [{ id: 'site-1', name: 'Example' }]
+    },
+    async update(table, filters, body) {
+      calls.push(['update', table, body])
+      return [{ id: 'site-1', ...body }]
+    },
+    async tx(fn) {
+      return fn(txApi)
+    },
+  }
+  const repo = createRepository({}, db, {})
+
+  // Domains-only PATCH: no ck_sites update, but the row still comes back.
+  const site = await repo.updateSite('site-1', { domains: ['Verify.Example', 'www.verify.example'] })
+  assert.equal(site.id, 'site-1')
+  assert.deepEqual(calls[0], ['remove', 'ck_site_domains', { site_id: 'eq.site-1' }])
+  assert.equal(calls[1][1], 'ck_site_domains')
+  assert.deepEqual(
+    calls[1][2].map((row) => row.hostname),
+    ['verify.example', 'www.verify.example'],
+  )
+  assert.ok(
+    calls[1][2].every((row) => row.verified_at),
+    'PATCHed domains are verified like created ones',
+  )
+  assert.ok(!calls.some(([op]) => op === 'update'), 'a domains-only PATCH must not touch ck_sites')
+
+  // Empty array removes every mapping without inserting.
+  calls.length = 0
+  await repo.updateSite('site-1', { domains: [] })
+  assert.deepEqual(
+    calls.map(([op]) => op),
+    ['remove'],
+  )
+
+  // Absent domains: plain metadata update, no domain writes.
+  calls.length = 0
+  await repo.updateSite('site-1', { name: 'Renamed' })
+  assert.deepEqual(
+    calls.map(([op]) => op),
+    ['update'],
+  )
+})
+
 test('updateSite rejects an empty-string default_locale (guard on presence, not truthiness)', async () => {
   const db = {
     async select(table) {

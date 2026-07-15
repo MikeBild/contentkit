@@ -156,8 +156,9 @@ export function openApi(config) {
           responses: { 200: { description: 'Site' }, 404: { description: 'Site not found' } },
         },
         patch: {
-          summary: 'Update site metadata and settings',
-          description: 'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped.',
+          summary: 'Update site metadata, settings and domains',
+          description:
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),
@@ -334,6 +335,18 @@ export function openApi(config) {
       '/public/v1/posts/{post}/comments': {
         post: { summary: 'Submit a guest comment for moderation', responses: { 201: { description: 'Accepted' } } },
       },
+      '/public/v1/posts/{post}/feedback': {
+        post: {
+          summary: 'Submit a one-click post feedback vote (up or down)',
+          description:
+            'Anonymous by design: the body carries only site_id and vote, no reader data is stored. Requires settings.feedback.enabled: true on the site; guarded by the honeypot and per-IP rate limit instead of a captcha.',
+          responses: {
+            201: { description: 'Accepted' },
+            404: { description: 'Feedback disabled, or post not found' },
+            422: { description: 'vote must be up or down' },
+          },
+        },
+      },
       '/v1/comments': {
         get: {
           summary: 'List the moderation queue',
@@ -364,6 +377,14 @@ export function openApi(config) {
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: jsonBody(['status']),
           responses: { 200: { description: 'Updated' } },
+        },
+      },
+      '/v1/feedback': {
+        get: {
+          summary: 'Per-post feedback aggregates (up/down counts)',
+          description: 'Optional query filters: site_id, post (content item id). Sorted by total votes, descending.',
+          security: secured,
+          responses: { 200: { description: 'Aggregated votes per post' } },
         },
       },
       '/v1/api-keys': {

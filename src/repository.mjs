@@ -250,7 +250,29 @@ export function createRepository(config, db, storage) {
           throw Object.assign(new Error('default_locale must be one of the site locales'), { statusCode: 422 })
         }
       }
-      const rows = await db.update('ck_sites', { id: `eq.${siteId}` }, allowed)
+      // Domains replace in full, mirroring the settings contract: read first,
+      // merge, send the whole list. An empty array removes every mapping —
+      // absent means "leave them alone".
+      if (Array.isArray(input.domains)) {
+        await db.tx(async (tx) => {
+          await tx.remove('ck_site_domains', { site_id: `eq.${siteId}` })
+          if (input.domains.length) {
+            await tx.insert(
+              'ck_site_domains',
+              input.domains.map((hostname) => ({
+                site_id: siteId,
+                hostname: String(hostname).toLowerCase(),
+                verified_at: new Date().toISOString(),
+              })),
+            )
+          }
+        })
+      }
+      // A domains-only PATCH leaves `allowed` empty, and update() with no
+      // columns is a no-op returning [] — read the row back instead.
+      const rows = Object.keys(allowed).length
+        ? await db.update('ck_sites', { id: `eq.${siteId}` }, allowed)
+        : await db.select('ck_sites', { id: `eq.${siteId}`, limit: '1' })
       return rows[0]
     },
     async listContent(siteId, query = {}) {

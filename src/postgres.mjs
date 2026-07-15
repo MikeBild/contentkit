@@ -15,6 +15,7 @@ const TABLES = new Set([
   'ck_preview_tokens',
   'ck_comments',
   'ck_contact_submissions',
+  'ck_post_feedback',
   'ck_outbox_events',
   'ck_webhook_endpoints',
   'ck_webhook_deliveries',

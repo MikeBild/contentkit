@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { audioPlayer, blogcastPage, contentBody, dictionary, layout, searchBody } from '../../src/templates.mjs'
+import {
+  audioPlayer,
+  blogBody,
+  blogcastPage,
+  contentBody,
+  dictionary,
+  layout,
+  searchBody,
+} from '../../src/templates.mjs'
 import { contentCsp } from '../../src/security.mjs'
 
 function render(ctxOverrides = {}, options = {}) {
@@ -201,6 +209,39 @@ test('post comments can omit the submission form while keeping approved comments
   assert.match(html, /Approved/)
   assert.doesNotMatch(html, /<form action="\/public\/v1\/posts\/post-1\/comments"/)
   assert.doesNotMatch(html, /Kommentar schreiben/)
+})
+
+test('the feedback widget renders only when the site opts in', () => {
+  const post = {
+    kind: 'post',
+    item_id: 'post-1',
+    title: 'A',
+    summary: 'S',
+    html: '<p>Body</p>',
+    published_at: '2026-01-01T00:00:00Z',
+  }
+  const ctx = (settings) => ({ site: { id: 'site-1', settings }, t: dictionary('de'), locale: 'de' })
+
+  const html = contentBody(post, ctx({ feedback: { enabled: true } }), [])
+  assert.match(html, /Wie fandest du diesen Beitrag\?/)
+  assert.match(html, /data-action="\/public\/v1\/posts\/post-1\/feedback"/)
+  assert.match(html, /data-feedback-vote="up" hidden>.*Hilfreich</)
+  assert.match(html, /data-feedback-vote="down" hidden>.*Nicht hilfreich</)
+  assert.match(html, /data-thanks="Danke für dein Feedback!"/)
+  assert.match(html, /data-feedback-thanks role="status" hidden/)
+  assert.doesNotMatch(html, /onclick|innerHTML/, 'CSP-safe markup: no inline handlers')
+
+  // en locale renders the en strings.
+  const en = contentBody(
+    post,
+    { site: { id: 'site-1', settings: { feedback: { enabled: true } } }, t: dictionary('en'), locale: 'en' },
+    [],
+  )
+  assert.match(en, /Was this post helpful\?/)
+
+  // Default (no settings) and explicit false both keep the widget out — opt-in.
+  assert.doesNotMatch(contentBody(post, ctx({}), []), /post-feedback/)
+  assert.doesNotMatch(contentBody(post, ctx({ feedback: { enabled: false } }), []), /post-feedback/)
 })
 
 test('search pages can be rendered with noindex robots metadata', () => {
@@ -497,11 +538,12 @@ test('the shared player ships a native fallback plus the hidden custom control b
   assert.doesNotMatch(audioPlayer(audioPost(), ctx, { label: false }), /audio-player-label/)
 })
 
-test('the blogcast page lists episodes as cards with player markup and a subscribe link', () => {
+test('the blogcast page lists episodes as cards with player markup and a subscribe row', () => {
   const ctx = {
     site: {
       id: 's',
       name: 'Example',
+      base_url: 'https://example.test',
       settings: {
         audio: {
           enabled: true,
@@ -524,7 +566,20 @@ test('the blogcast page lists episodes as cards with player markup and a subscri
     html,
     /<img class="blogcast-cover" src="https:\/\/example\.test\/cover\.jpg" alt="Mein Blogcast" width="180" height="180">/,
   )
-  assert.match(html, /<a class="blogcast-subscribe" href="\/de\/blogcast\.xml">Per RSS abonnieren<\/a>/)
+  // The subscribe row: plain RSS link, podcast-app deep links built from the
+  // absolute feed URL, and the copy button ai-actions.js reveals.
+  assert.match(html, /<a class="subscribe-button" href="\/de\/blogcast\.xml">Per RSS abonnieren<\/a>/)
+  assert.match(html, /href="podcast:\/\/example\.test\/de\/blogcast\.xml">In Apple Podcasts öffnen<\/a>/)
+  assert.match(
+    html,
+    /href="overcast:\/\/x-callback-url\/add\?url=https%3A%2F%2Fexample\.test%2Fde%2Fblogcast\.xml">In Overcast öffnen<\/a>/,
+  )
+  assert.match(html, /href="pktc:\/\/subscribe\/example\.test\/de\/blogcast\.xml">In Pocket Casts öffnen<\/a>/)
+  assert.doesNotMatch(html, /podcast:[^"]*" target="_blank"/, 'app deep links hand off in place, not in a new tab')
+  assert.match(
+    html,
+    /<button type="button" class="subscribe-button subscribe-copy" data-copy-feed="https:\/\/example\.test\/de\/blogcast\.xml" data-copied="Kopiert" hidden>Feed-URL kopieren<\/button>/,
+  )
   // Episodes: title links to the post, formatted date, duration chip, summary,
   // and the same shared player markup audio.js drives on article pages.
   assert.match(html, /<h2 class="blogcast-episode-title"><a href="\/de\/blog\/a\/">Folge A<\/a><\/h2>/)
@@ -539,7 +594,13 @@ test('the blogcast page lists episodes as cards with player markup and a subscri
   // and without a cover no broken <img> is emitted.
   const plain = blogcastPage(
     {
-      site: { id: 's', name: 'Example', description: 'Personal site', settings: { audio: { enabled: true } } },
+      site: {
+        id: 's',
+        name: 'Example',
+        description: 'Personal site',
+        base_url: 'https://example.test',
+        settings: { audio: { enabled: true } },
+      },
       t: dictionary('en'),
       locale: 'en',
     },
@@ -549,6 +610,57 @@ test('the blogcast page lists episodes as cards with player markup and a subscri
   assert.match(plain, /Personal site/)
   assert.match(plain, /Subscribe via RSS/)
   assert.doesNotMatch(plain, /blogcast-cover/)
+})
+
+test('settings.audio.subscribe_targets replaces the podcast deep links, and unsafe targets drop out', () => {
+  const ctx = {
+    site: {
+      id: 's',
+      name: 'Example',
+      base_url: 'https://example.test/',
+      settings: {
+        audio: {
+          enabled: true,
+          subscribe_targets: [
+            { label: 'Castro', url_template: 'castro://subscribe/{feed_no_scheme}' },
+            { label: 'Evil', url_template: 'javascript:alert(1)' },
+            { label: 'Web', url_template: 'https://reader.example/add?url={feed_encoded}' },
+          ],
+        },
+      },
+    },
+    t: dictionary('de'),
+    locale: 'de',
+  }
+  const html = blogcastPage(ctx, [audioPost()])
+  // base_url's trailing slash must not double up in the feed URL.
+  assert.match(html, /data-copy-feed="https:\/\/example\.test\/de\/blogcast\.xml"/)
+  assert.doesNotMatch(html, /Apple Podcasts|Overcast|Pocket Casts/, 'override replaces the default list')
+  assert.doesNotMatch(html, /castro:/, 'unlisted protocols stay blocked even for overrides')
+  assert.doesNotMatch(html, /javascript:/)
+  assert.match(
+    html,
+    /<a class="subscribe-button" href="https:\/\/reader\.example\/add\?url=https%3A%2F%2Fexample\.test%2Fde%2Fblogcast\.xml" target="_blank" rel="noopener nofollow">In Web öffnen<\/a>/,
+  )
+})
+
+test('the blog index promotes the RSS feed with the shared subscribe row, opt-out via settings', () => {
+  const ctx = {
+    site: { id: 's', name: 'Example', base_url: 'https://example.test', settings: {} },
+    t: dictionary('de'),
+    locale: 'de',
+    posts: [],
+  }
+  const html = blogBody(ctx)
+  assert.match(html, /<a class="subscribe-button" href="\/de\/feed\.xml">Per RSS abonnieren<\/a>/)
+  assert.match(
+    html,
+    /href="https:\/\/feedly\.com\/i\/subscription\/feed\/https%3A%2F%2Fexample\.test%2Fde%2Ffeed\.xml" target="_blank" rel="noopener nofollow">In Feedly öffnen<\/a>/,
+  )
+  assert.match(html, /data-copy-feed="https:\/\/example\.test\/de\/feed\.xml"[^>]* hidden>Feed-URL kopieren<\/button>/)
+
+  const off = blogBody({ ...ctx, site: { ...ctx.site, settings: { blog: { subscribe_row: false } } } })
+  assert.doesNotMatch(off, /subscribe-row/, 'settings.blog.subscribe_row: false removes the row')
 })
 
 test('settings.ai.share_targets replaces the default deep links, and unsafe targets are dropped', () => {

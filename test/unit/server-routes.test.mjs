@@ -84,6 +84,138 @@ test('public comment submission returns 404 when comments are disabled for the s
   )
 })
 
+test('public feedback accepts a vote without Turnstile when the site opts in', async () => {
+  await withApp(
+    {
+      // No turnstileDevBypass: a 201 proves the feedback branch never consults
+      // the (fail-closed) captcha — honeypot + rate limit are its whole gate.
+      repo: {
+        async getSite() {
+          return { id: 's', settings: { feedback: { enabled: true } } }
+        },
+      },
+      db: {
+        async select(table, filters) {
+          assert.equal(table, 'ck_content_items')
+          assert.equal(filters.kind, 'eq.post')
+          return [{ id: 'post-1' }]
+        },
+        async insert(table, row) {
+          assert.equal(table, 'ck_post_feedback')
+          assert.equal(row.vote, 'up')
+          assert.equal(row.content_item_id, 'post-1')
+          return [{ id: 'fb-1' }]
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/public/v1/posts/post-1/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ site_id: 's', vote: 'up', website: '' }),
+      })
+      assert.equal(response.status, 201)
+      assert.deepEqual(await response.json(), { accepted: true, id: 'fb-1' })
+    },
+  )
+})
+
+test('public feedback is opt-in: without settings.feedback.enabled the endpoint is 404', async () => {
+  await withApp(
+    {
+      repo: {
+        async getSite() {
+          return { id: 's', settings: {} }
+        },
+      },
+      db: {
+        async select() {
+          throw new Error('disabled feedback must not query content')
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/public/v1/posts/post-1/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ site_id: 's', vote: 'up' }),
+      })
+      assert.equal(response.status, 404)
+      assert.deepEqual(await response.json(), { error: 'not found' })
+    },
+  )
+})
+
+test('public feedback rejects anything but an up/down vote and swallows the honeypot', async () => {
+  await withApp(
+    {
+      repo: {
+        async getSite() {
+          return { id: 's', settings: { feedback: { enabled: true } } }
+        },
+      },
+    },
+    async (request) => {
+      const invalid = await request('/public/v1/posts/post-1/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ site_id: 's', vote: 'sideways' }),
+      })
+      assert.equal(invalid.status, 422)
+      assert.match((await invalid.json()).error, /vote must be up or down/)
+    },
+  )
+  await withApp(
+    {
+      repo: {
+        async getSite() {
+          throw new Error('the honeypot must answer before any site lookup')
+        },
+      },
+    },
+    async (request) => {
+      const bot = await request('/public/v1/posts/post-1/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ site_id: 's', vote: 'up', website: 'https://spam.example' }),
+      })
+      assert.equal(bot.status, 201)
+      assert.deepEqual(await bot.json(), { accepted: true })
+    },
+  )
+})
+
+test('GET /v1/feedback requires moderation scope and aggregates votes per post', async () => {
+  const rows = [
+    { content_item_id: 'post-1', site_id: 's', vote: 'up' },
+    { content_item_id: 'post-1', site_id: 's', vote: 'up' },
+    { content_item_id: 'post-1', site_id: 's', vote: 'down' },
+    { content_item_id: 'post-2', site_id: 's', vote: 'up' },
+  ]
+  await withApp(
+    {
+      auth: scopedAuth(['moderation:write']),
+      db: {
+        async select(table) {
+          assert.equal(table, 'ck_post_feedback')
+          return rows
+        },
+      },
+    },
+    async (request) => {
+      const unauthorized = await request('/v1/feedback')
+      assert.equal(unauthorized.status, 401)
+
+      const response = await request('/v1/feedback', { headers: { 'x-api-key': 'valid' } })
+      assert.equal(response.status, 200)
+      assert.deepEqual(await response.json(), [
+        { content_item_id: 'post-1', site_id: 's', up: 2, down: 1 },
+        { content_item_id: 'post-2', site_id: 's', up: 1, down: 0 },
+      ])
+    },
+  )
+})
+
 test('public contact submission is unaffected by disabled comments', async () => {
   await withApp(
     {

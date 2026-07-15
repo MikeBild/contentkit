@@ -462,6 +462,81 @@ button.ai-action {
   margin-top: 2.5rem;
   text-align: center;
 }
+/* The feed subscribe row (blog index, blogcast). Outline buttons: subscribing
+   is an offer, not the page's action. */
+.subscribe-row {
+  margin: 1rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.subscribe-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-weight: 650;
+  text-decoration: none;
+}
+.subscribe-button:hover {
+  border-color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.4);
+}
+button.subscribe-copy {
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+/* One-click post feedback: quiet outline card, same offer-not-action stance. */
+.post-feedback {
+  margin: 2rem 0 0;
+  padding: 1.25rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) + 0.2rem);
+}
+.post-feedback-prompt {
+  margin: 0 0 0.75rem;
+  font-weight: 650;
+}
+.post-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.post-feedback-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.post-feedback-button:hover {
+  border-color: hsl(var(--muted-foreground));
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.4);
+}
+.post-feedback-button:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+.post-feedback-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.post-feedback-thanks {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-weight: 550;
+}
 /* No max-width: the toolbar and the jump nav share the full .container width, so
    their left edge lines up with the year groups below rather than sitting in a
    centred 48rem box while the headings stay left-aligned. */

@@ -59,7 +59,9 @@ quickly.
 ### Blog and archive
 
 The two listings render the same posts to different ends. `/{locale}/blog/` is the
-curated feed: the newest twelve posts as cards, plus topic chips. `/{locale}/archive/`
+curated feed: the newest twelve posts as cards, plus topic chips and an RSS
+subscribe row (feed link, reader deep links, copy-feed-URL button; opt-out via
+`settings.blog.subscribe_row: false`). `/{locale}/archive/`
 is the reference index: every post, grouped by year. Neither paginates, and the blog
 deliberately does not — the archive already gives crawlers one page with every post
 two clicks from the root, while pages `2..N` would need `hreflang` alternates that

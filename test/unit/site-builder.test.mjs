@@ -553,6 +553,63 @@ test('the AI share row offers markdown, copy and deep links, and honours the per
   assert.ok(optedOut.files.has('en/blog/a/index.md'))
 })
 
+test('the blog index promotes the RSS feed and ships the clipboard module, opt-out removes both', async () => {
+  const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha' })] })
+  const blog = result.files.get('en/blog/index.html').body.toString()
+  assert.match(blog, /<a class="subscribe-button" href="\/en\/feed\.xml">Subscribe via RSS<\/a>/)
+  assert.match(blog, /data-copy-feed="https:\/\/example\.test\/en\/feed\.xml"/)
+  assert.match(blog, /assets\/ai-actions-[0-9a-f]{10}\.js/, 'the copy button needs the clipboard module')
+
+  const off = await build({
+    site: { ...site, settings: { blog: { subscribe_row: false } } },
+    revisions: [post({ slug: 'a', title: 'Alpha' })],
+  })
+  const quiet = off.files.get('en/blog/index.html').body.toString()
+  assert.doesNotMatch(quiet, /subscribe-row|data-copy-feed/, 'subscribe_row: false must remove the row')
+  assert.doesNotMatch(quiet, /ai-actions-/, 'a blog index without the row must not pay for the script')
+})
+
+test('feedback-enabled sites ship the widget and its script on post pages only', async () => {
+  const enabled = await build({
+    site: { ...site, settings: { feedback: { enabled: true } } },
+    revisions: [post({ slug: 'a', title: 'Alpha' })],
+  })
+  const page = enabled.files.get('en/blog/a/index.html').body.toString()
+  assert.match(page, /Was this post helpful\?/)
+  assert.match(page, /assets\/feedback-[0-9a-f]{10}\.js/, 'feedback.js must load with the widget')
+  assert.doesNotMatch(
+    enabled.files.get('en/index.html').body.toString(),
+    /feedback-.*\.js|post-feedback/,
+    'non-post pages must not pay for the widget',
+  )
+
+  const off = await build({ revisions: [post({ slug: 'a', title: 'Alpha' })] })
+  const quiet = off.files.get('en/blog/a/index.html').body.toString()
+  assert.doesNotMatch(quiet, /post-feedback|assets\/feedback-/, 'feedback is opt-in')
+})
+
+test('the blogcast page ships the clipboard module for its copy-feed-URL button', async () => {
+  const audio = [
+    {
+      item_id: 'item-a',
+      url: '/media/asset-1/a-vorlesen.mp3',
+      content_type: 'audio/mpeg',
+      byte_size: 1234,
+      duration_secs: 300,
+    },
+  ]
+  const result = await build({
+    site: { ...site, settings: { audio: { enabled: true } } },
+    revisions: [post({ slug: 'a', title: 'A' })],
+    audio,
+  })
+  const page = result.files.get('en/blogcast/index.html').body.toString()
+  assert.match(page, /assets\/audio-[0-9a-f]{10}\.js/)
+  assert.match(page, /assets\/ai-actions-[0-9a-f]{10}\.js/, 'the copy button needs the clipboard module')
+  assert.match(page, /data-copy-feed="https:\/\/example\.test\/en\/blogcast\.xml"/)
+  assert.match(page, /href="podcast:\/\/example\.test\/en\/blogcast\.xml"/, 'Apple Podcasts deep link missing')
+})
+
 test('authored tldr and faq render as details blocks and reach the search index', async () => {
   const result = await build({ revisions: [post({ slug: 'a', title: 'Alpha', extra: TLDR_FAQ })] })
   const html = result.files.get('en/blog/a/index.html').body.toString()

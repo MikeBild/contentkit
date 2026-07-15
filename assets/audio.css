@@ -201,26 +201,7 @@
   flex: 1 1 20rem;
 }
 
-.blogcast-subscribe-row {
-  margin: 1rem 0 0;
-}
-
-/* Outline button: the subscribe link is an offer, not the page's action. */
-.blogcast-subscribe {
-  display: inline-flex;
-  padding: 0.55rem 1rem;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.blogcast-subscribe:hover {
-  border-color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.4);
-}
+/* The subscribe row itself is styled in site.css — the blog index shares it. */
 
 .blogcast-episodes {
   display: grid;

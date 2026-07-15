@@ -6,6 +6,7 @@ import {
   archiveBody,
   blogBody,
   commentsEnabled,
+  feedbackEnabled,
   contactBody,
   contentBody,
   dictionary,
@@ -72,6 +73,7 @@ async function staticAssets(root) {
     'archive.js',
     'audio.js',
     'ai-actions.js',
+    'feedback.js',
   ]) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
@@ -454,6 +456,8 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
         layout(
           { ...base, title: t.blog, description: t.blog, canonical: absolute(site, blogPath), currentPath: blogPath },
           blogBody(base),
+          // The subscribe row's copy button needs the shared clipboard module.
+          { aiActions: site.settings?.blog?.subscribe_row !== false },
         ),
       ),
     )
@@ -593,7 +597,8 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
               currentPath: blogcastPath,
             },
             blogcastPage(base, audioPosts),
-            { audio: true },
+            // aiActions: the subscribe row's copy-feed-URL button.
+            { audio: true, aiActions: true },
           ),
         ),
       )
@@ -739,6 +744,7 @@ export async function buildSite({ root, site, locales, revisions, comments = [],
               structured,
               mermaid: item.hasMermaid,
               forms: item.kind === 'post' && commentsEnabled(site),
+              feedback: item.kind === 'post' && feedbackEnabled(site),
               audio: Boolean(item.audio),
               // The copy button only enhances a page that has a Markdown twin,
               // and only when the share row is not switched off per site.

@@ -168,8 +168,10 @@ Under the same gate as the feed (audio enabled + at least one narrated
 indexable post), each locale also gets a human-facing page at
 `/{locale}/blogcast/`: the channel cover (`blogcast_image`), title and
 description (`audio.title`/`audio.description`, falling back to the site's
-own), a "Subscribe via RSS" link to `/{locale}/blogcast.xml`, and one card per
-episode — title linking to the post, date, duration, summary and the same
+own), a subscribe row — a plain RSS link to `/{locale}/blogcast.xml`,
+podcast-app deep links (Apple Podcasts, Overcast, Pocket Casts; replaceable via
+`settings.audio.subscribe_targets`) and a copy-feed-URL button — and one card
+per episode: title linking to the post, date, duration, summary and the same
 player the article pages use. The page is indexable and listed in the sitemap.
 
 Deliberately independent of `blogcast_link`: that flag only controls the

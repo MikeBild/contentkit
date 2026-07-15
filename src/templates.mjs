@@ -66,6 +66,11 @@ const words = {
     copied: 'Kopiert',
     openIn: 'In {name} öffnen',
     aiPrompt: 'Lies diesen Artikel und beantworte meine Fragen dazu: {url}',
+    copyFeedUrl: 'Feed-URL kopieren',
+    feedbackPrompt: 'Wie fandest du diesen Beitrag?',
+    feedbackYes: 'Hilfreich',
+    feedbackNo: 'Nicht hilfreich',
+    feedbackThanks: 'Danke für dein Feedback!',
   },
   en: {
     blog: 'Blog',
@@ -132,6 +137,11 @@ const words = {
     copied: 'Copied',
     openIn: 'Open in {name}',
     aiPrompt: 'Read this article and answer my questions about it: {url}',
+    copyFeedUrl: 'Copy feed URL',
+    feedbackPrompt: 'Was this post helpful?',
+    feedbackYes: 'Helpful',
+    feedbackNo: 'Not helpful',
+    feedbackThanks: 'Thanks for your feedback!',
   },
 }
 
@@ -178,12 +188,15 @@ export function tagCounts(posts) {
   return [...tags.values()].sort((a, b) => b.count - a.count || cmp(a.label, b.label))
 }
 
-function safeUrl(value, { relative = false } = {}) {
+// `protocols` widens the allowlist for callers that legitimately emit app
+// deep-links (podcast clients on the subscribe row); everything else keeps the
+// strict http/https/mailto set.
+function safeUrl(value, { relative = false, protocols = [] } = {}) {
   const string = String(value || '')
   if (relative && string.startsWith('/') && !string.startsWith('//')) return string
   try {
     const url = new URL(string)
-    return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? string : '#'
+    return ['http:', 'https:', 'mailto:', ...protocols].includes(url.protocol) ? string : '#'
   } catch {
     return '#'
   }
@@ -439,8 +452,11 @@ export function layout(ctx, body, options = {}) {
   // Read-aloud pages only: the tempo switch and position memory enhance the
   // player, so neither script nor stylesheet taxes a page without one.
   if (options.audio) scripts.push(`<script src="${asset('audio.js')}" defer></script>`)
-  // Post pages with a Markdown twin only: reveals and drives the copy button.
+  // Pages with a copy affordance only: the AI share row's copy-Markdown button
+  // and the subscribe rows' copy-feed-URL button share one clipboard module.
   if (options.aiActions) scripts.push(`<script src="${asset('ai-actions.js')}" defer></script>`)
+  // Post pages with the feedback widget only: reveals and drives the vote buttons.
+  if (options.feedback) scripts.push(`<script src="${asset('feedback.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)
   if (analytics) scripts.push(analytics)
   const structured = options.structured ? `<script type="application/ld+json">${json(options.structured)}</script>` : ''
@@ -557,7 +573,13 @@ export function blogBody(ctx) {
     .map((tag) => tagChip(locale, tag, { count: tag.count }))
     .join('')
   const feed = posts.slice(0, BLOG_FEED_SIZE)
-  return `<section class="container article-header"><h1>${escapeHtml(t.blog)}</h1>${chips ? `<div class="tags blog-topics" aria-label="${escapeHtml(t.tags)}">${chips}<a class="tag tag-all" href="/${escapeHtml(locale)}/tags/">${escapeHtml(t.allTags)}</a></div>` : ''}</section>
+  // The RSS row is on by default (zero-config) — the feed exists on every site,
+  // promoting it costs nothing. settings.blog.subscribe_row = false opts out.
+  const subscribe =
+    ctx.site.settings?.blog?.subscribe_row === false
+      ? ''
+      : subscribeRow(ctx, `/${locale}/feed.xml`, ctx.site.settings?.blog?.subscribe_targets || FEED_SUBSCRIBE_TARGETS)
+  return `<section class="container article-header"><h1>${escapeHtml(t.blog)}</h1>${chips ? `<div class="tags blog-topics" aria-label="${escapeHtml(t.tags)}">${chips}<a class="tag tag-all" href="/${escapeHtml(locale)}/tags/">${escapeHtml(t.allTags)}</a></div>` : ''}${subscribe}</section>
 <section class="container section"><div class="grid">${feed.map(card).join('')}</div>
 <p class="listing-more"><a class="button" href="/${escapeHtml(locale)}/archive/">${escapeHtml(fill(t.allPostsCount, { n: posts.length }))} →</a></p></section>`
 }
@@ -759,10 +781,51 @@ ${cover}
 <div class="blogcast-header-text">
 <h1>${escapeHtml(title)}</h1>
 ${description ? `<p class="article-summary">${escapeHtml(description)}</p>` : ''}
-<p class="blogcast-subscribe-row"><a class="blogcast-subscribe" href="/${escapeHtml(locale)}/blogcast.xml">${escapeHtml(t.subscribeRss)}</a></p>
+${subscribeRow(ctx, `/${locale}/blogcast.xml`, site.settings?.audio?.subscribe_targets || BLOGCAST_SUBSCRIBE_TARGETS)}
 </div>
 </section>
 <section class="container section blogcast-episodes">${episodes}</section>`
+}
+
+// Deep-link entry points for feed subscriptions — protocol, not branding, the
+// same stance as AI_SHARE_TARGETS below. `{feed}` is the absolute feed URL,
+// `{feed_encoded}` its URL-encoded form, `{feed_no_scheme}` the URL without
+// scheme (the form podcast:// and pktc:// expect). Sites can replace either
+// list via settings.audio.subscribe_targets / settings.blog.subscribe_targets
+// = [{ label, url_template }].
+const BLOGCAST_SUBSCRIBE_TARGETS = [
+  { label: 'Apple Podcasts', url_template: 'podcast://{feed_no_scheme}' },
+  { label: 'Overcast', url_template: 'overcast://x-callback-url/add?url={feed_encoded}' },
+  { label: 'Pocket Casts', url_template: 'pktc://subscribe/{feed_no_scheme}' },
+]
+const FEED_SUBSCRIBE_TARGETS = [
+  { label: 'Feedly', url_template: 'https://feedly.com/i/subscription/feed/{feed_encoded}' },
+]
+const SUBSCRIBE_PROTOCOLS = ['podcast:', 'overcast:', 'pktc:']
+
+// The subscribe row under a feed's heading: a plain RSS link (works without
+// JS), app/reader deep links, and a copy-feed-URL button that the shared
+// clipboard module (ai-actions.js) reveals. Deep links and the copy target use
+// the absolute URL from site.base_url — a relative URL is useless inside a
+// podcast app or feed reader. App-protocol links open in place (they hand off
+// to the app); only http(s) targets get a new tab, matching the AI share row.
+export function subscribeRow(ctx, feedPath, targets) {
+  const { t, site } = ctx
+  const feedUrl = `${String(site.base_url || '').replace(/\/$/, '')}${feedPath}`
+  const expand = (template) =>
+    String(template || '')
+      .replace('{feed_encoded}', encodeURIComponent(feedUrl))
+      .replace('{feed_no_scheme}', feedUrl.replace(/^https?:\/\//, ''))
+      .replace('{feed}', feedUrl)
+  const links = targets
+    .map((target) => {
+      const href = safeUrl(expand(target.url_template), { protocols: SUBSCRIBE_PROTOCOLS })
+      if (href === '#') return ''
+      const external = /^https?:\/\//.test(href)
+      return `<a class="subscribe-button" href="${escapeHtml(href)}"${external ? ' target="_blank" rel="noopener nofollow"' : ''}>${escapeHtml(fill(t.openIn, { name: target.label }))}</a>`
+    })
+    .join('')
+  return `<p class="subscribe-row"><a class="subscribe-button" href="${escapeHtml(feedPath)}">${escapeHtml(t.subscribeRss)}</a>${links}<button type="button" class="subscribe-button subscribe-copy" data-copy-feed="${escapeHtml(feedUrl)}" data-copied="${escapeHtml(t.copied)}" hidden>${escapeHtml(t.copyFeedUrl)}</button></p>`
 }
 
 // Deep-link entry points of the major assistants. Protocol, not branding — the
@@ -853,12 +916,44 @@ export function contentBody(item, ctx, comments = []) {
   // Share row and Markdown twin exist for indexable posts only — a draft's page
   // has no index.md to link, and a draft is not for sharing.
   const aiActions = isPost && !item.noindex ? aiActionsBody(item, ctx) : ''
-  const footer = isPost ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${commentsBody(item, ctx, comments)}` : ''
+  const footer = isPost
+    ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
+    : ''
   return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose">${player}${notice}${tldrBody(item, ctx)}${item.html}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {
   return site?.settings?.comments?.enabled !== false
+}
+
+// Opt-in, unlike comments' opt-out: every vote writes to the database, so a
+// site owner must ask for that before readers can trigger it.
+export function feedbackEnabled(site) {
+  return site?.settings?.feedback?.enabled === true
+}
+
+// Same 16×16 currentColor stance as the player icons; down is up mirrored.
+const thumbIcon = (down) =>
+  svg(
+    `<g${down ? ' transform="scale(1,-1) translate(0,-16)"' : ''}><path d="M5.5 13.4h6a1.5 1.5 0 0 0 1.46-1.16l.9-3.8A1.5 1.5 0 0 0 12.4 6.6H9.5V3.7c0-.9-.7-1.6-1.6-1.6L5.5 7.1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M2.6 7.1h2.9v6.3H2.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></g>`,
+  )
+const ICON_THUMB_UP = thumbIcon(false)
+const ICON_THUMB_DOWN = thumbIcon(true)
+
+// One-click reader feedback under a post. The vote buttons ship hidden —
+// without feedback.js a click could do nothing — and the thank-you line is a
+// role="status" region so the confirmation is announced. Strings ride on
+// data-* attributes, keeping `words` the single source of translation truth.
+function feedbackBody(item, ctx) {
+  if (!feedbackEnabled(ctx.site)) return ''
+  const t = ctx.t
+  const button = (vote, icon, label) =>
+    `<button type="button" class="post-feedback-button" data-feedback-vote="${vote}" hidden>${icon}<span>${escapeHtml(label)}</span></button>`
+  return `<section class="post-feedback" data-feedback="${escapeHtml(item.item_id)}" data-site="${escapeHtml(ctx.site.id)}" data-action="/public/v1/posts/${escapeHtml(item.item_id)}/feedback" data-thanks="${escapeHtml(t.feedbackThanks)}">
+<p class="post-feedback-prompt">${escapeHtml(t.feedbackPrompt)}</p>
+<div class="post-feedback-actions">${button('up', ICON_THUMB_UP, t.feedbackYes)}${button('down', ICON_THUMB_DOWN, t.feedbackNo)}</div>
+<p class="post-feedback-thanks" data-feedback-thanks role="status" hidden></p>
+</section>`
 }
 
 function turnstileWidget(ctx) {

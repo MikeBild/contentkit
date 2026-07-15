@@ -77,6 +77,7 @@ export const API_ROUTES = [
   { pattern: /^\/llms-full\.txt$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/public\/v1\/contact$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/comments$/, methods: ['POST'] },
+  { pattern: /^\/public\/v1\/posts\/[^/]+\/feedback$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
@@ -100,6 +101,7 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/comments\/[^/]+$/, methods: ['PATCH'] },
   { pattern: /^\/v1\/contact-submissions$/, methods: ['GET'] },
   { pattern: /^\/v1\/contact-submissions\/[^/]+$/, methods: ['PATCH'] },
+  { pattern: /^\/v1\/feedback$/, methods: ['GET'] },
 ]
 
 // Builds the single request handler from the app's composed dependencies.
@@ -214,6 +216,32 @@ export function createRequestHandler(ctx) {
         return row
       })
       return sendJson(res, 201, { accepted: true, id: record.id })
+    }
+    const feedbackMatch = url.pathname.match(/^\/public\/v1\/posts\/([^/]+)\/feedback$/)
+    if (feedbackMatch) {
+      // Deliberately no Turnstile: the payload is an enum-only anonymous vote,
+      // so the honeypot and the per-IP limiter above already bound abuse to
+      // noise a CAPTCHA would not prevent. Opt-in, unlike comments' opt-out —
+      // a vote writes to the database on every reader click.
+      const site = await repo.getSite(input.site_id || '')
+      if (!site || site.settings?.feedback?.enabled !== true) return sendJson(res, 404, { error: 'not found' })
+      if (!['up', 'down'].includes(input.vote)) return sendJson(res, 422, { error: 'vote must be up or down' })
+      const items = await db.select('ck_content_items', {
+        id: `eq.${feedbackMatch[1]}`,
+        site_id: `eq.${site.id}`,
+        kind: 'eq.post',
+        limit: '1',
+      })
+      if (!items[0]) return sendJson(res, 404, { error: 'post not found' })
+      // No outbox event: votes are anonymous and unmoderatable, and a webhook
+      // per thumb-click is noise. Without the event there is nothing to keep
+      // atomic, so the insert also skips db.tx.
+      const [row] = await db.insert('ck_post_feedback', {
+        site_id: site.id,
+        content_item_id: feedbackMatch[1],
+        vote: input.vote,
+      })
+      return sendJson(res, 201, { accepted: true, id: row.id })
     }
     const captcha = input['cf-turnstile-response'] || input.turnstile_token
     if (!(await verifyTurnstile(config, captcha, ip)))
@@ -416,7 +444,7 @@ export function createRequestHandler(ctx) {
     if (apiHost && req.method === 'GET' && path === '/') return sendJson(res, 200, SERVICE)
     if (
       req.method === 'POST' &&
-      (path === '/public/v1/contact' || /^\/public\/v1\/posts\/[^/]+\/comments$/.test(path))
+      (path === '/public/v1/contact' || /^\/public\/v1\/posts\/[^/]+\/(comments|feedback)$/.test(path))
     ) {
       return publicSubmission(req, res, url, ip)
     }
@@ -801,6 +829,40 @@ export function createRequestHandler(ctx) {
         return sendJson(res, 422, { error: 'status must be read or closed' })
       const rows = await db.update('ck_contact_submissions', { id: `eq.${contactMatch[1]}` }, { status: input.status })
       return sendJson(res, 200, rows[0])
+    }
+    if (path === '/v1/feedback' && req.method === 'GET') {
+      const principal = await requireScope(req, res, 'moderation:write')
+      if (!principal) return
+      const requestedSite = url.searchParams.get('site_id')
+      if (requestedSite && !auth.authorize(principal, 'moderation:write', requestedSite)) {
+        return sendJson(res, 403, { error: 'site access denied' })
+      }
+      const rows = await db.select('ck_post_feedback', {
+        ...(requestedSite
+          ? { site_id: `eq.${requestedSite}` }
+          : Array.isArray(principal.site_ids) && principal.site_ids.length
+            ? { site_id: `in.(${principal.site_ids.join(',')})` }
+            : {}),
+        ...(url.searchParams.get('post') ? { content_item_id: `eq.${url.searchParams.get('post')}` } : {}),
+      })
+      // The db wrapper has no GROUP BY; rows are four small columns at blog
+      // scale, so aggregate here instead of raw SQL.
+      const byPost = new Map()
+      for (const row of rows) {
+        const entry = byPost.get(row.content_item_id) || {
+          content_item_id: row.content_item_id,
+          site_id: row.site_id,
+          up: 0,
+          down: 0,
+        }
+        entry[row.vote] += 1
+        byPost.set(row.content_item_id, entry)
+      }
+      return sendJson(
+        res,
+        200,
+        [...byPost.values()].sort((a, b) => b.up + b.down - (a.up + a.down)),
+      )
     }
 
     // Unmatched method on a known API path: answer with OPTIONS/405 + Allow

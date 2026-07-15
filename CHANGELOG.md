@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.10.0
+
+### Added
+
+- **Feed subscribe rows.** The blogcast page's bare "Subscribe via RSS" link —
+  which just opened raw XML — became a subscribe row: the plain RSS link,
+  podcast-app deep links (Apple Podcasts, Overcast, Pocket Casts), and a
+  copy-feed-URL button with clipboard confirmation. The blog index promotes its
+  RSS feed with the same shared row (RSS link, Feedly, copy button), on by
+  default and removable via `settings.blog.subscribe_row: false`. Both target
+  lists can be replaced per site via `settings.audio.subscribe_targets` /
+  `settings.blog.subscribe_targets = [{ label, url_template }]` with `{feed}`,
+  `{feed_encoded}` and `{feed_no_scheme}` placeholders.
+- **Domains via PATCH.** `PATCH /v1/sites/{site}` now also accepts `domains`,
+  replacing the hostname mappings in full (the same read-merge-send contract
+  as `settings`); previously domains could only be set at site creation.
+- **One-click post feedback.** Sites can opt in via
+  `settings.feedback.enabled: true` to render a quiet "Was this post helpful?"
+  thumbs-up/down widget under each post. Votes are anonymous by design (no
+  name, no email, no IP — no consent surface), deduplicated per device via
+  localStorage, and protected by the existing honeypot and per-IP rate limit
+  instead of a captcha. New public endpoint
+  `POST /public/v1/posts/{post}/feedback` stores the vote in the new
+  `ck_post_feedback` table (migration `0005`); `GET /v1/feedback`
+  (`moderation:write`) returns per-post up/down aggregates.
+
 ## 1.9.3
 
 ### Fixed
