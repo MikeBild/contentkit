@@ -11,13 +11,12 @@ const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 // from the scan for good measure.
 test('no production domain references in tracked files', () => {
   const needle = ['mikebild', 'dev'].join('\\.')
-  let hits = ''
+  let hits
   try {
-    hits = execFileSync(
-      'git',
-      ['grep', '-nIE', needle, '--', '.', ':!test/unit/no-prod-references.test.mjs'],
-      { cwd: root, encoding: 'utf8' },
-    )
+    hits = execFileSync('git', ['grep', '-nIE', needle, '--', '.', ':!test/unit/no-prod-references.test.mjs'], {
+      cwd: root,
+      encoding: 'utf8',
+    })
   } catch (err) {
     // git grep exits 1 with empty stdout when there are no matches — success.
     if (err.status === 1 && !err.stdout) return
