@@ -24,6 +24,15 @@ test('builds a complete multilingual static release', async () => {
       translation_key: 'hello',
       markdown: `---\nkind: post\ntitle: Hello\nlocale: en\nslug: hello\ntranslationKey: hello\nsummary: English\ndate: 2026-06-29\n---\n# Hello\n\nText.`,
     },
+    {
+      id: 'rev-report',
+      item_id: 'item-report',
+      kind: 'page',
+      locale: 'de',
+      translation_key: 'quarterly-report',
+      markdown:
+        '---\nkind: page\nlayout: report\ntitle: Quartalsbericht\nlocale: de\nslug: quartalsbericht\ntranslationKey: quarterly-report\nsummary: Snapshot\n---\n:::chart{type="bar" title="Umsatz" description="Umsatz im Quartal" unit="EUR"}\n| Monat | Umsatz |\n|-|-:|\n| Apr | 42 |\n| Mai | 51 |\n:::',
+    },
   ]
   const result = await buildSite({
     root,
@@ -45,6 +54,8 @@ test('builds a complete multilingual static release', async () => {
     'en/index.html',
     'de/blog/hallo/index.html',
     'en/blog/hello/index.html',
+    'de/quartalsbericht/index.html',
+    'de/quartalsbericht/index.md',
     'de/archive/index.html',
     'de/tags/index.html',
     'en/tags/index.html',
@@ -61,6 +72,7 @@ test('builds a complete multilingual static release', async () => {
   // First-party assets are content-hashed (cache-busting under immutable cache):
   // the file is emitted at assets/<name>-<hash>.<ext> and referenced from HTML.
   const assetKeys = [...result.files.keys()]
+  assert.ok(assetKeys.some((key) => /^assets\/report-chart-light-[0-9a-f]{10}\.svg$/.test(key)))
   assert.ok(
     assetKeys.some((k) => /^assets\/site-[0-9a-f]{10}\.css$/.test(k)),
     'hashed site.css missing',

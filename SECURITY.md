@@ -22,6 +22,10 @@ Only the latest release receives security fixes.
   session secret and webhook secret as independent production secrets.
 - Keep the service bound to localhost behind a reverse proxy (Caddy, nginx).
 - Do not enable raw HTML in the Markdown pipeline.
+- Keep report authoring on the built-in `layout: report` directives. Do not
+  accept client-supplied ECharts/Vega options or executable chart callbacks;
+  Contentkit's table contract, resource limits and server-rendered SVG boundary
+  are part of the security model.
 - Configure Turnstile in production; without it public writes fail closed unless
   the explicit development bypass is enabled outside production.
 - Rotate scoped API keys rather than sharing the bootstrap key.

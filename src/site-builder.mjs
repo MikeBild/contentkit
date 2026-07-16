@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renderMarkdown } from './markdown.mjs'
+import { materializeReportCharts } from './report-charts.mjs'
 import {
   archiveBody,
   blogBody,
@@ -117,13 +118,17 @@ function hashedName(name, body) {
   return dot === -1 ? `${name}-${hash}` : `${name.slice(0, dot)}-${hash}${name.slice(dot)}`
 }
 
+function emitHashedAsset(files, name, body, contentType) {
+  const hashed = hashedName(name, body)
+  files.set(`assets/${hashed}`, text(body, contentType, 'public,max-age=31536000,immutable'))
+  return `/assets/${hashed}`
+}
+
 async function staticAssets(root) {
   const files = new Map()
   const assets = {}
   const emit = (name, body, type) => {
-    const hashed = hashedName(name, body)
-    files.set(`assets/${hashed}`, text(body, type, 'public,max-age=31536000,immutable'))
-    assets[name] = `/assets/${hashed}`
+    assets[name] = emitHashedAsset(files, name, body, type)
   }
   const css = await readFile(join(root, 'assets/site.css'), 'utf8')
   const katexCss = (await readFile(join(root, 'node_modules/katex/dist/katex.min.css'), 'utf8')).replaceAll(
@@ -314,6 +319,7 @@ function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
 // are separated by a horizontal rule: without it the boundary between two posts is
 // indistinguishable from a section break inside one.
 const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^\n]*\n+/, '')
+const hasMarkdownTwin = (item) => !item.noindex && (item.kind === 'post' || item.layout === 'report')
 
 // One document as Markdown: title heading, canonical URL, the authored TL;DR
 // bullets (frontmatter, so they are absent from `source`), then the body. The
@@ -423,7 +429,12 @@ export async function buildSite({
     // Lenient: a stored revision predating today's frontmatter rules (e.g. a
     // malformed `extra:`) renders without the offending field instead of
     // failing the release — write-time validation stays strict.
-    const result = await renderMarkdown(revision.markdown, { lenient: true })
+    const parsed = await renderMarkdown(revision.markdown, { lenient: true })
+    const result = materializeReportCharts(parsed, {
+      settings: site.settings || {},
+      locale: parsed.meta.locale,
+      emit: (svg, { scheme }) => emitHashedAsset(files, `report-chart-${scheme}.svg`, svg, 'image/svg+xml'),
+    })
     for (const warning of result.warnings) {
       logger?.warn?.(warning, { siteId: site.id, itemId: revision.item_id, slug: result.meta.slug })
     }
@@ -926,11 +937,11 @@ export async function buildSite({
         item.layout === 'docs' &&
         site.settings?.presentation?.docs?.versions?.find((entry) => entry.id === item.docs_version)?.status ===
           'archived'
-      // The raw-Markdown twin of the post page, for readers feeding an article
-      // into their own AI tools and for agents that prefer Markdown over HTML.
-      // noindex posts get none: their HTML page at least carries a robots meta,
+      // The raw-Markdown twin of a post or report, for readers feeding the
+      // authored artifact into their own tools and for agents that prefer
+      // Markdown over HTML. noindex content gets none: its HTML page at least carries a robots meta,
       // a bare .md file could not ask crawlers for the same restraint.
-      const markdownUrl = item.kind === 'post' && !item.noindex ? `${item.url}index.md` : undefined
+      const markdownUrl = hasMarkdownTwin(item) ? `${item.url}index.md` : undefined
       if (markdownUrl) {
         files.set(
           markdownUrl.replace(/^\//, ''),
@@ -1107,7 +1118,7 @@ export async function buildSite({
       user_ids: item.access_rule.user_ids || [],
       content_item_id: item.item_id,
     })
-    if (item.kind === 'post' && !item.noindex) {
+    if (hasMarkdownTwin(item)) {
       accessEntries.push({
         site_id: site.id,
         match: 'exact',

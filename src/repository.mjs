@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { renderMarkdown } from './markdown.mjs'
+import { materializeReportCharts } from './report-charts.mjs'
 import { hashApiKey } from './auth.mjs'
 import { sha256, slugify } from './utils.mjs'
 import { assertDeliverableUrl, decryptSecret, encryptSecret, generateWebhookSecret } from './secrets.mjs'
@@ -125,6 +126,11 @@ const THEME_TOKEN_ALLOWLIST = [
   'border',
   'primary',
   'primary_foreground',
+  'chart_1',
+  'chart_2',
+  'chart_3',
+  'chart_4',
+  'chart_5',
   'radius',
   'font_family',
 ]
@@ -969,7 +975,12 @@ export function createRepository(config, db, storage) {
       // Markdown exactly as authored; source_sha256 rides along for the ETag.
       // Lenient like the site build: a published document must stay readable
       // even when it predates today's frontmatter rules.
-      const rendered = await renderMarkdown(revision.markdown, { lenient: true })
+      const parsed = await renderMarkdown(revision.markdown, { lenient: true })
+      const site = await one('ck_sites', { id: `eq.${siteId}` })
+      const rendered = materializeReportCharts(parsed, {
+        settings: site?.settings || {},
+        locale: parsed.meta.locale,
+      })
       return {
         ...publishedEntry(item, revision),
         markdown: revision.markdown,

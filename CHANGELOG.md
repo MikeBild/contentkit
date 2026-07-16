@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.13.0
+
+### Added
+
+- **Visual reports and dashboards from Markdown.** Pages can select the
+  controlled `report` layout and compose responsive metric cards, badges,
+  progress, cards and grids. `bar`, `line`, `area` and `donut` charts use an
+  ordinary GFM table as their complete data contract; Apache ECharts renders
+  deterministic, accessible light/dark SVG release assets server-side, so no
+  chart runtime or executable specification reaches the browser. The existing
+  shadcn-style token contract now includes `chart_1` through `chart_5`, and
+  report pages retain their source tables, print cleanly and receive Markdown
+  twins. Unit, contract, real-document smoke, integration, compiled-binary E2E
+  and a 200-chart benchmark cover the feature.
+
 ## 1.12.0
 
 ### Added

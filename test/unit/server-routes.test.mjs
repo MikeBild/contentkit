@@ -1337,6 +1337,7 @@ test('feed.xml is served as RSS while other xml stays application/xml', () => {
   assert.equal(releaseContentType('de/index.html'), 'text/html; charset=utf-8')
   assert.equal(releaseContentType('llms.txt'), 'text/plain; charset=utf-8')
   assert.equal(releaseContentType('de/llms-full.txt'), 'text/plain; charset=utf-8')
+  assert.equal(releaseContentType('assets/report-chart-light-abc.svg'), 'image/svg+xml')
   assert.equal(releaseContentType('robots.txt'), 'text/plain; charset=utf-8')
   assert.equal(releaseContentType('assets/logo.woff2'), undefined)
 })
@@ -1667,7 +1668,11 @@ describe('theme settings', () => {
       const settings = {
         accent: '#2563eb',
         theme: {
-          tokens: { background: { light: '#ffffff', dark: '#0b0b0c' }, radius: '0.75rem' },
+          tokens: {
+            background: { light: '#ffffff', dark: '#0b0b0c' },
+            chart_1: { light: '#2563eb', dark: '#93c5fd' },
+            radius: '0.75rem',
+          },
           custom_css: '.hero{border:1px solid}',
         },
       }

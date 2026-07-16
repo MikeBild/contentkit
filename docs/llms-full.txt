@@ -4,8 +4,8 @@ This single file contains the complete Contentkit documentation for LLM
 consumption. A concise index is in `docs/llms.txt`; the committed OpenAPI
 snapshot is in `docs/openapi.json`.
 
-Contentkit is an API-first Markdown mini-CMS for personal websites, blogs and
-project portfolios. It stores CMS metadata and immutable content revisions in a
+Contentkit is an API-first Markdown mini-CMS for personal websites, blogs,
+project portfolios, documentation and visual reports. It stores CMS metadata and immutable content revisions in a
 dedicated PostgreSQL database, stores assets and release objects in private
 Supabase Storage, and serves clean static websites through atomically activated
 release pointers.
@@ -36,6 +36,10 @@ content-hashed (`/assets/<name>-<hash>.<ext>`) and served `immutable`, so a new
 release changes the URL and returning visitors always fetch the current build
 instead of a stale cached copy. Rollback activates a known release pointer
 without re-rendering or copying files.
+
+Report charts are also static output: authors provide one Markdown table, and a
+release emits content-hashed light/dark SVGs plus the accessible source table.
+Published report pages load no chart JavaScript.
 
 Contentkit is not a visual page builder and not a generic Supabase application.
 It is a focused, API-first Markdown-to-static-site CMS with explicit operational
@@ -371,7 +375,7 @@ Important site fields:
 | `settings.blog.subscribe_targets` | Optional replacement for the blog row's reader targets: `[{ "label": "...", "url_template": "..." }]` with `{feed}` (absolute feed URL), `{feed_encoded}` and `{feed_no_scheme}` placeholders. Templates outside http(s) and the podcast-app protocols (`podcast:`, `overcast:`, `pktc:`) are dropped |
 | `settings.audio.subscribe_targets` | Same shape, for the blogcast page's subscribe row. Defaults to Apple Podcasts, Overcast and Pocket Casts deep links |
 | `settings.feedback.enabled` | Default off (opt-in). `true` renders a one-click "Was this post helpful?" thumbs-up/down widget under each post, posting to `/public/v1/posts/{post}/feedback`. Votes are anonymous (no reader data), deduplicated per device via localStorage |
-| `settings.theme.tokens` | Per-site design tokens injected as an inline `<style>` on every page. Allowlisted keys only (`background`, `foreground`, `muted`, `muted_foreground`, `border`, `primary`, `primary_foreground`, `radius`, `font_family`) — an unknown key fails the write with 422 so typos surface. Each key maps onto the stylesheet custom property of the same name (underscores become hyphens, e.g. `muted_foreground` → `--muted-foreground`). A value is one string for both color schemes or `{ "light": "...", "dark": "..." }` for a `prefers-color-scheme` override; color values accept hex (converted to the `H S% L%` triple like `settings.accent`) or a triple verbatim. Each value is at most 256 bytes and must not contain `<` (422 otherwise) — values are emitted verbatim into the `<style>` element, so quoted font stacks like `"Helvetica Neue", Arial, sans-serif` work. `settings.accent` remains the shorthand for the `primary` token; the explicit token wins on conflict. `font_family` additionally applies `body{font-family:var(--font-family)}`. A theme is a token assignment — there are no template or layout overrides |
+| `settings.theme.tokens` | Per-site design tokens injected as an inline `<style>` on every page. Allowlisted keys only (`background`, `foreground`, `muted`, `muted_foreground`, `border`, `primary`, `primary_foreground`, `chart_1`, `chart_2`, `chart_3`, `chart_4`, `chart_5`, `radius`, `font_family`) — an unknown key fails the write with 422 so typos surface. Each key maps onto the stylesheet custom property of the same name (underscores become hyphens, e.g. `chart_1` → `--chart-1`). A value is one string for both color schemes or `{ "light": "...", "dark": "..." }` for a `prefers-color-scheme` override; color values accept hex (converted to the `H S% L%` triple like `settings.accent`) or a triple verbatim. The five chart tokens color server-rendered report SVGs in the matching scheme as well as the page CSS. Each value is at most 256 bytes and must not contain `<` (422 otherwise) — values are emitted verbatim into the `<style>` element, so quoted font stacks like `"Helvetica Neue", Arial, sans-serif` work. `settings.accent` remains the shorthand for the `primary` token; the explicit token wins on conflict. `font_family` additionally applies `body{font-family:var(--font-family)}`. A theme is a token assignment — there are no template or layout overrides |
 | `settings.theme.custom_css` | Escape hatch for whatever tokens do not cover: a raw CSS string appended as the last `<style>` element on every page. Must be a string of at most 8192 bytes and must not contain `</style` (422 otherwise); the site owner authors it, so there is no further sanitizing |
 
 Read a site:
@@ -419,6 +423,7 @@ Supported YAML frontmatter:
 | Field | Required | Function |
 |---|---:|---|
 | `kind` | no | `page`, `post` or `project`; defaults to `page` |
+| `layout` | no | Controlled layout: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` or `report` |
 | `title` | yes | Title, navigation label and SEO title basis |
 | `locale` | yes | IETF-ish tag such as `de`, `en` or `en-us` |
 | `slug` | no | URL segment; generated from title when omitted |
@@ -475,11 +480,42 @@ The Markdown renderer supports:
 - math with KaTeX;
 - fenced code highlighting via Shiki using GitHub light/dark themes;
 - safe `:::note`, `:::tip` and `:::warning` directives rendered as callouts;
+- report-only visual directives described below;
 - Mermaid code fences rendered client-side only on pages that contain Mermaid;
 - autolinked headings with stable heading IDs.
 
 Raw HTML is sanitized. Script URLs and arbitrary unsafe markup are not passed
 through. Mermaid runs with strict initialization in the browser.
+
+### Report authoring contract
+
+Set `layout: report` to compose a responsive report from the controlled
+`report-grid`, `report-card`, `metric`, `badge`, `progress` and `chart`
+directives. Report directives are rejected outside that layout. Unknown report
+directives or attributes fail the write with 422.
+
+`report-grid` accepts `columns="1..4"`. Cards require `title` and accept
+`span="1..4"`. Metrics require `label` and `value`, and optionally accept
+`trend`, `tone` and `span`. Badges contain visible inline text. Progress requires
+`label` and numeric `value`, optionally `max` and `span`; value must be in the
+zero-to-max range. Tones are `neutral`, `positive`, `warning` or `negative`.
+
+A chart contains exactly one GFM table. Its first column is the category and all
+remaining cells are finite numbers; an em dash (`—`) represents a missing
+point. Required attributes are `type`, `title` and `description`. `type` is
+`bar`, `line`, `area` or `donut`; optional attributes are `unit`, `span`, bar-only
+`orientation="vertical|horizontal"`, and bar/area-only
+`stacked="true|false"`. Donuts require exactly one value series. Limits are 24
+charts per report, 200 data rows per chart and eight value series per chart.
+
+Apache ECharts is an internal SSR implementation detail rather than an
+authoring surface. Every release creates deterministic content-hashed light and
+dark SVG assets, an accessible `<picture>`, caption and collapsible source
+table; no client chart runtime is shipped. The table expands for print/PDF. The
+authenticated document read API uses the same renderer with SVG data URLs.
+Indexable reports receive `/{locale}/{slug}/index.md`, and their authored source
+is retained in the site's `llms-full.txt`. See `docs/REPORTS.md` and
+`examples/reports/quarterly.en.md` for the complete guide and example.
 
 ---
 
@@ -597,6 +633,7 @@ For each configured locale, Contentkit generates:
 | LLM index | `/{locale}/llms.txt` (llmstxt.org format, describing the site) |
 | LLM full text | `/{locale}/llms-full.txt` (every published document's Markdown source) |
 | Post Markdown twin | `/{locale}/blog/{slug}/index.md` (the post as raw Markdown — title, canonical URL, TL;DR, body; not generated for `noindex` posts) |
+| Report Markdown twin | `/{locale}/{slug}/index.md` (the authored report with directives and source tables; not generated for `noindex` reports) |
 | Content pages | by kind-specific route |
 
 Global generated files:
@@ -1226,7 +1263,9 @@ unique lowercase slug IDs, labels up to 120 characters, exactly one
 Archived documentation remains reachable but is
 `noindex,follow` and absent from the sitemap.
 
-A page can override the preset default with `layout: standard|docs|wiki|knowledge|landing|changelog`.
+A page can override the preset default with `layout: standard`, `layout: docs`,
+`layout: wiki`, `layout: knowledge`, `layout: landing`, `layout: changelog` or
+`layout: report`.
 Hierarchical layouts accept `docKey`, `parent`, `navTitle` and `navOrder`;
 documentation also requires `docsVersion`. Changelog pages accept `category`,
 `releaseVersion` and `changeTypes` (`added`, `changed`, `deprecated`, `removed`,
@@ -1234,17 +1273,23 @@ documentation also requires `docsVersion`. Changelog pages accept `category`,
 `steps` and `cta` directives. Invalid versions, missing parents, cycles,
 duplicate keys and duplicate routes fail the build before activation.
 
+Report pages use the normal page route and the closed visual directive contract
+from section 7. Table-driven charts are rendered to static light/dark SVGs at
+build time, use `chart_1` through `chart_5`, retain their accessible source data
+and add no chart JavaScript to the page.
+
 Generated routes:
 
 - docs: `/{locale}/docs/{version}/{hierarchy}/`;
 - wiki: `/{locale}/wiki/{hierarchy}/`;
 - knowledge base: `/{locale}/help/{hierarchy}/`;
 - changelog: `/{locale}/changelog/{slug}/`;
-- landing and standard pages: `/{locale}/{slug}/`.
+- landing, report and standard pages: `/{locale}/{slug}/`.
 
 See `docs/TEMPLATES.md` and the real documents under `examples/docs`,
 `examples/wiki`, `examples/knowledge`, `examples/landing` and
-`examples/changelog`.
+`examples/changelog`; the complete report guide and example are
+`docs/REPORTS.md` and `examples/reports/quarterly.en.md`.
 
 ### Reader authorization model
 
@@ -1300,15 +1345,17 @@ Production requires an independent `CONTENTKIT_SESSION_SECRET`. See
 
 ### Verification and performance
 
-`npm run test:contract` checks that the OpenAPI access operations and public
-schemas match routable methods. `npm run test:smoke` builds the real
-documentation, wiki, knowledge-base, landing-page and changelog examples in one
+`npm run test:contract` checks that the OpenAPI operations and report authoring
+contract match the runtime. `npm run test:smoke` builds the real documentation,
+wiki, knowledge-base, landing-page, changelog and report examples in one
 release. `npm run test:e2e:local` compiles the binary, applies the real
-PostgreSQL migration, uploads the real docs, publishes them, verifies anonymous
-non-discovery, signs in as a real reader and checks private search and delivery.
+PostgreSQL migration, uploads the real docs and report, publishes them, verifies
+the report SVG and Markdown twin, verifies anonymous non-discovery, signs in as
+a real reader and checks private search and delivery.
 
 `npm run benchmark` builds 1,000 documents in two locales, including 200
-protected documents, then measures 100,000 rule resolutions and an scrypt
-verification. CI enforces the broad regression budgets in
+protected documents. It separately times 50 reports with 200 charts and 24 rows
+per chart, then measures 100,000 rule resolutions and an scrypt verification.
+CI enforces the broad regression budgets in
 `benchmarks/budgets.json` and uploads the JSON result. Reference results and
 measurement caveats live in `docs/BENCHMARKS.md`.

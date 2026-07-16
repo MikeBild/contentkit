@@ -55,6 +55,17 @@ element. The generated inline block rides each page while `site.css` itself
 stays shared and content-hashed — deliberately no template or layout overrides,
 which would be a plugin system through the back door.
 
+Reports follow the same static-release boundary. With explicit
+`layout: report`, the Markdown pipeline maps a fixed set of report directives
+onto sanitized semantic HTML and normalizes each chart's single GFM table into
+a bounded descriptor. During the release build, modular Apache ECharts SSR
+renders a light and dark SVG from that descriptor; Contentkit canonicalizes the
+renderer IDs and stores the SVG as a content-hashed release asset. The page
+receives only a `<picture>` and the authored table, never a chart runtime or an
+author-supplied visualization specification. The authenticated read API uses
+the same renderer but embeds the SVGs as data URLs because it has no release
+asset namespace.
+
 ## Migration ownership
 
 The binary contains the migration journal and SQL bodies as generated string
@@ -75,6 +86,10 @@ provision the database and login; they do not copy or execute migration files.
   expired key gets `401 unauthorized`; a valid key missing the required scope
   gets `403 insufficient_scope` — two distinct failure modes.
 - Markdown raw HTML is discarded; Mermaid uses strict mode.
+- Report directives have closed names and attributes, numeric table parsing and
+  build-time limits (24 charts, 200 rows and eight series per chart). SVG markup
+  comes only from Contentkit's server-side renderer; authored chart text is
+  escaped and the browser receives no chart JavaScript.
 - Preview tokens are random, stored only as hashes, expiring and revocable.
 - Public writes pass Turnstile, honeypot, length and in-memory IP rate limits.
 - Contentkit signs exact webhook bytes using Standard Webhooks HMAC-SHA256; the
@@ -91,6 +106,16 @@ file or executable module. Docs/wiki/help hierarchies are resolved as a content
 graph before any release object is uploaded. Missing parents, cycles, unknown
 versions/groups, and duplicate generated URLs fail the build without moving the
 active release pointer.
+
+### Static report rendering
+
+Report cards use the same controlled DOM and shadcn-style CSS variables as the
+rest of the site. `chart_1` through `chart_5` extend the existing theme-token
+allowlist and are resolved separately for light and dark SVG output. Fixed
+dimensions, locale-explicit number formatting, disabled animation and
+canonical renderer IDs make identical inputs byte-reproducible. Each chart
+keeps its source table in a semantic disclosure, supplies an accessible name,
+collapses responsively and expands the table for print/PDF output.
 
 ### Release-scoped reader access
 

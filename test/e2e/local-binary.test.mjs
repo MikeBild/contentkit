@@ -30,9 +30,9 @@ async function readBody(req) {
   return Buffer.concat(chunks)
 }
 
-async function responseJson(response, expected) {
+async function responseJson(response, expected, diagnostics = '') {
   const text = await response.text()
-  assert.equal(response.status, expected, text)
+  assert.equal(response.status, expected, `${text}${diagnostics ? `\n${diagnostics}` : ''}`)
   return text ? JSON.parse(text) : null
 }
 
@@ -272,6 +272,15 @@ test(
           ),
         )
       }
+      const reportSource = await readFile(join(root, 'examples', 'reports', 'quarterly.en.md'), 'utf8')
+      const reportEntry = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/content`, {
+          method: 'POST',
+          headers: { ...auth, 'content-type': 'text/markdown' },
+          body: reportSource,
+        }),
+        201,
+      )
 
       const markdown = `---
 kind: post
@@ -311,7 +320,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
           body: JSON.stringify({
-            revision_ids: [ingested.revision.id, ...docs.map((entry) => entry.revision.id)],
+            revision_ids: [ingested.revision.id, reportEntry.revision.id, ...docs.map((entry) => entry.revision.id)],
             expires_in: 600,
           }),
         }),
@@ -321,14 +330,17 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.equal(previewPage.status, 200)
       assert.equal(previewPage.headers.get('x-robots-tag'), 'noindex,nofollow,noarchive')
       assert.match(await previewPage.text(), /Lokaler E2E Beitrag/)
+      const previewReport = await fetch(`${preview.url}en/q2-business-review/`)
+      assert.equal(previewReport.status, 200)
+      assert.match(await previewReport.text(), /report-chart-picture/)
 
       const release = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, {
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
           body: JSON.stringify({
-            revision_ids: [ingested.revision.id, ...docs.map((entry) => entry.revision.id)],
-            reason: 'local E2E with real documentation',
+            revision_ids: [ingested.revision.id, reportEntry.revision.id, ...docs.map((entry) => entry.revision.id)],
+            reason: 'local E2E with real documentation and report',
           }),
         }),
         201,
@@ -346,6 +358,22 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       const manifestResponse = await requestWithHost(origin, '/manifest.webmanifest', 'e2e.local')
       assert.equal(manifestResponse.status, 200)
       assert.match(manifestResponse.body, /"name":"Local E2E"/)
+
+      const reportPage = await requestWithHost(origin, '/en/q2-business-review/', 'e2e.local')
+      assert.equal(reportPage.status, 200)
+      assert.match(reportPage.body, /class="report-page"/)
+      assert.match(reportPage.body, /<details class="report-chart-data">/)
+      assert.doesNotMatch(reportPage.body, /echarts|report-chart[^"']*\.js/i)
+      assert.match(reportPage.headers['content-security-policy'], /script-src 'self'/)
+      const reportAssetPath = reportPage.body.match(/<img src="([^"]*report-chart-light-[^"]+\.svg)"/)[1]
+      const reportAsset = await requestWithHost(origin, reportAssetPath, 'e2e.local')
+      assert.equal(reportAsset.status, 200)
+      assert.equal(reportAsset.headers['content-type'], 'image/svg+xml')
+      assert.match(reportAsset.body, /^<svg role="img"/)
+      const reportMarkdown = await requestWithHost(origin, '/en/q2-business-review/index.md', 'e2e.local')
+      assert.equal(reportMarkdown.status, 200)
+      assert.match(reportMarkdown.body, /:::chart\{type="bar"/)
+      assert.match(reportMarkdown.body, /\| Apr \| 438 \| 425 \|/)
 
       const docsPage = await requestWithHost(origin, '/en/docs/v2/getting-started/installation/', 'e2e.local')
       assert.equal(docsPage.status, 200)
@@ -469,6 +497,19 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.ok(releaseList.length >= 2)
       assert.equal(releaseList.filter((entry) => entry.status === 'active').length, 1)
 
+      const rolledBack = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/releases/${release.release_id}/activate`, {
+          method: 'POST',
+          headers: auth,
+        }),
+        200,
+        logs.join(''),
+      )
+      assert.equal(rolledBack.active, true)
+      const reportAfterRollback = await requestWithHost(origin, '/en/q2-business-review/', 'e2e.local')
+      assert.equal(reportAfterRollback.status, 200)
+      assert.match(reportAfterRollback.body, /Revenue versus plan/)
+
       const unpublished = await responseJson(
         await fetch(`${origin}/v1/content/${ingested.item.id}/published`, {
           method: 'DELETE',
@@ -514,10 +555,10 @@ Markdown rein, veröffentlichte HTML-Seite raus.
 
       // The built-in env endpoint receives every event: contact, comment
       // submit + approve, and the content lifecycle of this flow — publish,
-      // comment-approval republish, unpublish and republish give 4 release.published,
-      // 5 content.published and 1 content.unpublished — 13 in total. The managed
-      // endpoint, filtered to contact.submitted, receives exactly 1 (fan-out) — 14.
-      const webhooks = await waitForWebhooks(webhookEvents, 14)
+      // comment-approval republish, pointer rollback, unpublish and republish give
+      // 5 release.published; the report adds one initial content.published event.
+      // The managed endpoint receives exactly the contact fan-out, for 16 total.
+      const webhooks = await waitForWebhooks(webhookEvents, 16)
       const envHooks = webhooks.filter((event) => event.path === '/hooks/contentkit-notifications')
       const managedHooks = webhooks.filter((event) => event.path === '/hooks/managed')
       assert.deepEqual(
@@ -556,7 +597,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           delivered = (
             await pool.query("SELECT count(*)::int AS n FROM public.ck_webhook_deliveries WHERE status = 'delivered'")
           ).rows[0].n
-          if (delivered >= 14) break
+          if (delivered >= 16) break
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
         const state = await pool.query(`
@@ -571,9 +612,9 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           // migration (the audio migration broke it once already).
           migrations: listEmbeddedMigrations().length,
           active_releases: 1,
-          events: 13,
+          events: 15,
         })
-        assert.equal(delivered, 14, 'all fan-out deliveries succeed')
+        assert.equal(delivered, 16, 'all fan-out deliveries succeed')
       } finally {
         await pool.end()
       }

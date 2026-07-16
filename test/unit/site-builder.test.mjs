@@ -1142,3 +1142,58 @@ test('wiki, knowledge, landing and changelog layouts receive controlled routes',
   ])
     assert.ok(result.files.has(path), path)
 })
+
+test('report pages emit static themed SVG assets while preserving authored Markdown', async () => {
+  const markdown = `---
+kind: page
+layout: report
+title: Quarterly report
+summary: Auditable business snapshot
+locale: en
+slug: quarterly-report
+translationKey: quarterly-report
+---
+# Quarterly report
+
+:::chart{type="line" title="Revenue trend" description="Revenue for January and February" unit="EUR" span="4"}
+| Month | Revenue |
+|---|---:|
+| Jan | 42 |
+| Feb | 51 |
+:::`
+  const result = await build({
+    site: {
+      ...site,
+      settings: { theme: { tokens: { chart_1: { light: '#2563eb', dark: '#93c5fd' } } } },
+    },
+    revisions: [
+      {
+        id: 'report-revision',
+        item_id: 'report-item',
+        kind: 'page',
+        locale: 'en',
+        translation_key: 'quarterly-report',
+        markdown,
+      },
+    ],
+  })
+  const page = result.files.get('en/quarterly-report/index.html').body.toString()
+  const svgFiles = [...result.files.keys()].filter((path) =>
+    /^assets\/report-chart-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path),
+  )
+  assert.equal(svgFiles.length, 2)
+  for (const path of svgFiles) {
+    assert.equal(result.files.get(path).contentType, 'image/svg+xml')
+    assert.match(result.files.get(path).body.toString(), /^<svg role="img"/)
+  }
+  assert.match(page, /class="report-page"/)
+  assert.match(page, /<picture class="report-chart-picture">/)
+  assert.match(page, /prefers-color-scheme: dark/)
+  assert.match(page, /<details class="report-chart-data">/)
+  assert.doesNotMatch(page, /echarts|report-chart[^"']*\.js/i)
+
+  const twin = result.files.get('en/quarterly-report/index.md').body.toString()
+  assert.match(twin, /:::chart\{type="line"/)
+  assert.match(twin, /\| Jan \| 42 \|/)
+  assert.match(result.files.get('en/llms-full.txt').body.toString(), /:::chart\{type="line"/)
+})

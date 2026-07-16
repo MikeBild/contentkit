@@ -248,6 +248,11 @@ const THEME_COLOR_TOKENS = [
   'border',
   'primary',
   'primary_foreground',
+  'chart_1',
+  'chart_2',
+  'chart_3',
+  'chart_4',
+  'chart_5',
 ]
 
 // Generalizes the old single-token accent injection: every settings.theme.tokens
@@ -1063,6 +1068,7 @@ function extraBody(item, ctx) {
 
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
+  const isReport = item.layout === 'report'
   const locale = item.locale || ctx.locale
   const updated = item.updated_at && item.updated_at > item.published_at ? item.updated_at : ''
   const meta = [
@@ -1096,7 +1102,7 @@ export function contentBody(item, ctx, comments = []) {
   const footer = isPost
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
-  return `<article><header class="container article-header"><div class="eyebrow">${escapeHtml(item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
+  return `<article${isReport ? ' class="report-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isReport ? 'report' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

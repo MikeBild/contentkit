@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { layouts } from '../../src/markdown.mjs'
 import { openApi } from '../../src/openapi.mjs'
 import { VERSION } from '../../src/version.mjs'
 import { createApp } from '../../src/server.mjs'
@@ -34,6 +35,19 @@ test('llms index points to valid local documentation files', async () => {
   assert.ok(links.length > 0)
   for (const link of links) {
     await readFile(join(root, link), 'utf8')
+  }
+})
+
+test('public authoring docs name every runtime layout', async () => {
+  const documents = await Promise.all([
+    readFile(join(root, 'README.md'), 'utf8'),
+    readFile(join(root, 'docs', 'TEMPLATES.md'), 'utf8'),
+    readFile(join(root, 'docs', 'llms-full.txt'), 'utf8'),
+  ])
+  for (const layout of layouts) {
+    for (const document of documents) {
+      assert.match(document, new RegExp('`' + escapeRegExp(layout) + '`'), `${layout} is missing from authoring docs`)
+    }
   }
 })
 

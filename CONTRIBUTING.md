@@ -27,7 +27,7 @@ npm run test:contract   # OpenAPI-to-router contract tests
 npm run test:smoke      # build the real template example corpus
 npm run test:integration  # needs CONTENTKIT_TEST_DATABASE_URL (PostgreSQL 16)
 npm run test:e2e:local  # needs Docker and Bun; builds and runs the binary
-npm run benchmark       # 1,000-document build and access-control benchmark
+npm run benchmark       # 1,000 documents + 200 static charts + access benchmark
 npm run check:embedded-drift
 npm run check:docs-drift
 ```
@@ -47,6 +47,9 @@ Format your changes with `npm run format` before committing.
 - Add or update tests for behavior changes. New route or rendering behavior
   should be covered by a unit test; database behavior belongs in
   `test/integration/`.
+- Report changes must keep directive validation, deterministic SVG unit tests,
+  the real report smoke fixture, compiled-binary E2E assertions and the chart
+  benchmark in sync.
 - If you change the HTTP API, run `npm run docs:gen-openapi` and commit the
   regenerated `docs/openapi.json`; the drift check enforces this.
 - Keep `README.md`, `docs/llms.txt`, `docs/llms-full.txt` and the focused guides

@@ -261,3 +261,99 @@ test('landing-page directives render only controlled content blocks', async () =
   assert.match(html, /class="content-block content-block-hero"/)
   assert.doesNotMatch(html, /<script/)
 })
+
+const reportDoc = (body, fields = '') => `---
+kind: page
+layout: report
+title: Quarterly report
+locale: de
+slug: quarterly-report
+${fields}---
+${body}`
+
+test('report directives produce controlled dashboard markup and normalized chart descriptors', async () => {
+  const result = await renderMarkdown(
+    reportDoc(`::::report-grid{columns="4"}
+::metric{label="Umsatz" value="51 Tsd. €" trend="+21%" tone="positive"}
+
+:::report-card{title="Qualität" span="1"}
+Status: :badge[Stabil]{tone="positive"}
+
+::progress{label="Abdeckung" value="92" max="100"}
+:::
+
+:::chart{type="bar" title="Umsatz nach Monat" description="Umsatz und Ziel im ersten Quartal" unit="Tsd. €" span="2"}
+| Monat | Umsatz | Ziel |
+|---|---:|---:|
+| Jan | 42 | 45 |
+| Feb | 51 | — |
+:::
+::::`),
+  )
+  assert.match(result.html, /class="report-grid report-columns-4"/)
+  assert.match(result.html, /class="report-metric report-tone-positive report-span-1"/)
+  assert.match(result.html, /role="progressbar"[^>]*aria-valuenow="92"/)
+  assert.match(result.html, /class="report-badge report-tone-positive"/)
+  assert.match(result.html, /data-report-chart="0"/)
+  assert.match(result.html, /<details class="report-chart-data">/)
+  assert.equal(result.charts.length, 1)
+  assert.deepEqual(result.charts[0], {
+    id: 0,
+    type: 'bar',
+    title: 'Umsatz nach Monat',
+    description: 'Umsatz und Ziel im ersten Quartal',
+    orientation: 'vertical',
+    stacked: false,
+    unit: 'Tsd. €',
+    headers: ['Monat', 'Umsatz', 'Ziel'],
+    rows: [
+      ['Jan', 42, 45],
+      ['Feb', 51, null],
+    ],
+  })
+})
+
+test('report charts reject malformed tables, unsupported options and unsafe scope expansion', async () => {
+  const rejects = (body, pattern) => assert.rejects(() => renderMarkdown(reportDoc(body)), pattern)
+  await rejects(
+    ':::chart{type="scatter" title="T" description="D"}\n| A | B |\n|-|-|\n| x | 1 |\n:::',
+    /chart type must be/,
+  )
+  await rejects(
+    ':::chart{type="line" title="T" description="D" orientation="horizontal"}\n| A | B |\n|-|-|\n| x | 1 |\n:::',
+    /orientation is only supported/,
+  )
+  await rejects(
+    ':::chart{type="donut" title="T" description="D"}\n| A | B | C |\n|-|-|-|\n| x | 1 | 2 |\n:::',
+    /exactly one category and one value/,
+  )
+  await rejects(
+    ':::chart{type="bar" title="T" description="D"}\n| A | B |\n|-|-|\n| x | nope |\n:::',
+    /must be a finite number/,
+  )
+  await rejects(
+    ':::chart{type="bar" title="T" description="D" option="raw"}\n| A | B |\n|-|-|\n| x | 1 |\n:::',
+    /unknown attribute "option"/,
+  )
+  await rejects(':::unknown{title="T"}\nText\n:::', /unknown report directive/)
+
+  await assert.rejects(
+    () => renderMarkdown('---\ntitle: Normal page\nlocale: de\nslug: normal\n---\n::metric{label="X" value="1"}'),
+    /requires frontmatter layout: report/,
+  )
+})
+
+test('report chart resource limits fail at write time', async () => {
+  const rows = Array.from({ length: 201 }, (_, index) => `| row-${index} | ${index} |`).join('\n')
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        reportDoc(`:::chart{type="bar" title="Too many" description="Too many rows"}
+| Name | Value |
+|-|-:|
+${rows}
+:::`),
+      ),
+    /at most 200 data rows/,
+  )
+})

@@ -237,7 +237,7 @@ export function openApi(config) {
         patch: {
           summary: 'Update site metadata, settings and domains',
           description:
-            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),
@@ -386,7 +386,7 @@ export function openApi(config) {
         post: {
           summary: 'Create content and its first draft revision',
           description:
-            'Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing` and `changelog`. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference). Malformed values fail with 422.',
+            'Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` and `report`. A report can compose sanitized `report-grid`, `report-card`, `metric`, `badge`, `progress` and `chart` directives; a `chart` contains exactly one Markdown table and renders to static light/dark SVG assets without client JavaScript. Supported chart types are `bar`, `line`, `area` and `donut`; malformed directives, non-numeric values or resource-limit violations fail with 422. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference).',
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
@@ -505,7 +505,7 @@ export function openApi(config) {
         put: {
           summary: 'Create another immutable revision',
           description:
-            'Accepts the same controlled-layout, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
+            'Accepts the same controlled-layout, report-directive, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,

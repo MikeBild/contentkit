@@ -587,7 +587,13 @@ function publishedRepo() {
     ),
     revision('rev-2', 'two', 'Two', ['a']),
     revision('rev-3', 'three', 'Three', ['b']),
-    revision('rev-5', 'five', 'Five', []),
+    revision(
+      'rev-5',
+      'five',
+      'Five',
+      [],
+      '---\nkind: page\nlayout: report\ntitle: Five\nlocale: de\nslug: five\n---\n:::chart{type="bar" title="Werte" description="Werte nach Monat"}\n| Monat | Wert |\n|-|-:|\n| Jan | 5 |\n:::',
+    ),
   ]
   const db = {
     async select(table, query = {}) {
@@ -702,6 +708,14 @@ test('getPublished returns the merged document with markdown verbatim and on-dem
   assert.match(doc.html, /<strong>Hello<\/strong>/)
   assert.equal(doc.source_sha256, 'sha-rev-1')
   assert.deepEqual(doc.metadata, { kind: 'post', title: 'One', extra: { series: 'one' } })
+})
+
+test('getPublished materializes report charts as self-contained data images', async () => {
+  const repo = publishedRepo()
+  const doc = await repo.getPublished('site-1', 'page', 'de', 'five')
+  assert.match(doc.html, /<picture class="report-chart-picture">/)
+  assert.match(doc.html, /data:image\/svg\+xml;base64,/)
+  assert.doesNotMatch(doc.html, /data-report-chart/)
 })
 
 test('getPublished is null for drafts and for a kind/locale/slug mismatch', async () => {

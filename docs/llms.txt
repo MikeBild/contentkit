@@ -3,8 +3,9 @@
 A robots.txt-style index of the Contentkit documentation for LLMs. Contentkit is
 an API-first mini-CMS that turns Markdown revisions into immutable multilingual
 static website releases for portfolios, blogs, product documentation, wikis,
-knowledge bases, product pages and changelogs. Each
-entry below has a title, path and one-line summary. For the complete
+knowledge bases, product pages, changelogs and visual reports. Report and
+dashboard pages use the same Markdown/release model and render charts to static
+SVG assets. Each entry below has a title, path and one-line summary. For the complete
 documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-full.txt).
 
 > Local API: http://127.0.0.1:4050 — OpenAPI 3.1 spec at `/openapi.json`.
@@ -20,6 +21,10 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - [Example post](examples/post.de.md): German Markdown blog post with supported frontmatter.
 - [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
   versioned routes, hierarchy fields and real English Markdown documents.
+- [Reports and dashboards](docs/REPORTS.md): `layout: report`, controlled visual
+  primitives, table-driven static charts, theme tokens and resource limits.
+- [Example report](examples/reports/quarterly.en.md): Complete quarterly report
+  with metrics, cards, progress and all four chart types.
 - [Reader access control](docs/ACCESS_CONTROL.md): Personal reader accounts,
   groups, release-scoped exact/prefix policies, sessions and protected discovery.
 - [Benchmarks](docs/BENCHMARKS.md): Reproducible 1,000-document corpus, results
@@ -66,8 +71,12 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   site key.
 - Controlled presentation: `portfolio`, `product-docs`, `wiki`,
   `knowledge-base`, `product` and `changelog` site presets; `standard`, `docs`,
-  `wiki`, `knowledge`, `landing` and `changelog` page layouts; hierarchical
+  `wiki`, `knowledge`, `landing`, `changelog` and `report` page layouts; hierarchical
   navigation and current/archived documentation versions.
+- Visual reports: shadcn-style grids, cards, metrics, badges and progress;
+  `bar`, `line`, `area` and `donut` charts take one Markdown table and become
+  accessible light/dark SVG assets at build time. Source tables remain visible;
+  no client chart JavaScript or executable chart configuration is published.
 - Reader access: personal usernames and scrypt passwords, named groups,
   exact/prefix path policies and release-scoped authorization. Protected pages
   and media require an HttpOnly reader session and are omitted from public
@@ -79,7 +88,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   links, hreflang, OpenGraph, Twitter cards and JSON-LD (BlogPosting,
   BreadcrumbList, FAQPage).
 - AI readability (GEO): per-locale `llms.txt`/`llms-full.txt`, a raw Markdown
-  twin per post (`.../index.md`), an AI share row ("copy as Markdown", "open in
+  twin per post and report (`.../index.md`), an AI share row on posts ("copy as Markdown", "open in
   Claude/ChatGPT" — the reader's own assistant, no site→AI data flow) and
   authored `tldr`/`faq` frontmatter rendered on the page and in JSON-LD.
 - Publishing: expiring previews, atomic releases, scheduled publishing through
@@ -104,7 +113,8 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   sites keep their static client-side search. See llms-full section 4.
 - Theming: per-site design tokens via `settings.theme.tokens` (allowlisted
   stylesheet custom properties, scalar or `{ light, dark }` values,
-  `settings.accent` stays the primary shorthand) plus a size-capped
+  `chart_1` through `chart_5` color report SVGs, `settings.accent` stays the
+  primary shorthand) plus a size-capped
   `settings.theme.custom_css` escape hatch — a theme is a token assignment,
   never a template override. See llms-full section 5.
 
@@ -146,7 +156,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   integration and local binary end-to-end verification.
 - `npm run test:contract`, `npm run test:smoke`: API/router contract tests and
   a real-document multi-template build.
-- `npm run benchmark`: deterministic 1,000-document build, access-resolution
-  and password-verification benchmark.
+- `npm run benchmark`: deterministic 1,000-document build plus a separately
+  timed 50-report/200-chart build, access resolution and password verification.
 - `npm run docs:gen-openapi` updates the committed OpenAPI snapshot; `npm run
   check:docs-drift` fails when OpenAPI and LLM docs drift apart.

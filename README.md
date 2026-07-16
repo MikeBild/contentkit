@@ -6,7 +6,7 @@
 
 **Markdown in, multilingual static website out.** Contentkit is an API-first
 mini-CMS for portfolios, blogs, product documentation, wikis, knowledge bases,
-product pages and changelogs: you upload Markdown through an HTTP API,
+product pages, changelogs and visual reports: you upload Markdown through an HTTP API,
 Contentkit renders it into an immutable static-site release and activates it
 atomically — with instant, pointer-based rollback.
 
@@ -55,6 +55,9 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   media, with personal usernames, salted scrypt passwords, groups and revocable
   sessions. Protected content is excluded from public discovery outputs.
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
+- Responsive reports and dashboards from Markdown: shadcn-style metric cards,
+  status badges and progress, plus table-driven bar, line, area and donut charts
+  rendered server-side as accessible light/dark SVGs with no client chart runtime.
 - Locale-prefixed routes, translation alternates, a year-grouped archive with
   client-side tag filtering, a tag index and tag pages.
 - Reading time, related posts by tag similarity, older/newer navigation and a
@@ -82,7 +85,8 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   `GET /v1/sites/{site}/search` — published sites keep their client-side search.
 - Per-site theming as structured design tokens: `settings.theme.tokens` fills
   the shared stylesheet's custom properties (allowlisted, light/dark aware,
-  `settings.accent` stays the primary shorthand) and a size-capped
+  including `chart_1` through `chart_5`; `settings.accent` stays the primary
+  shorthand) and a size-capped
   `settings.theme.custom_css` escape hatch — no template overrides.
 
 ## How it works
@@ -185,12 +189,14 @@ uploaded executable code.
 }
 ```
 
-A Markdown page can set `layout: docs`, `wiki`, `knowledge`, `landing`,
-`changelog` or `standard`. Documentation hierarchy uses `docKey`,
+A Markdown page can use the controlled layouts `standard`, `docs`, `wiki`,
+`knowledge`, `landing`, `changelog` or `report`. Documentation hierarchy uses `docKey`,
 `docsVersion`, `parent`, `navTitle` and `navOrder`. See
 [docs/TEMPLATES.md](docs/TEMPLATES.md) for routes, complete frontmatter and the
 real example documents in `examples/docs`, `examples/wiki`,
-`examples/knowledge`, `examples/landing` and `examples/changelog`.
+`examples/knowledge`, `examples/landing`, `examples/changelog` and
+`examples/reports`. The focused [report guide](docs/REPORTS.md) documents every
+dashboard primitive, chart option, theme token and resource limit.
 
 ## Protect reader content
 
@@ -265,10 +271,10 @@ npm audit
 
 `test:e2e:local` requires Docker and Bun. It boots disposable PostgreSQL,
 executes the compiled single binary against a local storage/webhook boundary,
-uploads the real documentation examples, and verifies draft, preview, release,
+uploads the real documentation and report examples, and verifies draft, preview, release,
 reader login, protected discovery/delivery, custom-domain delivery and signed
 notification delivery. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for the
-1,000-document performance corpus and CI regression budgets.
+1,000-document and 200-chart performance corpora and CI regression budgets.
 
 Add migrations as ordered `.sql` files plus journal entries under
 `src/db/migrations/`, then run `npm run db:gen-embedded`. The build runs the
@@ -287,6 +293,7 @@ signed following the Standard Webhooks specification.
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — build, systemd, secrets, release pipeline
 - [docs/WEBHOOKS.md](docs/WEBHOOKS.md) — events, signature verification, scheduled publishing
 - [docs/TEMPLATES.md](docs/TEMPLATES.md) — presets, layouts, routes and examples
+- [docs/REPORTS.md](docs/REPORTS.md) — Markdown reports, dashboard components and static charts
 - [docs/ACCESS_CONTROL.md](docs/ACCESS_CONTROL.md) — reader accounts, groups and protected areas
 - [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — reproducible corpus and CI budgets
 

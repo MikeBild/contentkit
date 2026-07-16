@@ -16,12 +16,156 @@ import { visit } from 'unist-util-visit'
 import { assertSlug, excerpt, parseIsoDate, slugify } from './utils.mjs'
 
 const kinds = new Set(['page', 'post', 'project'])
-export const layouts = new Set(['standard', 'docs', 'wiki', 'knowledge', 'landing', 'changelog'])
+export const layouts = new Set(['standard', 'docs', 'wiki', 'knowledge', 'landing', 'changelog', 'report'])
 const accessSlug = /^[a-z0-9][a-z0-9-]{0,63}$/
 
-function directives() {
+const REPORT_DIRECTIVES = new Set(['report-grid', 'report-card', 'metric', 'badge', 'progress', 'chart'])
+const REPORT_TONES = new Set(['neutral', 'positive', 'warning', 'negative'])
+const REPORT_CHART_TYPES = new Set(['bar', 'line', 'area', 'donut'])
+const REPORT_MAX_CHARTS = 24
+const REPORT_MAX_ROWS = 200
+const REPORT_MAX_SERIES = 8
+
+const directiveError = (message) => Object.assign(new Error(message), { statusCode: 422 })
+
+function directiveAttributes(node, allowed, required = []) {
+  const attributes = node.attributes || {}
+  const unknown = Object.keys(attributes).find((key) => !allowed.includes(key))
+  if (unknown) throw directiveError(`${node.name} directive has unknown attribute "${unknown}"`)
+  for (const key of required) {
+    if (!String(attributes[key] || '').trim()) throw directiveError(`${node.name} directive requires ${key}`)
+  }
+  return attributes
+}
+
+function boundedText(value, field, max) {
+  const text = String(value || '').trim()
+  if (text.length > max) throw directiveError(`${field} must be at most ${max} characters`)
+  return text
+}
+
+function integerAttribute(value, field, { min, max, fallback = null } = {}) {
+  if (value == null || value === '') return fallback
+  if (!/^\d+$/.test(String(value)) || Number(value) < min || Number(value) > max) {
+    throw directiveError(`${field} must be an integer from ${min} to ${max}`)
+  }
+  return Number(value)
+}
+
+function booleanAttribute(value, field, fallback = false) {
+  if (value == null || value === '') return fallback
+  if (!['true', 'false'].includes(String(value))) throw directiveError(`${field} must be true or false`)
+  return String(value) === 'true'
+}
+
+function toneAttribute(value, field = 'tone') {
+  const tone = String(value || 'neutral')
+  if (!REPORT_TONES.has(tone)) {
+    throw directiveError(`${field} must be one of ${[...REPORT_TONES].join(', ')}`)
+  }
+  return tone
+}
+
+function reportNode(tagName, className, children = [], properties = {}) {
+  return {
+    type: 'reportElement',
+    children,
+    data: { hName: tagName, hProperties: { className, ...properties } },
+  }
+}
+
+function textNode(tagName, className, value) {
+  return reportNode(tagName, className, [{ type: 'text', value: String(value) }])
+}
+
+function spanClass(attributes) {
+  const span = integerAttribute(attributes.span, 'span', { min: 1, max: 4, fallback: 1 })
+  return `report-span-${span}`
+}
+
+function tableCellText(cell) {
+  return headingText(cell).replace(/\s+/g, ' ').trim()
+}
+
+function chartDescriptor(node, charts) {
+  if (charts.length >= REPORT_MAX_CHARTS) {
+    throw directiveError(`report allows at most ${REPORT_MAX_CHARTS} charts`)
+  }
+  const attributes = directiveAttributes(
+    node,
+    ['type', 'title', 'description', 'orientation', 'stacked', 'unit', 'span'],
+    ['type', 'title', 'description'],
+  )
+  const type = String(attributes.type)
+  if (!REPORT_CHART_TYPES.has(type)) {
+    throw directiveError(`chart type must be one of ${[...REPORT_CHART_TYPES].join(', ')}`)
+  }
+  const orientation = String(attributes.orientation || 'vertical')
+  if (!['vertical', 'horizontal'].includes(orientation)) {
+    throw directiveError('chart orientation must be vertical or horizontal')
+  }
+  if (type !== 'bar' && attributes.orientation != null) {
+    throw directiveError('chart orientation is only supported for bar charts')
+  }
+  const stacked = booleanAttribute(attributes.stacked, 'chart stacked')
+  if (stacked && !['bar', 'area'].includes(type)) {
+    throw directiveError('chart stacked is only supported for bar and area charts')
+  }
+  if (node.children?.length !== 1 || node.children[0].type !== 'table') {
+    throw directiveError('chart directive must contain exactly one Markdown table')
+  }
+  const table = node.children[0]
+  const [head, ...body] = table.children || []
+  if (!head || !body.length) throw directiveError('chart table needs a header and at least one data row')
+  if (body.length > REPORT_MAX_ROWS) throw directiveError(`chart table allows at most ${REPORT_MAX_ROWS} data rows`)
+  const headers = head.children.map(tableCellText)
+  if (headers.length < 2 || headers.some((entry) => !entry)) {
+    throw directiveError('chart table needs a category column and at least one named value column')
+  }
+  if (headers.length - 1 > REPORT_MAX_SERIES) {
+    throw directiveError(`chart table allows at most ${REPORT_MAX_SERIES} data series`)
+  }
+  if (type === 'donut' && headers.length !== 2) {
+    throw directiveError('donut chart table needs exactly one category and one value column')
+  }
+  const rows = body.map((row, rowIndex) => {
+    if (row.children.length !== headers.length) {
+      throw directiveError(`chart table row ${rowIndex + 1} must have ${headers.length} cells`)
+    }
+    const cells = row.children.map(tableCellText)
+    if (!cells[0]) throw directiveError(`chart table row ${rowIndex + 1} needs a category`)
+    return [
+      cells[0],
+      ...cells.slice(1).map((value, valueIndex) => {
+        if (value === '—') return null
+        if (!value)
+          throw directiveError(`chart table row ${rowIndex + 1}, column ${valueIndex + 2} needs a number or —`)
+        const number = Number(value)
+        if (!Number.isFinite(number)) {
+          throw directiveError(`chart table row ${rowIndex + 1}, column ${valueIndex + 2} must be a finite number or —`)
+        }
+        return number
+      }),
+    ]
+  })
+  const chart = {
+    id: charts.length,
+    type,
+    title: boundedText(attributes.title, 'chart title', 160),
+    description: boundedText(attributes.description, 'chart description', 500),
+    orientation,
+    stacked,
+    unit: boundedText(attributes.unit, 'chart unit', 16),
+    headers,
+    rows,
+  }
+  charts.push(chart)
+  return chart
+}
+
+function reportDirectives(meta, charts) {
   return (tree) => {
-    visit(tree, ['containerDirective', 'leafDirective'], (node) => {
+    visit(tree, ['containerDirective', 'leafDirective', 'textDirective'], (node) => {
       const data = node.data || (node.data = {})
       if (['note', 'tip', 'warning'].includes(node.name)) {
         data.hName = 'aside'
@@ -29,6 +173,89 @@ function directives() {
       } else if (['hero', 'features', 'steps', 'cta'].includes(node.name)) {
         data.hName = 'section'
         data.hProperties = { className: ['content-block', `content-block-${node.name}`] }
+      } else if (REPORT_DIRECTIVES.has(node.name)) {
+        if (meta.layout !== 'report') throw directiveError(`${node.name} directive requires frontmatter layout: report`)
+        if (node.name === 'report-grid') {
+          const attributes = directiveAttributes(node, ['columns'])
+          const columns = integerAttribute(attributes.columns, 'report-grid columns', { min: 1, max: 4, fallback: 4 })
+          data.hName = 'div'
+          data.hProperties = { className: ['report-grid', `report-columns-${columns}`] }
+        } else if (node.name === 'report-card') {
+          const attributes = directiveAttributes(node, ['title', 'span'], ['title'])
+          const title = boundedText(attributes.title, 'report-card title', 160)
+          data.hName = 'section'
+          data.hProperties = { className: ['report-card', spanClass(attributes)] }
+          node.children.unshift({ type: 'heading', depth: 3, children: [{ type: 'text', value: title }] })
+        } else if (node.name === 'metric') {
+          const attributes = directiveAttributes(node, ['label', 'value', 'trend', 'tone', 'span'], ['label', 'value'])
+          const tone = toneAttribute(attributes.tone, 'metric tone')
+          data.hName = 'article'
+          data.hProperties = { className: ['report-metric', `report-tone-${tone}`, spanClass(attributes)] }
+          node.type = 'containerDirective'
+          node.children = [
+            textNode('span', ['report-metric-label'], boundedText(attributes.label, 'metric label', 120)),
+            textNode('strong', ['report-metric-value'], boundedText(attributes.value, 'metric value', 120)),
+            ...(attributes.trend
+              ? [textNode('span', ['report-metric-trend'], boundedText(attributes.trend, 'metric trend', 80))]
+              : []),
+          ]
+        } else if (node.name === 'badge') {
+          const attributes = directiveAttributes(node, ['tone'])
+          const tone = toneAttribute(attributes.tone, 'badge tone')
+          if (!headingText(node).trim()) throw directiveError('badge directive needs visible text')
+          data.hName = 'span'
+          data.hProperties = { className: ['report-badge', `report-tone-${tone}`] }
+        } else if (node.name === 'progress') {
+          const attributes = directiveAttributes(node, ['label', 'value', 'max', 'span'], ['label', 'value'])
+          const max = Number(attributes.max ?? 100)
+          const value = Number(attributes.value)
+          if (!Number.isFinite(max) || max <= 0) throw directiveError('progress max must be a positive number')
+          if (!Number.isFinite(value) || value < 0 || value > max) {
+            throw directiveError('progress value must be a number from 0 to max')
+          }
+          const percentage = Number(((value / max) * 100).toFixed(4))
+          data.hName = 'div'
+          data.hProperties = {
+            className: ['report-progress', spanClass(attributes)],
+            role: 'progressbar',
+            ariaValueMin: 0,
+            ariaValueMax: max,
+            ariaValueNow: value,
+            ariaLabel: boundedText(attributes.label, 'progress label', 120),
+          }
+          node.type = 'containerDirective'
+          node.children = [
+            reportNode(
+              'div',
+              ['report-progress-head'],
+              [
+                textNode('span', ['report-progress-label'], attributes.label),
+                textNode('span', ['report-progress-value'], `${value}/${max}`),
+              ],
+            ),
+            reportNode(
+              'div',
+              ['report-progress-track'],
+              [reportNode('span', ['report-progress-fill'], [], { style: `width:${percentage}%` })],
+            ),
+          ]
+        } else if (node.name === 'chart') {
+          const chart = chartDescriptor(node, charts)
+          const table = node.children[0]
+          data.hName = 'figure'
+          data.hProperties = { className: ['report-chart', spanClass(node.attributes || {})] }
+          node.children = [
+            reportNode('div', ['report-chart-visual'], [], { dataReportChart: chart.id }),
+            textNode('figcaption', ['report-chart-caption'], chart.title),
+            reportNode(
+              'details',
+              ['report-chart-data'],
+              [textNode('summary', ['report-chart-summary'], 'Data'), table],
+            ),
+          ]
+        }
+      } else if (meta.layout === 'report') {
+        throw directiveError(`unknown report directive "${node.name}"`)
       }
     })
   }
@@ -114,18 +341,49 @@ function mermaidBlocks() {
 
 const schema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames || []), 'aside', 'input', 'span', 'div', 'pre'],
+  tagNames: [
+    ...new Set([
+      ...(defaultSchema.tagNames || []),
+      'aside',
+      'input',
+      'span',
+      'div',
+      'pre',
+      'article',
+      'section',
+      'figure',
+      'figcaption',
+      'details',
+      'summary',
+      'strong',
+    ]),
+  ],
   attributes: {
     ...defaultSchema.attributes,
-    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'ariaHidden', 'ariaLabel', 'role'],
+    '*': [
+      ...(defaultSchema.attributes?.['*'] || []),
+      'className',
+      'ariaHidden',
+      'ariaLabel',
+      'ariaValueMin',
+      'ariaValueMax',
+      'ariaValueNow',
+      'role',
+    ],
     a: [...(defaultSchema.attributes?.a || []), 'dataFootnoteRef', 'dataFootnoteBackref'],
     input: ['type', 'checked', 'disabled'],
     code: ['className', 'style'],
     pre: ['className', 'style'],
     span: ['className', 'style'],
-    div: ['className', 'style'],
+    div: ['className', 'style', 'dataReportChart'],
     aside: ['className', 'role'],
     section: ['className'],
+    article: ['className'],
+    figure: ['className'],
+    figcaption: ['className'],
+    details: ['className', 'open'],
+    summary: ['className'],
+    strong: ['className'],
   },
 }
 
@@ -356,6 +614,7 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
   const parsed = parseFrontmatter(markdown)
   const warnings = []
   const meta = validateFrontmatter(parsed.data, { lenient, warnings })
+  const charts = []
   if (!meta.summary) meta.summary = excerpt(parsed.content.replace(/[`#>*_[\]()!-]/g, ' '))
 
   const processor = unified()
@@ -364,7 +623,7 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
     .use(remarkGfm)
     .use(remarkMath)
     .use(remarkDirective)
-    .use(directives)
+    .use(reportDirectives, meta, charts)
     .use(dropRedundantTitle, meta.title)
     .use(remarkRehype)
     .use(mermaidBlocks)
@@ -376,5 +635,5 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
     .use(rehypeStringify)
 
   const html = String(await processor.process(parsed.content))
-  return { meta, html, source: parsed.content, hasMermaid: /class="mermaid"/.test(html), warnings }
+  return { meta, html, source: parsed.content, hasMermaid: /class="mermaid"/.test(html), charts, warnings }
 }

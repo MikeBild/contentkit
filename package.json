@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "API-first Markdown mini-CMS publishing immutable multilingual static-site releases",
   "private": true,
   "type": "module",
@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@shikijs/rehype": "^4.3.1",
+    "echarts": "^6.1.0",
     "katex": "^0.17.0",
     "mermaid": "^11.12.2",
     "pg": "^8.16.3",

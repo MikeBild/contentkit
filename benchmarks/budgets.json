@@ -2,6 +2,12 @@
   "corpus_documents": 1000,
   "build_ms_max": 6000,
   "rss_mb_max": 1024,
+  "report_documents": 50,
+  "report_charts": 200,
+  "report_rows_per_chart": 24,
+  "report_build_ms_max": 8000,
+  "charts_per_second_min": 25,
+  "report_rss_mb_max": 1024,
   "access_resolutions": 100000,
   "access_resolution_ms_max": 600,
   "password_verify_ms_max": 250
