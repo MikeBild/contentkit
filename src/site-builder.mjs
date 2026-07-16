@@ -8,16 +8,16 @@ import {
   commentsEnabled,
   feedbackEnabled,
   contactBody,
-  contentBody,
   dictionary,
   extraFieldText,
-  homeBody,
+  presetHomeBody,
   layout,
   listingBody,
   blogcastPage,
   searchBody,
   tagCounts,
   tagsBody,
+  structuredContentBody,
 } from './templates.mjs'
 import { escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
 
@@ -27,10 +27,78 @@ const text = (body, contentType = 'text/html; charset=utf-8', cacheControl = 'pu
   cacheControl,
 })
 
+const PRESET_LAYOUT = {
+  portfolio: 'standard',
+  'product-docs': 'docs',
+  wiki: 'wiki',
+  'knowledge-base': 'knowledge',
+  product: 'landing',
+  changelog: 'changelog',
+}
+
 function route(item) {
   if (item.kind === 'post') return `/${item.locale}/blog/${item.slug}/`
   if (item.kind === 'project') return `/${item.locale}/projects/${item.slug}/`
+  const nested = (item.route_segments || [item.slug]).join('/')
+  if (item.layout === 'docs') return `/${item.locale}/docs/${item.docs_version}/${nested}/`
+  if (item.layout === 'wiki') return `/${item.locale}/wiki/${nested}/`
+  if (item.layout === 'knowledge') return `/${item.locale}/help/${nested}/`
+  if (item.layout === 'changelog') return `/${item.locale}/changelog/${item.slug}/`
   return `/${item.locale}/${item.slug}/`
+}
+
+function assignContentRoutes(items, site) {
+  const preset = site.settings?.presentation?.preset || 'portfolio'
+  const versions = site.settings?.presentation?.docs?.versions || []
+  const versionIds = new Set(versions.map((entry) => entry.id))
+  for (const item of items) {
+    item.layout = item.layout || (item.kind === 'page' ? PRESET_LAYOUT[preset] : 'standard') || 'standard'
+    if (item.layout === 'docs') {
+      if (!item.doc_key || !item.docs_version)
+        throw Object.assign(new Error(`docs page "${item.title}" needs docKey and docsVersion`), { statusCode: 422 })
+      if (!versionIds.has(item.docs_version))
+        throw Object.assign(new Error(`unknown docs version "${item.docs_version}"`), { statusCode: 422 })
+    }
+    if (['wiki', 'knowledge'].includes(item.layout)) item.doc_key ||= item.translation_key
+  }
+  const treeItems = items.filter((item) => ['docs', 'wiki', 'knowledge'].includes(item.layout))
+  const groups = new Map()
+  for (const item of treeItems) {
+    const key = `${item.locale}:${item.layout}:${item.docs_version || ''}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(item)
+  }
+  for (const group of groups.values()) {
+    const byKey = new Map()
+    for (const item of group) {
+      if (byKey.has(item.doc_key))
+        throw Object.assign(new Error(`duplicate docKey "${item.doc_key}"`), { statusCode: 422 })
+      byKey.set(item.doc_key, item)
+    }
+    const resolve = (item, visiting = new Set()) => {
+      if (item.route_segments) return item.route_segments
+      if (visiting.has(item.doc_key))
+        throw Object.assign(new Error(`content hierarchy cycle at "${item.doc_key}"`), { statusCode: 422 })
+      if (!item.parent) return (item.route_segments = [item.slug])
+      const parent = byKey.get(item.parent)
+      if (!parent)
+        throw Object.assign(new Error(`parent "${item.parent}" not found for "${item.doc_key}"`), { statusCode: 422 })
+      return (item.route_segments = [...resolve(parent, new Set(visiting).add(item.doc_key)), item.slug])
+    }
+    for (const item of group) resolve(item)
+  }
+  const urls = new Set()
+  for (const item of items) {
+    item.url = route(item)
+    if (urls.has(item.url)) throw Object.assign(new Error(`duplicate generated URL ${item.url}`), { statusCode: 422 })
+    urls.add(item.url)
+  }
+}
+
+function matchingRule(rules, pathname) {
+  return [...rules]
+    .filter((rule) => (rule.match === 'exact' ? pathname === rule.path : pathname.startsWith(rule.path)))
+    .sort((a, b) => Number(b.match === 'exact') - Number(a.match === 'exact') || b.path.length - a.path.length)[0]
 }
 
 function absolute(site, path) {
@@ -343,6 +411,8 @@ export async function buildSite({
   revisions,
   comments = [],
   audio = [],
+  accessRules = [],
+  accessGroups = [],
   now = new Date(),
   logger,
 }) {
@@ -371,9 +441,21 @@ export async function buildSite({
       // opt-out (audio: false) wins even over an already-generated asset.
       audio: result.meta.audio === false ? null : audioByItem.get(revision.item_id) || null,
     }
-    item.url = route(item)
-    item.canonical = absolute(site, item.url)
     rendered.push(item)
+  }
+
+  assignContentRoutes(rendered, site)
+  const knownGroups = new Set(accessGroups.map((group) => group.slug))
+  for (const item of rendered) {
+    if ((item.access || []).some((group) => !knownGroups.has(group))) {
+      throw Object.assign(new Error(`unknown access group on "${item.title}"`), { statusCode: 422 })
+    }
+    const authored = item.access?.length
+      ? { match: 'exact', path: item.url, group_slugs: item.access, user_ids: [], content_item_id: item.item_id }
+      : null
+    item.access_rule = authored || matchingRule(accessRules, item.url) || null
+    item.protected = Boolean(item.access_rule)
+    item.canonical = absolute(site, item.url)
   }
 
   const groups = new Map()
@@ -384,15 +466,25 @@ export async function buildSite({
   }
   for (const group of groups.values()) {
     for (const item of group) {
-      item.translations = group.map((alt) => ({ locale: alt.locale, canonical: alt.canonical }))
+      // A public page must never advertise a protected translation through
+      // hreflang or the sitemap. Private pages are already reader-gated and may
+      // still link to their translated counterparts.
+      item.translations = group
+        .filter((alternate) => item.protected || !alternate.protected)
+        .map((alternate) => ({ locale: alternate.locale, canonical: alternate.canonical }))
     }
   }
 
   const sitemapItems = []
+  const protectedPath = (pathname) =>
+    rendered.some((item) => item.url === pathname && item.protected) || Boolean(matchingRule(accessRules, pathname))
   // Static per-locale routes (home, listings, contact …) exist for every
   // configured locale, so their hreflang alternates can be derived directly.
   const staticAlternates = (path) =>
-    locales.map((l) => ({ locale: l.locale, canonical: absolute(site, path(l.locale)) }))
+    locales
+      .map((l) => ({ locale: l.locale, pathname: path(l.locale) }))
+      .filter((entry) => !protectedPath(entry.pathname))
+      .map((entry) => ({ locale: entry.locale, canonical: absolute(site, entry.pathname) }))
   const lastUpdated = (items) =>
     items
       .map((item) => item.updated_at || item.published_at)
@@ -403,17 +495,19 @@ export async function buildSite({
     const locale = localeConfig.locale
     const t = dictionary(locale)
     const local = rendered.filter((item) => item.locale === locale)
+    const publicLocal = local.filter((item) => !item.protected)
     // `local` still drives per-item page generation below, so a noindex item keeps
     // its own page. It must not reach any *listing*, though: blog, archive, tag
     // pages, the tag index, RSS, related posts and prev/next all read these two
     // arrays, and a draft has no business being syndicated or recommended.
-    const posts = local
+    const posts = publicLocal
       .filter((item) => item.kind === 'post' && !item.noindex)
       .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)))
-    const projects = local
+    const projects = publicLocal
       .filter((item) => item.kind === 'project' && !item.noindex)
       .sort((a, b) => Number(b.featured) - Number(a.featured))
-    const pages = local.filter((item) => item.kind === 'page')
+    const pages = publicLocal.filter((item) => item.kind === 'page')
+    const allPages = local.filter((item) => item.kind === 'page')
 
     // Related posts and prev/next are read off `posts`, which excludes noindex
     // items — so a draft is never recommended, and a draft's own page gets no
@@ -460,7 +554,7 @@ export async function buildSite({
     // Whether this locale's blogcast feed will exist at all (same condition as
     // the blogcast.xml emit below) — templates hide every blogcast link without it.
     const blogcast = site.settings?.audio?.enabled === true && posts.some((post) => post.audio)
-    const base = { site, locale, t, posts, projects, pages, assets, now, blogcast }
+    const base = { site, locale, t, posts, projects, pages, allPages, assets, now, blogcast }
     const personData = {
       '@context': 'https://schema.org',
       '@type': 'Person',
@@ -480,7 +574,7 @@ export async function buildSite({
             canonical: absolute(site, homePath),
             currentPath: homePath,
           },
-          homeBody(base),
+          presetHomeBody(base),
           { structured: personData },
         ),
       ),
@@ -589,7 +683,7 @@ export async function buildSite({
       },
       { canonical: absolute(site, `/${locale}/contact/`), translations: staticAlternates((l) => `/${l}/contact/`) },
     )
-    const searchIndexItems = local.filter((item) => !item.noindex)
+    const searchIndexItems = publicLocal.filter((item) => !item.noindex)
     const includeSearchBody = site.settings?.search?.index_body === true
     files.set(
       `${locale}/search-index.json`,
@@ -609,6 +703,78 @@ export async function buildSite({
       ),
     )
     files.set(`${locale}/feed.xml`, text(rss(site, locale, posts), 'application/rss+xml; charset=utf-8'))
+
+    const collections = [
+      ['wiki', `/${locale}/wiki/`, 'Wiki'],
+      ['knowledge', `/${locale}/help/`, locale.startsWith('de') ? 'Hilfe & Wissen' : 'Help center'],
+      ['changelog', `/${locale}/changelog/`, 'Changelog'],
+    ]
+    for (const [contentLayout, collectionPath, title] of collections) {
+      const items = pages.filter((item) => item.layout === contentLayout)
+      const presetForLayout = { wiki: 'wiki', knowledge: 'knowledge-base', changelog: 'changelog' }[contentLayout]
+      if (!items.length && site.settings?.presentation?.preset !== presetForLayout) continue
+      files.set(
+        `${collectionPath.slice(1)}index.html`,
+        text(
+          layout(
+            {
+              ...base,
+              title,
+              description: title,
+              canonical: absolute(site, collectionPath),
+              currentPath: collectionPath,
+            },
+            listingBody(title, items),
+          ),
+        ),
+      )
+      sitemapItems.push({ canonical: absolute(site, collectionPath), updated_at: lastUpdated(items) })
+    }
+
+    const docVersions = site.settings?.presentation?.docs?.versions || []
+    if (docVersions.length) {
+      const docsRoot = `/${locale}/docs/`
+      const currentVersion = docVersions.find((entry) => entry.status === 'current')
+      const currentDocs = pages.filter((item) => item.layout === 'docs' && item.docs_version === currentVersion?.id)
+      files.set(
+        `${locale}/docs/index.html`,
+        text(
+          layout(
+            {
+              ...base,
+              title: 'Documentation',
+              description: site.description,
+              canonical: absolute(site, docsRoot),
+              currentPath: docsRoot,
+            },
+            listingBody('Documentation', currentDocs),
+          ),
+        ),
+      )
+      sitemapItems.push({ canonical: absolute(site, docsRoot), updated_at: lastUpdated(currentDocs) })
+      for (const version of docVersions) {
+        const versionPath = `/${locale}/docs/${version.id}/`
+        const versionPages = pages.filter((item) => item.layout === 'docs' && item.docs_version === version.id)
+        files.set(
+          `${locale}/docs/${version.id}/index.html`,
+          text(
+            layout(
+              {
+                ...base,
+                title: `Documentation ${version.label}`,
+                description: site.description,
+                canonical: absolute(site, versionPath),
+                currentPath: versionPath,
+                robots: version.status === 'archived' ? 'noindex,follow' : '',
+              },
+              listingBody(`Documentation ${version.label}`, versionPages),
+            ),
+          ),
+        )
+        if (version.status === 'current')
+          sitemapItems.push({ canonical: absolute(site, versionPath), updated_at: lastUpdated(versionPages) })
+      }
+    }
 
     // Blogcast feed only where it has something to say: the site opted in and at
     // least one (indexable) post carries audio. The XML itself gets no sitemap
@@ -756,6 +922,10 @@ export async function buildSite({
         (comment) => comment.content_item_id === item.item_id && comment.status === 'approved',
       )
       const structured = item.kind === 'post' ? postStructured(site, item, t) : null
+      const archivedDocs =
+        item.layout === 'docs' &&
+        site.settings?.presentation?.docs?.versions?.find((entry) => entry.id === item.docs_version)?.status ===
+          'archived'
       // The raw-Markdown twin of the post page, for readers feeding an article
       // into their own AI tools and for agents that prefer Markdown over HTML.
       // noindex posts get none: their HTML page at least carries a robots meta,
@@ -784,13 +954,33 @@ export async function buildSite({
               currentPath: item.url,
               image: item.cover,
               imageAlt: item.cover_alt,
-              noindex: item.noindex,
+              noindex: item.noindex || item.protected,
+              robots: archivedDocs ? 'noindex,follow' : undefined,
               publishedTime: item.published_at,
               modifiedTime: item.updated_at || item.published_at,
               articleTags: item.kind === 'post' ? item.tags : [],
               markdownUrl,
             },
-            contentBody(item, base, itemComments),
+            structuredContentBody(
+              item,
+              {
+                ...base,
+                pages: item.protected
+                  ? [
+                      ...pages,
+                      ...allPages.filter(
+                        (entry) =>
+                          entry.protected &&
+                          JSON.stringify(entry.access_rule?.group_slugs || []) ===
+                            JSON.stringify(item.access_rule?.group_slugs || []) &&
+                          JSON.stringify(entry.access_rule?.user_ids || []) ===
+                            JSON.stringify(item.access_rule?.user_ids || []),
+                      ),
+                    ]
+                  : pages,
+              },
+              itemComments,
+            ),
             {
               structured,
               mermaid: item.hasMermaid,
@@ -804,7 +994,7 @@ export async function buildSite({
           ),
         ),
       )
-      if (!item.noindex) sitemapItems.push(item)
+      if (!item.noindex && !item.protected && !archivedDocs) sitemapItems.push(item)
     }
   }
 
@@ -844,7 +1034,19 @@ export async function buildSite({
   // asset) withholds it until the visitor opts in. The measurement id reaches
   // that generic asset via the head tag's data-ga-id, so nothing per-site is
   // emitted for analytics anymore.
-  files.set('sitemap.xml', text(sitemap(sitemapItems), 'application/xml; charset=utf-8'))
+  const publicSitemapItems = sitemapItems
+    .filter((item) => !protectedPath(new URL(item.canonical).pathname))
+    .map((item) => ({
+      ...item,
+      ...(item.translations
+        ? {
+            translations: item.translations.filter(
+              (alternate) => !protectedPath(new URL(alternate.canonical).pathname),
+            ),
+          }
+        : {}),
+    }))
+  files.set('sitemap.xml', text(sitemap(publicSitemapItems), 'application/xml; charset=utf-8'))
   files.set(
     '404.html',
     text(
@@ -869,5 +1071,107 @@ export async function buildSite({
     ),
   )
 
-  return { files, content: rendered }
+  const accessEntries = accessRules.flatMap((rule) => {
+    const entry = {
+      site_id: site.id,
+      match: rule.match,
+      path: rule.path,
+      group_slugs: rule.group_slugs || [],
+      user_ids: rule.user_ids || [],
+      content_item_id: null,
+    }
+    return rule.match === 'exact' && rule.path.endsWith('/')
+      ? [entry, { ...entry, path: `${rule.path}index.html` }]
+      : [entry]
+  })
+  for (const item of rendered) {
+    if (!item.protected) continue
+    accessEntries.push({
+      site_id: site.id,
+      // Frontmatter protects this canonical document only. Authors use an
+      // explicit prefix rule when an entire subtree must inherit the grant.
+      match: 'exact',
+      path: item.url,
+      group_slugs: item.access_rule.group_slugs || [],
+      user_ids: item.access_rule.user_ids || [],
+      content_item_id: item.item_id,
+    })
+    // The gateway accepts the clean URL and the physical index.html path. Both
+    // must carry the same grant so a caller cannot bypass authorization by
+    // requesting the release object spelling directly.
+    accessEntries.push({
+      site_id: site.id,
+      match: 'exact',
+      path: `${item.url}index.html`,
+      group_slugs: item.access_rule.group_slugs || [],
+      user_ids: item.access_rule.user_ids || [],
+      content_item_id: item.item_id,
+    })
+    if (item.kind === 'post' && !item.noindex) {
+      accessEntries.push({
+        site_id: site.id,
+        match: 'exact',
+        path: `${item.url}index.md`,
+        group_slugs: item.access_rule.group_slugs || [],
+        user_ids: item.access_rule.user_ids || [],
+        content_item_id: item.item_id,
+      })
+    }
+  }
+  // A protected-only media URL inherits the page grant. If the same URL is
+  // referenced by public content it stays public and the builder warns.
+  const media = new Map()
+  for (const item of rendered) {
+    const urls = [
+      ...`${item.html || ''} ${item.cover || ''} ${item.audio?.url || ''}`.matchAll(
+        /\/media\/[0-9a-f-]{36}\/[^"'\s<)]+/gi,
+      ),
+    ].map((match) => match[0])
+    for (const url of urls) {
+      const state = media.get(url) || { public: false, grants: [] }
+      if (item.protected) state.grants.push(item.access_rule)
+      else state.public = true
+      media.set(url, state)
+    }
+  }
+  for (const [path, state] of media) {
+    if (state.public) {
+      if (state.grants.length)
+        logger?.warn?.('asset is referenced by public and protected content', { siteId: site.id, path })
+      continue
+    }
+    const groups = [...new Set(state.grants.flatMap((grant) => grant.group_slugs || []))]
+    const users = [...new Set(state.grants.flatMap((grant) => grant.user_ids || []))]
+    accessEntries.push({
+      site_id: site.id,
+      match: 'exact',
+      path,
+      group_slugs: groups,
+      user_ids: users,
+      content_item_id: null,
+    })
+  }
+  const accessCatalog = rendered
+    .filter((item) => item.protected)
+    .map((item) => ({
+      site_id: site.id,
+      content_item_id: item.item_id,
+      locale: item.locale,
+      title: item.title,
+      summary: item.summary,
+      url: item.url,
+      layout: item.layout,
+      parent_key: item.parent,
+      nav_order: item.nav_order,
+      search_text:
+        `${item.title} ${item.summary} ${(item.tags || []).join(' ')} ${item.source || ''}`.toLocaleLowerCase(
+          item.locale,
+        ),
+      group_slugs: item.access_rule.group_slugs || [],
+      user_ids: item.access_rule.user_ids || [],
+    }))
+  const uniqueAccessEntries = [
+    ...new Map(accessEntries.map((entry) => [`${entry.match}:${entry.path}`, entry])).values(),
+  ]
+  return { files, content: rendered, accessEntries: uniqueAccessEntries, accessCatalog }
 }

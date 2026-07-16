@@ -5,9 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Markdown in, multilingual static website out.** Contentkit is an API-first
-mini-CMS for personal sites, blogs and project portfolios: you upload Markdown
-through an HTTP API, Contentkit renders it into an immutable static-site
-release and activates it atomically — with instant, pointer-based rollback.
+mini-CMS for portfolios, blogs, product documentation, wikis, knowledge bases,
+product pages and changelogs: you upload Markdown through an HTTP API,
+Contentkit renders it into an immutable static-site release and activates it
+atomically — with instant, pointer-based rollback.
 
 It is deliberately not a WYSIWYG CMS: there is no admin UI, no page builder
 and no plugin system. Content lives as portable Markdown, the API is the
@@ -45,6 +46,14 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 ## Features
 
 - Pages, posts and projects with immutable draft revisions.
+- Controlled site presets for portfolios, versioned product documentation,
+  wikis, knowledge bases, product landing pages and changelogs, plus a
+  per-document layout override.
+- Hierarchical documentation navigation, breadcrumbs, heading tables of
+  contents and current/archived product versions.
+- Release-scoped reader access control for individual pages, path areas and
+  media, with personal usernames, salted scrypt passwords, groups and revocable
+  sessions. Protected content is excluded from public discovery outputs.
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
 - Locale-prefixed routes, translation alternates, a year-grouped archive with
   client-side tag filtering, a tag index and tag pages.
@@ -156,6 +165,60 @@ snapshot lives in [docs/openapi.json](docs/openapi.json); update it with
 `npm run docs:gen-openapi` whenever the HTTP API changes. LLM-friendly docs
 are served at `/llms.txt` and `/llms-full.txt`.
 
+## Site presets and page layouts
+
+Choose a controlled preset through `settings.presentation.preset`; existing
+sites default to `portfolio`. Templates remain Contentkit-owned and contain no
+uploaded executable code.
+
+```json
+{
+  "presentation": {
+    "preset": "product-docs",
+    "docs": {
+      "versions": [
+        { "id": "v2", "label": "2.x", "status": "current" },
+        { "id": "v1", "label": "1.x", "status": "archived" }
+      ]
+    }
+  }
+}
+```
+
+A Markdown page can set `layout: docs`, `wiki`, `knowledge`, `landing`,
+`changelog` or `standard`. Documentation hierarchy uses `docKey`,
+`docsVersion`, `parent`, `navTitle` and `navOrder`. See
+[docs/TEMPLATES.md](docs/TEMPLATES.md) for routes, complete frontmatter and the
+real example documents in `examples/docs`, `examples/wiki`,
+`examples/knowledge`, `examples/landing` and `examples/changelog`.
+
+## Protect reader content
+
+Reader accounts are separate from management API keys. A site administrator
+creates groups and personal users, then either adds `access: [customers]` to a
+Markdown document or creates an exact/prefix path rule. The next release
+snapshots the content and policy together, so rollback restores both.
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/$SITE/access/groups" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"customers","name":"Customers"}'
+
+curl -X POST "$CONTENTKIT_URL/v1/sites/$SITE/access/users" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"anna","display_name":"Anna","password":"a-long-unique-password","groups":["customers"]}'
+```
+
+Opening a protected page redirects an anonymous visitor to the site login.
+After sign-in, an HttpOnly session cookie grants only the user's groups or
+personal rules. Protected documents are absent from public sitemap, feeds,
+search, navigation and LLM files; authenticated search and navigation are
+available through same-origin `/_contentkit/*` endpoints. See
+[docs/ACCESS_CONTROL.md](docs/ACCESS_CONTROL.md) for the beginner workflow,
+security model and troubleshooting.
+
 ## Read-aloud audio
 
 Every published post can carry a pre-rendered spoken MP3 ("Vorlesen"):
@@ -191,16 +254,21 @@ override both. `.env.defaults` is never loaded when `NODE_ENV=production`.
 ```bash
 npm run lint
 npm test
+npm run test:contract
+npm run test:smoke
 npm run check:docs-drift
 npm run test:integration
 npm run test:e2e:local
+npm run benchmark
 npm audit
 ```
 
 `test:e2e:local` requires Docker and Bun. It boots disposable PostgreSQL,
 executes the compiled single binary against a local storage/webhook boundary,
-and verifies draft, preview, release, custom-domain delivery and signed
-notification delivery.
+uploads the real documentation examples, and verifies draft, preview, release,
+reader login, protected discovery/delivery, custom-domain delivery and signed
+notification delivery. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for the
+1,000-document performance corpus and CI regression budgets.
 
 Add migrations as ordered `.sql` files plus journal entries under
 `src/db/migrations/`, then run `npm run db:gen-embedded`. The build runs the
@@ -218,6 +286,9 @@ signed following the Standard Webhooks specification.
 
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — build, systemd, secrets, release pipeline
 - [docs/WEBHOOKS.md](docs/WEBHOOKS.md) — events, signature verification, scheduled publishing
+- [docs/TEMPLATES.md](docs/TEMPLATES.md) — presets, layouts, routes and examples
+- [docs/ACCESS_CONTROL.md](docs/ACCESS_CONTROL.md) — reader accounts, groups and protected areas
+- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — reproducible corpus and CI budgets
 
 ## Versioning and license
 

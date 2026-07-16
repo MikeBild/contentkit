@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: npm run test:contract
+      - run: npm run test:smoke
       - run: npm run check:embedded-drift
       - run: npm run check:docs-drift
       - run: npm audit --audit-level=high
@@ -64,3 +66,18 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
       - run: npm run test:e2e:local
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - run: CONTENTKIT_BENCHMARK_ASSERT=1 npm run --silent benchmark | tee benchmark.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: benchmark
+          path: benchmark.json

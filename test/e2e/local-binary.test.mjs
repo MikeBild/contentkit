@@ -3,11 +3,15 @@ import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
 import { createServer, request } from 'node:http'
 import { spawn } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { listEmbeddedMigrations } from '../../src/db/migrate.mjs'
 
 const binary = process.env.CONTENTKIT_E2E_BINARY
 const databaseUrl = process.env.CONTENTKIT_E2E_DATABASE_URL
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -32,16 +36,16 @@ async function responseJson(response, expected) {
   return text ? JSON.parse(text) : null
 }
 
-function requestWithHost(origin, path, host) {
+function requestWithHost(origin, path, host, init = {}) {
   const url = new URL(path, origin)
   return new Promise((resolve, reject) => {
     const req = request(
       {
         hostname: url.hostname,
         port: url.port,
-        path: url.pathname,
-        method: 'GET',
-        headers: { host },
+        path: `${url.pathname}${url.search}`,
+        method: init.method || 'GET',
+        headers: { host, ...(init.headers || {}) },
       },
       (res) => {
         const chunks = []
@@ -50,12 +54,13 @@ function requestWithHost(origin, path, host) {
           resolve({
             status: res.statusCode,
             body: Buffer.concat(chunks).toString('utf8'),
+            headers: res.headers,
           }),
         )
       },
     )
     req.on('error', reject)
-    req.end()
+    req.end(init.body)
   })
 }
 
@@ -169,6 +174,7 @@ test(
         CONTENTKIT_BOOTSTRAP_API_KEY: bootstrapKey,
         CONTENTKIT_KEY_PEPPER: 'local-e2e-key-pepper',
         CONTENTKIT_PREVIEW_SECRET: 'local-e2e-preview-secret',
+        CONTENTKIT_SESSION_SECRET: 'local-e2e-session-secret',
         SUPABASE_URL: boundaryOrigin,
         SUPABASE_SERVICE_ROLE_KEY: 'local-e2e-storage-key',
         CONTENTKIT_STORAGE_BUCKET: 'contentkit',
@@ -198,8 +204,19 @@ test(
             name: 'Local E2E',
             base_url: 'http://e2e.local',
             default_locale: 'de',
-            locales: ['de'],
+            locales: ['de', 'en'],
             domains: ['e2e.local'],
+            settings: {
+              presentation: {
+                preset: 'product-docs',
+                docs: {
+                  versions: [
+                    { id: 'v2', label: '2.x', status: 'current' },
+                    { id: 'v1', label: '1.x', status: 'archived' },
+                  ],
+                },
+              },
+            },
           }),
         }),
         201,
@@ -216,6 +233,45 @@ test(
       )
       const managedSecret = endpoint.secret
       assert.match(managedSecret, /^whsec_/)
+
+      const group = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/access/groups`, {
+          method: 'POST',
+          headers: { ...auth, 'content-type': 'application/json' },
+          body: JSON.stringify({ slug: 'customers', name: 'Customers' }),
+        }),
+        201,
+      )
+      assert.equal(group.slug, 'customers')
+      const reader = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/access/users`, {
+          method: 'POST',
+          headers: { ...auth, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            username: 'anna',
+            display_name: 'Anna Customer',
+            password: 'a-real-e2e-password',
+            groups: ['customers'],
+          }),
+        }),
+        201,
+      )
+      assert.deepEqual(reader.groups, ['customers'])
+
+      const docs = []
+      for (const name of ['getting-started.en.md', 'installation.en.md', 'customer-runbook.en.md']) {
+        const source = await readFile(join(root, 'examples', 'docs', name), 'utf8')
+        docs.push(
+          await responseJson(
+            await fetch(`${origin}/v1/sites/${site.id}/content`, {
+              method: 'POST',
+              headers: { ...auth, 'content-type': 'text/markdown' },
+              body: source,
+            }),
+            201,
+          ),
+        )
+      }
 
       const markdown = `---
 kind: post
@@ -254,7 +310,10 @@ Markdown rein, veröffentlichte HTML-Seite raus.
         await fetch(`${origin}/v1/sites/${site.id}/previews`, {
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
-          body: JSON.stringify({ revision_ids: [ingested.revision.id], expires_in: 600 }),
+          body: JSON.stringify({
+            revision_ids: [ingested.revision.id, ...docs.map((entry) => entry.revision.id)],
+            expires_in: 600,
+          }),
         }),
         201,
       )
@@ -267,7 +326,10 @@ Markdown rein, veröffentlichte HTML-Seite raus.
         await fetch(`${origin}/v1/sites/${site.id}/releases`, {
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
-          body: JSON.stringify({ revision_ids: [ingested.revision.id], reason: 'local E2E' }),
+          body: JSON.stringify({
+            revision_ids: [ingested.revision.id, ...docs.map((entry) => entry.revision.id)],
+            reason: 'local E2E with real documentation',
+          }),
         }),
         201,
       )
@@ -284,6 +346,76 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       const manifestResponse = await requestWithHost(origin, '/manifest.webmanifest', 'e2e.local')
       assert.equal(manifestResponse.status, 200)
       assert.match(manifestResponse.body, /"name":"Local E2E"/)
+
+      const docsPage = await requestWithHost(origin, '/en/docs/v2/getting-started/installation/', 'e2e.local')
+      assert.equal(docsPage.status, 200)
+      assert.match(docsPage.body, /Local installation, configuration/)
+      assert.match(docsPage.body, /docs-sidebar/)
+      const protectedAnonymous = await requestWithHost(
+        origin,
+        '/en/docs/v2/getting-started/customer-runbook/',
+        'e2e.local',
+      )
+      assert.equal(protectedAnonymous.status, 302)
+      assert.match(protectedAnonymous.headers.location, /^\/_contentkit\/login/)
+      const protectedPhysicalPath = await requestWithHost(
+        origin,
+        '/en/docs/v2/getting-started/customer-runbook/index.html',
+        'e2e.local',
+      )
+      assert.equal(protectedPhysicalPath.status, 302)
+      const sitemap = await requestWithHost(origin, '/sitemap.xml', 'e2e.local')
+      assert.doesNotMatch(sitemap.body, /customer-runbook/)
+      const publicSearch = await requestWithHost(origin, '/en/search-index.json', 'e2e.local')
+      assert.doesNotMatch(publicSearch.body, /Customer runbook/)
+
+      const loginForm = await requestWithHost(
+        origin,
+        '/_contentkit/login?return_to=/en/docs/v2/getting-started/customer-runbook/',
+        'e2e.local',
+      )
+      assert.equal(loginForm.status, 200)
+      const csrf = loginForm.body.match(/name="csrf" value="([^"]+)"/)[1]
+      const csrfCookie = loginForm.headers['set-cookie'][0].split(';')[0]
+      const loginBody = new URLSearchParams({
+        csrf,
+        return_to: '/en/docs/v2/getting-started/customer-runbook/',
+        username: 'anna',
+        password: 'a-real-e2e-password',
+      }).toString()
+      const signedIn = await requestWithHost(origin, '/_contentkit/login', 'e2e.local', {
+        method: 'POST',
+        headers: {
+          cookie: csrfCookie,
+          'content-type': 'application/x-www-form-urlencoded',
+          'content-length': String(Buffer.byteLength(loginBody)),
+        },
+        body: loginBody,
+      })
+      assert.equal(signedIn.status, 303)
+      const readerCookie = signedIn.headers['set-cookie'][0].split(';')[0]
+      const protectedPage = await requestWithHost(
+        origin,
+        '/en/docs/v2/getting-started/customer-runbook/',
+        'e2e.local',
+        { headers: { cookie: readerCookie } },
+      )
+      assert.equal(protectedPage.status, 200)
+      assert.match(protectedPage.body, /operational information for signed-in customers/)
+      assert.equal(protectedPage.headers['cache-control'], 'private,no-store')
+      const protectedPhysicalPage = await requestWithHost(
+        origin,
+        '/en/docs/v2/getting-started/customer-runbook/index.html',
+        'e2e.local',
+        { headers: { cookie: readerCookie } },
+      )
+      assert.equal(protectedPhysicalPage.status, 200)
+      assert.equal(protectedPhysicalPage.headers['cache-control'], 'private,no-store')
+      const protectedSearch = await requestWithHost(origin, '/_contentkit/search-index.json?locale=en', 'e2e.local', {
+        headers: { cookie: readerCookie },
+      })
+      assert.equal(protectedSearch.status, 200)
+      assert.match(protectedSearch.body, /Customer runbook/)
 
       const contact = await responseJson(
         await fetch(`${origin}/public/v1/contact`, {
@@ -382,10 +514,10 @@ Markdown rein, veröffentlichte HTML-Seite raus.
 
       // The built-in env endpoint receives every event: contact, comment
       // submit + approve, and the content lifecycle of this flow — publish,
-      // comment-approval republish, unpublish, republish give 4 release.published,
-      // 2 content.published and 1 content.unpublished — 10 in total. The managed
-      // endpoint, filtered to contact.submitted, receives exactly 1 (fan-out) — 11.
-      const webhooks = await waitForWebhooks(webhookEvents, 11)
+      // comment-approval republish, unpublish and republish give 4 release.published,
+      // 5 content.published and 1 content.unpublished — 13 in total. The managed
+      // endpoint, filtered to contact.submitted, receives exactly 1 (fan-out) — 14.
+      const webhooks = await waitForWebhooks(webhookEvents, 14)
       const envHooks = webhooks.filter((event) => event.path === '/hooks/contentkit-notifications')
       const managedHooks = webhooks.filter((event) => event.path === '/hooks/managed')
       assert.deepEqual(
@@ -424,7 +556,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           delivered = (
             await pool.query("SELECT count(*)::int AS n FROM public.ck_webhook_deliveries WHERE status = 'delivered'")
           ).rows[0].n
-          if (delivered >= 11) break
+          if (delivered >= 14) break
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
         const state = await pool.query(`
@@ -439,9 +571,9 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           // migration (the audio migration broke it once already).
           migrations: listEmbeddedMigrations().length,
           active_releases: 1,
-          events: 10,
+          events: 13,
         })
-        assert.equal(delivered, 11, 'all fan-out deliveries succeed')
+        assert.equal(delivered, 14, 'all fan-out deliveries succeed')
       } finally {
         await pool.end()
       }

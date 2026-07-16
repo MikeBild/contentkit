@@ -222,3 +222,42 @@ test('related frontmatter is validated and stored as related_slugs', async () =>
   await assert.rejects(() => renderMarkdown(doc('related: [a, a]')), /related must not contain duplicates/)
   await assert.rejects(() => renderMarkdown(doc('related: [t]')), /related must not reference the document itself/)
 })
+
+test('template, hierarchy, changelog and access frontmatter are validated', async () => {
+  const markdown = `---
+kind: page
+title: Install
+locale: en
+slug: install
+translationKey: install-v2
+layout: docs
+docKey: install
+docsVersion: v2
+parent: start
+navTitle: Quick install
+navOrder: 20
+category: Setup
+releaseVersion: 2.0.0
+changeTypes: [added, security]
+access: [customers, team]
+---
+# Install`
+  const { meta } = await renderMarkdown(markdown)
+  assert.equal(meta.layout, 'docs')
+  assert.equal(meta.doc_key, 'install')
+  assert.equal(meta.docs_version, 'v2')
+  assert.equal(meta.parent, 'start')
+  assert.equal(meta.nav_title, 'Quick install')
+  assert.deepEqual(meta.change_types, ['added', 'security'])
+  assert.deepEqual(meta.access, ['customers', 'team'])
+  await assert.rejects(() => renderMarkdown(markdown.replace('layout: docs', 'layout: arbitrary')), /layout must be/)
+  await assert.rejects(() => renderMarkdown(markdown.replace('[customers, team]', '[Bad Group]')), /invalid/)
+})
+
+test('landing-page directives render only controlled content blocks', async () => {
+  const { html } = await renderMarkdown(
+    '---\ntitle: Product\nlocale: en\nslug: product\nlayout: landing\n---\n:::hero\n# Fast releases\n:::',
+  )
+  assert.match(html, /class="content-block content-block-hero"/)
+  assert.doesNotMatch(html, /<script/)
+})

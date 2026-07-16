@@ -82,6 +82,31 @@ provision the database and login; they do not copy or execute migration files.
 
 ## Static output
 
+### Controlled presets and content graphs
+
+`settings.presentation.preset` selects one of the server-owned portfolio,
+product-docs, wiki, knowledge-base, product, or changelog information
+architectures. Frontmatter can select a controlled page layout; it never names a
+file or executable module. Docs/wiki/help hierarchies are resolved as a content
+graph before any release object is uploaded. Missing parents, cycles, unknown
+versions/groups, and duplicate generated URLs fail the build without moving the
+active release pointer.
+
+### Release-scoped reader access
+
+Reader credentials and memberships are site-scoped database state, while exact
+and prefix access policies are snapshotted into `ck_release_access_entries`.
+Activation and rollback therefore switch content and visibility through the
+same active-release pointer. The builder derives every public discovery output
+from the same visibility projection and stores protected search/navigation
+records in `ck_release_access_catalog`; the gateway filters that catalog using
+the current reader session.
+
+The gateway checks policy before downloading HTML or protected-only media.
+Passwords are salted scrypt hashes, session tokens are random and stored only as
+HMAC hashes, and protected responses are never shared-cacheable. `noindex` is
+SEO metadata and remains unrelated to authorization.
+
 Pages render without JavaScript except for the header search, which needs it:
 `search.js` ships on every page and fetches the search index lazily on the first
 interaction with the field, so a page view costs no extra request. Mermaid, forms

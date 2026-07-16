@@ -37,6 +37,7 @@ Required production environment values:
 - `CONTENTKIT_BOOTSTRAP_API_KEY`
 - `CONTENTKIT_KEY_PEPPER`
 - `CONTENTKIT_PREVIEW_SECRET`
+- `CONTENTKIT_SESSION_SECRET`
 - `DATABASE_URL`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
 - `CONTENTKIT_WEBHOOK_SECRET` (with `CONTENTKIT_WEBHOOK_URL`)
@@ -46,6 +47,11 @@ Generate independent random values; never reuse the Supabase service-role key
 as a Contentkit, database or webhook secret. If you embed the database
 password in a connection URL, use at least 32 base64url characters so it needs
 no escaping. See `.env.example` for the full template.
+
+`CONTENTKIT_SESSION_SECRET` HMAC-hashes reader session tokens. Rotating it logs
+out every reader immediately. Published sites must use HTTPS so the
+`__Host-contentkit_session` cookie can keep its Secure attribute; the reverse
+proxy must preserve the original site `Host` header.
 
 ## Release pipeline
 

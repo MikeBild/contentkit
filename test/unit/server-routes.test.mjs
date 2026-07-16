@@ -253,7 +253,7 @@ test('public contact submission is unaffected by disabled comments', async () =>
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 async function withApp(
-  { db = {}, repo = {}, releases = {}, auth = {}, storage = {}, config = {}, maintenance, audio } = {},
+  { db = {}, repo = {}, releases = {}, auth = {}, storage = {}, config = {}, maintenance, audio, loginLimiter } = {},
   run,
 ) {
   const app = createApp(
@@ -280,6 +280,7 @@ async function withApp(
       outbox: { start() {}, stop() {} },
       ...(maintenance ? { maintenance } : {}),
       ...(audio ? { audio } : {}),
+      ...(loginLimiter ? { loginLimiter } : {}),
     },
   )
   await new Promise((resolve, reject) => {
@@ -291,6 +292,7 @@ async function withApp(
     await run((path, init) => fetch(`http://127.0.0.1:${port}${path}`, init))
   } finally {
     app.limiter.stop()
+    app.loginLimiter.stop()
     await new Promise((resolve) => app.server.close(resolve))
   }
 }
@@ -538,6 +540,138 @@ test("a served page's CSP stays strict with no analytics configured", async () =
   await withApp({ repo, storage }, async (request) => {
     const csp = (await request('/de/blog/')).headers.get('content-security-policy')
     assert.doesNotMatch(csp, /googletagmanager|plausible/)
+  })
+})
+
+test('gateway redirects anonymous readers and serves protected pages only to an allowed session', async () => {
+  const repo = {
+    async getSiteByHost() {
+      return {
+        id: 'site-1',
+        name: 'Docs',
+        default_locale: 'en',
+        base_url: 'http://example.test',
+        active_release_id: 'release-1',
+      }
+    },
+    async getRelease() {
+      return { id: 'release-1', storage_prefix: 'prefix' }
+    },
+    async releaseAccessEntries() {
+      return [{ match: 'prefix', path: '/en/docs/internal/', group_slugs: ['customers'], user_ids: [] }]
+    },
+    async authenticateReader(_siteId, token) {
+      return token === 'allowed' ? { id: 'reader-1', groups: ['customers'] } : null
+    },
+  }
+  const storage = {
+    async download() {
+      return {
+        headers: new Map(),
+        async arrayBuffer() {
+          return Buffer.from('<h1>Protected</h1>')
+        },
+      }
+    },
+  }
+  await withApp({ repo, storage }, async (request) => {
+    const anonymous = await request('/en/docs/internal/', { redirect: 'manual' })
+    assert.equal(anonymous.status, 302)
+    assert.match(anonymous.headers.get('location'), /^\/_contentkit\/login/)
+    const physicalPath = await request('/en/docs/internal/index.html', { redirect: 'manual' })
+    assert.equal(physicalPath.status, 302)
+    const encodedPath = await request('/en/docs/%69nternal/', { redirect: 'manual' })
+    assert.equal(encodedPath.status, 302)
+    const allowed = await request('/en/docs/internal/', {
+      headers: { cookie: '__Host-contentkit_session=allowed' },
+    })
+    assert.equal(allowed.status, 200)
+    assert.match(await allowed.text(), /Protected/)
+    assert.equal(allowed.headers.get('cache-control'), 'private,no-store')
+  })
+})
+
+test('site reader login sets a session cookie and validates the return path', async () => {
+  const rateLimitKeys = []
+  const repo = {
+    async getSiteByHost() {
+      return { id: 'site-1', name: 'Docs', default_locale: 'en', base_url: 'http://example.test' }
+    },
+    async createReaderSession(_siteId, username, password) {
+      return username === 'anna' && password === 'a-long-password' ? { token: 'reader-token', reader: {} } : null
+    },
+  }
+  const loginLimiter = {
+    take(key) {
+      rateLimitKeys.push(key)
+      return true
+    },
+    stop() {},
+  }
+  await withApp({ repo, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
+    const form = await request('/_contentkit/login?return_to=/en/docs/')
+    assert.equal(form.status, 200)
+    assert.equal(form.headers.get('x-frame-options'), 'DENY')
+    assert.match(form.headers.get('content-security-policy'), /form-action 'self'/)
+    const html = await form.text()
+    const csrf = html.match(/name="csrf" value="([^"]+)"/)[1]
+    const csrfCookie = form.headers.get('set-cookie').split(';')[0]
+    const signedIn = await request('/_contentkit/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: csrfCookie },
+      body: new URLSearchParams({ csrf, return_to: '/en/docs/', username: 'anna', password: 'a-long-password' }),
+    })
+    assert.equal(signedIn.status, 303)
+    assert.equal(signedIn.headers.get('location'), '/en/docs/')
+    assert.match(signedIn.headers.get('set-cookie'), /contentkit_session=reader-token/)
+    assert.equal(rateLimitKeys.length, 2)
+    assert.match(rateLimitKeys[0], /^reader-login-ip:/)
+    assert.equal(rateLimitKeys[1], 'reader-login-user:site-1:anna')
+  })
+})
+
+test('reader routes advertise and enforce their documented methods', async () => {
+  const repo = {
+    async getSiteByHost() {
+      return { id: 'site-1', name: 'Docs', default_locale: 'en', base_url: 'http://example.test' }
+    },
+  }
+  await withApp({ repo }, async (request) => {
+    const options = await request('/_contentkit/login', { method: 'OPTIONS' })
+    assert.equal(options.status, 204)
+    assert.equal(options.headers.get('allow'), 'GET, POST, OPTIONS')
+    const unsupported = await request('/_contentkit/login', { method: 'PUT' })
+    assert.equal(unsupported.status, 405)
+    assert.equal(unsupported.headers.get('allow'), 'GET, POST, OPTIONS')
+  })
+})
+
+test('site:admin manages reader groups through the access API', async () => {
+  const calls = []
+  const repo = {
+    async getSite() {
+      return { id: 'site-1' }
+    },
+    async listAccessGroups() {
+      calls.push('list')
+      return [{ id: 'g1', slug: 'customers', name: 'Customers' }]
+    },
+    async createAccessGroup(_siteId, input) {
+      calls.push(['create', input])
+      return { id: 'g2', ...input }
+    },
+  }
+  await withApp({ repo, auth: scopedAuth(['site:admin']) }, async (request) => {
+    const listed = await request('/v1/sites/site-1/access/groups', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(listed.status, 200)
+    const created = await request('/v1/sites/site-1/access/groups', {
+      method: 'POST',
+      headers: { 'x-api-key': 'valid', 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'team', name: 'Team' }),
+    })
+    assert.equal(created.status, 201)
+    assert.deepEqual(calls, ['list', ['create', { slug: 'team', name: 'Team' }]])
   })
 })
 

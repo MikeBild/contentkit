@@ -60,6 +60,9 @@ export function loadConfig() {
     bootstrapApiKey: process.env.CONTENTKIT_BOOTSTRAP_API_KEY || '',
     keyPepper: process.env.CONTENTKIT_KEY_PEPPER || '',
     previewSecret: process.env.CONTENTKIT_PREVIEW_SECRET || '',
+    sessionSecret:
+      process.env.CONTENTKIT_SESSION_SECRET ||
+      (process.env.NODE_ENV === 'production' ? '' : process.env.CONTENTKIT_PREVIEW_SECRET || ''),
     storageUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
     storageServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     databaseUrl: process.env.DATABASE_URL || '',
@@ -103,6 +106,7 @@ export function loadConfig() {
       CONTENTKIT_BOOTSTRAP_API_KEY: config.bootstrapApiKey,
       CONTENTKIT_KEY_PEPPER: config.keyPepper,
       CONTENTKIT_PREVIEW_SECRET: config.previewSecret,
+      CONTENTKIT_SESSION_SECRET: config.sessionSecret,
       SUPABASE_URL: config.storageUrl,
       SUPABASE_SERVICE_ROLE_KEY: config.storageServiceKey,
       DATABASE_URL: config.databaseUrl,

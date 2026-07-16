@@ -54,11 +54,23 @@
     if (pending) return pending
     if (attempts >= MAX_ATTEMPTS) return Promise.resolve(null)
     attempts += 1
-    pending = fetch(input.dataset.index, { credentials: 'same-origin' })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('http'))))
-      .then((data) => {
+    pending = Promise.all([
+      fetch(input.dataset.index, { credentials: 'same-origin' }).then((response) =>
+        response.ok ? response.json() : Promise.reject(new Error('http')),
+      ),
+      fetch(`/_contentkit/search-index.json?locale=${encodeURIComponent(lang)}`, { credentials: 'same-origin' })
+        .then((response) => (response.ok ? response.json() : []))
+        .catch(() => []),
+    ])
+      .then(([publicData, protectedData]) => {
         // A poisoned index must not be able to produce javascript: hrefs.
-        records = (Array.isArray(data) ? data : []).filter((record) => internal(record.url))
+        const merged = [
+          ...(Array.isArray(publicData) ? publicData : []),
+          ...(Array.isArray(protectedData) ? protectedData : []),
+        ]
+        records = [
+          ...new Map(merged.filter((record) => internal(record.url)).map((record) => [record.url, record])).values(),
+        ]
         pending = null
         return records
       })

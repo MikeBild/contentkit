@@ -1041,6 +1041,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_BOOTSTRAP_API_KEY` | initial break-glass admin key |
 | `CONTENTKIT_KEY_PEPPER` | server-side API key hashing pepper |
 | `CONTENTKIT_PREVIEW_SECRET` | preview token hashing secret |
+| `CONTENTKIT_SESSION_SECRET` | independent HMAC secret for reader session tokens and login CSRF |
 | `SUPABASE_URL` | Supabase project URL for Storage API |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
 | `CONTENTKIT_STORAGE_BUCKET` | Storage bucket name; default `contentkit` |
@@ -1158,10 +1159,13 @@ Run local checks:
 ```bash
 npm run lint
 npm test
+npm run test:contract
+npm run test:smoke
 npm run check:docs-drift
 npm run check:embedded-drift
 npm run test:integration
 npm run test:e2e:local
+npm run benchmark
 npm audit
 ```
 
@@ -1203,3 +1207,108 @@ Common failures:
   its own domain (or serve it via `www.`) to avoid whole-site 404s;
 - release request fails: render or storage upload failed; the previous active
   release remains active and a failure event is queued.
+
+---
+
+## 20. Site presets, page layouts and reader access
+
+### Controlled presentation model
+
+`settings.presentation.preset` selects one of six built-in information
+architectures: `portfolio` (the backward-compatible default), `product-docs`,
+`wiki`, `knowledge-base`, `product` or `changelog`. Templates are controlled by
+Contentkit; uploaded Markdown cannot provide executable templates.
+
+`product-docs` requires
+`settings.presentation.docs.versions = [{ id, label, status }]`, with 1–32
+unique lowercase slug IDs, labels up to 120 characters, exactly one
+`status: current`, and the remaining entries marked `status: archived`.
+Archived documentation remains reachable but is
+`noindex,follow` and absent from the sitemap.
+
+A page can override the preset default with `layout: standard|docs|wiki|knowledge|landing|changelog`.
+Hierarchical layouts accept `docKey`, `parent`, `navTitle` and `navOrder`;
+documentation also requires `docsVersion`. Changelog pages accept `category`,
+`releaseVersion` and `changeTypes` (`added`, `changed`, `deprecated`, `removed`,
+`fixed`, `security`). Landing pages can use the sanitized `hero`, `features`,
+`steps` and `cta` directives. Invalid versions, missing parents, cycles,
+duplicate keys and duplicate routes fail the build before activation.
+
+Generated routes:
+
+- docs: `/{locale}/docs/{version}/{hierarchy}/`;
+- wiki: `/{locale}/wiki/{hierarchy}/`;
+- knowledge base: `/{locale}/help/{hierarchy}/`;
+- changelog: `/{locale}/changelog/{slug}/`;
+- landing and standard pages: `/{locale}/{slug}/`.
+
+See `docs/TEMPLATES.md` and the real documents under `examples/docs`,
+`examples/wiki`, `examples/knowledge`, `examples/landing` and
+`examples/changelog`.
+
+### Reader authorization model
+
+Reader identities are site-scoped and separate from management API keys. A
+reader has a normalized personal username, a salted scrypt password hash, an
+active flag and zero or more named groups. Administrators can grant groups or
+individual user IDs to an exact path or a prefix subtree. A document-level
+`access: [group-slug]` grant protects exactly that canonical document.
+
+Policies are drafts until the next preview or release. The builder snapshots
+access entries and a private search/navigation catalog under the immutable
+release ID, so activation and rollback switch content and authorization
+together. The most-specific rule wins, with exact above prefix. Protected
+content is removed from public listings, navigation, search, sitemap, RSS,
+`llms.txt`, `llms-full.txt`, Markdown twins and structured discovery. A media
+asset referenced only by protected content inherits a grant; an asset also
+needed by public content remains public and emits a build warning.
+
+All management routes below require a site-scoped `site:admin` key:
+
+- `GET|POST /v1/sites/{site}/access/users`: list or create personal readers;
+- `PATCH|DELETE /v1/sites/{site}/access/users/{user}`: update, disable, reset a
+  password or delete a reader;
+- `POST /v1/sites/{site}/access/users/{user}/revoke-sessions`: revoke every
+  active session for one reader;
+- `GET|POST /v1/sites/{site}/access/groups`: list or create groups;
+- `PATCH|DELETE /v1/sites/{site}/access/groups/{group}`: rename or delete a
+  group;
+- `PUT /v1/sites/{site}/access/groups/{group}/members`: replace group members;
+- `GET|POST /v1/sites/{site}/access/rules`: list or create exact/prefix rules;
+- `PATCH|DELETE /v1/sites/{site}/access/rules/{rule}`: update or delete a draft
+  policy; the response signals that a rebuild is required.
+
+Reader routes run on each published site host:
+
+- `GET|POST /_contentkit/login`: signed-CSRF login form and credential submit;
+- `POST /_contentkit/logout`: revoke the current session and clear its cookie;
+- `GET /_contentkit/session`: current public reader profile and group slugs;
+- `GET /_contentkit/navigation.json`: protected navigation entries allowed to
+  the current reader;
+- `GET /_contentkit/search-index.json`: protected search entries allowed to the
+  current reader.
+
+Successful login sets an HttpOnly, SameSite=Lax reader cookie, Secure on HTTPS.
+Sessions have a 12-hour idle expiry and seven-day absolute expiry; only an HMAC
+of the random token is stored. Login attempts are limited to five per 15 minutes
+per IP and normalized username. Anonymous HTML requests redirect to login,
+protected media returns 401, a signed-in reader without a grant receives 403,
+and every protected response uses `Cache-Control: private,no-store`.
+
+Production requires an independent `CONTENTKIT_SESSION_SECRET`. See
+`docs/ACCESS_CONTROL.md` for the end-user setup and troubleshooting guide.
+
+### Verification and performance
+
+`npm run test:contract` checks that the OpenAPI access operations and public
+schemas match routable methods. `npm run test:smoke` builds the real
+documentation, wiki, knowledge-base, landing-page and changelog examples in one
+release. `npm run test:e2e:local` compiles the binary, applies the real
+PostgreSQL migration, uploads the real docs, publishes them, verifies anonymous
+non-discovery, signs in as a real reader and checks private search and delivery.
+
+`npm run benchmark` builds 1,000 documents in two locales, including 200
+protected documents, then measures 100,000 rule resolutions and an scrypt
+verification. CI enforces the broad regression budgets in
+`benchmarks/budgets.json` and uploads the JSON result. Reference results and
+measurement caveats live in `docs/BENCHMARKS.md`.

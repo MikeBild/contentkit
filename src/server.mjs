@@ -41,6 +41,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()
+  const loginLimiter = dependencies.loginLimiter || createLimiter(15 * 60 * 1000, 5)
   const metrics = createMetrics()
   const state = { draining: false, storageReady: false }
 
@@ -54,6 +55,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     auth,
     maintenance,
     limiter,
+    loginLimiter,
     metrics,
     state,
     audio,
@@ -93,6 +95,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     outbox,
     audio,
     limiter,
+    loginLimiter,
     releases,
     database,
     handle,
@@ -151,6 +154,7 @@ export async function start(config = loadConfig()) {
     app.outbox.stop()
     app.audio.stop()
     app.limiter.stop()
+    app.loginLimiter.stop()
     app.server.close(async () => {
       await app.database.close().catch(() => {})
       process.exit(0)

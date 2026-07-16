@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.12.0
+
+### Added
+
+- **Controlled site presets and page layouts.** Sites can select `portfolio`,
+  `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog` through
+  `settings.presentation.preset`; existing sites remain `portfolio`. Pages can
+  override the preset with `standard`, `docs`, `wiki`, `knowledge`, `landing`
+  or `changelog`. Documentation, wiki and knowledge layouts add validated
+  hierarchies, sidebars, breadcrumbs and heading tables of contents; product
+  documentation supports one current and multiple archived versions. Landing
+  pages gain controlled `hero`, `features`, `steps` and `cta` directives.
+- **Reader access control.** Site administrators can create personal readers,
+  salted-scrypt passwords, groups, memberships and exact/prefix path rules.
+  A Markdown document can grant groups with `access`. Successful site-host
+  login creates a hashed, revocable session with idle and absolute expiry;
+  anonymous page requests redirect to login and wrong-group readers receive
+  403. Access policy and protected navigation/search are snapshotted per
+  immutable release, so rollback restores content and authorization together.
+- **Private discovery projection.** Protected documents and protected-only
+  media are removed from public navigation, search indexes, sitemaps, feeds,
+  Markdown twins, LLM files and structured discovery. Authenticated readers get
+  a same-origin private navigation and search projection with
+  `Cache-Control: private,no-store`.
+- **Real-document verification and benchmarks.** English product docs, wiki,
+  knowledge-base, product landing and changelog examples are exercised by a
+  smoke build and the compiled-binary E2E flow. A deterministic 1,000-document
+  benchmark measures build throughput, memory, access-rule resolution and
+  password verification; CI enforces broad regression budgets and uploads the
+  JSON report.
+
+### Security
+
+- Production requires an independent `CONTENTKIT_SESSION_SECRET`. Reader
+  cookies are HttpOnly and SameSite=Lax (Secure on HTTPS); login uses a signed
+  CSRF token, validates same-origin return paths and limits attempts to five per
+  15 minutes per IP and normalized username.
+- Reader passwords are 12–256 characters and stored with salted scrypt
+  (`N=32768`, `r=8`, `p=1`, 64-byte output). Session tokens are random and only
+  their HMAC is stored. Password resets, account disabling and explicit session
+  revocation invalidate active sessions.
+
 ## 1.11.0
 
 ### Added

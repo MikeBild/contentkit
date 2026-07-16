@@ -2,7 +2,8 @@
 
 A robots.txt-style index of the Contentkit documentation for LLMs. Contentkit is
 an API-first mini-CMS that turns Markdown revisions into immutable multilingual
-static website releases for personal sites, blogs and project portfolios. Each
+static website releases for portfolios, blogs, product documentation, wikis,
+knowledge bases, product pages and changelogs. Each
 entry below has a title, path and one-line summary. For the complete
 documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-full.txt).
 
@@ -17,6 +18,12 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - [README](README.md): What Contentkit is, local zero-config setup, content upload, preview/release flow and verification commands.
 - [Example page](examples/page.de.md): German Markdown page with supported frontmatter.
 - [Example post](examples/post.de.md): German Markdown blog post with supported frontmatter.
+- [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
+  versioned routes, hierarchy fields and real English Markdown documents.
+- [Reader access control](docs/ACCESS_CONTROL.md): Personal reader accounts,
+  groups, release-scoped exact/prefix policies, sessions and protected discovery.
+- [Benchmarks](docs/BENCHMARKS.md): Reproducible 1,000-document corpus, results
+  and CI regression budgets.
 - [OpenAPI snapshot](docs/openapi.json): Committed canonical OpenAPI 3.1 snapshot used by the docs drift check.
 
 ## API & usage
@@ -25,6 +32,13 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   `GET /ready`, `GET /metrics`, `GET /openapi.json`, `GET /llms.txt`,
   `GET /llms-full.txt`, plus `/v1/*` management routes and public submission
   routes.
+- Reader endpoints on a published site host: `GET|POST /_contentkit/login`,
+  `POST /_contentkit/logout`, `GET /_contentkit/session`,
+  `GET /_contentkit/navigation.json` and
+  `GET /_contentkit/search-index.json`.
+- Reader administration: `/v1/sites/{site}/access/users`,
+  `/v1/sites/{site}/access/groups` and `/v1/sites/{site}/access/rules`, plus
+  membership and session-revocation endpoints, all with `site:admin`.
 - Management flow: create site → upload Markdown + assets → build preview →
   publish release → optionally activate an older release for rollback.
 - Markdown upload accepts raw `text/markdown` or `multipart/form-data` with a
@@ -50,6 +64,14 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - Site administration: create/read/update sites, locales, domains and design/content
   settings such as hero text, accent color, socials, profile image and Turnstile
   site key.
+- Controlled presentation: `portfolio`, `product-docs`, `wiki`,
+  `knowledge-base`, `product` and `changelog` site presets; `standard`, `docs`,
+  `wiki`, `knowledge`, `landing` and `changelog` page layouts; hierarchical
+  navigation and current/archived documentation versions.
+- Reader access: personal usernames and scrypt passwords, named groups,
+  exact/prefix path policies and release-scoped authorization. Protected pages
+  and media require an HttpOnly reader session and are omitted from public
+  navigation, search, sitemap, feeds and LLM files.
 - Content authoring: immutable revisions for `page`, `post` and `project`
   Markdown documents, scheduled revisions, tags, translations and asset uploads.
 - Static generation: home, blog, project, archive, tag index, tag, search,
@@ -122,5 +144,9 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   legal-notice page and publishes them locally.
 - `npm test`, `npm run test:integration`, `npm run test:e2e:local`: unit,
   integration and local binary end-to-end verification.
+- `npm run test:contract`, `npm run test:smoke`: API/router contract tests and
+  a real-document multi-template build.
+- `npm run benchmark`: deterministic 1,000-document build, access-resolution
+  and password-verification benchmark.
 - `npm run docs:gen-openapi` updates the committed OpenAPI snapshot; `npm run
   check:docs-drift` fails when OpenAPI and LLM docs drift apart.

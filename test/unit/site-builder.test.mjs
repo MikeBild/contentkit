@@ -1011,3 +1011,134 @@ test('a site without theme settings builds byte-identically and carries no theme
   assert.match(themedPage, /<style>:root\{--primary:0 72% 51%\}<\/style>/)
   assert.match(themedPage, /<style>\.x\{color:red\}<\/style>/)
 })
+
+test('product docs build a versioned hierarchy and keep protected content out of public discovery', async () => {
+  const docsSite = {
+    ...site,
+    settings: {
+      presentation: {
+        preset: 'product-docs',
+        docs: {
+          versions: [
+            { id: 'v2', label: '2.x', status: 'current' },
+            { id: 'v1', label: '1.x', status: 'archived' },
+          ],
+        },
+      },
+    },
+  }
+  const page = ({ id, slug, key, parent = '', access = '', cover = '' }) => ({
+    id,
+    item_id: `item-${id}`,
+    kind: 'page',
+    locale: 'en',
+    translation_key: `${key}-v2`,
+    markdown: `---\nkind: page\nlayout: docs\ntitle: ${key}\nlocale: en\nslug: ${slug}\ntranslationKey: ${key}-v2\ndocKey: ${key}\ndocsVersion: v2\n${parent ? `parent: ${parent}\n` : ''}${access ? `access: [${access}]\n` : ''}${cover ? `cover: ${cover}\n` : ''}---\n# ${key}\n\n## Details\n\nSecret phrase ${key}.`,
+  })
+  const result = await build({
+    site: docsSite,
+    accessGroups: [{ slug: 'customers' }],
+    revisions: [
+      page({ id: 'start', slug: 'start', key: 'start' }),
+      page({
+        id: 'install',
+        slug: 'install',
+        key: 'install',
+        parent: 'start',
+        access: 'customers',
+        cover: '/media/00000000-0000-0000-0000-000000000001/cover.png',
+      }),
+    ],
+  })
+  assert.ok(result.files.has('en/docs/index.html'))
+  assert.ok(result.files.has('en/docs/v2/index.html'))
+  assert.ok(result.files.has('en/docs/v2/start/install/index.html'))
+  assert.match(result.files.get('en/docs/v2/start/install/index.html').body.toString(), /docs-sidebar/)
+  const sitemap = result.files.get('sitemap.xml').body.toString()
+  const search = result.files.get('en/search-index.json').body.toString()
+  const llms = result.files.get('en/llms-full.txt').body.toString()
+  assert.doesNotMatch(sitemap, /\/start\/install/)
+  assert.doesNotMatch(search, /secret phrase install/i)
+  assert.doesNotMatch(llms, /secret phrase install/i)
+  assert.ok(
+    result.accessEntries.some((entry) => entry.path === '/en/docs/v2/start/install/' && entry.match === 'exact'),
+  )
+  assert.ok(
+    result.accessEntries.some(
+      (entry) => entry.path === '/en/docs/v2/start/install/index.html' && entry.match === 'exact',
+    ),
+  )
+  assert.ok(
+    result.accessEntries.some((entry) => entry.path === '/media/00000000-0000-0000-0000-000000000001/cover.png'),
+  )
+  assert.equal(result.accessCatalog[0].title, 'install')
+})
+
+test('a prefix access rule removes its whole documentation area from public discovery', async () => {
+  const docsSite = {
+    ...site,
+    settings: {
+      presentation: {
+        preset: 'product-docs',
+        docs: { versions: [{ id: 'v2', label: '2.x', status: 'current' }] },
+      },
+    },
+  }
+  const result = await build({
+    site: docsSite,
+    accessGroups: [{ slug: 'team' }],
+    accessRules: [{ match: 'prefix', path: '/en/docs/', group_slugs: ['team'], user_ids: [] }],
+    revisions: [
+      {
+        id: 'docs-private',
+        item_id: 'item-docs-private',
+        kind: 'page',
+        locale: 'en',
+        translation_key: 'private-v2',
+        markdown:
+          '---\nkind: page\nlayout: docs\ntitle: Internal manual\nlocale: en\nslug: internal\ntranslationKey: private-v2\ndocKey: internal\ndocsVersion: v2\n---\n# Internal manual\n\nPrivate operations.',
+      },
+    ],
+  })
+  const sitemap = result.files.get('sitemap.xml').body.toString()
+  assert.doesNotMatch(sitemap, /\/en\/docs/)
+  assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Internal manual/)
+  assert.doesNotMatch(result.files.get('en/llms-full.txt').body.toString(), /Private operations/)
+  assert.ok(result.accessEntries.some((entry) => entry.match === 'prefix' && entry.path === '/en/docs/'))
+})
+
+test('a protected post also protects its raw Markdown twin', async () => {
+  const result = await build({
+    accessGroups: [{ slug: 'customers' }],
+    revisions: [post({ slug: 'private-post', title: 'Private post', extra: 'access: [customers]\n' })],
+  })
+  assert.ok(result.files.has('en/blog/private-post/index.md'))
+  assert.ok(
+    result.accessEntries.some((entry) => entry.match === 'exact' && entry.path === '/en/blog/private-post/index.md'),
+  )
+  assert.doesNotMatch(result.files.get('en/llms-full.txt').body.toString(), /Private post/)
+})
+
+test('wiki, knowledge, landing and changelog layouts receive controlled routes', async () => {
+  const revisions = [
+    ['wiki', 'wiki-one'],
+    ['knowledge', 'help-one'],
+    ['landing', 'product-one'],
+    ['changelog', 'release-one'],
+  ].map(([layoutName, slug]) => ({
+    id: `r-${slug}`,
+    item_id: `i-${slug}`,
+    kind: 'page',
+    locale: 'en',
+    translation_key: slug,
+    markdown: `---\nkind: page\nlayout: ${layoutName}\ntitle: ${slug}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\n---\n# ${slug}`,
+  }))
+  const result = await build({ revisions })
+  for (const path of [
+    'en/wiki/wiki-one/index.html',
+    'en/help/help-one/index.html',
+    'en/product-one/index.html',
+    'en/changelog/release-one/index.html',
+  ])
+    assert.ok(result.files.has(path), path)
+})

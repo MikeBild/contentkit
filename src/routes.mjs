@@ -1,10 +1,21 @@
+import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { keyFingerprint } from './auth.mjs'
-import { canonicalRequestPath, cleanPath, sha256 } from './utils.mjs'
+import { canonicalRequestPath, cleanPath, escapeHtml, hmac256, safeEqual, sha256 } from './utils.mjs'
 import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
 import { clientIp, contentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
+import {
+  clearSessionCookie,
+  INSECURE_READER_COOKIE,
+  mostSpecificAccess,
+  parseCookies,
+  readerAllowed,
+  READER_COOKIE,
+  sessionCookie,
+  validReturnTo,
+} from './access.mjs'
 
 export const SERVICE = {
   name: 'contentkit',
@@ -78,6 +89,9 @@ export const API_ROUTES = [
   { pattern: /^\/public\/v1\/contact$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/comments$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/feedback$/, methods: ['POST'] },
+  { pattern: /^\/_contentkit\/login$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/_contentkit\/logout$/, methods: ['POST'] },
+  { pattern: /^\/_contentkit\/(session|navigation\.json|search-index\.json)$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
@@ -89,6 +103,10 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/backfill$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/jobs$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/access\/(users|groups|rules)$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/access\/(users|groups|rules)\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/access\/users\/[^/]+\/revoke-sessions$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/access\/groups\/[^/]+\/members$/, methods: ['PUT'] },
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
@@ -111,9 +129,161 @@ export const API_ROUTES = [
 // All state (draining/storageReady) and services are owned by createApp.
 export function createRequestHandler(ctx) {
   const { config, logger, db, storage, repo, releases, auth, maintenance, limiter, metrics, state, audio } = ctx
+  const loginLimiter = ctx.loginLimiter || limiter
 
   async function bodyFor(req) {
     return readBody(req, config.maxBodyBytes)
+  }
+
+  const secureCookies = (site) => String(site?.base_url || '').startsWith('https://')
+  const csrfCookieName = (site) => (secureCookies(site) ? '__Host-contentkit_csrf' : 'contentkit_csrf')
+  const signedCsrf = () => {
+    const token = randomBytes(24).toString('base64url')
+    return `${token}.${hmac256(config.sessionSecret || config.previewSecret || 'development', token)}`
+  }
+  const validCsrf = (req, value, site) => {
+    const cookie = parseCookies(req.headers.cookie || '')[csrfCookieName(site)] || ''
+    const [token, signature] = cookie.split('.')
+    return Boolean(
+      token &&
+      signature &&
+      safeEqual(cookie, value) &&
+      safeEqual(signature, hmac256(config.sessionSecret || config.previewSecret || 'development', token)),
+    )
+  }
+  const csrfCookie = (value, site) =>
+    `${csrfCookieName(site)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax${secureCookies(site) ? '; Secure' : ''}`
+  const parseInput = async (req) => {
+    const body = await bodyFor(req)
+    if ((req.headers['content-type'] || '').includes('application/json')) return parseJson(body)
+    return Object.fromEntries(new URLSearchParams(body.toString('utf8')))
+  }
+  const readerFor = async (req, site) => {
+    const cookies = parseCookies(req.headers.cookie || '')
+    const token = cookies[READER_COOKIE] || cookies[INSECURE_READER_COOKIE]
+    return repo.authenticateReader ? repo.authenticateReader(site.id, token) : null
+  }
+  const accessFor = async (req, site, release, pathname) => {
+    const entries = repo.releaseAccessEntries ? await repo.releaseAccessEntries(release.id) : []
+    const normalized = cleanPath(pathname)
+    const entry =
+      mostSpecificAccess(entries, normalized) ||
+      (normalized.endsWith('/index.html')
+        ? mostSpecificAccess(entries, normalized.slice(0, -'index.html'.length))
+        : null)
+    if (!entry) return { entry: null, reader: null, allowed: true }
+    const reader = await readerFor(req, site)
+    return { entry, reader, allowed: readerAllowed(entry, reader) }
+  }
+  const loginPage = (site, csrf, returnTo, error = '') =>
+    `<!doctype html><html lang="${escapeHtml(site.default_locale || 'en')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Sign in · ${escapeHtml(site.name)}</title><style>body{font:16px system-ui;margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.login{width:min(90%,24rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}label,input,button{display:block;width:100%;box-sizing:border-box}label{margin-top:1rem}input,button{font:inherit;padding:.75rem;margin-top:.35rem;border:1px solid #ccd2dc;border-radius:.5rem}button{margin-top:1.25rem;background:#172033;color:white;cursor:pointer}.error{color:#a21b1b}</style></head><body><main class="login"><h1>${escapeHtml(site.name)}</h1><p>Sign in to continue.</p>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}<form method="post" action="/_contentkit/login"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Sign in</button></form></main></body></html>`
+  const loginHeaders = (csrf, site) => ({
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'private,no-store',
+    'set-cookie': csrfCookie(csrf, site),
+    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+  })
+
+  async function readerRoutes(req, res, url, path, ip) {
+    if (!path.startsWith('/_contentkit/')) return false
+    const methods = {
+      '/_contentkit/login': ['GET', 'POST'],
+      '/_contentkit/logout': ['POST'],
+      '/_contentkit/session': ['GET'],
+      '/_contentkit/navigation.json': ['GET'],
+      '/_contentkit/search-index.json': ['GET'],
+    }[path]
+    if (!methods) return sendJson(res, 404, { error: 'not found' })
+    const allow = [...methods, 'OPTIONS'].join(', ')
+    if (req.method === 'OPTIONS') return send(res, 204, '', { allow })
+    if (!methods.includes(req.method)) return sendJson(res, 405, { error: 'method not allowed' }, { allow })
+    const site = await repo.getSiteByHost(req.headers.host || '')
+    if (!site) return sendJson(res, 404, { error: 'not found' })
+    const cookies = parseCookies(req.headers.cookie || '')
+    const token = cookies[READER_COOKIE] || cookies[INSECURE_READER_COOKIE]
+    if (path === '/_contentkit/login') {
+      const returnTo = validReturnTo(url.searchParams.get('return_to'), `/${site.default_locale}/`)
+      if (req.method === 'GET') {
+        const csrf = signedCsrf()
+        return send(res, 200, loginPage(site, csrf, returnTo), loginHeaders(csrf, site))
+      }
+      const input = await parseInput(req)
+      if (!validCsrf(req, input.csrf, site)) return sendJson(res, 403, { error: 'invalid csrf token' })
+      const attemptedUsername = String(input.username || '')
+        .trim()
+        .toLowerCase()
+        .slice(0, 64)
+      const ipAllowed = loginLimiter.take(`reader-login-ip:${ip}`)
+      const usernameAllowed = loginLimiter.take(`reader-login-user:${site.id}:${attemptedUsername}`)
+      if (!ipAllowed || !usernameAllowed) {
+        return sendJson(res, 429, { error: 'rate limit exceeded' }, { 'retry-after': '900' })
+      }
+      const session = await repo.createReaderSession(site.id, input.username, input.password)
+      if (!session) {
+        const csrf = signedCsrf()
+        return send(
+          res,
+          401,
+          loginPage(site, csrf, validReturnTo(input.return_to, returnTo), 'Username or password is incorrect.'),
+          loginHeaders(csrf, site),
+        )
+      }
+      return send(res, 303, '', {
+        location: validReturnTo(input.return_to, `/${site.default_locale}/`),
+        'cache-control': 'private,no-store',
+        'set-cookie': sessionCookie(session.token, { secure: secureCookies(site) }),
+      })
+    }
+    if (path === '/_contentkit/logout' && req.method === 'POST') {
+      await repo.revokeReaderSession?.(site.id, token)
+      return send(res, 303, '', {
+        location: `/${site.default_locale}/`,
+        'cache-control': 'private,no-store',
+        'set-cookie': clearSessionCookie({ secure: secureCookies(site) }),
+      })
+    }
+    const reader = await readerFor(req, site)
+    if (!reader)
+      return sendJson(res, 401, { error: 'reader authentication required' }, { 'cache-control': 'private,no-store' })
+    if (path === '/_contentkit/session') {
+      return sendJson(
+        res,
+        200,
+        {
+          authenticated: true,
+          user: { id: reader.id, username: reader.username, display_name: reader.display_name },
+          groups: reader.groups,
+        },
+        { 'cache-control': 'private,no-store' },
+      )
+    }
+    if (!site.active_release_id) return sendJson(res, 503, { error: 'site has no active release' })
+    const catalog = await repo.releaseAccessCatalog(site.active_release_id, url.searchParams.get('locale') || undefined)
+    const visible = catalog.filter((entry) => readerAllowed(entry, reader))
+    if (path === '/_contentkit/navigation.json') {
+      return sendJson(
+        res,
+        200,
+        visible.map(({ search_text, group_slugs, user_ids, ...entry }) => entry),
+        { 'cache-control': 'private,no-store' },
+      )
+    }
+    if (path === '/_contentkit/search-index.json') {
+      return sendJson(
+        res,
+        200,
+        visible.map((entry) => ({
+          title: entry.title,
+          summary: entry.summary,
+          url: entry.url,
+          text: entry.search_text,
+        })),
+        { 'cache-control': 'private,no-store' },
+      )
+    }
+    return sendJson(res, 404, { error: 'not found' })
   }
 
   async function markdownRequest(req) {
@@ -193,6 +363,15 @@ export function createRequestHandler(ctx) {
         limit: '1',
       })
       if (!items[0]) return sendJson(res, 404, { error: 'post not found' })
+      if (site.active_release_id && repo.releaseAccessEntries) {
+        const entries = await repo.releaseAccessEntries(site.active_release_id)
+        const entry = entries.find((candidate) => candidate.content_item_id === items[0].id)
+        if (entry) {
+          const reader = await readerFor(req, site)
+          if (!reader) return sendJson(res, 401, { error: 'reader authentication required' })
+          if (!readerAllowed(entry, reader)) return sendJson(res, 403, { error: 'reader access denied' })
+        }
+      }
       const record = await db.tx(async (tx) => {
         const [row] = await tx.insert('ck_comments', {
           site_id: site.id,
@@ -236,6 +415,15 @@ export function createRequestHandler(ctx) {
         limit: '1',
       })
       if (!items[0]) return sendJson(res, 404, { error: 'post not found' })
+      if (site.active_release_id && repo.releaseAccessEntries) {
+        const entries = await repo.releaseAccessEntries(site.active_release_id)
+        const entry = entries.find((candidate) => candidate.content_item_id === items[0].id)
+        if (entry) {
+          const reader = await readerFor(req, site)
+          if (!reader) return sendJson(res, 401, { error: 'reader authentication required' })
+          if (!readerAllowed(entry, reader)) return sendJson(res, 403, { error: 'reader access denied' })
+        }
+      }
       // No outbox event: votes are anonymous and unmoderatable, and a webhook
       // per thumb-click is noise. Without the event there is nothing to keep
       // atomic, so the insert also skips db.tx.
@@ -294,6 +482,7 @@ export function createRequestHandler(ctx) {
     method = 'GET',
     previewBase = '',
     analytics = null,
+    privateAccess = false,
   ) {
     const releasePath = canonicalRequestPath(requestPath)
     const objectPath = `${release.storage_prefix}/${releasePath}`
@@ -309,10 +498,11 @@ export function createRequestHandler(ctx) {
     let body = method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
     const contentType =
       releaseContentType(releasePath) || response.headers.get('content-type') || 'application/octet-stream'
-    const cacheControl = preview
-      ? 'private,no-store'
-      : response.headers.get('cache-control') ||
-        (contentType.includes('html') ? 'public,max-age=60,must-revalidate' : 'public,max-age=31536000,immutable')
+    const cacheControl =
+      preview || privateAccess
+        ? 'private,no-store'
+        : response.headers.get('cache-control') ||
+          (contentType.includes('html') ? 'public,max-age=60,must-revalidate' : 'public,max-age=31536000,immutable')
     if (preview && body.length && (contentType.includes('html') || contentType.includes('css'))) {
       let value = body.toString('utf8')
       if (contentType.includes('html')) {
@@ -344,7 +534,22 @@ export function createRequestHandler(ctx) {
       await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/p/${preview[1]}`)
       return true
     }
+    const site = await repo.getSiteByHost(req.headers.host || '')
     if (url.pathname.startsWith('/media/')) {
+      if (site?.active_release_id && repo.releaseAccessEntries) {
+        const release = await repo.getRelease(site.active_release_id)
+        const access = await accessFor(req, site, release, url.pathname)
+        if (access.entry && !access.reader) {
+          return sendJson(
+            res,
+            401,
+            { error: 'reader authentication required' },
+            { 'cache-control': 'private,no-store' },
+          )
+        }
+        if (!access.allowed)
+          return sendJson(res, 403, { error: 'reader access denied' }, { 'cache-control': 'private,no-store' })
+      }
       const id = url.pathname.split('/')[2]
       const asset = await repo.asset(id)
       if (!asset) return sendJson(res, 404, { error: 'asset not found' })
@@ -406,7 +611,6 @@ export function createRequestHandler(ctx) {
       send(res, 206, body, { ...headers, 'content-range': `bytes ${range.start}-${range.end}/${total}` })
       return true
     }
-    const site = await repo.getSiteByHost(req.headers.host || '')
     if (!site) return false
     if (!site.active_release_id) return sendJson(res, 503, { error: 'site has no active release' })
     const leaf = url.pathname.split('/').at(-1)
@@ -415,7 +619,26 @@ export function createRequestHandler(ctx) {
       return true
     }
     const release = await repo.getRelease(site.active_release_id)
-    await serveRelease(res, release, url.pathname, false, req.method, '', site.settings?.analytics)
+    const access = await accessFor(req, site, release, url.pathname)
+    if (access.entry && !access.reader) {
+      const returnTo = encodeURIComponent(`${url.pathname}${url.search}`)
+      return send(res, 302, '', {
+        location: `/_contentkit/login?return_to=${returnTo}`,
+        'cache-control': 'private,no-store',
+      })
+    }
+    if (!access.allowed)
+      return sendJson(res, 403, { error: 'reader access denied' }, { 'cache-control': 'private,no-store' })
+    await serveRelease(
+      res,
+      release,
+      url.pathname,
+      false,
+      req.method,
+      '',
+      site.settings?.analytics,
+      Boolean(access.entry),
+    )
     return true
   }
 
@@ -445,6 +668,7 @@ export function createRequestHandler(ctx) {
     if (apiHost && req.method === 'GET' && path === '/llms-full.txt')
       return send(res, 200, documentation(config, 'llms-full.txt'), { 'content-type': 'text/plain; charset=utf-8' })
     if (apiHost && req.method === 'GET' && path === '/') return sendJson(res, 200, SERVICE)
+    if (path.startsWith('/_contentkit/')) return readerRoutes(req, res, url, path, ip)
     if (
       req.method === 'POST' &&
       (path === '/public/v1/contact' || /^\/public\/v1\/posts\/[^/]+\/(comments|feedback)$/.test(path))
@@ -469,6 +693,77 @@ export function createRequestHandler(ctx) {
       }
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
+    }
+    const accessCollection = path.match(/^\/v1\/sites\/([^/]+)\/access\/(users|groups|rules)$/)
+    if (accessCollection && ['GET', 'POST'].includes(req.method)) {
+      const site = await repo.getSite(accessCollection[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'site:admin', site.id))) return
+      const kind = accessCollection[2]
+      if (req.method === 'GET') {
+        const rows =
+          kind === 'users'
+            ? await repo.listAccessUsers(site.id)
+            : kind === 'groups'
+              ? await repo.listAccessGroups(site.id)
+              : await repo.listAccessRules(site.id)
+        return sendJson(res, 200, rows)
+      }
+      const input = parseJson(await bodyFor(req))
+      const record =
+        kind === 'users'
+          ? await repo.createAccessUser(site.id, input)
+          : kind === 'groups'
+            ? await repo.createAccessGroup(site.id, input)
+            : await repo.createAccessRule(site.id, input)
+      return sendJson(res, 201, record)
+    }
+    const accessRevoke = path.match(/^\/v1\/sites\/([^/]+)\/access\/users\/([^/]+)\/revoke-sessions$/)
+    if (accessRevoke && req.method === 'POST') {
+      const site = await repo.getSite(accessRevoke[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'site:admin', site.id))) return
+      return sendJson(res, 200, await repo.revokeReaderSessions(site.id, accessRevoke[2]))
+    }
+    const accessMembers = path.match(/^\/v1\/sites\/([^/]+)\/access\/groups\/([^/]+)\/members$/)
+    if (accessMembers && req.method === 'PUT') {
+      const site = await repo.getSite(accessMembers[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'site:admin', site.id))) return
+      const record = await repo.setAccessGroupMembers(
+        site.id,
+        accessMembers[2],
+        parseJson(await bodyFor(req)).user_ids || [],
+      )
+      return record ? sendJson(res, 200, record) : sendJson(res, 404, { error: 'access group not found' })
+    }
+    const accessItem = path.match(/^\/v1\/sites\/([^/]+)\/access\/(users|groups|rules)\/([^/]+)$/)
+    if (accessItem && ['PATCH', 'DELETE'].includes(req.method)) {
+      const site = await repo.getSite(accessItem[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'site:admin', site.id))) return
+      const [, , kind, id] = accessItem
+      if (req.method === 'DELETE') {
+        const deleted =
+          kind === 'users'
+            ? await repo.deleteAccessUser(site.id, id)
+            : kind === 'groups'
+              ? await repo.deleteAccessGroup(site.id, id)
+              : await repo.deleteAccessRule(site.id, id)
+        return deleted
+          ? sendJson(res, 200, { deleted: true, ...(kind === 'rules' ? { rebuild_required: true } : {}) })
+          : sendJson(res, 404, { error: `access ${kind.slice(0, -1)} not found` })
+      }
+      const input = parseJson(await bodyFor(req))
+      const record =
+        kind === 'users'
+          ? await repo.updateAccessUser(site.id, id, input)
+          : kind === 'groups'
+            ? await repo.updateAccessGroup(site.id, id, input)
+            : await repo.updateAccessRule(site.id, id, input)
+      return record
+        ? sendJson(res, 200, record)
+        : sendJson(res, 404, { error: `access ${kind.slice(0, -1)} not found` })
     }
     const contentMatch = path.match(/^\/v1\/sites\/([^/]+)\/content$/)
     if (contentMatch) {

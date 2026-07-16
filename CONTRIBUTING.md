@@ -23,15 +23,18 @@ Reset all local data with `npm run local:reset`.
 ```bash
 npm run lint            # ESLint + Prettier
 npm test                # unit tests (no external services)
+npm run test:contract   # OpenAPI-to-router contract tests
+npm run test:smoke      # build the real template example corpus
 npm run test:integration  # needs CONTENTKIT_TEST_DATABASE_URL (PostgreSQL 16)
 npm run test:e2e:local  # needs Docker and Bun; builds and runs the binary
+npm run benchmark       # 1,000-document build and access-control benchmark
 npm run check:embedded-drift
 npm run check:docs-drift
 ```
 
-Unit tests are fully self-contained; integration and e2e tests skip themselves
-when their environment variables are unset. CI runs all tiers on every pull
-request, so a green local `npm run lint && npm test` is enough to get started.
+Unit, contract and smoke tests are fully self-contained; integration and E2E
+tests skip themselves when their environment variables are unset. CI runs all
+tiers and checks the benchmark budgets on every pull request.
 
 Format your changes with `npm run format` before committing.
 
@@ -46,6 +49,9 @@ Format your changes with `npm run format` before committing.
   `test/integration/`.
 - If you change the HTTP API, run `npm run docs:gen-openapi` and commit the
   regenerated `docs/openapi.json`; the drift check enforces this.
+- Keep `README.md`, `docs/llms.txt`, `docs/llms-full.txt` and the focused guides
+  consistent with behavior and OpenAPI. Code, comments, tests and documentation
+  are written in English.
 - If you add a migration, add ordered `.sql` files plus journal entries under
   `src/db/migrations/` and run `npm run db:gen-embedded`.
 

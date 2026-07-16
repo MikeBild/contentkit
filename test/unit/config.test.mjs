@@ -51,6 +51,7 @@ test('production fails closed when secrets are absent', () => {
     'CONTENTKIT_BOOTSTRAP_API_KEY',
     'CONTENTKIT_KEY_PEPPER',
     'CONTENTKIT_PREVIEW_SECRET',
+    'CONTENTKIT_SESSION_SECRET',
     'DATABASE_URL',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',

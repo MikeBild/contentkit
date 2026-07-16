@@ -3,6 +3,15 @@ import { renderMarkdown } from './markdown.mjs'
 import { hashApiKey } from './auth.mjs'
 import { sha256, slugify } from './utils.mjs'
 import { assertDeliverableUrl, decryptSecret, encryptSecret, generateWebhookSecret } from './secrets.mjs'
+import {
+  createSessionToken,
+  hashReaderPassword,
+  normalizeUsername,
+  sessionTokenHash,
+  SESSION_ABSOLUTE_MS,
+  SESSION_IDLE_MS,
+  verifyReaderPassword,
+} from './access.mjs'
 
 // Content types that execute script in a browser when served inline. Uploaded
 // assets are served from /media on every tenant origin, so these are rejected.
@@ -57,6 +66,10 @@ const PUBLISHED_PAGE_MAX = 200
 const SEARCH_QUERY_MAX_CHARS = 200
 const SEARCH_LIMIT_DEFAULT = 20
 const SEARCH_LIMIT_MAX = 100
+// Invalid and unknown reader usernames still perform one real scrypt verify so
+// response timing does not become a practical account-enumeration signal.
+const DUMMY_READER_PASSWORD_HASH =
+  'scrypt$32768$8$1$sYov86OG4sb7EUwq8sJGQg$pIIVqDA6UO2Txv7iWAu_gF6j-yapuqw1s7aq_MYgPCfKhvCGvGvKvLIA3iU82ipfWFpM6_qzif71Wa8wyvFjBw'
 
 const invalidQuery = (message) => Object.assign(new Error(message), { statusCode: 422 })
 
@@ -126,6 +139,8 @@ const THEME_CUSTOM_CSS_MAX_BYTES = 8192
 // stack), so 256 bytes is generous. Capped for the same reason as custom_css:
 // themeStyles() inlines every value into each generated page.
 const THEME_TOKEN_VALUE_MAX_BYTES = 256
+const PRESENTATION_PRESETS = new Set(['portfolio', 'product-docs', 'wiki', 'knowledge-base', 'product', 'changelog'])
+const PRESENTATION_ID = /^[a-z0-9](?:[a-z0-9-]{0,94}[a-z0-9])?$/
 
 // Settings are one jsonb blob and unknown keys pass through untouched — but
 // keys the builder reads are validated on every write (create and PATCH), so
@@ -136,6 +151,58 @@ function validateSiteSettings(settings) {
   const showExtra = settings.content?.show_extra
   if (showExtra !== undefined && typeof showExtra !== 'boolean') {
     throw Object.assign(new Error('settings.content.show_extra must be a boolean'), { statusCode: 422 })
+  }
+  const presentation = settings.presentation
+  if (presentation !== undefined) {
+    if (!presentation || typeof presentation !== 'object' || Array.isArray(presentation)) {
+      throw Object.assign(new Error('settings.presentation must be an object'), { statusCode: 422 })
+    }
+    const preset = presentation.preset ?? 'portfolio'
+    if (!PRESENTATION_PRESETS.has(preset)) {
+      throw Object.assign(
+        new Error(`settings.presentation.preset must be one of ${[...PRESENTATION_PRESETS].join(', ')}`),
+        {
+          statusCode: 422,
+        },
+      )
+    }
+    if (
+      presentation.docs !== undefined &&
+      (!presentation.docs || typeof presentation.docs !== 'object' || Array.isArray(presentation.docs))
+    ) {
+      throw Object.assign(new Error('settings.presentation.docs must be an object'), { statusCode: 422 })
+    }
+    const versions = presentation.docs?.versions
+    if (versions !== undefined) {
+      if (
+        !Array.isArray(versions) ||
+        !versions.length ||
+        versions.length > 32 ||
+        versions.some(
+          (entry) =>
+            !entry ||
+            typeof entry !== 'object' ||
+            !PRESENTATION_ID.test(String(entry.id || '')) ||
+            !String(entry.label || '').trim() ||
+            String(entry.label).length > 120 ||
+            !['current', 'archived'].includes(entry.status),
+        ) ||
+        new Set(versions.map((entry) => entry.id)).size !== versions.length ||
+        versions.filter((entry) => entry.status === 'current').length !== 1
+      ) {
+        throw Object.assign(
+          new Error(
+            'settings.presentation.docs.versions needs 1-32 labeled unique ids and exactly one current version',
+          ),
+          { statusCode: 422 },
+        )
+      }
+    }
+    if (preset === 'product-docs' && !versions?.length) {
+      throw Object.assign(new Error('product-docs preset requires settings.presentation.docs.versions'), {
+        statusCode: 422,
+      })
+    }
   }
   const tokens = settings.theme?.tokens
   if (tokens !== undefined) {
@@ -190,6 +257,49 @@ function validateSiteSettings(settings) {
     }
   }
 }
+
+function accessSlug(value, field = 'group slug') {
+  const slug = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
+    throw Object.assign(new Error(`${field} must be a lowercase slug`), { statusCode: 422 })
+  }
+  return slug
+}
+
+function accessPath(value, match = 'exact') {
+  let path = String(value || '').trim()
+  if (
+    !path.startsWith('/') ||
+    path.startsWith('//') ||
+    path.includes('//') ||
+    path.includes('\\') ||
+    path.includes('?') ||
+    path.includes('#') ||
+    path.split('/').some((part) => part === '.' || part === '..')
+  ) {
+    throw Object.assign(new Error('access rule path must be a normalized absolute site path'), { statusCode: 422 })
+  }
+  if (match === 'prefix' && path !== '/' && !path.endsWith('/')) path += '/'
+  return path
+}
+
+function accessList(value, field) {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw Object.assign(new Error(`${field} must be an array`), { statusCode: 422 })
+  return value
+}
+
+function accessUserIds(value, field) {
+  const ids = accessList(value, field).map((id) => String(id).trim())
+  if (ids.some((id) => !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id))) {
+    throw Object.assign(new Error(`${field} must contain UUIDs`), { statusCode: 422 })
+  }
+  return ids
+}
+
+const publicReader = ({ password_hash, ...user }) => user
 
 export function createRepository(config, db, storage) {
   async function one(table, query) {
@@ -301,6 +411,58 @@ export function createRepository(config, db, storage) {
   }
 
   const publicEndpoint = ({ secret_encrypted, ...rest }) => rest
+
+  async function accessGroupsForUser(exec, siteId, userId) {
+    const groups = await exec.select('ck_access_groups', { site_id: `eq.${siteId}` })
+    if (!groups.length) return []
+    const memberships = await exec.select('ck_access_group_members', { user_id: `eq.${userId}` })
+    const ids = new Set(memberships.map((entry) => entry.group_id))
+    return groups
+      .filter((group) => ids.has(group.id))
+      .map((group) => group.slug)
+      .sort()
+  }
+
+  async function resolveAccessGroups(exec, siteId, slugs) {
+    const wanted = [...new Set(accessList(slugs, 'groups').map((slug) => accessSlug(slug)))]
+    const groups = await exec.select('ck_access_groups', { site_id: `eq.${siteId}` })
+    const selected = groups.filter((group) => wanted.includes(group.slug))
+    if (selected.length !== wanted.length)
+      throw Object.assign(new Error('one or more access groups do not exist'), { statusCode: 422 })
+    return { selected, wanted: wanted.sort() }
+  }
+
+  async function replaceAccessUserGroups(exec, userId, selected) {
+    const memberships = await exec.select('ck_access_group_members', { user_id: `eq.${userId}` })
+    for (const membership of memberships)
+      await exec.remove('ck_access_group_members', {
+        group_id: `eq.${membership.group_id}`,
+        user_id: `eq.${userId}`,
+      })
+    if (selected.length) {
+      await exec.insert(
+        'ck_access_group_members',
+        selected.map((group) => ({ group_id: group.id, user_id: userId })),
+        { returning: false },
+      )
+    }
+  }
+
+  async function revokeReaderSessions(exec, siteId, userId) {
+    const sessions = await exec.select('ck_reader_sessions', {
+      site_id: `eq.${siteId}`,
+      user_id: `eq.${userId}`,
+      revoked_at: 'is.null',
+    })
+    for (const session of sessions)
+      await exec.update(
+        'ck_reader_sessions',
+        { id: `eq.${session.id}` },
+        { revoked_at: new Date().toISOString() },
+        { returning: false },
+      )
+    return sessions.length
+  }
 
   return {
     enqueueEvent,
@@ -476,6 +638,256 @@ export function createRepository(config, db, storage) {
         ? await db.update('ck_sites', { id: `eq.${siteId}` }, allowed)
         : await db.select('ck_sites', { id: `eq.${siteId}`, limit: '1' })
       return rows[0]
+    },
+    async listAccessGroups(siteId) {
+      return db.select('ck_access_groups', { site_id: `eq.${siteId}`, order: 'slug.asc' })
+    },
+    async createAccessGroup(siteId, input) {
+      const slug = accessSlug(input.slug)
+      const name = String(input.name || slug)
+        .trim()
+        .slice(0, 120)
+      const [group] = await db.insert('ck_access_groups', { site_id: siteId, slug, name })
+      return group
+    },
+    async updateAccessGroup(siteId, id, input) {
+      const existing = await one('ck_access_groups', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      if (!existing) return null
+      const patch = {}
+      if (input.name !== undefined) patch.name = String(input.name).trim().slice(0, 120)
+      if (!Object.keys(patch).length) return existing
+      return (await db.update('ck_access_groups', { id: `eq.${id}`, site_id: `eq.${siteId}` }, patch))[0] || null
+    },
+    async deleteAccessGroup(siteId, id) {
+      const group = await one('ck_access_groups', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      if (!group) return false
+      const rules = await db.select('ck_access_rules', { site_id: `eq.${siteId}` })
+      if (rules.some((rule) => (rule.group_slugs || []).includes(group.slug))) {
+        throw Object.assign(new Error('access group is referenced by a draft rule'), { statusCode: 409 })
+      }
+      await db.remove('ck_access_groups', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      return true
+    },
+    async setAccessGroupMembers(siteId, groupId, userIds) {
+      const group = await one('ck_access_groups', { id: `eq.${groupId}`, site_id: `eq.${siteId}` })
+      if (!group) return null
+      const ids = [...new Set(accessUserIds(userIds, 'user_ids'))]
+      const users = ids.length ? await db.select('ck_access_users', { id: inFilter(ids), site_id: `eq.${siteId}` }) : []
+      if (users.length !== ids.length)
+        throw Object.assign(new Error('one or more users do not belong to this site'), { statusCode: 422 })
+      await db.tx(async (tx) => {
+        await tx.remove('ck_access_group_members', { group_id: `eq.${groupId}` })
+        if (ids.length) {
+          await tx.insert(
+            'ck_access_group_members',
+            ids.map((userId) => ({ group_id: groupId, user_id: userId })),
+            { returning: false },
+          )
+        }
+      })
+      return { ...group, user_ids: ids }
+    },
+    async accessGroupsForUser(siteId, userId) {
+      return accessGroupsForUser(db, siteId, userId)
+    },
+    async listAccessUsers(siteId) {
+      const users = await db.select('ck_access_users', { site_id: `eq.${siteId}`, order: 'username.asc' })
+      return Promise.all(
+        users.map(async (user) => ({ ...publicReader(user), groups: await this.accessGroupsForUser(siteId, user.id) })),
+      )
+    },
+    async setAccessUserGroups(siteId, userId, slugs) {
+      return db.tx(async (tx) => {
+        const { selected, wanted } = await resolveAccessGroups(tx, siteId, slugs)
+        await replaceAccessUserGroups(tx, userId, selected)
+        return wanted
+      })
+    },
+    async createAccessUser(siteId, input) {
+      const username = normalizeUsername(input.username)
+      const passwordHash = await hashReaderPassword(input.password)
+      return db.tx(async (tx) => {
+        const { selected, wanted } = await resolveAccessGroups(tx, siteId, input.groups || [])
+        const [user] = await tx.insert('ck_access_users', {
+          site_id: siteId,
+          username,
+          display_name: String(input.display_name || username)
+            .trim()
+            .slice(0, 120),
+          password_hash: passwordHash,
+          active: input.active !== false,
+        })
+        await replaceAccessUserGroups(tx, user.id, selected)
+        return { ...publicReader(user), groups: wanted }
+      })
+    },
+    async updateAccessUser(siteId, id, input) {
+      const passwordHash = input.password === undefined ? undefined : await hashReaderPassword(input.password)
+      return db.tx(async (tx) => {
+        const [existing] = await tx.select('ck_access_users', {
+          id: `eq.${id}`,
+          site_id: `eq.${siteId}`,
+          limit: '1',
+        })
+        if (!existing) return null
+        const resolved = input.groups === undefined ? null : await resolveAccessGroups(tx, siteId, input.groups)
+        const patch = { updated_at: new Date().toISOString() }
+        if (input.display_name !== undefined) patch.display_name = String(input.display_name).trim().slice(0, 120)
+        if (input.active !== undefined) patch.active = input.active === true
+        if (passwordHash !== undefined) patch.password_hash = passwordHash
+        const [user] = await tx.update('ck_access_users', { id: `eq.${id}`, site_id: `eq.${siteId}` }, patch)
+        if (resolved) await replaceAccessUserGroups(tx, id, resolved.selected)
+        const groups = resolved ? resolved.wanted : await accessGroupsForUser(tx, siteId, id)
+        if (input.password !== undefined || input.active === false) await revokeReaderSessions(tx, siteId, id)
+        return { ...publicReader(user), groups }
+      })
+    },
+    async deleteAccessUser(siteId, id) {
+      const user = await one('ck_access_users', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      if (!user) return false
+      await db.remove('ck_access_users', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      return true
+    },
+    async listAccessRules(siteId) {
+      return db.select('ck_access_rules', { site_id: `eq.${siteId}`, order: 'path.asc' })
+    },
+    async validateAccessGrant(siteId, input) {
+      const groupSlugs = [
+        ...new Set(accessList(input.groups ?? input.group_slugs, 'groups').map((slug) => accessSlug(slug))),
+      ]
+      const userIds = [...new Set(accessUserIds(input.users ?? input.user_ids, 'users'))]
+      if (!groupSlugs.length && !userIds.length)
+        throw Object.assign(new Error('access rule needs groups or users'), { statusCode: 422 })
+      const groups = await db.select('ck_access_groups', { site_id: `eq.${siteId}` })
+      if (groupSlugs.some((slug) => !groups.some((group) => group.slug === slug))) {
+        throw Object.assign(new Error('one or more access groups do not exist'), { statusCode: 422 })
+      }
+      const users = userIds.length
+        ? await db.select('ck_access_users', { id: inFilter(userIds), site_id: `eq.${siteId}` })
+        : []
+      if (users.length !== userIds.length)
+        throw Object.assign(new Error('one or more access users do not exist'), { statusCode: 422 })
+      return { group_slugs: groupSlugs, user_ids: userIds }
+    },
+    async createAccessRule(siteId, input) {
+      const match = input.match || 'prefix'
+      if (!['exact', 'prefix'].includes(match))
+        throw Object.assign(new Error('access rule match must be exact or prefix'), { statusCode: 422 })
+      const grant = await this.validateAccessGrant(siteId, input)
+      const [rule] = await db.insert('ck_access_rules', {
+        site_id: siteId,
+        match,
+        path: accessPath(input.path, match),
+        ...grant,
+      })
+      return { ...rule, rebuild_required: true }
+    },
+    async updateAccessRule(siteId, id, input) {
+      const existing = await one('ck_access_rules', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      if (!existing) return null
+      const merged = { groups: existing.group_slugs, users: existing.user_ids, ...input }
+      const grant = await this.validateAccessGrant(siteId, merged)
+      const match = input.match ?? existing.match
+      if (!['exact', 'prefix'].includes(match))
+        throw Object.assign(new Error('access rule match must be exact or prefix'), { statusCode: 422 })
+      const [rule] = await db.update(
+        'ck_access_rules',
+        { id: `eq.${id}`, site_id: `eq.${siteId}` },
+        { match, path: accessPath(input.path ?? existing.path, match), ...grant, updated_at: new Date().toISOString() },
+      )
+      return { ...rule, rebuild_required: true }
+    },
+    async deleteAccessRule(siteId, id) {
+      const rule = await one('ck_access_rules', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      if (!rule) return false
+      await db.remove('ck_access_rules', { id: `eq.${id}`, site_id: `eq.${siteId}` })
+      return true
+    },
+    async createReaderSession(siteId, username, password) {
+      if (!config.sessionSecret)
+        throw Object.assign(new Error('CONTENTKIT_SESSION_SECRET is not configured'), { statusCode: 503 })
+      let normalized
+      try {
+        normalized = normalizeUsername(username)
+      } catch {
+        return null
+      }
+      const user = await one('ck_access_users', {
+        site_id: `eq.${siteId}`,
+        username: `eq.${normalized}`,
+        active: 'eq.true',
+      })
+      const passwordAccepted = await verifyReaderPassword(password, user?.password_hash || DUMMY_READER_PASSWORD_HASH)
+      if (!user || !passwordAccepted) return null
+      const token = createSessionToken()
+      const now = Date.now()
+      await db.insert('ck_reader_sessions', {
+        site_id: siteId,
+        user_id: user.id,
+        token_hash: sessionTokenHash(config.sessionSecret, token),
+        expires_at: new Date(now + SESSION_IDLE_MS).toISOString(),
+        absolute_expires_at: new Date(now + SESSION_ABSOLUTE_MS).toISOString(),
+      })
+      return { token, reader: { ...publicReader(user), groups: await this.accessGroupsForUser(siteId, user.id) } }
+    },
+    async authenticateReader(siteId, token) {
+      if (!token || !config.sessionSecret) return null
+      const session = await one('ck_reader_sessions', {
+        site_id: `eq.${siteId}`,
+        token_hash: `eq.${sessionTokenHash(config.sessionSecret, token)}`,
+        revoked_at: 'is.null',
+      })
+      const now = Date.now()
+      if (
+        !session ||
+        new Date(session.expires_at).getTime() <= now ||
+        new Date(session.absolute_expires_at).getTime() <= now
+      )
+        return null
+      const user = await one('ck_access_users', {
+        id: `eq.${session.user_id}`,
+        site_id: `eq.${siteId}`,
+        active: 'eq.true',
+      })
+      if (!user) return null
+      const expiresAt = new Date(
+        Math.min(now + SESSION_IDLE_MS, new Date(session.absolute_expires_at).getTime()),
+      ).toISOString()
+      await db.update(
+        'ck_reader_sessions',
+        { id: `eq.${session.id}` },
+        { last_used_at: new Date(now).toISOString(), expires_at: expiresAt },
+        { returning: false },
+      )
+      return { ...publicReader(user), groups: await this.accessGroupsForUser(siteId, user.id), session_id: session.id }
+    },
+    async revokeReaderSession(siteId, token) {
+      if (!token || !config.sessionSecret) return false
+      const session = await one('ck_reader_sessions', {
+        site_id: `eq.${siteId}`,
+        token_hash: `eq.${sessionTokenHash(config.sessionSecret, token)}`,
+        revoked_at: 'is.null',
+      })
+      if (!session) return false
+      await db.update(
+        'ck_reader_sessions',
+        { id: `eq.${session.id}` },
+        { revoked_at: new Date().toISOString() },
+        { returning: false },
+      )
+      return true
+    },
+    async revokeReaderSessions(siteId, userId) {
+      return { revoked: await revokeReaderSessions(db, siteId, userId) }
+    },
+    async releaseAccessEntries(releaseId) {
+      return db.select('ck_release_access_entries', { release_id: `eq.${releaseId}` })
+    },
+    async releaseAccessCatalog(releaseId, locale) {
+      return db.select('ck_release_access_catalog', {
+        release_id: `eq.${releaseId}`,
+        ...(locale ? { locale: `eq.${locale}` } : {}),
+      })
     },
     async listContent(siteId, query = {}) {
       return db.select('ck_content_items', {
@@ -762,6 +1174,8 @@ export function createRepository(config, db, storage) {
         })
         .filter(Boolean)
       const comments = await db.select('ck_comments', { site_id: `eq.${site.id}`, status: 'eq.approved' })
+      const accessRules = await db.select('ck_access_rules', { site_id: `eq.${site.id}`, order: 'path.asc' })
+      const accessGroups = await db.select('ck_access_groups', { site_id: `eq.${site.id}` })
       // Read-aloud audio rides along as plain data: the newest finished job per
       // item, resolved to its asset's stable /media URL. The URL is content-
       // addressed and release-independent, so rebuilding a site never has to
@@ -795,7 +1209,7 @@ export function createRepository(config, db, storage) {
       // items and overlay ride along for the release manager, which derives the
       // content.published/unpublished webhook events from the pointer
       // transitions the activation is about to make.
-      return { site, locales, revisions, comments, audio, items, overlay }
+      return { site, locales, revisions, comments, audio, accessRules, accessGroups, items, overlay }
     },
     async listReleases(siteId) {
       const rows = await db.select('ck_releases', { site_id: `eq.${siteId}`, order: 'created_at.desc' })

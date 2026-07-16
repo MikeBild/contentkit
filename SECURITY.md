@@ -18,13 +18,22 @@ Only the latest release receives security fixes.
 
 ## Hardening notes for operators
 
-- Treat the Supabase service-role key, key pepper, preview secret and webhook
-  secret as independent production secrets.
+- Treat the storage service credential, key pepper, preview secret, reader
+  session secret and webhook secret as independent production secrets.
 - Keep the service bound to localhost behind a reverse proxy (Caddy, nginx).
 - Do not enable raw HTML in the Markdown pipeline.
-- Configure Turnstile in production; without it public writes intentionally
-  fail open only when `NODE_ENV` is not `production`.
+- Configure Turnstile in production; without it public writes fail closed unless
+  the explicit development bypass is enabled outside production.
 - Rotate scoped API keys rather than sharing the bootstrap key.
+- Give every protected-area reader a personal account. Reader passwords are
+  salted scrypt hashes, sessions store only a token HMAC, and password changes
+  or account disabling revoke active sessions. Never use a shared reader
+  credential as an administrative API key.
+- Terminate HTTPS at the trusted reverse proxy and forward the original host;
+  reader cookies are HttpOnly, SameSite=Lax and Secure for HTTPS sites.
+- Treat release access rules as real authorization. `noindex`, an unlinked URL
+  or robots.txt is not access control; activate a new release after changing a
+  draft path policy.
 - Verify the Standard Webhooks signature (timestamp window plus HMAC) at every
   webhook receiver. Accepting unsigned deliveries is not acceptable.
 - Back up Postgres and Storage together: database metadata without release

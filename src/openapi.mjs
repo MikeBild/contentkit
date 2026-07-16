@@ -100,6 +100,41 @@ export function openApi(config) {
             site: { type: 'string', description: 'On a site-scoped 403: the site the check was performed against.' },
           },
         },
+        AccessUser: {
+          type: 'object',
+          required: ['id', 'site_id', 'username', 'display_name', 'active', 'groups'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            username: { type: 'string' },
+            display_name: { type: 'string' },
+            active: { type: 'boolean' },
+            groups: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        AccessGroup: {
+          type: 'object',
+          required: ['id', 'site_id', 'slug', 'name'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            slug: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,63}$' },
+            name: { type: 'string' },
+          },
+        },
+        AccessRule: {
+          type: 'object',
+          required: ['id', 'site_id', 'match', 'path', 'group_slugs', 'user_ids'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            match: { enum: ['exact', 'prefix'] },
+            path: { type: 'string', pattern: '^/' },
+            group_slugs: { type: 'array', items: { type: 'string' } },
+            user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            rebuild_required: { type: 'boolean' },
+          },
+        },
       },
       responses: {
         Unauthorized: {
@@ -141,6 +176,47 @@ export function openApi(config) {
       '/llms-full.txt': {
         get: { summary: 'Full LLM documentation', responses: { 200: { description: 'Full LLM documentation' } } },
       },
+      '/_contentkit/login': {
+        get: {
+          summary: 'Show the site reader login form',
+          responses: { 200: { description: 'HTML login form with CSRF token' } },
+        },
+        post: {
+          summary: 'Create a reader session',
+          description:
+            'Site-host form endpoint. Accepts username, password, csrf and a same-origin return_to path; sets the HttpOnly reader-session cookie and redirects with 303.',
+          responses: {
+            303: { description: 'Signed in' },
+            401: { description: 'Invalid credentials' },
+            403: { description: 'Invalid CSRF token' },
+            429: { description: 'Login rate limited' },
+          },
+        },
+      },
+      '/_contentkit/logout': {
+        post: { summary: 'Revoke the current reader session', responses: { 303: { description: 'Signed out' } } },
+      },
+      '/_contentkit/session': {
+        get: {
+          summary: 'Describe the current site reader session',
+          responses: { 200: { description: 'Reader and group projection' }, 401: { description: 'Not signed in' } },
+        },
+      },
+      '/_contentkit/navigation.json': {
+        get: {
+          summary: 'Navigation entries visible to the current reader',
+          responses: { 200: { description: 'Authorized release navigation' }, 401: { description: 'Not signed in' } },
+        },
+      },
+      '/_contentkit/search-index.json': {
+        get: {
+          summary: 'Protected search entries visible to the current reader',
+          responses: {
+            200: { description: 'Authorized release search records' },
+            401: { description: 'Not signed in' },
+          },
+        },
+      },
       '/v1/sites': {
         post: {
           summary: 'Create a site',
@@ -161,11 +237,143 @@ export function openApi(config) {
         patch: {
           summary: 'Update site metadata, settings and domains',
           description:
-            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. Builder-read settings are validated on write and reject the whole PATCH with 422: `settings.theme.tokens` accepts only the allowlisted design tokens (`background`, `foreground`, `muted`, `muted_foreground`, `border`, `primary`, `primary_foreground`, `radius`, `font_family`; values are strings or `{ light, dark }` string pairs of at most 256 bytes each without `<`, `settings.accent` stays the shorthand for `primary`), `settings.theme.custom_css` must be a string of at most 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),
           responses: { 200: { description: 'Updated' } },
+        },
+      },
+      '/v1/sites/{site}/access/users': {
+        get: {
+          summary: 'List site reader accounts',
+          security: secured,
+          parameters: [siteParameter],
+          responses: { 200: { description: 'Users without password hashes' } },
+        },
+        post: {
+          summary: 'Create a site reader account',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: jsonBody(['username', 'password']),
+          responses: { 201: { description: 'Reader created; password is never returned' } },
+        },
+      },
+      '/v1/sites/{site}/access/users/{user}': {
+        patch: {
+          summary: 'Update a reader, password, active state or groups',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'user', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody(),
+          responses: { 200: { description: 'Updated' }, 404: { description: 'Reader not found' } },
+        },
+        delete: {
+          summary: 'Delete a reader and its sessions',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'user', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: { 200: { description: 'Deleted' }, 404: { description: 'Reader not found' } },
+        },
+      },
+      '/v1/sites/{site}/access/users/{user}/revoke-sessions': {
+        post: {
+          summary: 'Revoke every session for one reader',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'user', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: { 200: { description: 'Revocation count' } },
+        },
+      },
+      '/v1/sites/{site}/access/groups': {
+        get: {
+          summary: 'List reader groups',
+          security: secured,
+          parameters: [siteParameter],
+          responses: { 200: { description: 'Groups' } },
+        },
+        post: {
+          summary: 'Create a reader group',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: jsonBody(['slug']),
+          responses: { 201: { description: 'Group created' } },
+        },
+      },
+      '/v1/sites/{site}/access/groups/{group}': {
+        patch: {
+          summary: 'Rename a reader group',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'group', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody(),
+          responses: { 200: { description: 'Updated' } },
+        },
+        delete: {
+          summary: 'Delete an unreferenced reader group',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'group', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: { 200: { description: 'Deleted' }, 409: { description: 'Group is referenced by a rule' } },
+        },
+      },
+      '/v1/sites/{site}/access/groups/{group}/members': {
+        put: {
+          summary: 'Replace a reader group membership list',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'group', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody(['user_ids']),
+          responses: { 200: { description: 'Membership replaced' } },
+        },
+      },
+      '/v1/sites/{site}/access/rules': {
+        get: {
+          summary: 'List draft access rules',
+          security: secured,
+          parameters: [siteParameter],
+          responses: { 200: { description: 'Rules' } },
+        },
+        post: {
+          summary: 'Create a draft exact or prefix access rule',
+          description: 'The rule becomes live atomically with the next preview/release build.',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: jsonBody(['path']),
+          responses: { 201: { description: 'Rule created; rebuild_required is true' } },
+        },
+      },
+      '/v1/sites/{site}/access/rules/{rule}': {
+        patch: {
+          summary: 'Update a draft access rule',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'rule', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody(),
+          responses: { 200: { description: 'Updated; rebuild_required is true' } },
+        },
+        delete: {
+          summary: 'Delete a draft access rule',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'rule', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: { 200: { description: 'Deleted; rebuild_required is true' } },
         },
       },
       '/v1/sites/{site}/content': {
@@ -178,7 +386,7 @@ export function openApi(config) {
         post: {
           summary: 'Create content and its first draft revision',
           description:
-            'Frontmatter may carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in the revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference) that lead the related-posts block at build time. Malformed values fail with 422.',
+            'Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing` and `changelog`. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference). Malformed values fail with 422.',
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
@@ -297,7 +505,7 @@ export function openApi(config) {
         put: {
           summary: 'Create another immutable revision',
           description:
-            'Accepts the same frontmatter contract as content creation, including the author-owned `extra:` custom-field map and `related: [slug, ...]` post references — both validated on write (422 on malformed values) and stored verbatim in the revision metadata.',
+            'Accepts the same controlled-layout, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,

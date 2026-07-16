@@ -43,6 +43,12 @@
       "tag": "0006_contentkit_search",
       "when": 1784198400000,
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "tag": "0007_contentkit_access",
+      "when": 1784246400000,
+      "breakpoints": true
     }
   ]
 }

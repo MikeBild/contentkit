@@ -16,16 +16,51 @@ import { visit } from 'unist-util-visit'
 import { assertSlug, excerpt, parseIsoDate, slugify } from './utils.mjs'
 
 const kinds = new Set(['page', 'post', 'project'])
+export const layouts = new Set(['standard', 'docs', 'wiki', 'knowledge', 'landing', 'changelog'])
+const accessSlug = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 function directives() {
   return (tree) => {
     visit(tree, ['containerDirective', 'leafDirective'], (node) => {
-      if (!['note', 'tip', 'warning'].includes(node.name)) return
       const data = node.data || (node.data = {})
-      data.hName = 'aside'
-      data.hProperties = { className: ['callout', `callout-${node.name}`], role: 'note' }
+      if (['note', 'tip', 'warning'].includes(node.name)) {
+        data.hName = 'aside'
+        data.hProperties = { className: ['callout', `callout-${node.name}`], role: 'note' }
+      } else if (['hero', 'features', 'steps', 'cta'].includes(node.name)) {
+        data.hName = 'section'
+        data.hProperties = { className: ['content-block', `content-block-${node.name}`] }
+      }
     })
   }
+}
+
+function optionalSlug(value, field) {
+  return value == null || value === '' ? null : String(assertSlug(value, field))
+}
+
+function validateAccess(value) {
+  if (value == null) return []
+  if (!Array.isArray(value) || value.length > 32) {
+    throw Object.assign(new Error('frontmatter access must be a list of at most 32 group slugs'), { statusCode: 422 })
+  }
+  const groups = value.map((entry) => String(entry).trim().toLowerCase())
+  if (groups.some((entry) => !accessSlug.test(entry)) || new Set(groups).size !== groups.length) {
+    throw Object.assign(new Error('frontmatter access contains an invalid or duplicate group slug'), {
+      statusCode: 422,
+    })
+  }
+  return groups
+}
+
+function validateChangeTypes(value) {
+  if (value == null) return []
+  const allowed = new Set(['added', 'changed', 'deprecated', 'removed', 'fixed', 'security'])
+  if (!Array.isArray(value) || value.some((entry) => !allowed.has(String(entry)))) {
+    throw Object.assign(new Error(`frontmatter changeTypes must contain only ${[...allowed].join(', ')}`), {
+      statusCode: 422,
+    })
+  }
+  return [...new Set(value.map(String))]
 }
 
 // Collapse a heading's inline content to plain text. `# A *b* c` -> `A b c`.
@@ -90,6 +125,7 @@ const schema = {
     span: ['className', 'style'],
     div: ['className', 'style'],
     aside: ['className', 'role'],
+    section: ['className'],
   },
 }
 
@@ -237,6 +273,10 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   const slug = assertSlug(data.slug || slugify(title))
   const translationKey = assertSlug(data.translationKey || data.translation_key || slug, 'translationKey')
   const tags = Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
+  const pageLayout = data.layout == null ? null : String(data.layout)
+  if (pageLayout && !layouts.has(pageLayout)) {
+    throw Object.assign(new Error(`frontmatter layout must be one of ${[...layouts].join(', ')}`), { statusCode: 422 })
+  }
   const meta = {
     kind,
     title,
@@ -262,6 +302,15 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     technologies: Array.isArray(data.technologies) ? data.technologies.map(String) : [],
     external_url: data.externalUrl ? String(data.externalUrl) : null,
     nav_order: Number.isFinite(Number(data.navOrder)) ? Number(data.navOrder) : null,
+    layout: pageLayout,
+    doc_key: optionalSlug(data.docKey, 'docKey'),
+    docs_version: optionalSlug(data.docsVersion, 'docsVersion'),
+    parent: optionalSlug(data.parent, 'parent'),
+    nav_title: data.navTitle == null ? null : String(data.navTitle).trim().slice(0, 120),
+    category: data.category == null ? null : String(data.category).trim().slice(0, 120),
+    release_version: data.releaseVersion == null ? null : String(data.releaseVersion).trim().slice(0, 64),
+    change_types: validateChangeTypes(data.changeTypes),
+    access: validateAccess(data.access),
   }
   // Content modeling light: both keys are additive and omitted entirely when
   // absent or empty, so revisions written before they existed keep

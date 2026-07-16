@@ -298,17 +298,30 @@ export function dictionary(locale) {
 }
 
 function navLinks(ctx) {
-  const { locale, t, pages, currentPath } = ctx
+  const { locale, t, pages, currentPath, site } = ctx
   // Built-in links carry fixed weights so page frontmatter (navOrder) can slot
   // pages anywhere in the header: below 20 leads the nav, 41…60 trails it.
   // navOrder above 60 is reserved for footer-only legal pages (Impressum,
   // Datenschutzerklärung) — see siteFooter(). Contact is footer-only for the
   // same reason, and search is the header's combobox, not a navigation link.
+  const preset = site.settings?.presentation?.preset || 'portfolio'
+  const presetLinks = {
+    portfolio: [
+      [t.blog, `/${locale}/blog/`, 20],
+      [t.archive, `/${locale}/archive/`, 30],
+      [t.projects, `/${locale}/projects/`, 40],
+    ],
+    'product-docs': [['Docs', `/${locale}/docs/`, 20]],
+    wiki: [['Wiki', `/${locale}/wiki/`, 20]],
+    'knowledge-base': [[locale.startsWith('de') ? 'Hilfe' : 'Help', `/${locale}/help/`, 20]],
+    product: [],
+    changelog: [['Changelog', `/${locale}/changelog/`, 20]],
+  }
   const links = [
-    ...pages.filter((p) => p.nav_order != null && p.nav_order <= 60).map((p) => [p.title, p.url, p.nav_order]),
-    [t.blog, `/${locale}/blog/`, 20],
-    [t.archive, `/${locale}/archive/`, 30],
-    [t.projects, `/${locale}/projects/`, 40],
+    ...pages
+      .filter((p) => p.nav_order != null && p.nav_order <= 60)
+      .map((p) => [p.nav_title || p.title, p.url, p.nav_order]),
+    ...(presetLinks[preset] || []),
   ].sort((a, b) => a[2] - b[2])
   return links
     .map(
@@ -607,6 +620,83 @@ export function homeBody(ctx) {
 
 export function listingBody(title, items) {
   return `<section class="container article-header"><h1>${escapeHtml(title)}</h1></section><section class="container section"><div class="grid">${items.map(card).join('')}</div></section>`
+}
+
+export function presetHomeBody(ctx) {
+  const preset = ctx.site.settings?.presentation?.preset || 'portfolio'
+  if (preset === 'portfolio') return homeBody(ctx)
+  const labels = {
+    'product-docs': ctx.locale.startsWith('de') ? 'Dokumentation' : 'Documentation',
+    wiki: 'Wiki',
+    'knowledge-base': ctx.locale.startsWith('de') ? 'Hilfe & Wissen' : 'Help center',
+    product: ctx.site.settings?.hero_title || ctx.site.name,
+    changelog: 'Changelog',
+  }
+  const title = labels[preset] || ctx.site.name
+  const visible = [...(ctx.pages || [])].sort((a, b) => (a.nav_order ?? 1000) - (b.nav_order ?? 1000))
+  return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
+<section class="container section"><div class="grid">${visible.slice(0, 12).map(card).join('')}</div></section>`
+}
+
+function pageTree(items, currentUrl) {
+  const byParent = new Map()
+  for (const item of items) {
+    const key = item.parent || ''
+    if (!byParent.has(key)) byParent.set(key, [])
+    byParent.get(key).push(item)
+  }
+  for (const entries of byParent.values())
+    entries.sort((a, b) => (a.nav_order ?? 1000) - (b.nav_order ?? 1000) || (a.title < b.title ? -1 : 1))
+  const render = (parent = '', seen = new Set()) => {
+    if (seen.has(parent)) return ''
+    const next = new Set(seen).add(parent)
+    return (byParent.get(parent) || [])
+      .map(
+        (item) =>
+          `<li><a href="${escapeHtml(item.url)}"${item.url === currentUrl ? ' aria-current="page"' : ''}>${escapeHtml(item.nav_title || item.title)}</a>${render(item.doc_key || item.translation_key, next)}</li>`,
+      )
+      .join('')
+  }
+  return `<ol>${render()}</ol>`
+}
+
+export function structuredContentBody(item, ctx, comments = []) {
+  if (!['docs', 'wiki', 'knowledge', 'changelog'].includes(item.layout)) return contentBody(item, ctx, comments)
+  const peers = (ctx.pages || []).filter(
+    (entry) => entry.layout === item.layout && (item.layout !== 'docs' || entry.docs_version === item.docs_version),
+  )
+  const trail = []
+  const byKey = new Map(peers.map((entry) => [entry.doc_key || entry.translation_key, entry]))
+  for (let parent = item.parent, guard = 0; parent && guard < 32; guard++) {
+    const node = byKey.get(parent)
+    if (!node) break
+    trail.unshift(node)
+    parent = node.parent
+  }
+  const breadcrumbs = [...trail, item]
+    .map((entry) => `<li><a href="${escapeHtml(entry.url)}">${escapeHtml(entry.nav_title || entry.title)}</a></li>`)
+    .join('')
+  const toc = [...String(item.html).matchAll(/<h([2-3]) id="([^"]+)"[^>]*>(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/h\1>/g)]
+    .map(
+      (match) =>
+        `<li class="toc-level-${match[1]}"><a href="#${escapeHtml(match[2])}">${match[3].replace(/<[^>]+>/g, '')}</a></li>`,
+    )
+    .join('')
+  const version =
+    item.layout === 'docs' && item.docs_version
+      ? `<span class="docs-version">${escapeHtml(item.docs_version)}</span>`
+      : ''
+  const release =
+    item.layout === 'changelog' && item.release_version
+      ? `<span class="docs-version">${escapeHtml(item.release_version)}</span>`
+      : ''
+  return `<div class="container docs-shell">
+<aside class="docs-sidebar" aria-label="${escapeHtml(ctx.t.navigation)}">${pageTree(peers, item.url)}</aside>
+<article class="docs-article"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol>${breadcrumbs}</ol></nav>
+<header class="article-header">${version}${release}<div class="eyebrow">${escapeHtml(item.layout)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p></header>
+<div class="prose">${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}</div></article>
+${toc ? `<aside class="page-toc" aria-label="On this page"><h2>On this page</h2><ol>${toc}</ol></aside>` : ''}
+</div>`
 }
 
 // How many posts the blog feed shows before handing off to the archive. The grid

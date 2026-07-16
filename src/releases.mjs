@@ -126,6 +126,20 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         })
       }
       await db.insert('ck_release_entries', entries, { returning: false })
+      if (built.accessEntries?.length) {
+        await db.insert(
+          'ck_release_access_entries',
+          built.accessEntries.map((entry) => ({ release_id: releaseId, ...entry })),
+          { returning: false },
+        )
+      }
+      if (built.accessCatalog?.length) {
+        await db.insert(
+          'ck_release_access_catalog',
+          built.accessCatalog.map((entry) => ({ release_id: releaseId, ...entry })),
+          { returning: false },
+        )
+      }
       await db.update(
         'ck_releases',
         { id: `eq.${releaseId}` },

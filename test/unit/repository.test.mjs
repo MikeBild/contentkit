@@ -711,3 +711,84 @@ test('getPublished is null for drafts and for a kind/locale/slug mismatch', asyn
   assert.equal(await repo.getPublished('site-1', 'post', 'en', 'one'), null)
   assert.equal(await repo.getPublished('site-1', 'post', 'de', 'nope'), null)
 })
+
+test('createAccessUser validates groups before inserting the account', async () => {
+  const calls = []
+  const tx = {
+    async select(table) {
+      calls.push(['select', table])
+      return table === 'ck_access_groups' ? [{ id: 'group-1', slug: 'customers' }] : []
+    },
+    async insert(table) {
+      calls.push(['insert', table])
+      return []
+    },
+  }
+  const repo = createRepository(
+    {},
+    {
+      async tx(fn) {
+        return fn(tx)
+      },
+    },
+    {},
+  )
+
+  await assert.rejects(
+    () =>
+      repo.createAccessUser('site-1', {
+        username: 'anna',
+        password: 'correct horse battery staple',
+        groups: ['missing'],
+      }),
+    (error) => error.statusCode === 422 && error.message === 'one or more access groups do not exist',
+  )
+  assert.ok(!calls.some(([operation]) => operation === 'insert'))
+})
+
+test('updateAccessUser validates replacement groups before changing the account', async () => {
+  const calls = []
+  const tx = {
+    async select(table) {
+      calls.push(['select', table])
+      if (table === 'ck_access_users') return [{ id: 'user-1', site_id: 'site-1', username: 'anna' }]
+      if (table === 'ck_access_groups') return [{ id: 'group-1', slug: 'customers' }]
+      return []
+    },
+    async update(table) {
+      calls.push(['update', table])
+      return []
+    },
+  }
+  const repo = createRepository(
+    {},
+    {
+      async tx(fn) {
+        return fn(tx)
+      },
+    },
+    {},
+  )
+
+  await assert.rejects(
+    () => repo.updateAccessUser('site-1', 'user-1', { display_name: 'Anna', groups: ['missing'] }),
+    (error) => error.statusCode === 422 && error.message === 'one or more access groups do not exist',
+  )
+  assert.ok(!calls.some(([operation]) => operation === 'update'))
+})
+
+test('access grants reject malformed reader IDs before querying PostgreSQL', async () => {
+  const repo = createRepository(
+    {},
+    {
+      async select() {
+        throw new Error('malformed IDs must not reach the database')
+      },
+    },
+    {},
+  )
+  await assert.rejects(
+    () => repo.validateAccessGrant('site-1', { users: ['not-a-uuid'] }),
+    (error) => error.statusCode === 422 && error.message === 'users must contain UUIDs',
+  )
+})

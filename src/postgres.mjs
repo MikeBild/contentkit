@@ -20,6 +20,13 @@ const TABLES = new Set([
   'ck_webhook_endpoints',
   'ck_webhook_deliveries',
   'ck_audio_jobs',
+  'ck_access_users',
+  'ck_access_groups',
+  'ck_access_group_members',
+  'ck_access_rules',
+  'ck_release_access_entries',
+  'ck_reader_sessions',
+  'ck_release_access_catalog',
 ])
 
 // Whitelisted SQL functions rpc() may call. Each entry pins the exact statement
