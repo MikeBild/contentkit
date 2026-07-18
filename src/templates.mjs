@@ -1,4 +1,4 @@
-import { escapeHtml, json, slugify } from './utils.mjs'
+import { compareDateDesc, escapeHtml, json, slugify } from './utils.mjs'
 
 const words = {
   de: {
@@ -323,9 +323,8 @@ function latestReportLink(ctx) {
     .filter((page) => page.layout === 'report')
     .sort(
       (left, right) =>
-        String(right.published_at || right.updated_at || '').localeCompare(
-          String(left.published_at || left.updated_at || ''),
-        ) || String(right.title || '').localeCompare(String(left.title || '')),
+        compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
+        String(right.title || '').localeCompare(String(left.title || '')),
     )[0]
   return report ? [ctx.t.latestReport, report.url] : null
 }
@@ -684,9 +683,8 @@ export function presetHomeBody(ctx) {
   const visible = [...(ctx.pages || [])].sort(
     (a, b) =>
       (a.nav_order ?? 1000) - (b.nav_order ?? 1000) ||
-      String(b.published_at || b.updated_at || b.title || '').localeCompare(
-        String(a.published_at || a.updated_at || a.title || ''),
-      ),
+      compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||
+      String(b.title || '').localeCompare(String(a.title || '')),
   )
   return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
 <section class="container section"><div class="grid">${visible.slice(0, 12).map(card).join('')}</div></section>`

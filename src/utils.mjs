@@ -72,6 +72,17 @@ export function parseIsoDate(value, field = 'date') {
   return date.toISOString()
 }
 
+export function compareDateDesc(left, right) {
+  const timestamp = (value) => {
+    if (!value) return Number.MIN_SAFE_INTEGER
+    const parsed = value instanceof Date ? value.getTime() : Date.parse(String(value))
+    return Number.isFinite(parsed) ? parsed : Number.MIN_SAFE_INTEGER
+  }
+  const leftTime = timestamp(left)
+  const rightTime = timestamp(right)
+  return rightTime === leftTime ? 0 : rightTime > leftTime ? 1 : -1
+}
+
 export function excerpt(value, max = 180) {
   const compact = String(value || '')
     .replace(/\s+/g, ' ')

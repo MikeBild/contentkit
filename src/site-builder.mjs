@@ -20,7 +20,7 @@ import {
   tagsBody,
   structuredContentBody,
 } from './templates.mjs'
-import { escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
+import { compareDateDesc, escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
 
 const text = (body, contentType = 'text/html; charset=utf-8', cacheControl = 'public,max-age=60,must-revalidate') => ({
   body: Buffer.from(body),
@@ -536,7 +536,7 @@ export async function buildSite({
     // arrays, and a draft has no business being syndicated or recommended.
     const posts = publicLocal
       .filter((item) => item.kind === 'post' && !item.noindex)
-      .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)))
+      .sort((a, b) => compareDateDesc(a.published_at, b.published_at))
     const projects = publicLocal
       .filter((item) => item.kind === 'project' && !item.noindex)
       .sort((a, b) => Number(b.featured) - Number(a.featured))

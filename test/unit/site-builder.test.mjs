@@ -1114,7 +1114,9 @@ test('a fully private product home renders only same-grant reports and links the
     kind: 'page',
     locale: 'en',
     translation_key: `report-${hour}`,
-    published_at: publishedAt,
+    // node-postgres returns timestamptz columns as Date instances while
+    // authored frontmatter dates are normalized strings.
+    published_at: new Date(publishedAt),
     markdown: `---\nkind: page\nlayout: report\ntitle: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
   })
   const result = await build({
