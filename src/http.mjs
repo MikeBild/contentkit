@@ -119,8 +119,9 @@ export function send(res, status, body = '', headers = {}) {
     ...headers,
   })
   res.end(payload)
+  return true
 }
 
 export function sendJson(res, status, body, headers = {}) {
-  send(res, status, JSON.stringify(body), { 'content-type': 'application/json; charset=utf-8', ...headers })
+  return send(res, status, JSON.stringify(body), { 'content-type': 'application/json; charset=utf-8', ...headers })
 }

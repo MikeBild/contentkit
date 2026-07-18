@@ -253,7 +253,18 @@ test('public contact submission is unaffected by disabled comments', async () =>
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 async function withApp(
-  { db = {}, repo = {}, releases = {}, auth = {}, storage = {}, config = {}, maintenance, audio, loginLimiter } = {},
+  {
+    db = {},
+    repo = {},
+    releases = {},
+    auth = {},
+    storage = {},
+    config = {},
+    maintenance,
+    audio,
+    loginLimiter,
+    logger,
+  } = {},
   run,
 ) {
   const app = createApp(
@@ -266,7 +277,7 @@ async function withApp(
       ...config,
     },
     {
-      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      logger: logger || { info() {}, warn() {}, error() {}, debug() {} },
       database: { db, async close() {} },
       storage,
       repo,
@@ -296,6 +307,33 @@ async function withApp(
     await new Promise((resolve) => app.server.close(resolve))
   }
 }
+
+test('site gateway terminates after sending a no-release response', async () => {
+  const errors = []
+  await withApp(
+    {
+      logger: {
+        info() {},
+        warn() {},
+        error(message, fields) {
+          errors.push({ message, fields })
+        },
+        debug() {},
+      },
+      repo: {
+        async getSiteByHost() {
+          return { id: 'private-site', active_release_id: null }
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/', { headers: { host: 'cockpit.example' } })
+      assert.equal(response.status, 503)
+      assert.deepEqual(await response.json(), { error: 'site has no active release' })
+    },
+  )
+  assert.deepEqual(errors, [])
+})
 
 const scopedAuth = (scopes) => ({
   async authenticate(headers) {
