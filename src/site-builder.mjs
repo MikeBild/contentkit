@@ -462,6 +462,12 @@ export async function buildSite({
       html: result.html,
       source: result.source,
       hasMermaid: result.hasMermaid,
+      // An authored reporting/content date is semantic and therefore wins over
+      // the database activation time. Older documents without one must retain
+      // their repository timestamps instead of having the parser's null
+      // defaults erase them.
+      published_at: result.meta.published_at ?? revision.published_at ?? null,
+      updated_at: result.meta.updated_at ?? revision.updated_at ?? null,
       // Derived, not frontmatter: renderMarkdown's `meta` is the authored
       // contract and must not grow fields the author never wrote.
       reading_minutes: result.meta.kind === 'post' ? readingTime(result.source) : 0,

@@ -321,10 +321,11 @@ function presetSectionLink(preset, locale) {
 function latestReportLink(ctx) {
   const report = [...(ctx.pages || [])]
     .filter((page) => page.layout === 'report')
-    .sort((left, right) =>
-      String(right.published_at || right.updated_at || right.title || '').localeCompare(
-        String(left.published_at || left.updated_at || left.title || ''),
-      ),
+    .sort(
+      (left, right) =>
+        String(right.published_at || right.updated_at || '').localeCompare(
+          String(left.published_at || left.updated_at || ''),
+        ) || String(right.title || '').localeCompare(String(left.title || '')),
     )[0]
   return report ? [ctx.t.latestReport, report.url] : null
 }

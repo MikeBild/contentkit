@@ -1107,15 +1107,15 @@ test('a prefix access rule removes its whole documentation area from public disc
   assert.ok(result.accessEntries.some((entry) => entry.match === 'prefix' && entry.path === '/en/docs/'))
 })
 
-test('a fully private product home renders only same-grant reports and links the newest report', async () => {
-  const report = (hour, publishedAt) => ({
+test('a fully private product home renders only same-grant reports and links the newest semantic period', async () => {
+  const report = (hour, publishedAt, date = '') => ({
     id: `report-${hour}`,
     item_id: `item-report-${hour}`,
     kind: 'page',
     locale: 'en',
     translation_key: `report-${hour}`,
     published_at: publishedAt,
-    markdown: `---\nkind: page\nlayout: report\ntitle: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\nnoindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
+    markdown: `---\nkind: page\nlayout: report\ntitle: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
   })
   const result = await build({
     site: { ...site, settings: { presentation: { preset: 'product' } } },
@@ -1123,7 +1123,8 @@ test('a fully private product home renders only same-grant reports and links the
     accessRules: [{ match: 'prefix', path: '/', group_slugs: ['cockpit'], user_ids: [] }],
     revisions: [
       report('08', '2026-07-18T09:00:00Z'),
-      report('09', '2026-07-18T10:00:00Z'),
+      report('09', '2026-07-18T10:23:00Z', '2026-07-18T10:00:00Z'),
+      report('yearly', '2026-07-18T10:27:00Z', '2026-01-01T00:00:00Z'),
       {
         id: 'other-team-page',
         item_id: 'item-other-team-page',
