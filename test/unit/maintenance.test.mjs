@@ -27,6 +27,7 @@ function fixture() {
   const tokens = [{ release_id: 'r-preview-live', revoked_at: null, expires_at: new Date(now + 86400000) }]
   const removedObjects = []
   const removedReleases = []
+  const removedAuthEvents = []
   const updated = []
   const db = {
     async select(table, q = {}) {
@@ -45,6 +46,7 @@ function fixture() {
     },
     async remove(table, f) {
       if (table === 'ck_releases') removedReleases.push(f.id.slice(3))
+      if (table === 'ck_reader_auth_events') removedAuthEvents.push(f.created_at.slice(4))
     },
     async update(table, f, body) {
       updated.push({ id: f.id.slice(3), body })
@@ -56,7 +58,7 @@ function fixture() {
       removedObjects.push(...paths)
     },
   }
-  return { db, storage, now, removedObjects, removedReleases, updated }
+  return { db, storage, now, removedObjects, removedReleases, removedAuthEvents, updated }
 }
 
 test('storage GC keeps active + rollback-window + live-preview releases, removes old ones with their objects', async () => {
@@ -80,6 +82,7 @@ test('storage GC keeps active + rollback-window + live-preview releases, removes
   }
   // The live preview's objects must never be swept while its token is valid.
   assert.ok(!f.removedObjects.some((p) => p.includes('r-preview-live')), 'live preview objects kept')
+  assert.deepEqual(f.removedAuthEvents, ['2025-05-27T00:00:00.000Z'], 'reader auth facts use 400-day retention')
 })
 
 test('storage GC keeps a recently-superseded release even beyond the keep count when within retention', async () => {

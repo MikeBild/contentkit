@@ -316,6 +316,16 @@ test('OPTIONS on a known API path returns 204 with an Allow header', async () =>
   })
 })
 
+test('HTTP responses continue W3C trace context with a fresh server span', async () => {
+  await withApp({}, async (request) => {
+    const response = await request('/health', {
+      headers: { traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' },
+    })
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('traceparent'), /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/)
+  })
+})
+
 test('unsupported method on a known API path returns 405 with an Allow header', async () => {
   await withApp({}, async (request) => {
     const response = await request('/v1/publish-due', { method: 'DELETE' })
@@ -421,6 +431,46 @@ test('GET /v1/sites/{site} is 403 without a read scope and 404 for an unknown si
     // The site lookup precedes the scope check, so an unknown slug is a 404.
     const missing = await request('/v1/sites/nope', { headers: { 'x-api-key': 'valid' } })
     assert.equal(missing.status, 404)
+  })
+})
+
+test('site stats use content:read, return private aggregates and validate bounded windows', async () => {
+  const repo = {
+    async getSite(id) {
+      return id === 'site-1' ? { id: 'site-1' } : null
+    },
+  }
+  const db = {
+    async query() {
+      return []
+    },
+  }
+  await withApp({ repo, db, auth: scopedAuth(['content:read']) }, async (request) => {
+    const ok = await request(
+      '/v1/sites/site-1/stats/content?bucket=hour&from=2026-07-18T10:00:00Z&to=2026-07-18T12:00:00Z',
+      { headers: { 'x-api-key': 'valid' } },
+    )
+    assert.equal(ok.status, 200)
+    assert.equal(ok.headers.get('cache-control'), 'private,max-age=60')
+    const body = await ok.json()
+    assert.equal(body.buckets.length, 2)
+    assert.deepEqual(body.totals, {
+      items_created: 0,
+      revisions_created: 0,
+      revisions_published: 0,
+      assets_created: 0,
+      asset_bytes: 0,
+    })
+
+    const invalid = await request('/v1/sites/site-1/stats/content?tz=Europe%2FBerlin', {
+      headers: { 'x-api-key': 'valid' },
+    })
+    assert.equal(invalid.status, 422)
+    assert.match((await invalid.json()).error, /only 'UTC'/)
+  })
+  await withApp({ repo, db, auth: scopedAuth(['site:admin']) }, async (request) => {
+    const forbidden = await request('/v1/sites/site-1/stats/readers', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(forbidden.status, 403)
   })
 })
 
@@ -593,6 +643,7 @@ test('gateway redirects anonymous readers and serves protected pages only to an 
 
 test('site reader login sets a session cookie and validates the return path', async () => {
   const rateLimitKeys = []
+  const authEvents = []
   const repo = {
     async getSiteByHost() {
       return { id: 'site-1', name: 'Docs', default_locale: 'en', base_url: 'http://example.test' }
@@ -608,7 +659,12 @@ test('site reader login sets a session cookie and validates the return path', as
     },
     stop() {},
   }
-  await withApp({ repo, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
+  const db = {
+    async insert(table, body, options) {
+      authEvents.push({ table, body, options })
+    },
+  }
+  await withApp({ repo, db, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
     const form = await request('/_contentkit/login?return_to=/en/docs/')
     assert.equal(form.status, 200)
     assert.equal(form.headers.get('x-frame-options'), 'DENY')
@@ -628,7 +684,51 @@ test('site reader login sets a session cookie and validates the return path', as
     assert.equal(rateLimitKeys.length, 2)
     assert.match(rateLimitKeys[0], /^reader-login-ip:/)
     assert.equal(rateLimitKeys[1], 'reader-login-user:site-1:anna')
+    assert.deepEqual(authEvents, [
+      {
+        table: 'ck_reader_auth_events',
+        body: { site_id: 'site-1', outcome: 'success' },
+        options: { returning: false },
+      },
+    ])
   })
+})
+
+test('reader auth telemetry records only bounded outcomes and never credentials or IPs', async () => {
+  const events = []
+  const repo = {
+    async getSiteByHost() {
+      return { id: 'site-1', name: 'Docs', default_locale: 'en', base_url: 'http://example.test' }
+    },
+    async createReaderSession() {
+      return null
+    },
+  }
+  const db = {
+    async insert(_table, body) {
+      events.push(body)
+    },
+  }
+  const loginLimiter = {
+    take() {
+      return true
+    },
+    stop() {},
+  }
+  await withApp({ repo, db, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
+    const form = await request('/_contentkit/login')
+    const html = await form.text()
+    const csrf = html.match(/name="csrf" value="([^"]+)"/)[1]
+    const cookie = form.headers.get('set-cookie').split(';')[0]
+    const failed = await request('/_contentkit/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+      body: new URLSearchParams({ csrf, username: 'private-user', password: 'private-password' }),
+    })
+    assert.equal(failed.status, 401)
+  })
+  assert.deepEqual(events, [{ site_id: 'site-1', outcome: 'failed' }])
+  assert.doesNotMatch(JSON.stringify(events), /private-user|private-password|127\.0\.0\.1/)
 })
 
 test('reader routes advertise and enforce their documented methods', async () => {

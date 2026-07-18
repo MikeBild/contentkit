@@ -12,6 +12,7 @@ export function createMaintenance(config, db, storage, logger) {
   const KEEP = config.releaseHistoryKeep ?? 5
   const RETENTION_MS = config.releaseRetentionMs ?? 7 * 86400 * 1000
   const BUILDING_REAP_MS = config.buildingReapMs ?? 3600 * 1000
+  const PRODUCT_STATS_RETENTION_DAYS = config.productStatsRetentionDays ?? 400
 
   async function removeReleaseObjects(releaseId) {
     if (!storage.remove) return 0
@@ -84,6 +85,11 @@ export function createMaintenance(config, db, storage, logger) {
 
   return {
     async run(now = Date.now()) {
+      await db
+        .remove('ck_reader_auth_events', {
+          created_at: `lte.${new Date(now - PRODUCT_STATS_RETENTION_DAYS * 86400 * 1000).toISOString()}`,
+        })
+        .catch((error) => logger.warn?.('reader auth metric retention failed', { error: String(error) }))
       const reaped = await reapStuckBuilds(now)
       const { removed, objects } = await collectGarbage(now)
       logger.info?.('storage gc complete', { reaped, removed, objects })

@@ -83,6 +83,10 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Server-side full-text search over published content with locale-aware
   PostgreSQL stemming (de/en), relevance ranking and `<mark>` headlines via
   `GET /v1/sites/{site}/search` — published sites keep their client-side search.
+- Bounded site-scoped product analytics for releases, content, reader auth,
+  webhooks, audio and engagement through `/v1/sites/{site}/stats/*`, reusing
+  `content:read` keys and returning aggregate counts only. See
+  [docs/PRODUCT_ANALYTICS.md](docs/PRODUCT_ANALYTICS.md).
 - Per-site theming as structured design tokens: `settings.theme.tokens` fills
   the shared stylesheet's custom properties (allowlisted, light/dark aware,
   including `chart_1` through `chart_5`; `settings.accent` stays the primary

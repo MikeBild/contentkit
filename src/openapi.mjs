@@ -1,6 +1,17 @@
 export function openApi(config) {
   const secured = [{ bearerAuth: [] }, { apiKeyAuth: [] }]
   const siteParameter = { name: 'site', in: 'path', required: true, schema: { type: 'string' } }
+  const statsParameters = [
+    siteParameter,
+    {
+      name: 'bucket',
+      in: 'query',
+      schema: { type: 'string', enum: ['hour', 'day', 'month', 'year'], default: 'hour' },
+    },
+    { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    { name: 'tz', in: 'query', schema: { type: 'string', enum: ['UTC'], default: 'UTC' } },
+  ]
   const jsonBody = (required = []) => ({
     required: true,
     content: { 'application/json': { schema: { type: 'object', required } } },
@@ -47,7 +58,7 @@ export function openApi(config) {
         '',
         '| Scope | Grants |',
         '|---|---|',
-        '| `content:read` | List content items and immutable revisions |',
+        '| `content:read` | Read content/revisions and site-scoped product statistics |',
         '| `content:write` | Upload Markdown/assets and create revisions |',
         '| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |',
         '| `site:admin` | Create/update sites, manage API keys and webhook endpoints |',
@@ -133,6 +144,26 @@ export function openApi(config) {
             group_slugs: { type: 'array', items: { type: 'string' } },
             user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
             rebuild_required: { type: 'boolean' },
+          },
+        },
+        ProductStats: {
+          type: 'object',
+          required: ['bucket', 'tz', 'from', 'to', 'buckets', 'totals'],
+          properties: {
+            bucket: { type: 'string', enum: ['hour', 'day', 'month', 'year'] },
+            tz: { const: 'UTC' },
+            from: { type: 'string', format: 'date-time' },
+            to: { type: 'string', format: 'date-time' },
+            buckets: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['ts'],
+                properties: { ts: { type: 'string', format: 'date-time' } },
+                additionalProperties: { type: 'number' },
+              },
+            },
+            totals: { type: 'object', additionalProperties: { type: 'number' } },
           },
         },
       },
@@ -780,6 +811,32 @@ export function openApi(config) {
         },
       },
     },
+  }
+  const stats = {
+    releases: 'release builds, activation, output size and build duration',
+    content: 'content items, revisions, publications and assets',
+    readers: 'privacy-safe reader authentication outcomes and sessions',
+    webhooks: 'outbox events and webhook delivery outcomes',
+    audio: 'read-aloud jobs, characters and generated duration',
+    engagement: 'comments, contact submissions and anonymous feedback',
+  }
+  for (const [kind, description] of Object.entries(stats)) {
+    spec.paths[`/v1/sites/{site}/stats/${kind}`] = {
+      get: {
+        summary: `Read site ${kind} statistics`,
+        description: `Bounded UTC aggregates for ${description}. Requires the existing content:read scope and never returns content, identities, credentials, payloads, URLs, paths or row identifiers. Defaults to the previous 24 hours in hourly buckets.`,
+        security: secured,
+        parameters: statsParameters,
+        responses: {
+          200: {
+            description: 'Dense, site-scoped aggregate time series',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ProductStats' } } },
+          },
+          404: { description: 'Site not found' },
+          422: { description: 'Invalid or excessive time window' },
+        },
+      },
+    }
   }
   // Every secured operation shares the same auth failure modes: 401 when the key
   // is not accepted and 403 when it is valid but under-scoped. Attach both without

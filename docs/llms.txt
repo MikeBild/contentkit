@@ -23,6 +23,9 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   versioned routes, hierarchy fields and real English Markdown documents.
 - [Reports and dashboards](docs/REPORTS.md): `layout: report`, controlled visual
   primitives, table-driven static charts, theme tokens and resource limits.
+- [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
+  release, content, reader, webhook, audio and engagement aggregates for
+  external collectors using the existing `content:read` scope.
 - [Example report](examples/reports/quarterly.en.md): Complete quarterly report
   with metrics, cards, progress and all four chart types.
 - [Reader access control](docs/ACCESS_CONTROL.md): Personal reader accounts,
@@ -111,6 +114,10 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   published content with locale-aware PostgreSQL stemming (de/en) and returns
   `<mark>`-highlighted headlines, behind `content:read` scoped keys — published
   sites keep their static client-side search. See llms-full section 4.
+- Product analytics API: `GET /v1/sites/{site}/stats/{releases|content|readers|webhooks|audio|engagement}`
+  returns privacy-safe dense UTC aggregates for bounded `from`/`to` windows,
+  behind existing site-scoped `content:read` keys. ContentKit does not own the
+  downstream cockpit or reporting store. See llms-full section 21.
 - Theming: per-site design tokens via `settings.theme.tokens` (allowlisted
   stylesheet custom properties, scalar or `{ light, dark }` values,
   `chart_1` through `chart_5` color report SVGs, `settings.accent` stays the

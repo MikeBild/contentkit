@@ -490,6 +490,53 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.equal(updatedPage.status, 200)
       assert.match(updatedPage.body, /Freigegebener E2E-Kommentar/)
 
+      // Product analytics cross the compiled HTTP boundary and real PostgreSQL,
+      // using the ordinary read scope carried by the bootstrap key.
+      const statsWindow = new URLSearchParams({
+        bucket: 'hour',
+        from: new Date(Date.now() - 3600_000).toISOString(),
+        to: new Date(Date.now() + 3600_000).toISOString(),
+      })
+      const incomingTrace = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+      const contentStatsResponse = await fetch(`${origin}/v1/sites/${site.id}/stats/content?${statsWindow}`, {
+        headers: { ...auth, traceparent: incomingTrace },
+      })
+      const contentStats = await responseJson(contentStatsResponse, 200)
+      assert.match(
+        contentStatsResponse.headers.get('traceparent'),
+        /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/,
+      )
+      assert.ok(contentStats.totals.items_created >= 5)
+      assert.ok(contentStats.totals.revisions_published >= 5)
+      const releaseStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/releases?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.ok(releaseStats.totals.builds_started >= 3)
+      assert.ok(releaseStats.totals.bytes > 0)
+      const readerStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/readers?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.equal(readerStats.totals.auth_success, 1)
+      assert.equal(readerStats.totals.sessions_created, 1)
+      const webhookStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/webhooks?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.ok(webhookStats.totals.events_created >= 1)
+      const engagementStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/engagement?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.equal(engagementStats.totals.comments_approved, 1)
+      assert.equal(engagementStats.totals.contacts_created, 1)
+      const audioStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/audio?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.equal(audioStats.totals.jobs_created, 0)
+
       const releaseList = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, { headers: auth }),
         200,

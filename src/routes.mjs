@@ -7,6 +7,15 @@ import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } f
 import { clientIp, contentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
 import {
+  getAudioStats,
+  getContentStats,
+  getEngagementStats,
+  getReaderStats,
+  getReleaseStats,
+  getWebhookStats,
+  resolveStatsWindow,
+} from './stats.mjs'
+import {
   clearSessionCookie,
   INSECURE_READER_COOKIE,
   mostSpecificAccess,
@@ -110,6 +119,10 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/access\/groups\/[^/]+\/members$/, methods: ['PUT'] },
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
+  {
+    pattern: /^\/v1\/sites\/[^/]+\/stats\/(releases|content|readers|webhooks|audio|engagement)$/,
+    methods: ['GET'],
+  },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
   { pattern: /^\/v1\/publish-due$/, methods: ['POST'] },
   { pattern: /^\/v1\/maintenance\/storage-gc$/, methods: ['POST'] },
@@ -131,6 +144,13 @@ export const API_ROUTES = [
 export function createRequestHandler(ctx) {
   const { config, logger, db, storage, repo, releases, auth, maintenance, limiter, metrics, state, audio } = ctx
   const loginLimiter = ctx.loginLimiter || limiter
+
+  async function recordReaderAuth(siteId, outcome) {
+    if (!db.insert) return
+    await db
+      .insert('ck_reader_auth_events', { site_id: siteId, outcome }, { returning: false })
+      .catch((error) => logger.warn('reader auth metric write failed', { siteId, error: String(error) }))
+  }
 
   async function bodyFor(req) {
     return readBody(req, config.maxBodyBytes)
@@ -219,9 +239,11 @@ export function createRequestHandler(ctx) {
       const ipAllowed = loginLimiter.take(`reader-login-ip:${ip}`)
       const usernameAllowed = loginLimiter.take(`reader-login-user:${site.id}:${attemptedUsername}`)
       if (!ipAllowed || !usernameAllowed) {
+        await recordReaderAuth(site.id, 'rate_limited')
         return sendJson(res, 429, { error: 'rate limit exceeded' }, { 'retry-after': '900' })
       }
       const session = await repo.createReaderSession(site.id, input.username, input.password)
+      await recordReaderAuth(site.id, session ? 'success' : 'failed')
       if (!session) {
         const csrf = signedCsrf()
         return send(
@@ -694,6 +716,24 @@ export function createRequestHandler(ctx) {
       }
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
+    }
+    const statsMatch = path.match(/^\/v1\/sites\/([^/]+)\/stats\/(releases|content|readers|webhooks|audio|engagement)$/)
+    if (statsMatch && req.method === 'GET') {
+      const site = await repo.getSite(statsMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      const window = resolveStatsWindow(Object.fromEntries(url.searchParams))
+      const readers = {
+        releases: getReleaseStats,
+        content: getContentStats,
+        readers: getReaderStats,
+        webhooks: getWebhookStats,
+        audio: getAudioStats,
+        engagement: getEngagementStats,
+      }
+      return sendJson(res, 200, await readers[statsMatch[2]](db, site.id, window), {
+        'cache-control': 'private,max-age=60',
+      })
     }
     const accessCollection = path.match(/^\/v1\/sites\/([^/]+)\/access\/(users|groups|rules)$/)
     if (accessCollection && ['GET', 'POST'].includes(req.method)) {

@@ -49,6 +49,18 @@ test('direct PostgreSQL adapter rejects unknown tables and unfiltered writes', a
   await assert.rejects(() => postgres.db.remove('ck_sites', {}), /unfiltered/)
 })
 
+test('raw aggregate queries preserve parameter values and reject unknown ContentKit tables', async () => {
+  const pool = new FakePool()
+  pool.rows = [{ total: 2 }]
+  const postgres = createPostgres({ databaseUrl: 'postgresql://unused' }, { pool })
+  assert.deepEqual(
+    await postgres.db.query('SELECT count(*)::int AS total FROM ck_reader_auth_events WHERE site_id = $1', ['site-1']),
+    [{ total: 2 }],
+  )
+  assert.deepEqual(pool.calls[0].values, ['site-1'])
+  await assert.rejects(() => postgres.db.query('SELECT * FROM ck_unregistered_reporting'), /unknown Contentkit table/)
+})
+
 test('rpc runs only whitelisted functions and returns their declared shape', async () => {
   const pool = new FakePool()
   const postgres = createPostgres({ databaseUrl: 'postgresql://unused' }, { pool })

@@ -13,6 +13,12 @@ npm ci
 npm run build:binary
 ```
 
+`CONTENTKIT_NODE_BINARY` may select the Node executable embedded in the
+artifact. On macOS the build rejects a Homebrew thin executable that links to
+an external `libnode` dylib; use the self-contained official Node binary from
+setup-node or nvm. This fails during packaging instead of publishing an
+artifact that crashes on another host.
+
 The resulting `dist/contentkit` embeds Node, dependencies, templates, fonts,
 assets and the ordered SQL migration journal. It extracts a content-hashed
 runtime below `$HOME/.cache/contentkit/<hash>` on first start. Prebuilt
@@ -52,6 +58,12 @@ no escaping. See `.env.example` for the full template.
 out every reader immediately. Published sites must use HTTPS so the
 `__Host-contentkit_session` cookie can keep its Secure attribute; the reverse
 proxy must preserve the original site `Host` header.
+
+Set `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` to the stable environment name used by
+your log backend (for example `production`). Structured request logs carry the
+service name/version, environment and W3C trace/span IDs. Reader-auth product
+facts contain no identity or IP and are pruned by the existing maintenance run
+after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (default 400).
 
 ## Release pipeline
 

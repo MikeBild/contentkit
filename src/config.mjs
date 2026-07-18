@@ -85,6 +85,7 @@ export function loadConfig() {
       max: 365 * 86400 * 1000,
     }),
     buildingReapMs: integer('CONTENTKIT_BUILDING_REAP_MS', 3600 * 1000, { min: 60 * 1000, max: 86400 * 1000 }),
+    productStatsRetentionDays: integer('CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS', 400, { min: 31, max: 3650 }),
     // Read-aloud audio (TTS). The worker only starts when explicitly enabled;
     // per-site opt-in lives in ck_sites.settings.audio (enabled/provider/voice/
     // monthly_char_budget). ffmpeg is a host runtime dependency for MP3 output.
@@ -99,6 +100,9 @@ export function loadConfig() {
     ttsGoogleToken: process.env.CONTENTKIT_TTS_GOOGLE_TOKEN || '',
     ttsGoogleQuotaProject: process.env.CONTENTKIT_TTS_GOOGLE_QUOTA_PROJECT || '',
     logLevel: process.env.LOG_LEVEL || 'info',
+    deploymentEnvironment:
+      process.env.CONTENTKIT_DEPLOYMENT_ENVIRONMENT ||
+      (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
     version: VERSION,
   }
   if (process.env.NODE_ENV === 'production') {

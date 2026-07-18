@@ -15,6 +15,7 @@ import { sendJson } from './http.mjs'
 import { createLimiter } from './security.mjs'
 import { createRequestHandler, routeName } from './routes.mjs'
 import { runMigrations } from './db/migrate.mjs'
+import { createTraceContext } from './trace-context.mjs'
 
 export function createApp(config = loadConfig(), dependencies = {}) {
   const logger = dependencies.logger || createLogger(config)
@@ -63,13 +64,18 @@ export function createApp(config = loadConfig(), dependencies = {}) {
 
   const server = createServer((req, res) => {
     const requestId = randomUUID().slice(0, 12)
+    const trace = createTraceContext(req.headers.traceparent)
     const started = Date.now()
     res.setHeader('x-request-id', requestId)
+    res.setHeader('traceparent', trace.traceparent)
     res.on('finish', () => {
       const route = routeName((req.url || '').split('?')[0])
       metrics.request(req.method, route, res.statusCode)
       logger.info('request', {
-        requestId,
+        request_id: requestId,
+        trace_id: trace.traceId,
+        span_id: trace.spanId,
+        parent_span_id: trace.parentSpanId,
         method: req.method,
         path: route,
         status: res.statusCode,
@@ -79,7 +85,10 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     handle(req, res).catch((error) => {
       const status = error.statusCode || (error.status >= 400 && error.status < 600 ? error.status : 500)
       logger.error('request failed', {
-        requestId,
+        request_id: requestId,
+        trace_id: trace.traceId,
+        span_id: trace.spanId,
+        parent_span_id: trace.parentSpanId,
         status,
         error: String(error.message || error),
         details: error.details,

@@ -1097,6 +1097,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_RELEASE_HISTORY_KEEP` | releases kept per site as a rollback window; default 5 |
 | `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible; default 7 days |
 | `CONTENTKIT_BUILDING_REAP_MS` | age after which a release stuck in building is reaped; default 1 hour |
+| `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` | reader-auth aggregate source retention; default 400 days |
 | `CONTENTKIT_AUDIO_ENABLED` | start the read-aloud TTS worker; default false |
 | `CONTENTKIT_AUDIO_POLL_MS` | audio job poll interval; default 15000 |
 | `CONTENTKIT_AUDIO_MAX_ATTEMPTS` | attempts before an audio job is marked failed; default 5 |
@@ -1106,6 +1107,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_TTS_GOOGLE_TOKEN` | OAuth bearer token alternative to the API key |
 | `CONTENTKIT_TTS_GOOGLE_QUOTA_PROJECT` | `x-goog-user-project` quota project header |
 | `LOG_LEVEL` | structured log verbosity |
+| `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` | structured-log deployment environment; defaults to `production` or `development` from `NODE_ENV` |
 
 Never reuse the Supabase service-role key as a Contentkit, database or webhook
 credential.
@@ -1149,6 +1151,12 @@ Build:
 npm ci
 npm run build:binary
 ```
+
+`CONTENTKIT_NODE_BINARY` may select the Node executable embedded in the
+artifact. macOS packaging rejects a Homebrew thin executable that depends on a
+Cellar `libnode` dylib; use the self-contained official Node binary from
+setup-node or nvm. The build therefore fails before it can publish an artifact
+that crashes after extraction.
 
 The resulting `dist/contentkit` embeds Node, dependencies, source, assets,
 documentation, development defaults and the ordered SQL migration journal. It
@@ -1359,3 +1367,40 @@ per chart, then measures 100,000 rule resolutions and an scrypt verification.
 CI enforces the broad regression budgets in
 `benchmarks/budgets.json` and uploads the JSON result. Reference results and
 measurement caveats live in `docs/BENCHMARKS.md`.
+
+---
+
+## 21. Product analytics API
+
+ContentKit derives privacy-safe, site-scoped product statistics from its own
+PostgreSQL tables. It exposes them through the ordinary product API; it does
+not know about a downstream cockpit, workflow engine, report schedule or
+central storage bucket. Consumers reuse an existing site-scoped `content:read`
+key rather than provisioning a reporting-specific credential.
+
+The six read-only endpoints are:
+
+- `/v1/sites/{site}/stats/releases`: builds, outcomes, activation, output size
+  and build duration;
+- `/v1/sites/{site}/stats/content`: items, revisions, publications and assets;
+- `/v1/sites/{site}/stats/readers`: privacy-safe authentication outcomes and
+  sessions created;
+- `/v1/sites/{site}/stats/webhooks`: outbox events and delivery outcomes;
+- `/v1/sites/{site}/stats/audio`: jobs, outcomes, characters and duration;
+- `/v1/sites/{site}/stats/engagement`: comments, contact submissions and
+  anonymous feedback.
+
+Every route accepts `bucket=hour|day|month|year`, RFC 3339 `from`/`to`, and
+`tz=UTC`. It defaults to the previous 24 hours in hourly buckets, uses
+inclusive-from/exclusive-to semantics, returns dense zero-filled buckets and
+rejects invalid or excessive windows with 422. Hourly windows are capped at 31
+days, daily at 366 days, monthly at five years and yearly at ten years.
+
+Responses contain aggregates only: never Markdown, reader identities, keys,
+webhook endpoints/payloads, storage paths, row IDs or error details. Reader
+authentication facts contain only site, `success|failed|rate_limited`, and
+timestamp and are retained for 400 days by default. External campaign,
+acquisition, SEO and revenue data must be collected from the APIs that own
+those facts and joined downstream. Full examples and collection guidance are
+in `docs/PRODUCT_ANALYTICS.md`; the precise response contract is in
+`docs/openapi.json`.

@@ -202,6 +202,18 @@ outline. A body that deliberately opens with a *different* top-level heading kee
 heading that is not the first block is never touched. `source` is unaffected, so
 `llms-full.txt` and the reading-time estimate still see the document as authored.
 
+### Product analytics boundary
+
+ContentKit owns its product facts in its own PostgreSQL database and exposes
+bounded site-scoped aggregates through `/v1/sites/{site}/stats/*`. Those routes
+reuse `content:read`; they are not a consumer-specific reporting API and do not
+query another product's database. The response boundary contains only numeric
+UTC time series. A downstream collector may join them with other product or
+marketing APIs and persist report snapshots elsewhere, but ContentKit has no
+dependency on that topology. The only new event table records privacy-safe
+reader-auth outcomes because failed logins do not otherwise create a session.
+See `docs/PRODUCT_ANALYTICS.md`.
+
 ### Derived, not authored
 
 Reading time, related posts and older/newer links are computed at build time from
