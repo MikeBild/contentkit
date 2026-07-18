@@ -105,6 +105,9 @@ export function loadConfig() {
       (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
     version: VERSION,
   }
+  if (Boolean(config.webhookUrl) !== Boolean(config.webhookSecret)) {
+    throw new Error('CONTENTKIT_WEBHOOK_URL and CONTENTKIT_WEBHOOK_SECRET must be configured together')
+  }
   if (process.env.NODE_ENV === 'production') {
     const required = {
       CONTENTKIT_BOOTSTRAP_API_KEY: config.bootstrapApiKey,
@@ -114,8 +117,6 @@ export function loadConfig() {
       SUPABASE_URL: config.storageUrl,
       SUPABASE_SERVICE_ROLE_KEY: config.storageServiceKey,
       DATABASE_URL: config.databaseUrl,
-      CONTENTKIT_WEBHOOK_URL: config.webhookUrl,
-      CONTENTKIT_WEBHOOK_SECRET: config.webhookSecret,
       CONTENTKIT_TURNSTILE_SECRET: config.turnstileSecret,
     }
     const missing = Object.entries(required)

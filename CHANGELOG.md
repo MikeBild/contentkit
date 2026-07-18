@@ -20,6 +20,11 @@ and this project adheres to
 
 ### Fixed
 
+- **Managed webhooks can be the only production delivery mechanism.** The
+  optional global environment endpoint is no longer incorrectly required in
+  production. If the legacy fallback is used, its URL and secret must still be
+  configured as a pair; managed per-site endpoints remain independently
+  filtered and encrypted at rest.
 - **Fully private sites now have a useful home and navigation after login.** A
   protected static page renders public pages plus protected pages carrying the
   exact same release-scoped group/user grant. Product sites with report pages

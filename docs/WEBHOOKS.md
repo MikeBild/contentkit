@@ -64,8 +64,10 @@ returned once on creation and on `/rotate`, and an optional `events` filter
 (empty means all events). Endpoint URLs are SSRF-validated on registration:
 private, loopback, link-local and cloud-metadata targets are rejected.
 
-Alternatively, a single built-in endpoint can be configured through the
-environment; it receives all events from all sites:
+Alternatively, an optional single built-in endpoint can be configured through
+the environment; it receives all events from all sites. Both values must be
+set together. Prefer managed endpoints when consumers need site or event
+isolation:
 
 ```bash
 CONTENTKIT_WEBHOOK_URL=https://hooks.example.com/contentkit-notifications

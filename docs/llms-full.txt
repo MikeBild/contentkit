@@ -914,9 +914,10 @@ once on create and on `/rotate`, stored encrypted at rest) and an optional
 like `contact.submitted`, or `contentkit.<entry>`). Endpoint URLs must be https
 and are SSRF-validated on registration — private, loopback, link-local and
 cloud-metadata targets are rejected. An event fans out to every enabled
-matching endpoint. The legacy `CONTENTKIT_WEBHOOK_URL` /
-`CONTENTKIT_WEBHOOK_SECRET` still receives all events as an implicit
-built-in endpoint when configured.
+matching endpoint. The optional legacy `CONTENTKIT_WEBHOOK_URL` /
+`CONTENTKIT_WEBHOOK_SECRET` pair still receives all events as an implicit
+built-in endpoint when both values are configured. Prefer managed endpoints
+for site- and event-scoped delivery.
 
 Events emitted:
 
@@ -1082,8 +1083,8 @@ Production config is explicit. Missing required production values fail startup.
 | `SUPABASE_URL` | Supabase project URL for Storage API |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
 | `CONTENTKIT_STORAGE_BUCKET` | Storage bucket name; default `contentkit` |
-| `CONTENTKIT_WEBHOOK_URL` | legacy built-in webhook endpoint URL (receives all events) |
-| `CONTENTKIT_WEBHOOK_SECRET` | Standard Webhooks signing secret for the built-in endpoint |
+| `CONTENTKIT_WEBHOOK_URL` | optional legacy built-in webhook endpoint URL (receives all events; configure with its secret) |
+| `CONTENTKIT_WEBHOOK_SECRET` | optional Standard Webhooks signing secret for the built-in endpoint (configure with its URL) |
 | `CONTENTKIT_TURNSTILE_SECRET` | Cloudflare Turnstile secret |
 | `CONTENTKIT_TRUST_PROXY` | trust `X-Forwarded-For` behind a reverse proxy |
 | `CONTENTKIT_MAX_BODY_BYTES` | upload body limit |
