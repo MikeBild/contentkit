@@ -58,7 +58,8 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
 - Responsive reports and dashboards from Markdown: shadcn-style metric cards,
   status badges and progress, plus table-driven bar, line, area and donut charts
-  rendered server-side as accessible light/dark SVGs with no client chart runtime.
+  rendered server-side as accessible light/dark SVGs with no client chart runtime;
+  major report headings become a responsive local section navigation.
 - Locale-prefixed routes, translation alternates, a year-grouped archive with
   client-side tag filtering, a tag index and tag pages.
 - Reading time, related posts by tag similarity, older/newer navigation and a

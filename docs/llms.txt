@@ -22,7 +22,8 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
   versioned routes, hierarchy fields and real English Markdown documents.
 - [Reports and dashboards](docs/REPORTS.md): `layout: report`, controlled visual
-  primitives, table-driven static charts, theme tokens and resource limits.
+  primitives, table-driven static charts, automatic section navigation, theme
+  tokens and resource limits.
 - [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
   release, content, reader, webhook, audio and engagement aggregates for
   external collectors using the existing `content:read` scope.
@@ -80,6 +81,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   `bar`, `line`, `area` and `donut` charts take one Markdown table and become
   accessible light/dark SVG assets at build time. Source tables remain visible;
   no client chart JavaScript or executable chart configuration is published.
+  Two or more level-two headings become a responsive local report navigation.
 - Reader access: personal usernames and scrypt passwords, named groups,
   exact/prefix path policies and release-scoped authorization. Protected pages
   and media require an HttpOnly reader session and are omitted from public

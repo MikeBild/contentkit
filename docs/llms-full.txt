@@ -514,7 +514,10 @@ dark SVG assets, an accessible `<picture>`, caption and collapsible source
 table; no client chart runtime is shipped. The table expands for print/PDF. The
 authenticated document read API uses the same renderer with SVG data URLs.
 Indexable reports receive `/{locale}/{slug}/index.md`, and their authored source
-is retained in the site's `llms-full.txt`. See `docs/REPORTS.md` and
+is retained in the site's `llms-full.txt`. When a report contains at least two
+level-two headings, Contentkit derives a responsive localized section
+navigation from them; level-three headings remain detail-only. The navigation
+uses ordinary anchors, no JavaScript, and is omitted from print. See `docs/REPORTS.md` and
 `examples/reports/quarterly.en.md` for the complete guide and example.
 
 ---
@@ -1285,7 +1288,9 @@ duplicate keys and duplicate routes fail the build before activation.
 Report pages use the normal page route and the closed visual directive contract
 from section 7. Table-driven charts are rendered to static light/dark SVGs at
 build time, use `chart_1` through `chart_5`, retain their accessible source data
-and add no chart JavaScript to the page.
+and add no chart JavaScript to the page. Two or more level-two headings become
+a responsive localized section navigation; level-three headings remain out of
+that navigation.
 
 Generated routes:
 

@@ -77,8 +77,9 @@ Reports use explicit `layout: report` and the sanitized `report-grid`,
 `report-card`, `metric`, `badge`, `progress` and `chart` directives. Charts take
 one ordinary Markdown table and become content-hashed light/dark SVG assets at
 release build time; the table remains as accessible source data and no chart
-JavaScript ships to readers. See [REPORTS.md](REPORTS.md) for the complete
-authoring and validation contract.
+JavaScript ships to readers. Two or more level-two headings additionally become
+a responsive local report navigation; level-three headings remain detail-only.
+See [REPORTS.md](REPORTS.md) for the complete authoring and validation contract.
 
 ## Complete examples
 

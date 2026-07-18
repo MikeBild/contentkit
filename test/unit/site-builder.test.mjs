@@ -1196,12 +1196,18 @@ translationKey: quarterly-report
 ---
 # Quarterly report
 
+## Revenue
+
 :::chart{type="line" title="Revenue trend" description="Revenue for January and February" unit="EUR" span="4"}
 | Month | Revenue |
 |---|---:|
 | Jan | 42 |
 | Feb | 51 |
-:::`
+:::
+
+## Interpretation
+
+Revenue is above the January baseline.`
   const result = await build({
     site: {
       ...site,
@@ -1231,6 +1237,9 @@ translationKey: quarterly-report
   assert.match(page, /<picture class="report-chart-picture">/)
   assert.match(page, /prefers-color-scheme: dark/)
   assert.match(page, /<details class="report-chart-data">/)
+  assert.match(page, /class="container report-section-nav"/)
+  assert.match(page, /href="#revenue">Revenue<\/a>/)
+  assert.match(page, /href="#interpretation">Interpretation<\/a>/)
   assert.doesNotMatch(page, /echarts|report-chart[^"']*\.js/i)
 
   const twin = result.files.get('en/quarterly-report/index.md').body.toString()

@@ -40,6 +40,12 @@ Report directives are accepted only with explicit `layout: report`. Unknown
 directives and unknown attributes fail the Markdown write with HTTP 422, so a
 typo cannot silently produce an incomplete dashboard.
 
+When a report contains at least two level-two headings (`##`), Contentkit
+derives a responsive, localized section navigation from them. The links remain
+ordinary same-page anchors, need no JavaScript and are omitted from print. Use
+level-two headings for the report's major areas and level-three headings for
+detail that should stay out of this navigation.
+
 ## Layout primitives
 
 Use a grid to arrange cards, metrics, progress and charts. It collapses to one

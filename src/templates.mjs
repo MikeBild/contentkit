@@ -9,6 +9,7 @@ const words = {
     contact: 'Kontakt',
     latest: 'Neueste Beiträge',
     latestReport: 'Aktueller Report',
+    reportSections: 'Reportbereiche',
     selected: 'Ausgewählte Projekte',
     allPosts: 'Alle Beiträge',
     allProjects: 'Alle Projekte',
@@ -81,6 +82,7 @@ const words = {
     contact: 'Contact',
     latest: 'Latest posts',
     latestReport: 'Latest report',
+    reportSections: 'Report sections',
     selected: 'Selected projects',
     allPosts: 'All posts',
     allProjects: 'All projects',
@@ -1113,6 +1115,18 @@ function extraBody(item, ctx) {
     .join('')}</dl>`
 }
 
+function reportSectionNavigation(item, ctx) {
+  const sections = [
+    ...String(item.html || '').matchAll(/<h2 id="([^"]+)"[^>]*>(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/h2>/g),
+  ]
+    .slice(0, 12)
+    .map((match) => ({ id: match[1], label: match[2].replace(/<[^>]+>/g, '') }))
+  if (sections.length < 2) return ''
+  return `<nav class="container report-section-nav" aria-label="${escapeHtml(ctx.t.reportSections)}"><span>${escapeHtml(ctx.t.reportSections)}</span><ol>${sections
+    .map((section) => `<li><a href="#${escapeHtml(section.id)}">${section.label}</a></li>`)
+    .join('')}</ol></nav>`
+}
+
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
   const isReport = item.layout === 'report'
@@ -1149,7 +1163,8 @@ export function contentBody(item, ctx, comments = []) {
   const footer = isPost
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
-  return `<article${isReport ? ' class="report-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isReport ? 'report' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
+  const reportNavigation = isReport ? reportSectionNavigation(item, ctx) : ''
+  return `<article${isReport ? ' class="report-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isReport ? 'report' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {
