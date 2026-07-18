@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Optional cross-build inputs:
+#   CONTENTKIT_NODE_BINARY — self-contained Node.js executable to embed
+#   CONTENTKIT_BUN_TARGET  — Bun compile target (for example bun-linux-x64)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -29,5 +32,9 @@ tar --use-compress-program 'gzip -1' -cf payload.tgz \
 KEY="$(shasum -a 256 payload.tgz | cut -c1-16)"
 printf "export default '%s'\n" "$KEY" > bin/cache-key.ts
 mkdir -p dist
-bun build bin/contentkit.ts --compile --outfile dist/contentkit
+TARGET_ARGS=()
+if [[ -n "${CONTENTKIT_BUN_TARGET:-}" ]]; then
+  TARGET_ARGS+=("--target=${CONTENTKIT_BUN_TARGET}")
+fi
+bun build bin/contentkit.ts --compile "${TARGET_ARGS[@]}" --outfile dist/contentkit
 echo "dist/contentkit ($(du -h dist/contentkit | cut -f1))"
