@@ -83,7 +83,9 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - Reader access: personal usernames and scrypt passwords, named groups,
   exact/prefix path policies and release-scoped authorization. Protected pages
   and media require an HttpOnly reader session and are omitted from public
-  navigation, search, sitemap, feeds and LLM files.
+  navigation, search, sitemap, feeds and LLM files. Protected static pages can
+  render only exact same-grant navigation/home cards; product report sites link
+  their newest same-grant report.
 - Content authoring: immutable revisions for `page`, `post` and `project`
   Markdown documents, scheduled revisions, tags, translations and asset uploads.
 - Static generation: home, blog, project, archive, tag index, tag, search,

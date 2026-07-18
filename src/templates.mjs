@@ -8,6 +8,7 @@ const words = {
     search: 'Suche',
     contact: 'Kontakt',
     latest: 'Neueste Beiträge',
+    latestReport: 'Aktueller Report',
     selected: 'Ausgewählte Projekte',
     allPosts: 'Alle Beiträge',
     allProjects: 'Alle Projekte',
@@ -79,6 +80,7 @@ const words = {
     search: 'Search',
     contact: 'Contact',
     latest: 'Latest posts',
+    latestReport: 'Latest report',
     selected: 'Selected projects',
     allPosts: 'All posts',
     allProjects: 'All projects',
@@ -316,6 +318,17 @@ function presetSectionLink(preset, locale) {
   return map[preset] || null
 }
 
+function latestReportLink(ctx) {
+  const report = [...(ctx.pages || [])]
+    .filter((page) => page.layout === 'report')
+    .sort((left, right) =>
+      String(right.published_at || right.updated_at || right.title || '').localeCompare(
+        String(left.published_at || left.updated_at || left.title || ''),
+      ),
+    )[0]
+  return report ? [ctx.t.latestReport, report.url] : null
+}
+
 function navLinks(ctx) {
   const { locale, t, pages, currentPath, site } = ctx
   // Built-in links carry fixed weights so page frontmatter (navOrder) can slot
@@ -325,17 +338,20 @@ function navLinks(ctx) {
   // same reason, and search is the header's combobox, not a navigation link.
   const preset = site.settings?.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
+  const report = latestReportLink(ctx)
   // Non-portfolio presets lead with their single hub (weight 20); portfolio
   // spreads blog/archive/projects across 20…40; product carries no built-in hub.
   const presetLinks = primary
     ? [[...primary, 20]]
-    : preset === 'portfolio'
-      ? [
-          [t.blog, `/${locale}/blog/`, 20],
-          [t.archive, `/${locale}/archive/`, 30],
-          [t.projects, `/${locale}/projects/`, 40],
-        ]
-      : []
+    : preset === 'product' && report
+      ? [[...report, 20]]
+      : preset === 'portfolio'
+        ? [
+            [t.blog, `/${locale}/blog/`, 20],
+            [t.archive, `/${locale}/archive/`, 30],
+            [t.projects, `/${locale}/projects/`, 40],
+          ]
+        : []
   const links = [
     ...pages
       .filter((p) => p.nav_order != null && p.nav_order <= 60)
@@ -369,12 +385,14 @@ function siteFooter(ctx) {
   // only place it is linked from besides the blog's chip row.
   const preset = settings.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
+  const report = latestReportLink(ctx)
   const posts = ctx.posts || []
   const hasPosts = posts.length > 0
   const hasProjects = (ctx.projects || []).length > 0
   const hasTags = posts.some((p) => (p.tags || []).length > 0)
   const navigation = [
     ...(primary ? [primary] : []),
+    ...(!primary && report ? [report] : []),
     ...(hasPosts ? [[t.blog, `/${locale}/blog/`]] : []),
     ...(hasProjects ? [[t.projects, `/${locale}/projects/`]] : []),
     ...(hasPosts ? [[t.archive, `/${locale}/archive/`]] : []),
@@ -662,7 +680,13 @@ export function presetHomeBody(ctx) {
     changelog: 'Changelog',
   }
   const title = labels[preset] || ctx.site.name
-  const visible = [...(ctx.pages || [])].sort((a, b) => (a.nav_order ?? 1000) - (b.nav_order ?? 1000))
+  const visible = [...(ctx.pages || [])].sort(
+    (a, b) =>
+      (a.nav_order ?? 1000) - (b.nav_order ?? 1000) ||
+      String(b.published_at || b.updated_at || b.title || '').localeCompare(
+        String(a.published_at || a.updated_at || a.title || ''),
+      ),
+  )
   return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
 <section class="container section"><div class="grid">${visible.slice(0, 12).map(card).join('')}</div></section>`
 }

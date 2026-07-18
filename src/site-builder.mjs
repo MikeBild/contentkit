@@ -102,6 +102,23 @@ function matchingRule(rules, pathname) {
     .sort((a, b) => Number(b.match === 'exact') - Number(a.match === 'exact') || b.path.length - a.path.length)[0]
 }
 
+function sameAccessGrant(left, right) {
+  const normalized = (grant, field) => [...(grant?.[field] || [])].sort()
+  return (
+    JSON.stringify(normalized(left, 'group_slugs')) === JSON.stringify(normalized(right, 'group_slugs')) &&
+    JSON.stringify(normalized(left, 'user_ids')) === JSON.stringify(normalized(right, 'user_ids'))
+  )
+}
+
+// Static HTML cannot vary by reader. A protected page may nevertheless render
+// navigation for documents carrying the exact same release-scoped grant: the
+// gateway checks that grant before serving the HTML, so no title or summary can
+// cross a group boundary. Public pages remain visible alongside those peers.
+function pagesVisibleWithGrant(publicPages, allPages, grant) {
+  if (!grant) return publicPages
+  return [...publicPages, ...allPages.filter((entry) => entry.protected && sameAccessGrant(entry.access_rule, grant))]
+}
+
 function absolute(site, path) {
   return `${site.base_url.replace(/\/$/, '')}${path}`
 }
@@ -574,18 +591,20 @@ export async function buildSite({
       sameAs: Object.values(site.settings?.socials || {}),
     }
     const homePath = `/${locale}/`
+    const homeGrant = matchingRule(accessRules, homePath)
+    const homeBase = { ...base, pages: pagesVisibleWithGrant(pages, allPages, homeGrant) }
     files.set(
       `${locale}/index.html`,
       text(
         layout(
           {
-            ...base,
+            ...homeBase,
             title: site.name,
             description: site.description,
             canonical: absolute(site, homePath),
             currentPath: homePath,
           },
-          presetHomeBody(base),
+          presetHomeBody(homeBase),
           { structured: personData },
         ),
       ),
@@ -942,6 +961,10 @@ export async function buildSite({
       // Markdown over HTML. noindex content gets none: its HTML page at least carries a robots meta,
       // a bare .md file could not ask crawlers for the same restraint.
       const markdownUrl = hasMarkdownTwin(item) ? `${item.url}index.md` : undefined
+      const itemBase = {
+        ...base,
+        pages: item.protected ? pagesVisibleWithGrant(pages, allPages, item.access_rule) : pages,
+      }
       if (markdownUrl) {
         files.set(
           markdownUrl.replace(/^\//, ''),
@@ -956,7 +979,7 @@ export async function buildSite({
         text(
           layout(
             {
-              ...base,
+              ...itemBase,
               title: item.title,
               description: item.summary,
               canonical: item.canonical,
@@ -972,26 +995,7 @@ export async function buildSite({
               articleTags: item.kind === 'post' ? item.tags : [],
               markdownUrl,
             },
-            structuredContentBody(
-              item,
-              {
-                ...base,
-                pages: item.protected
-                  ? [
-                      ...pages,
-                      ...allPages.filter(
-                        (entry) =>
-                          entry.protected &&
-                          JSON.stringify(entry.access_rule?.group_slugs || []) ===
-                            JSON.stringify(item.access_rule?.group_slugs || []) &&
-                          JSON.stringify(entry.access_rule?.user_ids || []) ===
-                            JSON.stringify(item.access_rule?.user_ids || []),
-                      ),
-                    ]
-                  : pages,
-              },
-              itemComments,
-            ),
+            structuredContentBody(item, itemBase, itemComments),
             {
               structured,
               mermaid: item.hasMermaid,

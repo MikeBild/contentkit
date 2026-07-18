@@ -132,6 +132,15 @@ Passwords are salted scrypt hashes, session tokens are random and stored only as
 HMAC hashes, and protected responses are never shared-cacheable. `noindex` is
 SEO metadata and remains unrelated to authorization.
 
+Because release HTML is static, it cannot be personalized safely for arbitrary
+combinations of reader groups. A protected home or content page may embed
+navigation and cards only for documents with the exact same canonicalized
+group/user grant (plus public pages); the gateway enforces that grant before it
+serves the bytes. Cross-grant unions remain reader-specific and are exposed only
+through the private catalog endpoints. Product report sites additionally derive
+one newest-report navigation link and a newest-first home grid from that
+same-grant set.
+
 Pages render without JavaScript except for the header search, which needs it:
 `search.js` ships on every page and fetches the search index lazily on the first
 interaction with the field, so a page view costs no extra request. Mermaid, forms

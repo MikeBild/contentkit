@@ -18,6 +18,19 @@ and this project adheres to
   retention-bounded. OpenAPI, LLM docs, indexes, unit/contract/real-PostgreSQL
   tests and W3C trace propagation cover the surface.
 
+### Fixed
+
+- **Fully private sites now have a useful home and navigation after login.** A
+  protected static page renders public pages plus protected pages carrying the
+  exact same release-scoped group/user grant. Product sites with report pages
+  show the newest report in header/footer navigation and render same-grant
+  report cards newest-first on the home page. Public discovery remains empty,
+  anonymous delivery remains gated, and a different reader group cannot leak
+  through the prebuilt HTML.
+- **Binary builds work with macOS Bash 3.2 under `set -u`.** Native builds no
+  longer expand an unset/empty target-argument array; cross-builds still pass
+  the requested Bun target explicitly.
+
 ## 1.13.1
 
 ### Fixed

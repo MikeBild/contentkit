@@ -1107,6 +1107,44 @@ test('a prefix access rule removes its whole documentation area from public disc
   assert.ok(result.accessEntries.some((entry) => entry.match === 'prefix' && entry.path === '/en/docs/'))
 })
 
+test('a fully private product home renders only same-grant reports and links the newest report', async () => {
+  const report = (hour, publishedAt) => ({
+    id: `report-${hour}`,
+    item_id: `item-report-${hour}`,
+    kind: 'page',
+    locale: 'en',
+    translation_key: `report-${hour}`,
+    published_at: publishedAt,
+    markdown: `---\nkind: page\nlayout: report\ntitle: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\nnoindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
+  })
+  const result = await build({
+    site: { ...site, settings: { presentation: { preset: 'product' } } },
+    accessGroups: [{ slug: 'cockpit' }, { slug: 'other-team' }],
+    accessRules: [{ match: 'prefix', path: '/', group_slugs: ['cockpit'], user_ids: [] }],
+    revisions: [
+      report('08', '2026-07-18T09:00:00Z'),
+      report('09', '2026-07-18T10:00:00Z'),
+      {
+        id: 'other-team-page',
+        item_id: 'item-other-team-page',
+        kind: 'page',
+        locale: 'en',
+        translation_key: 'other-team-page',
+        markdown:
+          '---\nkind: page\nlayout: landing\ntitle: Other team secret\nlocale: en\nslug: other-team\ntranslationKey: other-team-page\naccess: [other-team]\n---\n\nPrivate to another grant.',
+      },
+    ],
+  })
+  const home = result.files.get('en/index.html').body.toString()
+  assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
+  assert.ok(home.indexOf('Report 09:00 UTC') < home.indexOf('Report 08:00 UTC'))
+  assert.doesNotMatch(home, /Other team secret/)
+  assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Report 0[89]|Other team secret/)
+  const reportPage = result.files.get('en/report-09/index.html').body.toString()
+  assert.match(reportPage, /href="\/en\/report-09\/" aria-current="page">Latest report<\/a>/)
+  assert.doesNotMatch(reportPage, /Other team secret/)
+})
+
 test('a protected post also protects its raw Markdown twin', async () => {
   const result = await build({
     accessGroups: [{ slug: 'customers' }],

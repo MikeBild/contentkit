@@ -53,7 +53,8 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   contents and current/archived product versions.
 - Release-scoped reader access control for individual pages, path areas and
   media, with personal usernames, salted scrypt passwords, groups and revocable
-  sessions. Protected content is excluded from public discovery outputs.
+  sessions. Protected content is excluded from public discovery outputs; a
+  signed-in reader sees only same-grant navigation and home-page cards.
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
 - Responsive reports and dashboards from Markdown: shadcn-style metric cards,
   status badges and progress, plus table-driven bar, line, area and donut charts

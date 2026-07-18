@@ -1316,6 +1316,15 @@ content is removed from public listings, navigation, search, sitemap, RSS,
 asset referenced only by protected content inherits a grant; an asset also
 needed by public content remains public and emits a build warning.
 
+Release HTML is static and cannot be personalized for arbitrary group unions.
+A protected home or content page therefore pre-renders public pages plus only
+protected pages carrying the exact same canonicalized group/user grant. This
+provides useful navigation and home cards on a fully private site without
+cross-group title leakage. Product sites with report pages link the newest
+same-grant report in header/footer navigation and order same-grant report cards
+newest-first. Reader-specific unions across multiple grants remain available
+only through the private JSON catalog endpoints.
+
 All management routes below require a site-scoped `site:admin` key:
 
 - `GET|POST /v1/sites/{site}/access/users`: list or create personal readers;

@@ -32,9 +32,11 @@ tar --use-compress-program 'gzip -1' -cf payload.tgz \
 KEY="$(shasum -a 256 payload.tgz | cut -c1-16)"
 printf "export default '%s'\n" "$KEY" > bin/cache-key.ts
 mkdir -p dist
-TARGET_ARGS=()
 if [[ -n "${CONTENTKIT_BUN_TARGET:-}" ]]; then
-  TARGET_ARGS+=("--target=${CONTENTKIT_BUN_TARGET}")
+  bun build bin/contentkit.ts --compile "--target=${CONTENTKIT_BUN_TARGET}" --outfile dist/contentkit
+else
+  # Bash 3.2 (the macOS system shell) treats an empty array expansion as an
+  # unbound variable under `set -u`; keep the native build path scalar.
+  bun build bin/contentkit.ts --compile --outfile dist/contentkit
 fi
-bun build bin/contentkit.ts --compile "${TARGET_ARGS[@]}" --outfile dist/contentkit
 echo "dist/contentkit ($(du -h dist/contentkit | cut -f1))"
