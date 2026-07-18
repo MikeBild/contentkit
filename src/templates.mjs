@@ -302,6 +302,20 @@ export function dictionary(locale) {
   return words[locale.split('-')[0]] || words.en
 }
 
+// The single content hub of a non-portfolio preset, as a [label, href] pair.
+// Header nav and footer both read this so the two never drift when a preset is
+// added. portfolio and product have no single hub, so they return null and each
+// nav handles them itself (portfolio: blog/archive/projects; product: none).
+function presetSectionLink(preset, locale) {
+  const map = {
+    'product-docs': ['Docs', `/${locale}/docs/`],
+    wiki: ['Wiki', `/${locale}/wiki/`],
+    'knowledge-base': [locale.startsWith('de') ? 'Hilfe' : 'Help', `/${locale}/help/`],
+    changelog: ['Changelog', `/${locale}/changelog/`],
+  }
+  return map[preset] || null
+}
+
 function navLinks(ctx) {
   const { locale, t, pages, currentPath, site } = ctx
   // Built-in links carry fixed weights so page frontmatter (navOrder) can slot
@@ -310,23 +324,23 @@ function navLinks(ctx) {
   // Datenschutzerklärung) — see siteFooter(). Contact is footer-only for the
   // same reason, and search is the header's combobox, not a navigation link.
   const preset = site.settings?.presentation?.preset || 'portfolio'
-  const presetLinks = {
-    portfolio: [
-      [t.blog, `/${locale}/blog/`, 20],
-      [t.archive, `/${locale}/archive/`, 30],
-      [t.projects, `/${locale}/projects/`, 40],
-    ],
-    'product-docs': [['Docs', `/${locale}/docs/`, 20]],
-    wiki: [['Wiki', `/${locale}/wiki/`, 20]],
-    'knowledge-base': [[locale.startsWith('de') ? 'Hilfe' : 'Help', `/${locale}/help/`, 20]],
-    product: [],
-    changelog: [['Changelog', `/${locale}/changelog/`, 20]],
-  }
+  const primary = presetSectionLink(preset, locale)
+  // Non-portfolio presets lead with their single hub (weight 20); portfolio
+  // spreads blog/archive/projects across 20…40; product carries no built-in hub.
+  const presetLinks = primary
+    ? [[...primary, 20]]
+    : preset === 'portfolio'
+      ? [
+          [t.blog, `/${locale}/blog/`, 20],
+          [t.archive, `/${locale}/archive/`, 30],
+          [t.projects, `/${locale}/projects/`, 40],
+        ]
+      : []
   const links = [
     ...pages
       .filter((p) => p.nav_order != null && p.nav_order <= 60)
       .map((p) => [p.nav_title || p.title, p.url, p.nav_order]),
-    ...(presetLinks[preset] || []),
+    ...presetLinks,
   ].sort((a, b) => a[2] - b[2])
   return links
     .map(
@@ -347,14 +361,24 @@ function siteFooter(ctx) {
   const legalPages = pages
     .filter((p) => p.nav_order != null && p.nav_order > 60)
     .sort((a, b) => a.nav_order - b.nav_order)
-  // The tag index has no header-nav slot (the nav is already four items wide on
-  // mobile), so the footer is the only place it is linked from besides the blog's
-  // chip row. Without it, /{locale}/tags/ is reachable only by typing the URL.
+  // The navigation column adapts to the preset, mirroring the header: a
+  // non-portfolio preset (wiki, docs, …) leads with its content hub. The blog
+  // links then follow only when that content actually exists — an empty wiki's
+  // footer must not advertise /blog/, /archive/ or /tags/. The tag index has no
+  // header-nav slot (that nav is already wide on mobile), so the footer is the
+  // only place it is linked from besides the blog's chip row.
+  const preset = settings.presentation?.preset || 'portfolio'
+  const primary = presetSectionLink(preset, locale)
+  const posts = ctx.posts || []
+  const hasPosts = posts.length > 0
+  const hasProjects = (ctx.projects || []).length > 0
+  const hasTags = posts.some((p) => (p.tags || []).length > 0)
   const navigation = [
-    [t.blog, `/${locale}/blog/`],
-    [t.projects, `/${locale}/projects/`],
-    [t.archive, `/${locale}/archive/`],
-    [t.tags, `/${locale}/tags/`],
+    ...(primary ? [primary] : []),
+    ...(hasPosts ? [[t.blog, `/${locale}/blog/`]] : []),
+    ...(hasProjects ? [[t.projects, `/${locale}/projects/`]] : []),
+    ...(hasPosts ? [[t.archive, `/${locale}/archive/`]] : []),
+    ...(hasTags ? [[t.tags, `/${locale}/tags/`]] : []),
   ]
     .map((link) => item(link))
     .join('')

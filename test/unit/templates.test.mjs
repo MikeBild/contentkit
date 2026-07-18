@@ -331,13 +331,19 @@ test('footer renders brand, navigation, contact/legal and social columns', () =>
       { title: 'Profil', url: '/de/profil/', nav_order: 1 },
       { title: 'Impressum', url: '/de/impressum/', nav_order: 99 },
     ],
+    posts: [{ title: 'A', url: '/de/blog/a/', tags: ['Effect-TS'] }],
+    projects: [{ title: 'P', url: '/de/projects/p/' }],
   })
   const footer = html.match(/<footer class="site-footer">(.*?)<\/footer>/s)[1]
   assert.match(footer, /class="footer-grid"/)
   assert.doesNotMatch(footer, /data-site-search/)
   assert.match(footer, /<p>Personal site<\/p>/)
   assert.match(footer, /<h2>Navigation<\/h2>/)
+  // Portfolio with content: blog, projects, archive and the tag index.
   assert.match(footer, /href="\/de\/blog\/">Blog<\/a>/)
+  assert.match(footer, /href="\/de\/projects\/">Projekte<\/a>/)
+  assert.match(footer, /href="\/de\/archive\/">Archiv<\/a>/)
+  assert.match(footer, /href="\/de\/tags\/">Themen<\/a>/)
   // Contact column: contact link plus legal pages (navOrder > 60), but not Profil.
   const contactCol = footer.match(/<h2>Kontakt<\/h2><ul>(.*?)<\/ul>/s)[1]
   assert.match(contactCol, /href="\/de\/contact\/">Kontakt<\/a>/)
@@ -348,6 +354,46 @@ test('footer renders brand, navigation, contact/legal and social columns', () =>
   assert.match(footer, /<a href="https:\/\/www\.linkedin\.com\/in\/x" rel="me">LinkedIn<\/a>/)
   assert.match(footer, /href="\/de\/feed\.xml">RSS<\/a>/)
   assert.match(footer, /© \d{4} Example/)
+})
+
+test('footer navigation follows the preset: a wiki without posts links only the wiki hub', () => {
+  const html = render({
+    site: {
+      name: 'Wiki',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { presentation: { preset: 'wiki' } },
+    },
+    posts: [],
+    projects: [],
+  })
+  const nav = html.match(/<h2>Navigation<\/h2><ul>(.*?)<\/ul>/s)[1]
+  assert.match(nav, /href="\/de\/wiki\/">Wiki<\/a>/)
+  // No blog content, so the portfolio-style links stay out of the wiki footer.
+  assert.doesNotMatch(nav, /\/de\/blog\//)
+  assert.doesNotMatch(nav, /\/de\/archive\//)
+  assert.doesNotMatch(nav, /\/de\/projects\//)
+  assert.doesNotMatch(nav, /\/de\/tags\//)
+})
+
+test('footer navigation adds the blog links to a wiki that also has posts', () => {
+  const html = render({
+    site: {
+      name: 'Wiki',
+      base_url: 'https://example.test',
+      default_locale: 'de',
+      settings: { presentation: { preset: 'wiki' } },
+    },
+    posts: [{ title: 'A', url: '/de/blog/a/', tags: ['Effect-TS'] }],
+    projects: [],
+  })
+  const nav = html.match(/<h2>Navigation<\/h2><ul>(.*?)<\/ul>/s)[1]
+  assert.match(nav, /href="\/de\/wiki\/">Wiki<\/a>/)
+  assert.match(nav, /href="\/de\/blog\/">Blog<\/a>/)
+  assert.match(nav, /href="\/de\/archive\/">Archiv<\/a>/)
+  assert.match(nav, /href="\/de\/tags\/">Themen<\/a>/)
+  // Still no projects section, since the wiki has none.
+  assert.doesNotMatch(nav, /\/de\/projects\//)
 })
 
 test('contentCsp widens script/connect only for the configured provider', () => {
