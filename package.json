@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "1.14.4",
+  "version": "1.14.5",
   "description": "API-first Markdown mini-CMS publishing immutable multilingual static-site releases",
   "private": true,
   "type": "module",

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.14.5
+
+### Added
+
+- **Product report sites derive a cadence-aware catalog.** Report pages can
+  declare the generic `reportCadence` field as hourly, daily, weekly, monthly,
+  quarterly or yearly. A product home then renders one current report per
+  available period, localized period navigation and a bounded immutable
+  history. Reports without the field remain compatible, and protected catalogs
+  still contain only exact same-grant pages.
+
 ## 1.14.4
 
 ### Added
