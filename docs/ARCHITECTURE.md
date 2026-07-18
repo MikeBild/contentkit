@@ -138,8 +138,10 @@ navigation and cards only for documents with the exact same canonicalized
 group/user grant (plus public pages); the gateway enforces that grant before it
 serves the bytes. Cross-grant unions remain reader-specific and are exposed only
 through the private catalog endpoints. Product report sites additionally derive
-one newest-report navigation link and a newest-first home grid from that
-same-grant set.
+one newest-report navigation link and, when `reportCadence` is present, one
+current report per cadence plus a bounded recent history from that same-grant
+set. Cadence is explicit metadata and is never inferred from tenant-specific
+titles or slugs.
 
 Pages render without JavaScript except for the header search, which needs it:
 `search.js` ships on every page and fetches the search index lazily on the first

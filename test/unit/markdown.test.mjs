@@ -271,6 +271,22 @@ slug: quarterly-report
 ${fields}---
 ${body}`
 
+test('reportCadence is a bounded report-only catalog field', async () => {
+  const { meta } = await renderMarkdown(reportDoc('## Status\n\nStable.', 'reportCadence: daily\n'))
+  assert.equal(meta.report_cadence, 'daily')
+  await assert.rejects(
+    () => renderMarkdown(reportDoc('## Status', 'reportCadence: realtime\n')),
+    /reportCadence must be one of hourly, daily, weekly, monthly, quarterly, yearly/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        '---\nkind: page\nlayout: landing\ntitle: Product\nlocale: en\nslug: product\nreportCadence: daily\n---\nBody.',
+      ),
+    /reportCadence requires layout: report/,
+  )
+})
+
 test('report directives produce controlled dashboard markup and normalized chart descriptors', async () => {
   const result = await renderMarkdown(
     reportDoc(`::::report-grid{columns="4"}

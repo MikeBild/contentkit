@@ -22,8 +22,8 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
   versioned routes, hierarchy fields and real English Markdown documents.
 - [Reports and dashboards](docs/REPORTS.md): `layout: report`, controlled visual
-  primitives, table-driven static charts, automatic section navigation, theme
-  tokens and resource limits.
+  primitives, table-driven static charts, automatic section navigation,
+  cadence-aware product catalogs, theme tokens and resource limits.
 - [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
   release, content, reader, webhook, audio and engagement aggregates for
   external collectors using the existing `content:read` scope.
@@ -87,7 +87,8 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   and media require an HttpOnly reader session and are omitted from public
   navigation, search, sitemap, feeds and LLM files. Protected static pages can
   render only exact same-grant navigation/home cards; product report sites link
-  their newest same-grant report.
+  a cadence-aware current-report catalog plus history from exact same-grant
+  reports.
 - Content authoring: immutable revisions for `page`, `post` and `project`
   Markdown documents, scheduled revisions, tags, translations and asset uploads.
 - Static generation: home, blog, project, archive, tag index, tag, search,

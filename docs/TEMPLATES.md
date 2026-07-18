@@ -46,6 +46,8 @@ the sitemap. A page can opt out of its preset with `layout: standard`.
 The following fields are validated on upload:
 
 - `layout`: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, or `report`.
+- `reportCadence`: optional report-only frequency: `hourly`, `daily`, `weekly`,
+  `monthly`, `quarterly`, or `yearly`.
 - `docKey`: stable page identity within a documentation version or hierarchy.
 - `docsVersion`: an ID declared in `settings.presentation.docs.versions`.
 - `parent`: the parent page's `docKey` in the same locale, layout, and version.
@@ -80,6 +82,13 @@ release build time; the table remains as accessible source data and no chart
 JavaScript ships to readers. Two or more level-two headings additionally become
 a responsive local report navigation; level-three headings remain detail-only.
 See [REPORTS.md](REPORTS.md) for the complete authoring and validation contract.
+
+When the `product` preset contains report pages, its home page becomes a report
+catalog automatically. `reportCadence` selects the newest report for each period
+and creates localized period navigation; older reports remain in a bounded recent
+history. Reports without the optional field remain compatible and appear as
+“Other report”. The catalog uses only pages visible under the home page's exact
+reader grant, so private titles cannot cross access boundaries.
 
 ## Complete examples
 

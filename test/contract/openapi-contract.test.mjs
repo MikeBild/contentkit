@@ -46,9 +46,22 @@ test('every documented access operation has a routable method', () => {
   }
 })
 
-test('the OpenAPI authoring contract documents reports, charts and their theme tokens', () => {
+test('the OpenAPI authoring contract documents report cadence, charts and their theme tokens', () => {
   const serialized = JSON.stringify(spec)
-  for (const term of ['`report`', '`report-grid`', '`chart`', '`bar`', '`line`', '`area`', '`donut`', '`chart_1`']) {
+  for (const term of [
+    '`report`',
+    '`reportCadence`',
+    '`hourly`',
+    '`daily`',
+    '`yearly`',
+    '`report-grid`',
+    '`chart`',
+    '`bar`',
+    '`line`',
+    '`area`',
+    '`donut`',
+    '`chart_1`',
+  ]) {
     assert.match(serialized, new RegExp(term), term)
   }
   assert.match(serialized, /static light\/dark SVG assets without client JavaScript/)

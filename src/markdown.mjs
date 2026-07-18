@@ -22,6 +22,7 @@ const accessSlug = /^[a-z0-9][a-z0-9-]{0,63}$/
 const REPORT_DIRECTIVES = new Set(['report-grid', 'report-card', 'metric', 'badge', 'progress', 'chart'])
 const REPORT_TONES = new Set(['neutral', 'positive', 'warning', 'negative'])
 const REPORT_CHART_TYPES = new Set(['bar', 'line', 'area', 'donut'])
+const REPORT_CADENCES = new Set(['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'])
 const REPORT_MAX_CHARTS = 24
 const REPORT_MAX_ROWS = 200
 const REPORT_MAX_SERIES = 8
@@ -535,6 +536,15 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   if (pageLayout && !layouts.has(pageLayout)) {
     throw Object.assign(new Error(`frontmatter layout must be one of ${[...layouts].join(', ')}`), { statusCode: 422 })
   }
+  const reportCadence = data.reportCadence == null ? null : String(data.reportCadence).trim()
+  if (reportCadence && !REPORT_CADENCES.has(reportCadence)) {
+    throw Object.assign(new Error(`frontmatter reportCadence must be one of ${[...REPORT_CADENCES].join(', ')}`), {
+      statusCode: 422,
+    })
+  }
+  if (reportCadence && pageLayout !== 'report') {
+    throw Object.assign(new Error('frontmatter reportCadence requires layout: report'), { statusCode: 422 })
+  }
   const meta = {
     kind,
     title,
@@ -561,6 +571,7 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     external_url: data.externalUrl ? String(data.externalUrl) : null,
     nav_order: Number.isFinite(Number(data.navOrder)) ? Number(data.navOrder) : null,
     layout: pageLayout,
+    report_cadence: reportCadence,
     doc_key: optionalSlug(data.docKey, 'docKey'),
     docs_version: optionalSlug(data.docsVersion, 'docsVersion'),
     parent: optionalSlug(data.parent, 'parent'),

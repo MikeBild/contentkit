@@ -1107,8 +1107,8 @@ test('a prefix access rule removes its whole documentation area from public disc
   assert.ok(result.accessEntries.some((entry) => entry.match === 'prefix' && entry.path === '/en/docs/'))
 })
 
-test('a fully private product home renders only same-grant reports and links the newest semantic period', async () => {
-  const report = (hour, publishedAt, date = '') => ({
+test('a fully private product home renders a cadence catalog for only same-grant reports', async () => {
+  const report = (hour, publishedAt, date = '', cadence = 'hourly') => ({
     id: `report-${hour}`,
     item_id: `item-report-${hour}`,
     kind: 'page',
@@ -1117,7 +1117,7 @@ test('a fully private product home renders only same-grant reports and links the
     // node-postgres returns timestamptz columns as Date instances while
     // authored frontmatter dates are normalized strings.
     published_at: new Date(publishedAt),
-    markdown: `---\nkind: page\nlayout: report\ntitle: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
+    markdown: `---\nkind: page\nlayout: report\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
   })
   const result = await build({
     site: { ...site, settings: { presentation: { preset: 'product' } } },
@@ -1126,7 +1126,8 @@ test('a fully private product home renders only same-grant reports and links the
     revisions: [
       report('08', '2026-07-18T09:00:00Z'),
       report('09', '2026-07-18T10:23:00Z', '2026-07-18T10:00:00Z'),
-      report('yearly', '2026-07-18T10:27:00Z', '2026-01-01T00:00:00Z'),
+      report('yearly', '2026-07-18T10:27:00Z', '2026-01-01T00:00:00Z', 'yearly'),
+      report('legacy', '2025-12-31T23:00:00Z', '2025-12-31T23:00:00Z', null),
       {
         id: 'other-team-page',
         item_id: 'item-other-team-page',
@@ -1140,6 +1141,13 @@ test('a fully private product home renders only same-grant reports and links the
   })
   const home = result.files.get('en/index.html').body.toString()
   assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
+  assert.match(home, /aria-label="Periods"/)
+  assert.match(home, /href="\/en\/report-09\/"><span>Hourly<\/span>/)
+  assert.match(home, /href="\/en\/report-yearly\/"><span>Yearly<\/span>/)
+  assert.match(home, /<span>Other report<\/span>/)
+  assert.equal((home.match(/class="card report-catalog-card"/g) || []).length, 4)
+  assert.match(home, /Current reports/)
+  assert.match(home, /Report history/)
   assert.ok(home.indexOf('Report 09:00 UTC') < home.indexOf('Report 08:00 UTC'))
   assert.doesNotMatch(home, /Other team secret/)
   assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Report 0[89]|Other team secret/)

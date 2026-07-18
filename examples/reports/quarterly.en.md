@@ -1,6 +1,7 @@
 ---
 kind: page
 layout: report
+reportCadence: quarterly
 title: Q2 Business Review
 locale: en
 slug: q2-business-review

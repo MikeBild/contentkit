@@ -417,7 +417,7 @@ export function openApi(config) {
         post: {
           summary: 'Create content and its first draft revision',
           description:
-            'Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` and `report`. A report can compose sanitized `report-grid`, `report-card`, `metric`, `badge`, `progress` and `chart` directives; a `chart` contains exactly one Markdown table and renders to static light/dark SVG assets without client JavaScript. Supported chart types are `bar`, `line`, `area` and `donut`; malformed directives, non-numeric values or resource-limit violations fail with 422. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference).',
+            'Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` and `report`. A report can set `reportCadence` to `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` for the generic product report catalog, and can compose sanitized `report-grid`, `report-card`, `metric`, `badge`, `progress` and `chart` directives; a `chart` contains exactly one Markdown table and renders to static light/dark SVG assets without client JavaScript. Supported chart types are `bar`, `line`, `area` and `donut`; malformed directives, non-numeric values or resource-limit violations fail with 422. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference).',
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
@@ -536,7 +536,7 @@ export function openApi(config) {
         put: {
           summary: 'Create another immutable revision',
           description:
-            'Accepts the same controlled-layout, report-directive, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
+            'Accepts the same controlled-layout, report-cadence, report-directive, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,

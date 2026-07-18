@@ -23,6 +23,7 @@ locale: en
 slug: q2-business-review
 translationKey: q2-business-review
 summary: Revenue, delivery and reliability for Q2.
+reportCadence: quarterly
 ---
 
 ::metric{label="Revenue" value="€1.42M" trend="+12.8% QoQ" tone="positive"}
@@ -45,6 +46,25 @@ derives a responsive, localized section navigation from them. The links remain
 ordinary same-page anchors, need no JavaScript and are omitted from print. Use
 level-two headings for the report's major areas and level-three headings for
 detail that should stay out of this navigation.
+
+## Report catalog and periods
+
+An optional `reportCadence` adds the report to the generic period catalog. Its
+allowed values are `hourly`, `daily`, `weekly`, `monthly`, `quarterly` and
+`yearly`; it is rejected on every layout except `report`. The report's `date`
+remains the semantic period timestamp and therefore drives newest-first sorting.
+
+With the `product` site preset, the presence of at least one report activates a
+zero-configuration report home. It shows the newest immutable report for every
+available cadence, links those periods directly, and keeps up to twelve older
+reports as recent history. A report without `reportCadence` remains valid and is
+grouped as “Other report”. This behavior is based only on generic frontmatter;
+Contentkit never infers a cadence from a product name, title or slug.
+
+Private sites retain the normal release-scoped security model: the catalog can
+render protected titles only when they carry the exact same grant as the home
+route. Public discovery files continue to exclude protected and `noindex`
+reports.
 
 ## Layout primitives
 

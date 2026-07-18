@@ -494,6 +494,12 @@ Set `layout: report` to compose a responsive report from the controlled
 directives. Report directives are rejected outside that layout. Unknown report
 directives or attributes fail the write with 422.
 
+Optional `reportCadence` is restricted to `hourly`, `daily`, `weekly`,
+`monthly`, `quarterly` or `yearly` and requires `layout: report`. Under the
+`product` preset, cadence-tagged reports automatically produce a localized
+current-report catalog and a bounded twelve-item recent history. Sorting uses
+the semantic frontmatter `date`; no product name, title or slug is interpreted.
+
 `report-grid` accepts `columns="1..4"`. Cards require `title` and accept
 `span="1..4"`. Metrics require `label` and `value`, and optionally accept
 `trend`, `tone` and `span`. Badges contain visible inline text. Progress requires
@@ -1278,6 +1284,8 @@ Archived documentation remains reachable but is
 A page can override the preset default with `layout: standard`, `layout: docs`,
 `layout: wiki`, `layout: knowledge`, `layout: landing`, `layout: changelog` or
 `layout: report`.
+Report pages may additionally declare
+`reportCadence: hourly|daily|weekly|monthly|quarterly|yearly`.
 Hierarchical layouts accept `docKey`, `parent`, `navTitle` and `navOrder`;
 documentation also requires `docsVersion`. Changelog pages accept `category`,
 `releaseVersion` and `changeTypes` (`added`, `changed`, `deprecated`, `removed`,
@@ -1290,7 +1298,9 @@ from section 7. Table-driven charts are rendered to static light/dark SVGs at
 build time, use `chart_1` through `chart_5`, retain their accessible source data
 and add no chart JavaScript to the page. Two or more level-two headings become
 a responsive localized section navigation; level-three headings remain out of
-that navigation.
+that navigation. A `product` preset containing reports also derives a localized
+period catalog: one newest report per cadence plus a bounded recent history,
+restricted to the home route's exact reader grant.
 
 Generated routes:
 

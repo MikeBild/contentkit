@@ -10,6 +10,19 @@ const words = {
     latest: 'Neueste Beiträge',
     latestReport: 'Aktueller Report',
     reportSections: 'Reportbereiche',
+    reportPeriods: 'Zeiträume',
+    currentReports: 'Aktuelle Reports',
+    currentReportsHint: 'Je Zeitraum wird der neueste abgeschlossene Report gezeigt.',
+    reportHistory: 'Reportverlauf',
+    reportHistoryHint: 'Frühere Reports bleiben unverändert und nachvollziehbar.',
+    reportOtherPages: 'Weitere Seiten',
+    reportCadenceHourly: 'Stündlich',
+    reportCadenceDaily: 'Täglich',
+    reportCadenceWeekly: 'Wöchentlich',
+    reportCadenceMonthly: 'Monatlich',
+    reportCadenceQuarterly: 'Quartalsweise',
+    reportCadenceYearly: 'Jährlich',
+    reportCadenceOther: 'Weiterer Report',
     selected: 'Ausgewählte Projekte',
     allPosts: 'Alle Beiträge',
     allProjects: 'Alle Projekte',
@@ -83,6 +96,19 @@ const words = {
     latest: 'Latest posts',
     latestReport: 'Latest report',
     reportSections: 'Report sections',
+    reportPeriods: 'Periods',
+    currentReports: 'Current reports',
+    currentReportsHint: 'The latest completed report is shown for every period.',
+    reportHistory: 'Report history',
+    reportHistoryHint: 'Earlier reports remain immutable and traceable.',
+    reportOtherPages: 'Other pages',
+    reportCadenceHourly: 'Hourly',
+    reportCadenceDaily: 'Daily',
+    reportCadenceWeekly: 'Weekly',
+    reportCadenceMonthly: 'Monthly',
+    reportCadenceQuarterly: 'Quarterly',
+    reportCadenceYearly: 'Yearly',
+    reportCadenceOther: 'Other report',
     selected: 'Selected projects',
     allPosts: 'All posts',
     allProjects: 'All projects',
@@ -329,6 +355,59 @@ function latestReportLink(ctx) {
         String(right.title || '').localeCompare(String(left.title || '')),
     )[0]
   return report ? [ctx.t.latestReport, report.url] : null
+}
+
+const REPORT_CADENCES = ['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly']
+
+function reportCadenceLabel(t, cadence) {
+  const suffix = cadence ? `${cadence[0].toUpperCase()}${cadence.slice(1)}` : 'Other'
+  return t[`reportCadence${suffix}`] || t.reportCadenceOther
+}
+
+function reportSort(left, right) {
+  return (
+    compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
+    cmp(String(right.title || ''), String(left.title || ''))
+  )
+}
+
+function reportCatalogCard(item, t) {
+  const cadence = reportCadenceLabel(t, item.report_cadence)
+  return `<article class="card report-catalog-card"><a href="${escapeHtml(item.url)}">
+<div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div>
+<h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.summary)}</p>
+</a></article>`
+}
+
+function reportCatalogBody(ctx, title, visible) {
+  const reports = visible.filter((page) => page.layout === 'report').sort(reportSort)
+  const otherPages = visible.filter((page) => page.layout !== 'report')
+  const newestByCadence = new Map()
+  for (const report of reports) {
+    const key = REPORT_CADENCES.includes(report.report_cadence) ? report.report_cadence : 'other'
+    if (!newestByCadence.has(key)) newestByCadence.set(key, report)
+  }
+  const current = [...REPORT_CADENCES, 'other'].flatMap((cadence) => {
+    const report = newestByCadence.get(cadence)
+    return report ? [report] : []
+  })
+  const currentIds = new Set(current.map((report) => report.item_id))
+  const history = reports.filter((report) => !currentIds.has(report.item_id)).slice(0, 12)
+  const settings = ctx.site.settings || {}
+  const periodNav =
+    current.length > 1
+      ? `<nav class="container report-cadence-nav" aria-label="${escapeHtml(ctx.t.reportPeriods)}"><span>${escapeHtml(ctx.t.reportPeriods)}</span><ol>${current
+          .map(
+            (report) =>
+              `<li><a href="${escapeHtml(report.url)}"><span>${escapeHtml(reportCadenceLabel(ctx.t, report.report_cadence))}</span>${report.published_at ? `<small>${escapeHtml(formatDate(report.published_at, report.locale))}</small>` : ''}</a></li>`,
+          )
+          .join('')}</ol></nav>`
+      : ''
+  return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.currentReports)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p></div></section>
+${periodNav}
+<section class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.currentReports)}</h2><p>${escapeHtml(ctx.t.currentReportsHint)}</p></div></div><div class="grid report-current-grid">${current.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>
+${history.length ? `<section class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>` : ''}
+${otherPages.length ? `<section class="container section"><div class="section-head"><h2>${escapeHtml(ctx.t.reportOtherPages)}</h2></div><div class="grid">${otherPages.slice(0, 12).map(card).join('')}</div></section>` : ''}`
 }
 
 function navLinks(ctx) {
@@ -688,6 +767,9 @@ export function presetHomeBody(ctx) {
       compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||
       String(b.title || '').localeCompare(String(a.title || '')),
   )
+  if (preset === 'product' && visible.some((page) => page.layout === 'report')) {
+    return reportCatalogBody(ctx, title, visible)
+  }
   return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
 <section class="container section"><div class="grid">${visible.slice(0, 12).map(card).join('')}</div></section>`
 }
