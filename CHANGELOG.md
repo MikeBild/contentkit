@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.14.2
+
+### Fixed
+
+- **Report navigation follows the semantic reporting period.** An authored
+  `date` now overrides the database activation time while undated legacy
+  documents retain their repository timestamps. Latest-report sorting compares
+  timestamps separately from its deterministic title tie-breaker, so a
+  historical weekly, monthly or yearly report published later cannot displace
+  the newest hourly report.
+
 ## 1.14.1
 
 ### Fixed
