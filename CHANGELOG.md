@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.14.4
+
+### Added
+
+- **Reports derive a responsive local section navigation.** A report with at
+  least two level-two headings now exposes those major areas as localized,
+  same-page navigation pills. Level-three detail stays out of the navigation;
+  the navigation needs no browser JavaScript and is omitted from print.
+
 ## 1.14.3
 
 ### Fixed
