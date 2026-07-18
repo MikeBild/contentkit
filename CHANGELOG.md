@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.13.1
+
+### Fixed
+
+- **The footer navigation column now follows the preset.** Non-portfolio sites
+  (wiki, product-docs, knowledge-base, changelog) previously showed the
+  portfolio links (Blog, Projects, Archive, Tags) in the footer even though the
+  header already led with the preset's own hub. The footer now leads with the
+  preset's section — Wiki, Docs, Help or Changelog — and appends the blog,
+  projects, archive and tag links only when the site actually has that content.
+  Portfolio sites with posts are unchanged. Header and footer now share one
+  preset-to-section definition so they cannot drift apart.
+
 ## 1.13.0
 
 ### Added
