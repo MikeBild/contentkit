@@ -28,7 +28,7 @@ fi
 cp "$NODE_BINARY" .node-bin
 rm -f payload.tgz
 tar --use-compress-program 'gzip -1' -cf payload.tgz \
-  .node-bin server.mjs src scripts assets docs patterns package.json .env.defaults .env.example node_modules
+  .node-bin server.mjs src scripts assets docs patterns guides package.json .env.defaults .env.example node_modules
 KEY="$(shasum -a 256 payload.tgz | cut -c1-16)"
 printf "export default '%s'\n" "$KEY" > bin/cache-key.ts
 mkdir -p dist

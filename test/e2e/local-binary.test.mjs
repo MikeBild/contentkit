@@ -361,7 +361,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
 
       const reportPage = await requestWithHost(origin, '/en/q2-business-review/', 'e2e.local')
       assert.equal(reportPage.status, 200)
-      assert.match(reportPage.body, /class="report-page"/)
+      assert.match(reportPage.body, /class="composition-page"/)
       assert.match(reportPage.body, /<details class="report-chart-data">/)
       assert.doesNotMatch(reportPage.body, /echarts|report-chart[^"']*\.js/i)
       assert.match(reportPage.headers['content-security-policy'], /script-src 'self'/)
