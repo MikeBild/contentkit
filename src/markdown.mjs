@@ -928,7 +928,25 @@ function compositionDirectives(meta, charts, semanticNodes) {
           node.type = 'containerDirective'
           node.children = [
             textNode('span', ['report-metric-label'], boundedText(attributes.label, 'metric label', 120)),
-            textNode('strong', ['report-metric-value'], boundedText(attributes.value, 'metric value', 120)),
+            reportNode(
+              'strong',
+              ['report-metric-value'],
+              [
+                { type: 'text', value: boundedText(attributes.value, 'metric value', 120) },
+                ...(attributes.unit
+                  ? [textNode('span', ['report-metric-unit'], boundedText(attributes.unit, 'metric unit', 32))]
+                  : []),
+              ],
+            ),
+            ...(attributes.period || attributes.status
+              ? [
+                  textNode(
+                    'span',
+                    ['report-metric-context'],
+                    [attributes.period, attributes.status].filter(Boolean).join(' · '),
+                  ),
+                ]
+              : []),
             ...(attributes.trend
               ? [textNode('span', ['report-metric-trend'], boundedText(attributes.trend, 'metric trend', 80))]
               : []),

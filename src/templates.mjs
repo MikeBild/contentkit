@@ -458,11 +458,24 @@ function reportCatalogCard(item, t, site) {
 </a></article>`
 }
 
+function reportPrimaryMetrics(item) {
+  const metrics = (item.semantic?.nodes || [])
+    .filter((node) => node?.type === 'metric' && node.role === 'primary')
+    .slice(0, 4)
+  if (!metrics.length) return ''
+  return `<dl class="report-feature-metrics" aria-label="Report summary">${metrics
+    .map(
+      (metric) =>
+        `<div><dt>${escapeHtml(metric.label)}</dt><dd>${escapeHtml(metric.value)}${metric.unit ? `<span>${escapeHtml(metric.unit)}</span>` : ''}</dd>${metric.status ? `<small>${escapeHtml(metric.status)}</small>` : ''}</div>`,
+    )
+    .join('')}</dl>`
+}
+
 function reportFeatureCard(item, ctx) {
   const cadence = reportCadenceLabel(ctx.t, item.report_cadence)
   const assessment = item.narrative?.conclusion || item.narrative?.thesis || item.summary
   const action = item.narrative?.action
-  return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p></div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
+  return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p>${reportPrimaryMetrics(item)}</div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
 }
 
 function reportCatalogBody(ctx, title, visible) {

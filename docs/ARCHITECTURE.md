@@ -157,7 +157,9 @@ serves the bytes. Cross-grant unions remain reader-specific and are exposed only
 through the private catalog endpoints. Product report sites additionally derive
 one newest-report navigation link and, when `reportCadence` is present, one
 current report per cadence plus a bounded recent history from that same-grant
-set. Cadence is explicit metadata and is never inferred from tenant-specific
+set. The current-state card may project up to four `role="primary"` metric nodes
+from the lead report's Semantic AST; it does not copy or reinterpret their values.
+Cadence is explicit metadata and is never inferred from tenant-specific
 titles or slugs.
 
 Pages render without JavaScript except for the header search, which needs it:

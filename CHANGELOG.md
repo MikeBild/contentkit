@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.8 - 2026-07-19
+
+### Added
+
+- Project primary report metrics from the current report's Semantic AST onto
+  product-report home pages without maintaining a second metric payload.
+- Render authored metric units, periods, and statuses consistently in semantic
+  HTML output.
+
+### Changed
+
+- Refine report catalogue spacing and responsive primary-metric presentation
+  for compact desktop and mobile reading.
+- Document the shared Semantic AST projection contract for humans and agents.
+
 ## 1.15.7 - 2026-07-19
 
 ### Added

@@ -344,7 +344,7 @@ Proceed with the release.
 test('composition directives produce controlled dashboard markup and normalized chart descriptors', async () => {
   const result = await renderMarkdown(
     reportDoc(`::::group{columns="4"}
-::metric{label="Umsatz" value="51 Tsd. €" trend="+21%" tone="positive"}
+::metric{label="Umsatz" value="51" unit="Tsd. €" period="Q1" status="stabil" trend="+21%" tone="positive"}
 
 :::card{title="Qualität" span="1"}
 Status: :badge[Stabil]{tone="positive"}
@@ -362,6 +362,8 @@ Status: :badge[Stabil]{tone="positive"}
   )
   assert.match(result.html, /class="composition-group composition-columns-4"/)
   assert.match(result.html, /class="report-metric report-tone-positive report-span-1"/)
+  assert.match(result.html, /class="report-metric-unit">Tsd\. €<\/span>/)
+  assert.match(result.html, /class="report-metric-context">Q1 · stabil<\/span>/)
   assert.match(result.html, /role="progressbar"[^>]*aria-valuenow="92"/)
   assert.match(result.html, /class="report-badge report-tone-positive"/)
   assert.match(result.html, /data-report-chart="0"/)

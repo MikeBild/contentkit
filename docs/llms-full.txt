@@ -654,7 +654,10 @@ Under the `product` preset, cadence-tagged reports produce a localized narrative
 home: the newest closed interval exposes its authored question, conclusion and
 action first; other cadences become decision horizons; at most six superseded
 reports become history. This is derived from the report Markdown and needs no
-separate home-page payload from a workflow or connector.
+separate home-page payload from a workflow or connector. Up to four `metric`
+nodes marked `role="primary"` in the lead report are projected into the
+current-state card from the same Semantic AST; values are not copied or
+reinterpreted.
 
 A chart contains exactly one GFM table. Its first column is the category and all
 remaining cells are finite numbers for the default `series` shape; an em dash

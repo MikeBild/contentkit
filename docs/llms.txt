@@ -38,7 +38,8 @@ Pattern Package and export as an independent visual.
   inputs, the visual gallery and the registry snapshot.
 - [Reports and dashboards](docs/REPORTS.md): `layout: composition` with
   `composition.format: report`, controlled dashboard primitives, table-driven
-  charts, catalogs, tokens and limits.
+  charts, cadence catalogs, primary-metric projection on product home pages,
+  tokens and limits.
 - [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
   release, content, reader, webhook, audio and engagement aggregates for
   external collectors using the existing `content:read` scope.

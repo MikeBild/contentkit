@@ -234,7 +234,10 @@ all 81 patterns, declarative Pattern Packages and the AI-agent workflow. The
 [semantic information-block guide](docs/INFORMATION_BLOCKS.md) documents
 dashboards, application shells, pricing, galleries, stats, FAQ, code examples,
 data tables, agent content budgets, typed units and responsive verification. The
-[report guide](docs/REPORTS.md) covers dashboard primitives and charts. Generate
+[report guide](docs/REPORTS.md) covers dashboard primitives and charts. For
+product report sites, the home page also projects up to four primary metric
+nodes from the newest report's Semantic AST, keeping the overview and report on
+one authored data contract. Generate
 the complete neutral review gallery with `npm run review:patterns`. It includes
 highlighted code, a technical diagram, a server-rendered chart, a semantic
 report, nine human- and machine-readable story-selection guides, and every

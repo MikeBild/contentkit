@@ -90,7 +90,9 @@ narrative automatically. `reportCadence` selects the newest report for each
 period. The newest closed interval becomes the primary current-state card and
 uses its authored question, conclusion and action; the other cadences form the
 remaining decision horizons, and at most six superseded reports form the recent
-history. Reports without the optional field remain compatible and appear as
+history. Up to four primary semantic metrics from the lead report are rendered
+inside the current-state card, so publishers do not have to maintain separate
+home-page values. Reports without the optional field remain compatible and appear as
 “Other report”. The home uses only pages visible under its exact reader grant,
 so private titles cannot cross access boundaries. No separate home-page model is
 required from the workflow that publishes the report Markdown.

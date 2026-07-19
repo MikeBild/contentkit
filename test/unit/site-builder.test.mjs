@@ -1126,7 +1126,7 @@ test('a fully private product home renders a cadence catalog for only same-grant
     // node-postgres returns timestamptz columns as Date instances while
     // authored frontmatter dates are normalized strings.
     published_at: new Date(publishedAt),
-    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n  question: What changed during closed interval ${hour}?\n  conclusion: Closed interval ${hour} is ready for an operational decision.\n  action: Review the evidence for interval ${hour}.\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Facts\n\nReport ${hour}.\n:::`,
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n  question: What changed during closed interval ${hour}?\n  conclusion: Closed interval ${hour} is ready for an operational decision.\n  action: Review the evidence for interval ${hour}.\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Facts\n\nReport ${hour}.\n:::\n\n::metric{label="Coverage" value="4/4" status="complete" role="primary"}`,
   })
   const result = await build({
     site: { ...site, settings: { presentation: { preset: 'product' } } },
@@ -1153,6 +1153,8 @@ test('a fully private product home renders a cadence catalog for only same-grant
   assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
   assert.doesNotMatch(home, /report-catalog-nav|href="#current-reports"/)
   assert.match(home, /class="report-feature-card"/)
+  assert.match(home, /class="report-feature-metrics"/)
+  assert.match(home, /<dt>Coverage<\/dt><dd>4\/4<\/dd><small>complete<\/small>/)
   assert.match(home, /Current operating state/)
   assert.match(home, /Additional decision horizons/)
   assert.match(home, /What changed during closed interval 09\?/)

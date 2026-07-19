@@ -517,6 +517,12 @@ main {
   font-size: clamp(2.4rem, 6vw, 4.5rem);
   line-height: 1;
 }
+.report-catalog-hero + .report-catalog {
+  padding-top: 1rem;
+}
+.report-catalog + .report-catalog {
+  padding-top: 2.25rem;
+}
 .report-catalog-heading {
   align-items: flex-end;
 }
@@ -553,6 +559,50 @@ main {
   margin: 1rem 0 0;
   color: hsl(var(--muted-foreground));
   font-size: clamp(1rem, 0.94rem + 0.25vw, 1.15rem);
+}
+.report-feature-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 1.5rem 0 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 0.15rem);
+  overflow: hidden;
+}
+.report-feature-metrics > div {
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid hsl(var(--border));
+}
+.report-feature-metrics > div:nth-child(-n + 2) {
+  border-top: 0;
+}
+.report-feature-metrics > div:nth-child(even) {
+  border-left: 1px solid hsl(var(--border));
+}
+.report-feature-metrics dt,
+.report-feature-metrics small {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+.report-feature-metrics dd {
+  margin: 0.15rem 0 0;
+  color: hsl(var(--foreground));
+  font-size: clamp(1.25rem, 1.1rem + 0.55vw, 1.65rem);
+  font-weight: 760;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.report-feature-metrics dd span {
+  margin-left: 0.25rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.report-feature-metrics small {
+  display: block;
+  margin-top: 0.25rem;
 }
 .report-feature-decision {
   display: grid;
@@ -720,6 +770,18 @@ main {
   line-height: 1.05;
   letter-spacing: -0.045em;
 }
+.report-metric-unit {
+  margin-left: 0.22em;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.42em;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.report-metric-context {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
 .report-tone-positive .report-metric-trend,
 .report-badge.report-tone-positive {
   color: hsl(var(--chart-2));
@@ -852,6 +914,19 @@ main {
   }
   .report-chart {
     padding: 0.65rem;
+  }
+}
+@media (max-width: 420px) {
+  .report-feature-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report-feature-metrics > div,
+  .report-feature-metrics > div:nth-child(-n + 2) {
+    border-top: 1px solid hsl(var(--border));
+    border-left: 0;
+  }
+  .report-feature-metrics > div:first-child {
+    border-top: 0;
   }
 }
 @media print {

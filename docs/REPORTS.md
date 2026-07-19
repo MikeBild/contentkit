@@ -58,7 +58,9 @@ and `report-card` directives are normalized internally to `composition`,
 `product` site preset, Contentkit lists the newest immutable report for each
 cadence. The home page presents the newest closed interval with its authored
 question, conclusion and action, then the remaining decision horizons, followed
-by at most six older reports. Untagged reports appear as “Other report”. Access
+by at most six older reports. Up to four `metric` nodes marked `role="primary"`
+in that newest report are reused as its compact overview. This is a projection
+of the same Semantic AST, not a second dashboard payload. Untagged reports appear as “Other report”. Access
 rules and `noindex` remain authoritative. This order is derived from report
 Markdown; a workflow or connector does not need a separate home-page payload.
 
