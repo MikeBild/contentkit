@@ -9,6 +9,12 @@ HTML/SVG/PNG, using a declarative repository-owned Pattern Registry. Each entry
 below has a title, path and one-line summary. For the complete
 documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-full.txt).
 
+Normal pages and posts may embed selected semantic directives as accessible
+responsive HTML. Their Semantic AST reports `presentation: embedded`; the
+document remains editorial prose and does not gain standalone SVG/PNG exports.
+Use `layout: composition` when the complete document must resolve through a
+Pattern Package and export as an independent visual.
+
 > Local API: http://127.0.0.1:4050 — OpenAPI 3.1 spec at `/openapi.json`.
 > Production API: your own deployment, e.g.
 > https://contentkit-api.example.com. Management endpoints require
@@ -23,7 +29,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
   versioned routes, hierarchy fields and real English Markdown documents.
 - [Visual compositions](docs/VISUAL_COMPOSITIONS.md): beginner-friendly
-  architecture, semantic Markdown, 56 declarative patterns, AI-agent workflow,
+  architecture, semantic Markdown, 81 declarative patterns, AI-agent workflow,
   headless planning/compile APIs, themes, gallery and migration.
 - [Information blocks plan](docs/INFORMATION_BLOCKS.md): researched mapping for
   dashboards, application shells, pricing, galleries, stats, FAQ, code examples

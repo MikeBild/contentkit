@@ -506,6 +506,13 @@ through. Mermaid runs with strict initialization in the browser.
 
 ### Visual composition authoring contract
 
+Normal pages and posts may embed selected semantic directives inside editorial
+prose. Embedded blocks render as complete responsive HTML and appear in the
+Semantic AST with `presentation: embedded`. They do not create a document-level
+Narrative or resolved Composition and do not implicitly add standalone SVG or
+PNG representations. Use this scope for one or two bounded information islands;
+use `layout: composition` when the whole document is an independent visual.
+
 Set `layout: composition` and a `composition` map with `format:
 infographic|report`, `canvas: portrait|landscape|square|flow`, `intent:
 explain|compare|sequence|status|explore`, optional `density:

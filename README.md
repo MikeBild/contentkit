@@ -64,6 +64,11 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   registry contains 81 information patterns with constraints, content budgets,
   typed value and time semantics, responsive fallbacks, spec examples and
   machine-readable selection reasons for external AI agents.
+- Embedded semantic blocks let normal pages and posts carry selected processes,
+  comparisons, relationships, timelines, hierarchies, metrics and evidence as
+  accessible responsive HTML plus a machine-readable Semantic AST. The surrounding
+  document remains editorial prose; full-canvas SVG and PNG stay an explicit
+  `layout: composition` concern.
 - Composition reports and dashboards with neutral metric cards, status,
   progress and table-driven charts with direct values and accessible source
   tables. Static report pages use semantic HTML for their information hierarchy

@@ -19,6 +19,14 @@ eligibility, responsive fallback, geometry, theme resolution, and output
 serialization. Authored CSS, coordinates, and executable pattern code are not
 part of the contract.
 
+Semantic information blocks may be used in two scopes. A full
+`layout: composition` document resolves all nodes into a document-level
+Narrative, Composition, Layout Tree and Render Tree and can produce HTML, SVG
+and PNG. A normal page or post may embed selected blocks in editorial prose;
+those blocks remain accessible HTML and appear in a Semantic AST whose
+`presentation` is `embedded`, while the surrounding document keeps its normal
+layout and does not acquire standalone visual exports implicitly.
+
 ## Implemented semantic families
 
 | Family | Directives | Meaning | Stable patterns |

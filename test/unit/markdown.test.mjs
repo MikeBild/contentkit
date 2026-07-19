@@ -459,10 +459,34 @@ test('composition charts reject malformed tables, unsupported options and unsafe
   )
   await rejects(':::unknown{title="T"}\nText\n:::', /unknown composition directive/)
 
-  await assert.rejects(
-    () => renderMarkdown('---\ntitle: Normal page\nlocale: de\nslug: normal\n---\n::metric{label="X" value="1"}'),
-    /requires frontmatter layout: composition/,
-  )
+  const embedded = await renderMarkdown(`---
+kind: post
+title: Normal article
+locale: de
+slug: normal-article
+summary: A normal article with an embedded semantic comparison.
+---
+
+Introductory prose.
+
+::::comparison{title="Delivery models" role="primary" preferredPattern="split-comparison"}
+:::side{label="Live view"}
+- Question · What is happening now?
+- State · Mutable
+:::
+:::side{label="Published report"}
+- Question · What was approved for this period?
+- State · Immutable
+:::
+::::`)
+  assert.equal(embedded.meta.layout, null)
+  assert.equal(embedded.semantic.presentation, 'embedded')
+  assert.equal(embedded.semantic.nodes.length, 1)
+  assert.equal(embedded.semantic.nodes[0].type, 'comparison')
+  assert.equal(embedded.semantic.nodes[0].preferred_pattern, 'split-comparison')
+  assert.equal(embedded.composition, null)
+  assert.match(embedded.html, /composition-comparison/)
+  assert.match(embedded.html, /composition-side/)
 })
 
 test('report chart resource limits fail at write time', async () => {

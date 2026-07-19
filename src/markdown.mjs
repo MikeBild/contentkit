@@ -474,9 +474,6 @@ function compositionDirectives(meta, charts, semanticNodes) {
         data.hName = 'section'
         data.hProperties = { className: ['content-block', `content-block-${node.name}`] }
       } else if (COMPOSITION_DIRECTIVES.has(node.name)) {
-        if (meta.layout !== 'composition') {
-          throw directiveError(`${node.name} directive requires frontmatter layout: composition`)
-        }
         if (node.name === 'faq') {
           const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern', 'state'], ['title'])
           const state = stateAttribute(attributes.state, 'faq state')
@@ -1561,6 +1558,7 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
   const html = String(await processor.process(content))
   const semantic = {
     schema_version: '1',
+    presentation: meta.layout === 'composition' ? 'document' : semanticNodes.length ? 'embedded' : 'prose',
     title: meta.title,
     summary: meta.summary,
     locale: meta.locale,

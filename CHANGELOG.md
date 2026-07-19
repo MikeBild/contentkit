@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.7 - 2026-07-19
+
+### Added
+
+- Let normal pages and posts embed bounded semantic information blocks inside
+  editorial prose without changing the whole document to a composition layout.
+- Classify every Semantic AST as `prose`, `embedded`, or `document` so humans
+  and external agents can distinguish plain articles, semantic information
+  islands, and complete visual compositions deterministically.
+
+### Changed
+
+- Document embedded-block authoring, output boundaries, responsive behavior,
+  and the selective editorial rule consistently in the README, visual guides,
+  LLM documentation, and OpenAPI contract.
+
+## 1.15.6 - 2026-07-19
+
+### Fixed
+
+- Refine responsive report presentation with concise overview navigation and
+  bounded report cards across desktop and mobile layouts.
+
 ## 1.15.5 - 2026-07-19
 
 ### Fixed

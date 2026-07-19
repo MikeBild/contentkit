@@ -57,6 +57,48 @@ The result contains responsive semantic HTML and independent light/dark SVG and
 PNG representations. The source order remains the accessible reading order.
 Identical source, registry, viewport and theme inputs produce identical bytes.
 
+## Embedded semantic blocks in articles
+
+A normal page or post may use selected semantic directives without changing its
+document layout to `composition`. This is intended for one or two information
+islands inside editorial prose: a process, comparison, relationship, timeline,
+hierarchy, metric group, chart, FAQ, code example or typed table whose meaning
+should remain explicit for readers and machines.
+
+```md
+---
+kind: post
+title: Reports and dashboards
+locale: en
+slug: reports-and-dashboards
+summary: Two publishing forms answer different reader questions.
+---
+
+The choice starts with the question the reader needs answered.
+
+::::comparison{title="Live view or published record" role="primary" preferredPattern="split-comparison"}
+:::side{label="Dashboard"}
+- Question · What is happening now?
+- State · Mutable
+:::
+:::side{label="Report"}
+- Question · What was approved for this period?
+- State · Immutable
+:::
+::::
+```
+
+Embedded blocks produce complete semantic HTML and appear in the document's
+Semantic AST with `presentation: embedded`. They do not turn the surrounding
+article into a canvas, do not create a document-level Narrative or resolved
+Composition, and do not silently add standalone SVG or PNG representations.
+Use `layout: composition` or the headless compile API when the entire document
+must resolve through a Pattern Package and export as an independent visual.
+
+The authoring rule is selective: prose introduces the block, the block answers
+one bounded question, and prose interprets it. Repeating an existing diagram or
+turning every list into cards is a semantic and editorial failure.
+
 ## The three contracts
 
 1. **Semantic AST — meaning.** A `process` is ordered, a `comparison` has sides,
