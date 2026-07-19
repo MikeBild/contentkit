@@ -386,7 +386,66 @@ function reportSort(left, right) {
   )
 }
 
+const GERMAN_MONTHS = [
+  'Januar',
+  'Februar',
+  'März',
+  'April',
+  'Mai',
+  'Juni',
+  'Juli',
+  'August',
+  'September',
+  'Oktober',
+  'November',
+  'Dezember',
+]
+
+function germanLongDate(date) {
+  return `${date.getUTCDate()}. ${GERMAN_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+}
+
+function germanLongRange(start, end) {
+  if (start.getUTCFullYear() === end.getUTCFullYear() && start.getUTCMonth() === end.getUTCMonth())
+    return `${start.getUTCDate()}.–${end.getUTCDate()}. ${GERMAN_MONTHS[start.getUTCMonth()]} ${start.getUTCFullYear()}`
+  if (start.getUTCFullYear() === end.getUTCFullYear())
+    return `${start.getUTCDate()}. ${GERMAN_MONTHS[start.getUTCMonth()]}–${end.getUTCDate()}. ${GERMAN_MONTHS[end.getUTCMonth()]} ${start.getUTCFullYear()}`
+  return `${germanLongDate(start)}–${germanLongDate(end)}`
+}
+
+function legacyGermanReportTitle(item) {
+  if (
+    !String(item.locale || '')
+      .toLowerCase()
+      .startsWith('de')
+  )
+    return null
+  if (!/(?:Stunden|Tages|Wochen|Monats|Jahres)report\s+\d{4}-\d{2}/.test(item.title || '')) return null
+  const cadence = item.report_cadence
+  const match = String(item.slug || '').match(
+    cadence === 'hourly'
+      ? /^report-(\d{4})-(\d{2})-(\d{2})-(\d{2})$/
+      : new RegExp(`^report-${cadence}-(\\d{4})-(\\d{2})-(\\d{2})$`),
+  )
+  if (!match) return null
+  const [, year, month, day, hour] = match
+  const start = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  if (Number.isNaN(start.getTime())) return null
+  if (cadence === 'hourly') return `Stundenreport · ${germanLongDate(start)} · ${hour}:00 UTC`
+  if (cadence === 'daily') return `Tagesreport · ${germanLongDate(start)}`
+  if (cadence === 'weekly') {
+    const end = new Date(start)
+    end.setUTCDate(end.getUTCDate() + 6)
+    return `Wochenreport · ${germanLongRange(start, end)}`
+  }
+  if (cadence === 'monthly') return `Monatsreport · ${GERMAN_MONTHS[start.getUTCMonth()]} ${year}`
+  if (cadence === 'yearly') return `Jahresreport · ${year}`
+  return null
+}
+
 function reportDisplayTitle(item, site) {
+  const legacyTitle = legacyGermanReportTitle(item)
+  if (legacyTitle) return legacyTitle
   const prefix = `${site.name} `
   return item.title.startsWith(prefix) ? item.title.slice(prefix.length) : item.title
 }
@@ -1276,7 +1335,8 @@ export function contentBody(item, ctx, comments = []) {
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
   const reportNavigation = isReport ? reportSectionNavigation(item, ctx) : ''
-  return `<article${isComposition ? ' class="composition-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isComposition ? item.composition?.format || 'composition' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isComposition ? ' composition-prose' : ''}${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
+  const displayTitle = isReport ? reportDisplayTitle(item, ctx.site) : item.title
+  return `<article${isComposition ? ' class="composition-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isComposition ? item.composition?.format || 'composition' : item.kind)}</div><h1>${escapeHtml(displayTitle)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isComposition ? ' composition-prose' : ''}${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

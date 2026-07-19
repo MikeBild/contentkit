@@ -1173,6 +1173,47 @@ test('a fully private product home renders a cadence catalog for only same-grant
   assert.doesNotMatch(reportPage, /Other team secret/)
 })
 
+test('legacy German machine dates become readable report titles without changing authored semantic content', async () => {
+  const report = ({ cadence, slug, title, date }) => ({
+    id: `revision-${slug}`,
+    item_id: `item-${slug}`,
+    kind: 'page',
+    locale: 'de',
+    translation_key: slug,
+    published_at: new Date(date),
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  intent: status\n  question: Welche Entscheidung folgt?\nreportCadence: ${cadence}\ntitle: ${title}\nlocale: de\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: Geschlossener Berichtszeitraum.\ndate: ${date}\nnoindex: true\naudio: false\n---\n\n:::hero\n## Betriebsstand\n\nKeine Ausnahme.\n:::`,
+  })
+  const result = await build({
+    site: {
+      ...site,
+      name: 'Mission Cockpit',
+      default_locale: 'de',
+      settings: { presentation: { preset: 'product' } },
+    },
+    locales: [{ locale: 'de' }],
+    revisions: [
+      report({
+        cadence: 'hourly',
+        slug: 'report-2026-07-19-12',
+        title: 'Mission Cockpit Stundenreport 2026-07-19 12:00 UTC',
+        date: '2026-07-19T13:00:00Z',
+      }),
+      report({
+        cadence: 'weekly',
+        slug: 'report-weekly-2026-07-06',
+        title: 'Mission Cockpit Wochenreport 2026-07-06',
+        date: '2026-07-13T00:00:00Z',
+      }),
+    ],
+  })
+  const home = result.files.get('de/index.html').body.toString()
+  assert.match(home, /Stundenreport · 19\. Juli 2026 · 12:00 UTC/)
+  assert.match(home, /Wochenreport · 6\.–12\. Juli 2026/)
+  assert.doesNotMatch(home, /Stundenreport 2026-07-19|Wochenreport 2026-07-06/)
+  const page = result.files.get('de/report-2026-07-19-12/index.html').body.toString()
+  assert.match(page, /<h1>Stundenreport · 19\. Juli 2026 · 12:00 UTC<\/h1>/)
+})
+
 test('a protected post also protects its raw Markdown twin', async () => {
   const result = await build({
     accessGroups: [{ slug: 'customers' }],

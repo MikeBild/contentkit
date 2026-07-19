@@ -358,10 +358,15 @@ main {
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
+.section-head > * {
+  min-width: 0;
+}
 .section h2 {
   font-size: clamp(1.8rem, 4vw, 2.75rem);
   letter-spacing: -0.035em;
   margin: 0;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 .grid {
   display: grid;
