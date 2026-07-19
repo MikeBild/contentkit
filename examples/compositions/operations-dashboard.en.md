@@ -15,3 +15,10 @@ composition: { format: report, canvas: landscape, intent: status, preferredPatte
 :::card{title="Two warnings"}
 The PNG worker is above its latency target. One publication is waiting for approval.
 :::
+:::chart{type="line" title="Completed activity" description="Completed workflows, publications, and reader sessions per closed interval" unit="events"}
+| Interval | Workflows | Publications | Reader sessions |
+|---|---:|---:|---:|
+| 12 h | 18 | 3 | 24 |
+| 13 h | 22 | 4 | 31 |
+| 14 h | 20 | 5 | 28 |
+:::

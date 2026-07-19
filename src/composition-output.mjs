@@ -59,11 +59,28 @@ export async function materializeComposition(
       assets[scheme].png_url = emit ? emit(png, { scheme, format: 'png' }) : null
     }
   }
+  const locale = String(rendered.meta?.locale || 'en').toLowerCase()
+  const isGerman = locale === 'de' || locale.startsWith('de-')
+  const isReport = rendered.composition?.format === 'report'
+  const visualOverview =
+    isReport && assets.light.svg_url
+      ? `<figure class="composition-visual-overview"><picture>${assets.dark.svg_url ? `<source media="(prefers-color-scheme: dark)" srcset="${escapeHtml(assets.dark.svg_url)}" type="image/svg+xml">` : ''}<img src="${escapeHtml(assets.light.svg_url)}" alt="" loading="eager" decoding="async"></picture><figcaption>${isGerman ? 'Visuelle Zusammenfassung des abgeschlossenen Berichtszeitraums' : 'Visual summary of the completed reporting period'}</figcaption></figure>`
+      : ''
   const representationLinks = [
-    assets.light.svg_url ? `<a href="${escapeHtml(assets.light.svg_url)}" type="image/svg+xml">SVG</a>` : '',
-    assets.light.png_url ? `<a href="${escapeHtml(assets.light.png_url)}" type="image/png">PNG</a>` : '',
+    assets.light.svg_url
+      ? `<a href="${escapeHtml(assets.light.svg_url)}" type="image/svg+xml">${isGerman ? 'SVG hell öffnen' : 'Open light SVG'}</a>`
+      : '',
+    assets.dark.svg_url
+      ? `<a href="${escapeHtml(assets.dark.svg_url)}" type="image/svg+xml">${isGerman ? 'SVG dunkel öffnen' : 'Open dark SVG'}</a>`
+      : '',
+    assets.light.png_url
+      ? `<a href="${escapeHtml(assets.light.png_url)}" type="image/png">${isGerman ? 'PNG öffnen' : 'Open PNG'}</a>`
+      : '',
   ].join('')
-  const html = `${rendered.html}<aside class="composition-representations" aria-label="Visual representations"><strong>Visual composition</strong>${representationLinks}</aside>`
+  const representations = representationLinks
+    ? `<aside class="composition-representations" aria-label="${isGerman ? 'Alternative Darstellungen' : 'Alternative representations'}"><strong>Export</strong>${representationLinks}</aside>`
+    : ''
+  const html = `${visualOverview}${rendered.html}${representations}`
   const layoutDiagnostics = assets.light.diagnostics || []
   return {
     ...rendered,

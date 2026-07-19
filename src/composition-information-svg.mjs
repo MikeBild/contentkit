@@ -449,7 +449,12 @@ function dashboard(rendered, items, frame, theme, ui) {
   const metricAreaH = metrics.length ? metricRows * metricH + (metricRows - 1) * gap : 0
   const chartY = frame.y + toolbarH + gap + metricAreaH + (metrics.length ? gap : 0)
   const chartH = frame.y + frame.height - chartY
-  const toolbar = `<g>${ui.rect(frame.x, frame.y, frame.width, toolbarH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.circle(frame.x + 22, frame.y + toolbarH / 2, 5, { fill: theme.chart_1 })}${ui.text(section?.title || 'Overview', frame.x + 38, frame.y + toolbarH / 2 + 6, { size: 14, weight: 720, fill: theme.foreground, width: frame.width * 0.48, lines: 1 }).svg}${ui.rect(frame.x + frame.width - (compact ? 82 : 116), frame.y + 11, compact ? 70 : 104, toolbarH - 22, { fill: theme.muted, stroke: theme.border, radius: 7 })}${ui.text(compact ? '30 d' : 'Last 30 days', frame.x + frame.width - (compact ? 47 : 64), frame.y + toolbarH / 2 + 5, { size: 10, weight: 670, fill: theme.foreground, width: compact ? 52 : 90, lines: 1, anchor: 'middle' }).svg}</g>`
+  const period = String(section?.description || metrics[0]?.period || '').trim()
+  const periodW = period
+    ? Math.min(compact ? frame.width * 0.42 : frame.width * 0.48, Math.max(84, period.length * 5.8 + 24))
+    : 0
+  const toolbarTitleW = Math.max(80, frame.width - 54 - (periodW ? periodW + 24 : 0))
+  const toolbar = `<g>${ui.rect(frame.x, frame.y, frame.width, toolbarH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.circle(frame.x + 22, frame.y + toolbarH / 2, 5, { fill: theme.chart_1 })}${ui.text(section?.title || 'Overview', frame.x + 38, frame.y + toolbarH / 2 + 6, { size: 14, weight: 720, fill: theme.foreground, width: toolbarTitleW, lines: 1 }).svg}${period ? `${ui.rect(frame.x + frame.width - periodW - 12, frame.y + 11, periodW, toolbarH - 22, { fill: theme.muted, stroke: theme.border, radius: 7 })}${ui.text(period, frame.x + frame.width - periodW / 2 - 12, frame.y + toolbarH / 2 + 5, { size: 10, weight: 670, fill: theme.foreground, width: periodW - 18, lines: 1, anchor: 'middle' }).svg}` : ''}</g>`
   const metricW = (frame.width - gap * (metricColumns - 1)) / metricColumns
   const cards = metrics
     .map((metric, index) => {
@@ -460,33 +465,28 @@ function dashboard(rendered, items, frame, theme, ui) {
       const shortMetric = metricH < 120
       const trendX = shortMetric ? x + metricW - badgeWidth - 16 : x + 16
       const trendY = shortMetric ? y + 12 : y + metricH - 34
-      const lineY = y + metricH - 25
-      const sparkW = Math.max(48, metricW * 0.33)
-      const sparkX = x + metricW - sparkW - 16
-      const spark = [0.42, 0.55, 0.48, 0.68, 0.61, 0.82]
-        .map((value, pointIndex) => `${sparkX + (pointIndex * sparkW) / 5},${lineY - value * 24}`)
-        .join(' ')
-      return `<g>${ui.rect(x, y, metricW, metricH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.text(metric.label, x + 16, y + 28, { size: 10, weight: 670, fill: theme.muted_foreground, width: shortMetric ? metricW - badgeWidth - 52 : metricW - 32, lines: 1, tracking: 0.35 }).svg}${ui.text(metric.value, x + 16, y + (compact ? 60 : 72), { size: compact ? 23 : Math.min(32, metricW / 6), weight: 780, fill: theme.foreground, width: metricW - 32, lines: 1 }).svg}${trend ? `${ui.rect(trendX, trendY, badgeWidth, 22, { fill: String(trend).startsWith('-') ? theme.warning_soft : theme.success_soft, radius: 11 })}${ui.text(trend, trendX + 11, trendY + 15, { size: 9, weight: 700, fill: String(trend).startsWith('-') ? theme.chart_3 : theme.chart_2, width: badgeWidth - 18, lines: 1 }).svg}` : ''}${!compact && metricW > 190 ? `<polyline points="${spark}" fill="none" stroke="${theme.chart_1}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}</g>`
+      return `<g>${ui.rect(x, y, metricW, metricH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.text(metric.label, x + 16, y + 28, { size: 10, weight: 670, fill: theme.muted_foreground, width: shortMetric ? metricW - badgeWidth - 52 : metricW - 32, lines: 1, tracking: 0.35 }).svg}${ui.text(metric.value, x + 16, y + (compact ? 60 : 72), { size: compact ? 23 : Math.min(32, metricW / 6), weight: 780, fill: theme.foreground, width: metricW - 32, lines: 1 }).svg}${trend ? `${ui.rect(trendX, trendY, badgeWidth, 22, { fill: String(trend).startsWith('-') ? theme.warning_soft : theme.success_soft, radius: 11 })}${ui.text(trend, trendX + 11, trendY + 15, { size: 9, weight: 700, fill: String(trend).startsWith('-') ? theme.chart_3 : theme.chart_2, width: badgeWidth - 18, lines: 1 }).svg}` : ''}</g>`
     })
     .join('')
   let chartMarkup = ''
   if (chartH > 70) {
     const rows = chart?.rows || []
-    const values = rows.map((row) => Number(row[1])).filter(Number.isFinite)
+    const seriesNames = (chart?.headers || []).slice(1, 6)
+    const values = rows
+      .flatMap((row) => row.slice(1, seriesNames.length + 1))
+      .map(Number)
+      .filter(Number.isFinite)
     const min = values.length ? Math.min(...values) : 0
     const max = values.length ? Math.max(...values) : 1
+    const legendH = seriesNames.length > 1 ? 48 : 0
     const plot = {
       x: frame.x + (compact ? 38 : 54),
-      y: chartY + 72,
+      y: chartY + 72 + legendH,
       width: frame.width - (compact ? 54 : 78),
-      height: Math.max(28, chartH - 108),
+      height: Math.max(28, chartH - 108 - legendH),
     }
-    const points = values
-      .map(
-        (value, index) =>
-          `${plot.x + (index * plot.width) / Math.max(1, values.length - 1)},${plot.y + plot.height - ((value - min) / (max - min || 1)) * plot.height}`,
-      )
-      .join(' ')
+    const pointX = (index) => plot.x + (index * plot.width) / Math.max(1, rows.length - 1)
+    const pointY = (value) => plot.y + plot.height - ((Number(value) - min) / (max - min || 1)) * plot.height
     const grid = Array.from({ length: 4 }, (_, index) => {
       const y = plot.y + (index * plot.height) / 3
       return ui.line(plot.x, y, plot.x + plot.width, y, { stroke: theme.border, width: 1, dash: '3 7' })
@@ -505,7 +505,33 @@ function dashboard(rendered, items, frame, theme, ui) {
           : '',
       )
       .join('')
-    chartMarkup = `<g>${ui.rect(frame.x, chartY, frame.width, chartH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.text(chart?.title || items.at(-1)?.title || 'Entwicklung', frame.x + 18, chartY + 30, { size: 14, weight: 720, fill: theme.foreground, width: frame.width * 0.6, lines: 1 }).svg}${ui.text(chart?.description || '', frame.x + 18, chartY + 52, { size: 10, weight: 480, fill: theme.muted_foreground, width: frame.width * 0.7, lines: 1 }).svg}${ui.rect(frame.x + frame.width - 72, chartY + 17, 54, 24, { fill: theme.accent_soft, radius: 12 })}${ui.text('LIVE', frame.x + frame.width - 45, chartY + 33, { size: 9, weight: 760, fill: theme.chart_1, width: 42, lines: 1, anchor: 'middle', tracking: 0.7 }).svg}${grid}${points ? `<polyline points="${points}" fill="none" stroke="${theme.chart_1}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${values.map((value, index) => ui.circle(plot.x + (index * plot.width) / Math.max(1, values.length - 1), plot.y + plot.height - ((value - min) / (max - min || 1)) * plot.height, 4, { fill: theme.surface, stroke: theme.chart_1, strokeWidth: 2 })).join('')}` : ''}${labels}</g>`
+    const legend =
+      seriesNames.length > 1
+        ? seriesNames
+            .map((name, index) => {
+              const cellW = plot.width / seriesNames.length
+              const x = plot.x + index * cellW
+              const stroke = theme[`chart_${(index % 5) + 1}`]
+              return `<g>${ui.line(x, plot.y - 15, x + 16, plot.y - 15, { stroke, width: 3 })}${ui.text(name, x + 22, plot.y - 10, { size: 9, weight: 650, fill: theme.muted_foreground, width: cellW - 24, lines: 1 }).svg}</g>`
+            })
+            .join('')
+        : ''
+    const series = seriesNames
+      .map((_, seriesIndex) => {
+        const stroke = theme[`chart_${(seriesIndex % 5) + 1}`]
+        const points = rows
+          .map((row, rowIndex) =>
+            Number.isFinite(Number(row[seriesIndex + 1]))
+              ? `${pointX(rowIndex)},${pointY(row[seriesIndex + 1])}`
+              : null,
+          )
+          .filter(Boolean)
+        return points.length
+          ? `<g><polyline points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${rows.map((row, rowIndex) => (Number.isFinite(Number(row[seriesIndex + 1])) ? ui.circle(pointX(rowIndex), pointY(row[seriesIndex + 1]), 4, { fill: theme.surface, stroke, strokeWidth: 2 }) : '')).join('')}</g>`
+          : ''
+      })
+      .join('')
+    chartMarkup = `<g>${ui.rect(frame.x, chartY, frame.width, chartH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.text(chart?.title || items.at(-1)?.title || 'Development', frame.x + 18, chartY + 30, { size: 14, weight: 720, fill: theme.foreground, width: frame.width - 36, lines: 1 }).svg}${ui.text(chart?.description || '', frame.x + 18, chartY + 52, { size: 10, weight: 480, fill: theme.muted_foreground, width: frame.width - 36, lines: 1 }).svg}${legend}${grid}${series}${labels}</g>`
   }
   return `<g>${toolbar}${cards}${chartMarkup}</g>`
 }

@@ -295,6 +295,8 @@ test('first-party assets and Inter are content-hashed while katex fonts keep sta
   const siteCss = result.files.get(siteCssKey).body.toString()
   assert.match(siteCss, new RegExp(`@font-face\\{[^}]+src:url\\(\\/${interKey}`))
   assert.match(siteCss, /font-family:\s*Inter,\s*ui-sans-serif,\s*system-ui/)
+  assert.match(siteCss, /\.report-cadence-nav ol\s*\{[^}]*display:\s*grid;[^}]*width:\s*100%;[^}]*max-width:\s*100%/s)
+  assert.match(siteCss, /grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(8rem, 100%\), 1fr\)\)/)
   assert.ok(
     keys.some((k) => /^assets\/katex\/[^/]+\.woff2$/.test(k)),
     'katex fonts missing',
@@ -1149,10 +1151,12 @@ test('a fully private product home renders a cadence catalog for only same-grant
   })
   const home = result.files.get('en/index.html').body.toString()
   assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
-  assert.match(home, /aria-label="Periods"/)
-  assert.match(home, /href="\/en\/report-09\/"><span>Hourly<\/span>/)
-  assert.match(home, /href="\/en\/report-yearly\/"><span>Yearly<\/span>/)
-  assert.match(home, /<span>Other report<\/span>/)
+  assert.match(home, /class="container report-catalog-nav" aria-label="Overview"/)
+  assert.match(home, /href="#current-reports">Current reports<\/a>/)
+  assert.match(home, /href="#report-history">Report history<\/a>/)
+  assert.match(home, /<span class="report-cadence-badge">Hourly<\/span>/)
+  assert.match(home, /<span class="report-cadence-badge">Yearly<\/span>/)
+  assert.match(home, /<span class="report-cadence-badge">Other report<\/span>/)
   assert.equal((home.match(/class="card report-catalog-card"/g) || []).length, 4)
   assert.match(home, /Current reports/)
   assert.match(home, /Report history/)
@@ -1263,7 +1267,10 @@ Revenue is above the January baseline.`
       .length,
     0,
   )
-  assert.match(page, /type="image\/svg\+xml">SVG<\/a>/)
+  assert.match(page, /class="composition-visual-overview"/)
+  assert.match(page, /<source media="\(prefers-color-scheme: dark\)"[^>]*type="image\/svg\+xml">/)
+  assert.match(page, /type="image\/svg\+xml">Open light SVG<\/a>/)
+  assert.match(page, /type="image\/svg\+xml">Open dark SVG<\/a>/)
   assert.doesNotMatch(page, /type="image\/png">PNG<\/a>/)
   assert.match(page, /class="composition-page"/)
   assert.match(page, /<picture class="report-chart-picture">/)

@@ -200,6 +200,19 @@ test('every new information family compiles at compact container width with comp
     assert.match(result.renders.svg, /<svg/)
     assert.match(result.renders.print_html, /composition-print/)
     assert.doesNotMatch(result.renders.svg, /NaN|undefined|Infinity/)
+    if (id === 'operations-dashboard') {
+      assert.doesNotMatch(result.renders.svg, />LIVE</)
+      assert.doesNotMatch(result.renders.svg, /Last 30 days/)
+      const wide = await compileCompositionMarkdown(source, {
+        viewport: { width: 1440, height: 1024 },
+        container: { width: 1200, height: 844 },
+        outputs: ['model', 'svg'],
+      })
+      assert.equal(wide.composition.resolved_pattern, 'operations-dashboard')
+      assert.match(wide.renders.svg, /Workflows/)
+      assert.match(wide.renders.svg, /Publications/)
+      assert.match(wide.renders.svg, /Reader sessions/)
+    }
     assert.ok(result.accessible_text.length > 20)
   }
 })

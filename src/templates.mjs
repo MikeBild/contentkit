@@ -12,9 +12,10 @@ const words = {
     reportSections: 'Reportbereiche',
     reportPeriods: 'Zeiträume',
     currentReports: 'Aktuelle Reports',
-    currentReportsHint: 'Je Zeitraum wird der neueste abgeschlossene Report gezeigt.',
+    currentReportsHint: 'Wähle den Zeithorizont passend zur Entscheidung. Jeder Report beantwortet eine andere Frage.',
     reportHistory: 'Reportverlauf',
-    reportHistoryHint: 'Frühere Reports bleiben unverändert und nachvollziehbar.',
+    reportHistoryHint: 'Die letzten abgeschlossenen Reports bleiben unverändert und nachvollziehbar.',
+    reportOverview: 'Übersicht',
     reportOtherPages: 'Weitere Seiten',
     reportCadenceHourly: 'Stündlich',
     reportCadenceDaily: 'Täglich',
@@ -98,9 +99,10 @@ const words = {
     reportSections: 'Report sections',
     reportPeriods: 'Periods',
     currentReports: 'Current reports',
-    currentReportsHint: 'The latest completed report is shown for every period.',
+    currentReportsHint: 'Choose the decision horizon. Every report answers a different question.',
     reportHistory: 'Report history',
-    reportHistoryHint: 'Earlier reports remain immutable and traceable.',
+    reportHistoryHint: 'The latest completed reports remain immutable and traceable.',
+    reportOverview: 'Overview',
     reportOtherPages: 'Other pages',
     reportCadenceHourly: 'Hourly',
     reportCadenceDaily: 'Daily',
@@ -393,21 +395,13 @@ function reportCatalogBody(ctx, title, visible) {
     return report ? [report] : []
   })
   const currentIds = new Set(current.map((report) => report.item_id))
-  const history = reports.filter((report) => !currentIds.has(report.item_id)).slice(0, 12)
+  const history = reports.filter((report) => !currentIds.has(report.item_id)).slice(0, 6)
   const settings = ctx.site.settings || {}
-  const periodNav =
-    current.length > 1
-      ? `<nav class="container report-cadence-nav" aria-label="${escapeHtml(ctx.t.reportPeriods)}"><span>${escapeHtml(ctx.t.reportPeriods)}</span><ol>${current
-          .map(
-            (report) =>
-              `<li><a href="${escapeHtml(report.url)}"><span>${escapeHtml(reportCadenceLabel(ctx.t, report.report_cadence))}</span>${report.published_at ? `<small>${escapeHtml(formatDate(report.published_at, report.locale))}</small>` : ''}</a></li>`,
-          )
-          .join('')}</ol></nav>`
-      : ''
+  const overviewNav = `<nav class="container report-catalog-nav" aria-label="${escapeHtml(ctx.t.reportOverview)}"><span>${escapeHtml(ctx.t.reportOverview)}</span><ol><li><a href="#current-reports">${escapeHtml(ctx.t.currentReports)}</a></li>${history.length ? `<li><a href="#report-history">${escapeHtml(ctx.t.reportHistory)}</a></li>` : ''}</ol></nav>`
   return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.currentReports)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p></div></section>
-${periodNav}
-<section class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.currentReports)}</h2><p>${escapeHtml(ctx.t.currentReportsHint)}</p></div></div><div class="grid report-current-grid">${current.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>
-${history.length ? `<section class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>` : ''}
+${overviewNav}
+<section id="current-reports" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.currentReports)}</h2><p>${escapeHtml(ctx.t.currentReportsHint)}</p></div></div><div class="grid report-current-grid">${current.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>
+${history.length ? `<section id="report-history" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>` : ''}
 ${otherPages.length ? `<section class="container section"><div class="section-head"><h2>${escapeHtml(ctx.t.reportOtherPages)}</h2></div><div class="grid">${otherPages.slice(0, 12).map(card).join('')}</div></section>` : ''}`
 }
 

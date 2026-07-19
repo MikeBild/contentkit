@@ -666,8 +666,11 @@ rejection. Geographic points require real latitude/longitude. Region tiles are
 explicitly equal-area tiles, not invented administrative boundaries.
 
 Charts are evidence nodes, not the composition architecture. Every release
-creates deterministic light/dark composition SVG/PNG and content-hashed chart SVGs with
-accessible text and source tables; no client runtime ships. Bars retain a zero
+creates deterministic light/dark composition SVG and content-hashed chart SVGs
+with accessible text and source tables; PNG is created only when explicitly
+requested and no client runtime ships. Report pages embed the color-scheme-aware
+composition SVG as a visual summary before the complete semantic HTML. Dashboard
+SVGs never invent live state, reporting periods or decorative trends. Bars retain a zero
 baseline, line axes use the observed range, short series show direct values,
 multiple lines also differ by stroke pattern, and donut labels include category,
 value and percentage. Typed data shapes include a structurally reflowed mobile

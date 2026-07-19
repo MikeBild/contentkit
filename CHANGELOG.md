@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.4 - 2026-07-19
+
+### Fixed
+
+- Reflow the product report-period navigation into a bounded responsive grid
+  instead of widening 320 px and 390 px pages beyond the viewport.
+- Embed the report composition's responsive light/dark SVG as a visual summary
+  while retaining semantic HTML and explicit export links.
+- Remove fabricated live-state, fixed-period and sparkline decorations from
+  dashboard SVGs; only authored reporting periods and measured values render.
+- Replace the duplicate cadence link row on report-catalog homes with concise
+  overview navigation and limit the visible immutable history to six reports.
+
 ## 1.15.3 - 2026-07-19
 
 ### Fixed
