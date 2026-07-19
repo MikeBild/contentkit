@@ -1,7 +1,16 @@
 const levels = { debug: 10, info: 20, warn: 30, error: 40 }
 
+// sd-daemon(3) priority prefixes. journald strips a leading <N> from each
+// stdout line and files it as the syslog PRIORITY, so `journalctl -p err`
+// finds "level":"error" lines instead of treating every line as info.
+// Only warn/error need a marker — info is journald's default priority.
+const priorities = { warn: '<4>', error: '<3>' }
+
 export function createLogger(config = {}) {
   const threshold = levels[config.logLevel || config.level] ?? 20
+  // systemd sets JOURNAL_STREAM when stdout goes to the journal; terminals
+  // and test captures stay plain JSON without the angle-bracket prefix.
+  const journal = Boolean(process.env.JOURNAL_STREAM)
   const resource = {
     'service.name': 'contentkit',
     'service.version': config.version || 'unknown',
@@ -9,7 +18,10 @@ export function createLogger(config = {}) {
   }
   function write(level, msg, fields = {}) {
     if (levels[level] < threshold) return
-    process.stdout.write(`${JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields, ...resource })}\n`)
+    const prefix = journal ? priorities[level] || '' : ''
+    process.stdout.write(
+      `${prefix}${JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields, ...resource })}\n`,
+    )
   }
   return {
     debug: (msg, fields) => write('debug', msg, fields),
