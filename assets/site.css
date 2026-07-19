@@ -607,6 +607,8 @@ main {
 }
 .report-section-nav ol {
   display: flex;
+  width: 100%;
+  max-width: 100%;
   gap: 0.4rem;
   min-width: 0;
   margin: 0;
@@ -813,9 +815,15 @@ main {
   }
   .report-section-nav {
     position: static;
+    width: 100%;
     align-items: flex-start;
     flex-direction: column;
     gap: 0.5rem;
+  }
+  .report-section-nav ol {
+    align-self: stretch;
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
   .report-grid,
   .report-columns-1,
@@ -1200,6 +1208,9 @@ main {
 }
 .composition-columns-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.composition-group > .composition-data-table {
+  grid-column: 1 / -1;
 }
 .composition-structure > ol,
 .composition-structure > ul,

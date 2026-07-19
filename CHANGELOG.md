@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.2 - 2026-07-19
+
+### Fixed
+
+- Keep report section navigation within narrow containers and wrap its links on
+  mobile instead of widening the page.
+- Let semantic data tables span the full composition grid so evidence remains
+  readable rather than occupying a single narrow column.
+- Localize the chart source-data disclosure label for German reports.
+
 ## 1.15.1 - 2026-07-19
 
 ### Fixed

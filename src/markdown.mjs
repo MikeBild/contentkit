@@ -1002,7 +1002,7 @@ function compositionDirectives(meta, charts, semanticNodes) {
             reportNode(
               'details',
               ['report-chart-data'],
-              [textNode('summary', ['report-chart-summary'], 'Data'), table],
+              [textNode('summary', ['report-chart-summary'], meta.locale === 'de' ? 'Daten' : 'Data'), table],
             ),
           ]
           semanticNodes.push({ ...chart, type: 'chart', role: 'evidence', chart_type: chart.type })

@@ -366,6 +366,7 @@ Status: :badge[Stabil]{tone="positive"}
   assert.match(result.html, /class="report-badge report-tone-positive"/)
   assert.match(result.html, /data-report-chart="0"/)
   assert.match(result.html, /<details class="report-chart-data">/)
+  assert.match(result.html, /report-chart-summary">Daten</)
   assert.equal(result.charts.length, 1)
   assert.deepEqual(result.charts[0], {
     id: 0,
