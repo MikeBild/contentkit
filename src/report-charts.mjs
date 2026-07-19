@@ -95,7 +95,7 @@ function valueFormatter(locale, unit) {
   return (value) => `${formatter.format(Number(value))}${unit ? ` ${unit}` : ''}`
 }
 
-function cartesianOption(chart, theme, locale) {
+function cartesianOption(chart, theme, locale, compact = false) {
   const horizontal = chart.type === 'bar' && chart.orientation === 'horizontal'
   const format = valueFormatter(locale, chart.unit)
   const seriesCount = chart.headers.length - 1
@@ -104,7 +104,12 @@ function cartesianOption(chart, theme, locale) {
     type: 'category',
     axisLine: { show: false },
     axisTick: { show: false },
-    axisLabel: { color: theme.muted_foreground, fontSize: 13, margin: 14, hideOverlap: true },
+    axisLabel: {
+      color: theme.muted_foreground,
+      fontSize: compact ? 12 : 13,
+      margin: compact ? 10 : 14,
+      hideOverlap: true,
+    },
     splitLine: { show: false },
   }
   const valueAxis = {
@@ -112,7 +117,12 @@ function cartesianOption(chart, theme, locale) {
     scale: chart.type === 'line',
     axisLine: { show: false },
     axisTick: { show: false },
-    axisLabel: { color: theme.muted_foreground, fontSize: 12, margin: 12, formatter: format },
+    axisLabel: {
+      color: theme.muted_foreground,
+      fontSize: compact ? 10 : 12,
+      margin: compact ? 8 : 12,
+      formatter: format,
+    },
     splitLine: { lineStyle: { color: theme.border, width: 1 } },
   }
   const seriesType = chart.type === 'bar' ? 'bar' : 'line'
@@ -120,16 +130,23 @@ function cartesianOption(chart, theme, locale) {
     animation: false,
     useUTC: true,
     backgroundColor: 'transparent',
-    textStyle: { fontFamily: contentkitFontFamily, fontSize: 13, color: theme.foreground },
+    textStyle: { fontFamily: contentkitFontFamily, fontSize: compact ? 12 : 13, color: theme.foreground },
     color: Array.from({ length: 5 }, (_, i) => theme[`chart_${i + 1}`]),
     aria: { enabled: true, description: chart.description, decal: { show: false } },
     dataset: { source: [chart.headers, ...chart.rows] },
-    grid: { top: seriesCount > 1 ? 58 : 28, right: showValues ? 76 : 42, bottom: 58, left: 82 },
+    grid: compact
+      ? {
+          top: seriesCount > 1 ? 66 : 24,
+          right: showValues ? 44 : 24,
+          bottom: 56,
+          left: horizontal ? 104 : 58,
+        }
+      : { top: seriesCount > 1 ? 58 : 28, right: showValues ? 76 : 42, bottom: 58, left: 82 },
     legend: {
       show: chart.headers.length > 2,
       top: 0,
-      textStyle: { color: theme.foreground, fontSize: 12 },
-      itemWidth: 18,
+      textStyle: { color: theme.foreground, fontSize: compact ? 10 : 12 },
+      itemWidth: compact ? 12 : 18,
       itemHeight: 3,
       itemGap: 22,
     },
@@ -154,7 +171,7 @@ function cartesianOption(chart, theme, locale) {
             position: horizontal ? 'right' : 'top',
             distance: 7,
             color: theme.foreground,
-            fontSize: 12,
+            fontSize: compact ? 11 : 12,
             fontWeight: 600,
             formatter: ({ value }) => format(Array.isArray(value) ? value[index + 1] : value),
           }
@@ -211,8 +228,11 @@ export function renderReportChartSvg(
     })
     if (specialized) return specialized
   }
-  const width = chart.type === 'donut' ? 760 : 960
-  const height = chart.type === 'donut' ? 460 : 480
+  const defaultWidth = chart.type === 'donut' ? 760 : 960
+  const defaultHeight = chart.type === 'donut' ? 460 : 480
+  const width = Math.max(320, Math.min(1920, Number(requestedWidth) || defaultWidth))
+  const height = Math.max(280, Math.min(1600, Number(requestedHeight) || defaultHeight))
+  const compact = width <= 480
   const theme = reportChartTheme(settings, scheme)
   const values = chart.rows.flatMap((row) => row.slice(1)).filter((value) => value != null)
   if (!values.length || (chart.type === 'donut' && values.every((value) => value === 0))) {
@@ -221,7 +241,7 @@ export function renderReportChartSvg(
   const instance = echarts.init(null, null, { renderer: 'svg', ssr: true, width, height })
   try {
     instance.setOption(
-      chart.type === 'donut' ? donutOption(chart, theme, locale) : cartesianOption(chart, theme, locale),
+      chart.type === 'donut' ? donutOption(chart, theme, locale) : cartesianOption(chart, theme, locale, compact),
     )
     return { svg: canonicalSvg(instance.renderToSVGString(), chart.description), width, height }
   } finally {
@@ -248,33 +268,30 @@ export function materializeReportCharts(
       const darkUrl =
         light.svg === dark.svg ? lightUrl : emit ? emit(dark.svg, { chart, scheme: 'dark' }) : dataUri(dark.svg)
       const specialized = chart.data_shape && chart.data_shape !== 'series'
-      let mobileSources = ''
-      if (specialized) {
-        const mobileLight = renderReportChartSvg(chart, {
-          settings,
-          scheme: 'light',
-          locale,
-          width: 390,
-          height: 620,
-        })
-        const mobileDark = renderReportChartSvg(chart, {
-          settings,
-          scheme: 'dark',
-          locale,
-          width: 390,
-          height: 620,
-        })
-        const mobileLightUrl = emit
-          ? emit(mobileLight.svg, { chart, scheme: 'light', viewport: 'mobile' })
-          : dataUri(mobileLight.svg)
-        const mobileDarkUrl =
-          mobileLight.svg === mobileDark.svg
-            ? mobileLightUrl
-            : emit
-              ? emit(mobileDark.svg, { chart, scheme: 'dark', viewport: 'mobile' })
-              : dataUri(mobileDark.svg)
-        mobileSources = `${mobileDarkUrl !== mobileLightUrl ? `<source media="(prefers-color-scheme: dark) and (max-width: 760px)" srcset="${escapeHtml(mobileDarkUrl)}">` : ''}<source media="(max-width: 760px)" srcset="${escapeHtml(mobileLightUrl)}">`
-      }
+      const mobileLight = renderReportChartSvg(chart, {
+        settings,
+        scheme: 'light',
+        locale,
+        width: 390,
+        height: specialized ? 620 : 360,
+      })
+      const mobileDark = renderReportChartSvg(chart, {
+        settings,
+        scheme: 'dark',
+        locale,
+        width: 390,
+        height: specialized ? 620 : 360,
+      })
+      const mobileLightUrl = emit
+        ? emit(mobileLight.svg, { chart, scheme: 'light', viewport: 'mobile' })
+        : dataUri(mobileLight.svg)
+      const mobileDarkUrl =
+        mobileLight.svg === mobileDark.svg
+          ? mobileLightUrl
+          : emit
+            ? emit(mobileDark.svg, { chart, scheme: 'dark', viewport: 'mobile' })
+            : dataUri(mobileDark.svg)
+      const mobileSources = `${mobileDarkUrl !== mobileLightUrl ? `<source media="(prefers-color-scheme: dark) and (max-width: 760px)" srcset="${escapeHtml(mobileDarkUrl)}">` : ''}<source media="(max-width: 760px)" srcset="${escapeHtml(mobileLightUrl)}">`
       return `<picture class="report-chart-picture">${mobileSources}${darkUrl !== lightUrl ? `<source media="(prefers-color-scheme: dark)" srcset="${escapeHtml(darkUrl)}">` : ''}<img src="${escapeHtml(lightUrl)}" alt="${escapeHtml(chart.description)}" width="${light.width}" height="${light.height}" loading="lazy" decoding="async"></picture>`
     },
   )

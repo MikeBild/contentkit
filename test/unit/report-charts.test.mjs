@@ -26,6 +26,11 @@ test('report SVGs are deterministic, static and accessible', () => {
   assert.match(first.svg, /<title id="chart-title">Revenue by month<\/title>/)
   assert.match(first.svg, /<desc id="chart-description">/)
   assert.doesNotMatch(first.svg, /<script|javascript:|(?:href|src)="https?:\/\//i)
+
+  const mobile = renderReportChartSvg(bar, { locale: 'en', scheme: 'light', width: 390, height: 360 })
+  assert.equal(mobile.width, 390)
+  assert.equal(mobile.height, 360)
+  assert.match(mobile.svg, /^<svg[^>]+width="390"[^>]+height="360"/)
 })
 
 test('authored labels and descriptions stay text inside the generated SVG', () => {
@@ -101,16 +106,17 @@ test('materialization replaces only trusted placeholders with light and dark ima
       html: '<figure><div class="report-chart-visual" data-report-chart="0"></div></figure>',
     },
     {
-      emit(svg, { scheme }) {
-        emitted.push([scheme, svg])
-        return `/assets/chart-${scheme}.svg`
+      emit(svg, { scheme, viewport }) {
+        emitted.push([scheme, viewport || 'desktop', svg])
+        return `/assets/chart-${scheme}-${viewport || 'desktop'}.svg`
       },
     },
   )
-  assert.equal(emitted.length, 2)
+  assert.equal(emitted.length, 4)
   assert.match(rendered.html, /<picture class="report-chart-picture">/)
+  assert.match(rendered.html, /media="\(max-width: 760px\)"/)
   assert.match(rendered.html, /prefers-color-scheme: dark/)
-  assert.match(rendered.html, /src="\/assets\/chart-light\.svg"/)
+  assert.match(rendered.html, /src="\/assets\/chart-light-desktop\.svg"/)
   assert.match(rendered.html, /alt="Revenue by month"/)
   assert.doesNotMatch(rendered.html, /data-report-chart/)
 })

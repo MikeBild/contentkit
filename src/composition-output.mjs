@@ -7,7 +7,7 @@ import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
 import { patternRegistryHash, resolvePattern } from './composition-registry.mjs'
 import { contentkitFontFace } from './typography.mjs'
-import { escapeHtml, sha256 } from './utils.mjs'
+import { sha256 } from './utils.mjs'
 
 const wasm = readFileSync(fileURLToPath(import.meta.resolve('@resvg/resvg-wasm/index_bg.wasm')))
 let wasmReady
@@ -59,28 +59,7 @@ export async function materializeComposition(
       assets[scheme].png_url = emit ? emit(png, { scheme, format: 'png' }) : null
     }
   }
-  const locale = String(rendered.meta?.locale || 'en').toLowerCase()
-  const isGerman = locale === 'de' || locale.startsWith('de-')
-  const isReport = rendered.composition?.format === 'report'
-  const visualOverview =
-    isReport && assets.light.svg_url
-      ? `<figure class="composition-visual-overview"><picture>${assets.dark.svg_url ? `<source media="(prefers-color-scheme: dark)" srcset="${escapeHtml(assets.dark.svg_url)}" type="image/svg+xml">` : ''}<img src="${escapeHtml(assets.light.svg_url)}" alt="" loading="eager" decoding="async"></picture><figcaption>${isGerman ? 'Visuelle Zusammenfassung des abgeschlossenen Berichtszeitraums' : 'Visual summary of the completed reporting period'}</figcaption></figure>`
-      : ''
-  const representationLinks = [
-    assets.light.svg_url
-      ? `<a href="${escapeHtml(assets.light.svg_url)}" type="image/svg+xml">${isGerman ? 'SVG hell öffnen' : 'Open light SVG'}</a>`
-      : '',
-    assets.dark.svg_url
-      ? `<a href="${escapeHtml(assets.dark.svg_url)}" type="image/svg+xml">${isGerman ? 'SVG dunkel öffnen' : 'Open dark SVG'}</a>`
-      : '',
-    assets.light.png_url
-      ? `<a href="${escapeHtml(assets.light.png_url)}" type="image/png">${isGerman ? 'PNG öffnen' : 'Open PNG'}</a>`
-      : '',
-  ].join('')
-  const representations = representationLinks
-    ? `<aside class="composition-representations" aria-label="${isGerman ? 'Alternative Darstellungen' : 'Alternative representations'}"><strong>Export</strong>${representationLinks}</aside>`
-    : ''
-  const html = `${visualOverview}${rendered.html}${representations}`
+  const html = rendered.html
   const layoutDiagnostics = assets.light.diagnostics || []
   return {
     ...rendered,

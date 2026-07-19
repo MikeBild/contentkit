@@ -329,12 +329,13 @@ Both are deterministic, cached with ETags and protected by the same site-scoped
 read authorization as the document.
 
 Static releases keep responsive semantic HTML/CSS as the primary reader surface
-and emit standalone light/dark SVG assets. A report page embeds the appropriate
-light/dark SVG as a visual summary, then presents the complete semantic HTML and
-source evidence. Explicit links retain both SVG variants. PNG rasterization is
-an explicit headless selection through the compile or published-representation
-API; it is not repeated for every historical composition during an additive
-site release. This keeps release duration bounded as a report archive grows.
+and emit standalone light/dark SVG assets. A report page does not embed that
+complete composition again: it presents the semantic HTML once and embeds only
+responsive chart SVGs that carry authored data evidence. The full composition
+SVG and PNG remain explicit headless selections through the compile or
+published-representation API. PNG is not repeated for every historical
+composition during an additive site release. This keeps both the page narrative
+and release duration bounded as a report archive grows.
 
 ## Themes and the review gallery
 

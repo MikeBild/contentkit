@@ -66,10 +66,12 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   machine-readable selection reasons for external AI agents.
 - Composition reports and dashboards with neutral metric cards, status,
   progress and table-driven charts with direct values and accessible source
-  tables. Static report pages embed the responsive light/dark composition SVG
-  as a visual summary before the detailed semantic HTML. Product sites turn
-  cadence-tagged reports into a localized, decision-oriented current-report
-  overview, concise page navigation and bounded immutable history.
+  tables. Static report pages use semantic HTML for their information hierarchy
+  and embed responsive light/dark chart SVGs only where a graphic adds evidence;
+  the complete composition SVG remains a standalone headless representation.
+  Product sites turn cadence-tagged reports into a localized decision flow:
+  current state and action first, additional horizons second, bounded immutable
+  history last.
 - Locale-prefixed routes, translation alternates, a year-grouped archive with
   client-side tag filtering, a tag index and tag pages.
 - Reading time, related posts by tag similarity, older/newer navigation and a

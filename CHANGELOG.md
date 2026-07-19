@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.5 - 2026-07-19
+
+### Fixed
+
+- Preserve missing chart cells as missing evidence instead of coercing them to
+  zero in dashboard SVGs.
+- Replace empty dashboard plot scaffolds with a compact, authored empty state
+  so reports without a completed input interval do not imply measured data.
+- Preserve authored bar-chart geometry in dashboard compositions and label all
+  readable categories instead of connecting unrelated categories with a line.
+- Remove duplicative composition overviews and end-user export controls from
+  report pages while retaining headless SVG assets; semantic charts remain
+  embedded only where they add information.
+- Expose overview plus current-report navigation in product report sites.
+- Emit compact mobile variants for ordinary report charts so labels remain
+  readable instead of scaling a 960 px desktop chart into a narrow card.
+
 ## 1.15.4 - 2026-07-19
 
 ### Fixed

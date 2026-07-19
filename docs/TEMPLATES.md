@@ -86,11 +86,14 @@ standalone light/dark SVG and PNG. See
 AI-agent contract; [REPORTS.md](REPORTS.md) covers report-specific authoring.
 
 When the `product` preset contains `composition.format: report` pages, its home page becomes a report
-catalog automatically. `reportCadence` selects the newest report for each period
-and creates localized period navigation; older reports remain in a bounded recent
+narrative automatically. `reportCadence` selects the newest report for each
+period. The newest closed interval becomes the primary current-state card and
+uses its authored question, conclusion and action; the other cadences form the
+remaining decision horizons, and at most six superseded reports form the recent
 history. Reports without the optional field remain compatible and appear as
-“Other report”. The catalog uses only pages visible under the home page's exact
-reader grant, so private titles cannot cross access boundaries.
+“Other report”. The home uses only pages visible under its exact reader grant,
+so private titles cannot cross access boundaries. No separate home-page model is
+required from the workflow that publishes the report Markdown.
 
 ## Complete examples
 

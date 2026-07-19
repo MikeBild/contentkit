@@ -67,10 +67,11 @@ test('real documentation, wiki, knowledge, landing, changelog, and composition e
   const report = result.files.get('en/q2-business-review/index.html').body.toString()
   assert.match(report, /class="composition-page"/)
   assert.match(report, /<picture class="report-chart-picture">/)
+  assert.match(report, /media="\(max-width: 760px\)"/)
   assert.equal(
     [...result.files.keys()].filter((path) => /^assets\/report-chart-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path))
       .length,
-    8,
+    16,
   )
   assert.equal(
     [...result.files.keys()].filter((path) =>

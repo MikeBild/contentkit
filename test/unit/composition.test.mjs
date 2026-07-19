@@ -217,6 +217,83 @@ test('every new information family compiles at compact container width with comp
   }
 })
 
+test('dashboard SVG renders missing evidence as an explicit compact empty state', async () => {
+  const source = `---
+kind: page
+layout: composition
+title: Weekly report
+summary: No completed input interval is available.
+locale: en
+slug: weekly-report
+composition:
+  format: report
+  canvas: landscape
+  intent: status
+  preferredPattern: operations-dashboard
+---
+
+:::dashboard-section{title="Completed week" description="2026-07-06" role="primary"}
+:::
+
+:::metric{label="Coverage" value="0%" trend="0/7"}
+:::
+
+:::chart{type="line" title="No evidence data" description="No completed input interval was measured."}
+| Interval | Value |
+|---|---:|
+| Closed | — |
+:::`
+  const result = await compileCompositionMarkdown(source, {
+    viewport: { width: 1440, height: 1024 },
+    container: { width: 1200, height: 844 },
+    outputs: ['model', 'svg'],
+  })
+  assert.match(result.renders.svg, /No evidence data/)
+  assert.match(result.renders.svg, /No completed input interval was measured\./)
+  assert.match(result.renders.svg, /stroke-dasharray="4 6"/)
+  assert.doesNotMatch(result.renders.svg, /stroke-dasharray="3 7"/)
+})
+
+test('dashboard SVG preserves authored bar-chart geometry and category labels', async () => {
+  const source = `---
+kind: page
+layout: composition
+title: Hourly report
+summary: Completed technical activity.
+locale: en
+slug: hourly-report
+composition:
+  format: report
+  canvas: landscape
+  intent: status
+  preferredPattern: operations-dashboard
+---
+
+:::dashboard-section{title="Completed hour" description="09:00–10:00 UTC" role="primary"}
+:::
+
+:::metric{label="Coverage" value="4/4" trend="complete"}
+:::
+
+:::chart{type="bar" title="Technical activity" description="Completed operations by source"}
+| Source | Count |
+|---|---:|
+| Workflows | 10 |
+| Publications | 2 |
+| Knowledge | 4 |
+:::`
+  const result = await compileCompositionMarkdown(source, {
+    viewport: { width: 1440, height: 1024 },
+    container: { width: 1200, height: 844 },
+    outputs: ['model', 'svg'],
+  })
+  assert.match(result.renders.svg, /class="composition-dashboard-bars"/)
+  assert.doesNotMatch(result.renders.svg, /class="composition-dashboard-lines"/)
+  assert.match(result.renders.svg, />Workflows</)
+  assert.match(result.renders.svg, />Publications</)
+  assert.match(result.renders.svg, />Knowledge</)
+})
+
 test('data shapes let agents select only semantically compatible chart patterns', () => {
   const semantic = {
     schema_version: '1',

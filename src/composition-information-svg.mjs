@@ -474,10 +474,26 @@ function dashboard(rendered, items, frame, theme, ui) {
     const seriesNames = (chart?.headers || []).slice(1, 6)
     const values = rows
       .flatMap((row) => row.slice(1, seriesNames.length + 1))
+      .filter((value) => value !== null && value !== undefined && value !== '')
       .map(Number)
       .filter(Number.isFinite)
-    const min = values.length ? Math.min(...values) : 0
-    const max = values.length ? Math.max(...values) : 1
+    if (!rows.length || !seriesNames.length || !values.length) {
+      const emptyTitle = chart?.title || items.at(-1)?.title || 'No data available'
+      const emptyDescription = chart?.description || chart?.narrative?.limitation || ''
+      const emptyW = Math.min(frame.width - 48, compact ? 320 : 520)
+      const emptyH = emptyDescription ? 152 : 120
+      const emptyX = frame.x + (frame.width - emptyW) / 2
+      const emptyY = chartY + (chartH - emptyH) / 2
+      const iconX = emptyX + 26
+      const iconY = emptyY + 28
+      chartMarkup = `<g>${ui.rect(frame.x, chartY, frame.width, chartH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.rect(emptyX, emptyY, emptyW, emptyH, { fill: theme.subtle, stroke: theme.border, radius: 12, dash: '4 6' })}${ui.line(iconX, iconY + 9, iconX, iconY, { stroke: theme.muted_foreground, width: 1.5 })}${ui.line(iconX, iconY + 9, iconX + 12, iconY + 9, { stroke: theme.muted_foreground, width: 1.5 })}${ui.circle(iconX + 3, iconY + 5, 2, { fill: theme.chart_1 })}${ui.circle(iconX + 8, iconY + 3, 2, { fill: theme.border })}${ui.circle(iconX + 12, iconY + 7, 2, { fill: theme.border })}${ui.text(emptyTitle, emptyX + 52, emptyY + 36, { size: 14, weight: 720, fill: theme.foreground, width: emptyW - 76, lines: 2 }).svg}${emptyDescription ? ui.text(emptyDescription, emptyX + 26, emptyY + 82, { size: 11, weight: 480, fill: theme.muted_foreground, width: emptyW - 52, lines: 3 }).svg : ''}</g>`
+      return `<g>${toolbar}${cards}${chartMarkup}</g>`
+    }
+    const isBar = chart?.chart_type === 'bar'
+    const observedMin = Math.min(...values)
+    const observedMax = Math.max(...values)
+    const min = isBar ? Math.min(0, observedMin) : observedMin
+    const max = isBar ? Math.max(0, observedMax) : observedMax
     const legendH = seriesNames.length > 1 ? 48 : 0
     const plot = {
       x: frame.x + (compact ? 38 : 54),
@@ -485,25 +501,29 @@ function dashboard(rendered, items, frame, theme, ui) {
       width: frame.width - (compact ? 54 : 78),
       height: Math.max(28, chartH - 108 - legendH),
     }
-    const pointX = (index) => plot.x + (index * plot.width) / Math.max(1, rows.length - 1)
+    const groupW = plot.width / Math.max(1, rows.length)
+    const pointX = (index) =>
+      isBar ? plot.x + groupW * (index + 0.5) : plot.x + (index * plot.width) / Math.max(1, rows.length - 1)
     const pointY = (value) => plot.y + plot.height - ((Number(value) - min) / (max - min || 1)) * plot.height
     const grid = Array.from({ length: 4 }, (_, index) => {
       const y = plot.y + (index * plot.height) / 3
       return ui.line(plot.x, y, plot.x + plot.width, y, { stroke: theme.border, width: 1, dash: '3 7' })
     }).join('')
     const labels = rows
-      .map((row, index) =>
-        index === 0 || index === rows.length - 1
-          ? ui.text(row[0], plot.x + (index * plot.width) / Math.max(1, rows.length - 1), plot.y + plot.height + 25, {
-              size: 9,
-              weight: 620,
-              fill: theme.muted_foreground,
-              width: 80,
-              lines: 1,
-              anchor: index === 0 ? 'start' : 'end',
-            }).svg
-          : '',
-      )
+      .map((row, index) => {
+        const show = rows.length <= 6 || index === 0 || index === rows.length - 1
+        if (!show) return ''
+        const anchor = rows.length <= 6 ? 'middle' : index === 0 ? 'start' : 'end'
+        const width = rows.length <= 6 ? Math.max(54, groupW - 10) : 88
+        return ui.text(row[0], pointX(index), plot.y + plot.height + 25, {
+          size: 9,
+          weight: 620,
+          fill: theme.muted_foreground,
+          width,
+          lines: 1,
+          anchor,
+        }).svg
+      })
       .join('')
     const legend =
       seriesNames.length > 1
@@ -516,21 +536,48 @@ function dashboard(rendered, items, frame, theme, ui) {
             })
             .join('')
         : ''
-    const series = seriesNames
-      .map((_, seriesIndex) => {
-        const stroke = theme[`chart_${(seriesIndex % 5) + 1}`]
-        const points = rows
-          .map((row, rowIndex) =>
-            Number.isFinite(Number(row[seriesIndex + 1]))
-              ? `${pointX(rowIndex)},${pointY(row[seriesIndex + 1])}`
-              : null,
-          )
-          .filter(Boolean)
-        return points.length
-          ? `<g><polyline points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${rows.map((row, rowIndex) => (Number.isFinite(Number(row[seriesIndex + 1])) ? ui.circle(pointX(rowIndex), pointY(row[seriesIndex + 1]), 4, { fill: theme.surface, stroke, strokeWidth: 2 }) : '')).join('')}</g>`
-          : ''
-      })
-      .join('')
+    const series = isBar
+      ? (() => {
+          const barGap = seriesNames.length > 1 ? 3 : 0
+          const totalW = Math.min(groupW * 0.68, compact ? 44 : 68)
+          const barW = Math.max(3, (totalW - barGap * (seriesNames.length - 1)) / seriesNames.length)
+          const zeroY = pointY(0)
+          return seriesNames
+            .map((_, seriesIndex) => {
+              const fill = theme[`chart_${(seriesIndex % 5) + 1}`]
+              const bars = rows
+                .map((row, rowIndex) => {
+                  const raw = row[seriesIndex + 1]
+                  if (raw === null || raw === undefined || raw === '' || !Number.isFinite(Number(raw))) return ''
+                  const valueY = pointY(raw)
+                  const height = Math.max(2, Math.abs(zeroY - valueY))
+                  const x = pointX(rowIndex) - totalW / 2 + seriesIndex * (barW + barGap)
+                  const y = Number(raw) >= 0 ? zeroY - height : zeroY
+                  return ui.rect(x, y, barW, height, { fill, radius: 3 })
+                })
+                .join('')
+              return bars ? `<g class="composition-dashboard-bars">${bars}</g>` : ''
+            })
+            .join('')
+        })()
+      : seriesNames
+          .map((_, seriesIndex) => {
+            const stroke = theme[`chart_${(seriesIndex % 5) + 1}`]
+            const points = rows
+              .map((row, rowIndex) =>
+                row[seriesIndex + 1] !== null &&
+                row[seriesIndex + 1] !== undefined &&
+                row[seriesIndex + 1] !== '' &&
+                Number.isFinite(Number(row[seriesIndex + 1]))
+                  ? `${pointX(rowIndex)},${pointY(row[seriesIndex + 1])}`
+                  : null,
+              )
+              .filter(Boolean)
+            return points.length
+              ? `<g class="composition-dashboard-lines"><polyline points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${rows.map((row, rowIndex) => (row[seriesIndex + 1] !== null && row[seriesIndex + 1] !== undefined && row[seriesIndex + 1] !== '' && Number.isFinite(Number(row[seriesIndex + 1])) ? ui.circle(pointX(rowIndex), pointY(row[seriesIndex + 1]), 4, { fill: theme.surface, stroke, strokeWidth: 2 }) : '')).join('')}</g>`
+              : ''
+          })
+          .join('')
     chartMarkup = `<g>${ui.rect(frame.x, chartY, frame.width, chartH, { fill: theme.surface, stroke: theme.border, radius: 12, filter: 'url(#ck-card-shadow)' })}${ui.text(chart?.title || items.at(-1)?.title || 'Development', frame.x + 18, chartY + 30, { size: 14, weight: 720, fill: theme.foreground, width: frame.width - 36, lines: 1 }).svg}${ui.text(chart?.description || '', frame.x + 18, chartY + 52, { size: 10, weight: 480, fill: theme.muted_foreground, width: frame.width - 36, lines: 1 }).svg}${legend}${grid}${series}${labels}</g>`
   }
   return `<g>${toolbar}${cards}${chartMarkup}</g>`

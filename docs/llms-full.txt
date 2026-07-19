@@ -643,8 +643,11 @@ Optional `reportCadence` is restricted to `hourly`, `daily`, `weekly`,
 `monthly`, `quarterly` or `yearly` and requires
 `composition.format: report`. Reports use `group`, `card`, `metric`, `badge`,
 `progress` and `chart`; group accepts 1–4 columns and card accepts a 1–4 span.
-Under the `product` preset, cadence-tagged reports produce a localized current
-catalog and bounded history.
+Under the `product` preset, cadence-tagged reports produce a localized narrative
+home: the newest closed interval exposes its authored question, conclusion and
+action first; other cadences become decision horizons; at most six superseded
+reports become history. This is derived from the report Markdown and needs no
+separate home-page payload from a workflow or connector.
 
 A chart contains exactly one GFM table. Its first column is the category and all
 remaining cells are finite numbers for the default `series` shape; an em dash
@@ -668,13 +671,16 @@ explicitly equal-area tiles, not invented administrative boundaries.
 Charts are evidence nodes, not the composition architecture. Every release
 creates deterministic light/dark composition SVG and content-hashed chart SVGs
 with accessible text and source tables; PNG is created only when explicitly
-requested and no client runtime ships. Report pages embed the color-scheme-aware
-composition SVG as a visual summary before the complete semantic HTML. Dashboard
-SVGs never invent live state, reporting periods or decorative trends. Bars retain a zero
+requested and no client runtime ships. Report pages render the semantic HTML
+once and embed only the color-scheme-aware chart SVGs that add authored data
+evidence. The complete composition SVG remains a headless representation and is
+not repeated above the same report blocks. Dashboard SVGs never invent live
+state, reporting periods or decorative trends. Bars retain a zero
 baseline, line axes use the observed range, short series show direct values,
 multiple lines also differ by stroke pattern, and donut labels include category,
-value and percentage. Typed data shapes include a structurally reflowed mobile
-SVG in report HTML rather than shrinking desktop geometry. Indexable reports
+value and percentage. Every embedded report chart includes a structurally
+reflowed mobile SVG in report HTML rather than shrinking desktop geometry.
+Indexable reports
 receive `/{locale}/{slug}/index.md`, and their authored source
 is retained in the site's `llms-full.txt`. When a report contains at least two
 level-two headings, Contentkit derives a responsive localized section
@@ -1453,12 +1459,15 @@ duplicate keys and duplicate routes fail the build before activation.
 
 Composition pages use the normal page route and the closed semantic directive
 contract from section 7. Releases render HTML and standalone light/dark SVG;
-PNG remains available through the headless APIs. Table-driven charts retain
-their accessible source data and add no chart JavaScript. Two or more report level-two headings become
+PNG remains available through the headless APIs. The complete composition SVG
+is not duplicated inside the semantic report page; embedded chart SVGs remain
+for authored visual evidence. Table-driven charts retain their accessible
+source data and add no chart JavaScript. Two or more report level-two headings become
 a responsive localized section navigation; level-three headings remain out of
 that navigation. A `product` preset containing reports also derives a localized
-period catalog: one newest report per cadence plus a bounded recent history,
-restricted to the home route's exact reader grant.
+home narrative: newest closed interval and action, remaining decision horizons,
+then at most six superseded reports, restricted to the home route's exact reader
+grant.
 
 Generated routes:
 

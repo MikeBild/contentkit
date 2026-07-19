@@ -11,11 +11,18 @@ const words = {
     latestReport: 'Aktueller Report',
     reportSections: 'Reportbereiche',
     reportPeriods: 'Zeiträume',
-    currentReports: 'Aktuelle Reports',
-    currentReportsHint: 'Wähle den Zeithorizont passend zur Entscheidung. Jeder Report beantwortet eine andere Frage.',
     reportHistory: 'Reportverlauf',
     reportHistoryHint: 'Die letzten abgeschlossenen Reports bleiben unverändert und nachvollziehbar.',
-    reportOverview: 'Übersicht',
+    overview: 'Übersicht',
+    reportOverview: 'Berichtsübersicht',
+    reportCurrentState: 'Aktueller Betriebsstand',
+    reportCurrentStateHint:
+      'Beginne mit dem jüngsten abgeschlossenen Zeitfenster und der daraus folgenden Entscheidung.',
+    reportHorizons: 'Weitere Entscheidungshorizonte',
+    reportHorizonsHint: 'Tag, Woche, Monat und Jahr verdichten dieselben Signale für unterschiedliche Entscheidungen.',
+    reportAssessment: 'Einordnung',
+    reportNextStep: 'Nächster Schritt',
+    reportOpen: 'Report öffnen',
     reportOtherPages: 'Weitere Seiten',
     reportCadenceHourly: 'Stündlich',
     reportCadenceDaily: 'Täglich',
@@ -98,11 +105,17 @@ const words = {
     latestReport: 'Latest report',
     reportSections: 'Report sections',
     reportPeriods: 'Periods',
-    currentReports: 'Current reports',
-    currentReportsHint: 'Choose the decision horizon. Every report answers a different question.',
     reportHistory: 'Report history',
     reportHistoryHint: 'The latest completed reports remain immutable and traceable.',
-    reportOverview: 'Overview',
+    overview: 'Overview',
+    reportOverview: 'Report overview',
+    reportCurrentState: 'Current operating state',
+    reportCurrentStateHint: 'Start with the latest completed interval and the decision that follows from it.',
+    reportHorizons: 'Additional decision horizons',
+    reportHorizonsHint: 'Day, week, month and year condense the same signals for different decisions.',
+    reportAssessment: 'Assessment',
+    reportNextStep: 'Next step',
+    reportOpen: 'Open report',
     reportOtherPages: 'Other pages',
     reportCadenceHourly: 'Hourly',
     reportCadenceDaily: 'Daily',
@@ -373,12 +386,24 @@ function reportSort(left, right) {
   )
 }
 
-function reportCatalogCard(item, t) {
+function reportDisplayTitle(item, site) {
+  const prefix = `${site.name} `
+  return item.title.startsWith(prefix) ? item.title.slice(prefix.length) : item.title
+}
+
+function reportCatalogCard(item, t, site) {
   const cadence = reportCadenceLabel(t, item.report_cadence)
   return `<article class="card report-catalog-card"><a href="${escapeHtml(item.url)}">
 <div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div>
-<h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.summary)}</p>
+<h3>${escapeHtml(reportDisplayTitle(item, site))}</h3><p>${escapeHtml(item.narrative?.question || item.summary)}</p>
 </a></article>`
+}
+
+function reportFeatureCard(item, ctx) {
+  const cadence = reportCadenceLabel(ctx.t, item.report_cadence)
+  const assessment = item.narrative?.conclusion || item.narrative?.thesis || item.summary
+  const action = item.narrative?.action
+  return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p></div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
 }
 
 function reportCatalogBody(ctx, title, visible) {
@@ -397,11 +422,12 @@ function reportCatalogBody(ctx, title, visible) {
   const currentIds = new Set(current.map((report) => report.item_id))
   const history = reports.filter((report) => !currentIds.has(report.item_id)).slice(0, 6)
   const settings = ctx.site.settings || {}
-  const overviewNav = `<nav class="container report-catalog-nav" aria-label="${escapeHtml(ctx.t.reportOverview)}"><span>${escapeHtml(ctx.t.reportOverview)}</span><ol><li><a href="#current-reports">${escapeHtml(ctx.t.currentReports)}</a></li>${history.length ? `<li><a href="#report-history">${escapeHtml(ctx.t.reportHistory)}</a></li>` : ''}</ol></nav>`
-  return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.currentReports)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p></div></section>
-${overviewNav}
-<section id="current-reports" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.currentReports)}</h2><p>${escapeHtml(ctx.t.currentReportsHint)}</p></div></div><div class="grid report-current-grid">${current.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>
-${history.length ? `<section id="report-history" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t)).join('')}</div></section>` : ''}
+  const lead = current.find((report) => report.report_cadence === 'hourly') || current[0]
+  const horizons = current.filter((report) => report !== lead)
+  return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.reportOverview)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p></div></section>
+${lead ? `<section id="current-state" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportCurrentState)}</h2><p>${escapeHtml(ctx.t.reportCurrentStateHint)}</p></div></div>${reportFeatureCard(lead, ctx)}</section>` : ''}
+${horizons.length ? `<section id="decision-horizons" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHorizons)}</h2><p>${escapeHtml(ctx.t.reportHorizonsHint)}</p></div></div><div class="grid report-current-grid">${horizons.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}
+${history.length ? `<section id="report-history" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}
 ${otherPages.length ? `<section class="container section"><div class="section-head"><h2>${escapeHtml(ctx.t.reportOtherPages)}</h2></div><div class="grid">${otherPages.slice(0, 12).map(card).join('')}</div></section>` : ''}`
 }
 
@@ -420,7 +446,10 @@ function navLinks(ctx) {
   const presetLinks = primary
     ? [[...primary, 20]]
     : preset === 'product' && report
-      ? [[...report, 20]]
+      ? [
+          [t.overview, `/${locale}/`, 20],
+          [...report, 30],
+        ]
       : preset === 'portfolio'
         ? [
             [t.blog, `/${locale}/blog/`, 20],
@@ -468,7 +497,8 @@ function siteFooter(ctx) {
   const hasTags = posts.some((p) => (p.tags || []).length > 0)
   const navigation = [
     ...(primary ? [primary] : []),
-    ...(!primary && report ? [report] : []),
+    ...(!primary && preset === 'product' && report ? [[t.overview, `/${locale}/`], report] : []),
+    ...(!primary && preset !== 'product' && report ? [report] : []),
     ...(hasPosts ? [[t.blog, `/${locale}/blog/`]] : []),
     ...(hasProjects ? [[t.projects, `/${locale}/projects/`]] : []),
     ...(hasPosts ? [[t.archive, `/${locale}/archive/`]] : []),

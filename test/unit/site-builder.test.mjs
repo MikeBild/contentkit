@@ -295,8 +295,7 @@ test('first-party assets and Inter are content-hashed while katex fonts keep sta
   const siteCss = result.files.get(siteCssKey).body.toString()
   assert.match(siteCss, new RegExp(`@font-face\\{[^}]+src:url\\(\\/${interKey}`))
   assert.match(siteCss, /font-family:\s*Inter,\s*ui-sans-serif,\s*system-ui/)
-  assert.match(siteCss, /\.report-cadence-nav ol\s*\{[^}]*display:\s*grid;[^}]*width:\s*100%;[^}]*max-width:\s*100%/s)
-  assert.match(siteCss, /grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(8rem, 100%\), 1fr\)\)/)
+  assert.match(siteCss, /\.report-feature-card\s*\{[^}]*display:\s*grid;/s)
   assert.ok(
     keys.some((k) => /^assets\/katex\/[^/]+\.woff2$/.test(k)),
     'katex fonts missing',
@@ -1127,7 +1126,7 @@ test('a fully private product home renders a cadence catalog for only same-grant
     // node-postgres returns timestamptz columns as Date instances while
     // authored frontmatter dates are normalized strings.
     published_at: new Date(publishedAt),
-    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Facts\n\nReport ${hour}.\n:::`,
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n  question: What changed during closed interval ${hour}?\n  conclusion: Closed interval ${hour} is ready for an operational decision.\n  action: Review the evidence for interval ${hour}.\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Facts\n\nReport ${hour}.\n:::`,
   })
   const result = await build({
     site: { ...site, settings: { presentation: { preset: 'product' } } },
@@ -1150,20 +1149,26 @@ test('a fully private product home renders a cadence catalog for only same-grant
     ],
   })
   const home = result.files.get('en/index.html').body.toString()
+  assert.match(home, /href="\/en\/" aria-current="page">Overview<\/a>/)
   assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
-  assert.match(home, /class="container report-catalog-nav" aria-label="Overview"/)
-  assert.match(home, /href="#current-reports">Current reports<\/a>/)
-  assert.match(home, /href="#report-history">Report history<\/a>/)
+  assert.doesNotMatch(home, /report-catalog-nav|href="#current-reports"/)
+  assert.match(home, /class="report-feature-card"/)
+  assert.match(home, /Current operating state/)
+  assert.match(home, /Additional decision horizons/)
+  assert.match(home, /What changed during closed interval 09\?/)
+  assert.match(home, /Closed interval 09 is ready for an operational decision\./)
+  assert.match(home, /Review the evidence for interval 09\./)
   assert.match(home, /<span class="report-cadence-badge">Hourly<\/span>/)
   assert.match(home, /<span class="report-cadence-badge">Yearly<\/span>/)
   assert.match(home, /<span class="report-cadence-badge">Other report<\/span>/)
-  assert.equal((home.match(/class="card report-catalog-card"/g) || []).length, 4)
-  assert.match(home, /Current reports/)
+  assert.equal((home.match(/class="card report-catalog-card"/g) || []).length, 3)
+  assert.doesNotMatch(home, /Current reports/)
   assert.match(home, /Report history/)
   assert.ok(home.indexOf('Report 09:00 UTC') < home.indexOf('Report 08:00 UTC'))
   assert.doesNotMatch(home, /Other team secret/)
   assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Report 0[89]|Other team secret/)
   const reportPage = result.files.get('en/report-09/index.html').body.toString()
+  assert.match(reportPage, /href="\/en\/">Overview<\/a>/)
   assert.match(reportPage, /href="\/en\/report-09\/" aria-current="page">Latest report<\/a>/)
   assert.doesNotMatch(reportPage, /Other team secret/)
 })
@@ -1252,7 +1257,7 @@ Revenue is above the January baseline.`
   const svgFiles = [...result.files.keys()].filter((path) =>
     /^assets\/report-chart-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path),
   )
-  assert.equal(svgFiles.length, 2)
+  assert.equal(svgFiles.length, 4)
   for (const path of svgFiles) {
     assert.equal(result.files.get(path).contentType, 'image/svg+xml')
     assert.match(result.files.get(path).body.toString(), /^<svg role="img"/)
@@ -1267,11 +1272,10 @@ Revenue is above the January baseline.`
       .length,
     0,
   )
-  assert.match(page, /class="composition-visual-overview"/)
-  assert.match(page, /<source media="\(prefers-color-scheme: dark\)"[^>]*type="image\/svg\+xml">/)
-  assert.match(page, /type="image\/svg\+xml">Open light SVG<\/a>/)
-  assert.match(page, /type="image\/svg\+xml">Open dark SVG<\/a>/)
-  assert.doesNotMatch(page, /type="image\/png">PNG<\/a>/)
+  assert.doesNotMatch(
+    page,
+    /composition-visual-overview|Alternative representations|Open light SVG|Open dark SVG|Open PNG/,
+  )
   assert.match(page, /class="composition-page"/)
   assert.match(page, /<picture class="report-chart-picture">/)
   assert.match(page, /prefers-color-scheme: dark/)

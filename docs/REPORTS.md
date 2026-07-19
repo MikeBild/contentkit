@@ -26,6 +26,10 @@ composition:
   canvas: flow
   intent: status
   density: compact
+  question: Did revenue outperform the quarterly plan?
+  thesis: Revenue exceeded plan in every reported month.
+  conclusion: Q2 closed above plan with improving monthly momentum.
+  action: Preserve the current plan and investigate the strongest June drivers.
 ---
 
 ::metric{label="Revenue" value="€1.42M" trend="+12.8% QoQ" tone="positive"}
@@ -52,8 +56,11 @@ and `report-card` directives are normalized internally to `composition`,
 `reportCadence` is valid only with `composition.format: report`. Its values are
 `hourly`, `daily`, `weekly`, `monthly`, `quarterly` and `yearly`. With the
 `product` site preset, Contentkit lists the newest immutable report for each
-cadence and keeps up to twelve older reports as history. Untagged reports appear
-as “Other report”. Access rules and `noindex` remain authoritative.
+cadence. The home page presents the newest closed interval with its authored
+question, conclusion and action, then the remaining decision horizons, followed
+by at most six older reports. Untagged reports appear as “Other report”. Access
+rules and `noindex` remain authoritative. This order is derived from report
+Markdown; a workflow or connector does not need a separate home-page payload.
 
 Two or more level-two headings create a responsive same-page section navigation
 without JavaScript. Use level-three headings for details that should stay out of
@@ -154,14 +161,17 @@ Report HTML consumes the normal theme tokens. Charts additionally use
 geometry does not come from theme CSS.
 
 Release builds emit content-hashed light/dark chart and composition SVGs beside
-responsive semantic HTML/CSS. PNG is generated only when a headless caller
-explicitly requests the raster representation. No visualization runtime, remote
-font or third-party request is sent to readers. Graphics use Contentkit's standard font stack (`Inter`,
+responsive semantic HTML/CSS. Report pages embed chart SVGs only for authored
+data evidence; they do not repeat the complete composition SVG above the same
+semantic blocks. The composition SVG remains available through the headless
+API, and PNG is generated only when a headless caller explicitly requests the
+raster representation. No visualization runtime, remote font or third-party
+request is sent to readers. Graphics use Contentkit's standard font stack (`Inter`,
 `ui-sans-serif`, `system-ui`, platform UI fallbacks and `sans-serif`); the
 bundled Inter primary face makes raster output independent from system fonts.
-Typed data shapes also emit a structurally reflowed 390-pixel
-mobile SVG selected by the responsive `<picture>` element; it is not a scaled
-desktop chart. Generated graphics enforce a responsive type floor of 15 px on
+Every embedded report chart also emits a structurally reflowed 390-pixel mobile
+SVG selected by the responsive `<picture>` element; it is not a scaled desktop
+chart. Generated graphics enforce a responsive type floor of 15 px on
 canvases up to 800 px, 15 px up to 1100 px, and 16 px on wider canvases; layouts reflow instead of reducing
 labels below that threshold.
 

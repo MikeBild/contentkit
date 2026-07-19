@@ -60,9 +60,10 @@ Visual compositions follow the same static-release boundary. With explicit
 Contentkit derives a Narrative, scores the repository-owned Pattern Registry,
 resolves constraints and responsive fallbacks into a Composition AST, and only
 then computes concrete layout and render trees. Release builds emit responsive
-semantic HTML plus content-hashed standalone light/dark SVG assets; report pages
-embed those SVGs as a color-scheme-aware visual summary before the detailed HTML.
-PNG remains an explicit headless representation and is not rerasterized with every release.
+semantic HTML plus content-hashed standalone light/dark SVG assets. Report pages
+do not repeat the complete composition inside the semantic HTML; they embed only
+the responsive chart SVGs that add visual evidence. The complete SVG and PNG
+remain explicit headless representations and PNG is not rerasterized with every release.
 Charts are bounded table-driven evidence nodes and retain their source table;
 they are not the composition architecture and no browser chart runtime is
 exposed to authors. Dashboard renderers never synthesize live state, periods or
