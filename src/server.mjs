@@ -83,7 +83,12 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       })
     })
     handle(req, res).catch((error) => {
-      const status = error.statusCode || (error.status >= 400 && error.status < 600 ? error.status : 500)
+      // A committed response cannot be rewritten, and the client already got
+      // its real status (e.g. the gateway's 503) — report that instead of
+      // filing the late write attempt (ERR_HTTP_HEADERS_SENT) as a fresh 500.
+      const status = res.headersSent
+        ? res.statusCode
+        : error.statusCode || (error.status >= 400 && error.status < 600 ? error.status : 500)
       logger.error('request failed', {
         request_id: requestId,
         trace_id: trace.traceId,
