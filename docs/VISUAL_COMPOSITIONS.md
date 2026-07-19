@@ -328,6 +328,12 @@ document response now includes `semantic`, `narrative`, `composition`,
 Both are deterministic, cached with ETags and protected by the same site-scoped
 read authorization as the document.
 
+Static releases keep responsive semantic HTML/CSS as the primary reader surface
+and emit standalone light/dark SVG assets. PNG rasterization is intentionally an
+explicit headless selection through the compile or published-representation API;
+it is not repeated for every historical composition during an additive site
+release. This keeps release duration bounded as a report archive grows.
+
 ## Themes and the review gallery
 
 Patterns select structure; themes select appearance. The generated review set

@@ -8,8 +8,9 @@
 information patterns.** Contentkit publishes websites, documentation, reports
 and infographics through one API-first content model. Semantic Markdown can
 become a versioned AST, a validated visual composition, responsive HTML and
-standalone SVG/PNG inside an immutable release that activates atomically—with
-instant, pointer-based rollback.
+standalone SVG inside an immutable release that activates atomically—with
+instant, pointer-based rollback. PNG remains an explicit deterministic
+headless export.
 
 It is deliberately not a WYSIWYG CMS: there is no admin UI, no page builder
 and no plugin system. Content lives as portable Markdown, the API is the
@@ -59,10 +60,10 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
 - Semantic visual compositions from Markdown: Semantic AST → Narrative →
   declarative Pattern Package → deterministic layout → responsive HTML and
-  standalone light/dark SVG/PNG. The repository-owned registry contains 81
-  information patterns with constraints, content budgets, typed value and time
-  semantics, responsive fallbacks, spec examples and machine-readable
-  selection reasons for external AI agents.
+  standalone light/dark SVG, with PNG available on demand. The repository-owned
+  registry contains 81 information patterns with constraints, content budgets,
+  typed value and time semantics, responsive fallbacks, spec examples and
+  machine-readable selection reasons for external AI agents.
 - Composition reports and dashboards with neutral metric cards, status,
   progress and table-driven charts with direct values and accessible source
   tables. Product sites turn cadence-tagged reports into a localized

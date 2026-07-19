@@ -40,8 +40,9 @@ without re-rendering or copying files.
 
 Visual compositions are static output. Semantic Markdown becomes a versioned
 Semantic AST, Narrative and validated Composition before responsive HTML and
-standalone light/dark SVG/PNG are rendered. The declarative Pattern Registry is
-repository-owned; published pages load no composition or chart runtime.
+standalone light/dark SVG are rendered into releases. PNG remains an explicit
+headless representation. The declarative Pattern Registry is repository-owned;
+published pages load no composition or chart runtime.
 
 Contentkit is not a visual page builder and not a generic Supabase application.
 It is a focused, API-first Markdown-to-static-site CMS with explicit operational
@@ -1448,9 +1449,9 @@ documentation also requires `docsVersion`. Changelog pages accept `category`,
 duplicate keys and duplicate routes fail the build before activation.
 
 Composition pages use the normal page route and the closed semantic directive
-contract from section 7. They render HTML and standalone light/dark SVG/PNG;
-table-driven charts retain their accessible source data and add no chart
-JavaScript. Two or more report level-two headings become
+contract from section 7. Releases render HTML and standalone light/dark SVG;
+PNG remains available through the headless APIs. Table-driven charts retain
+their accessible source data and add no chart JavaScript. Two or more report level-two headings become
 a responsive localized section navigation; level-three headings remain out of
 that navigation. A `product` preset containing reports also derives a localized
 period catalog: one newest report per cadence plus a bounded recent history,

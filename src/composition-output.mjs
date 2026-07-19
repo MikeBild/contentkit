@@ -31,26 +31,39 @@ export async function renderCompositionPng(svg) {
   }
 }
 
-export async function materializeComposition(rendered, { settings = {}, viewport, container, emit } = {}) {
+export async function materializeComposition(
+  rendered,
+  { settings = {}, viewport, container, emit, formats = ['svg', 'png'] } = {},
+) {
   if (!rendered.composition) return rendered
+  const requestedFormats = new Set(formats)
+  const unknownFormat = [...requestedFormats].find((format) => !['svg', 'png'].includes(format))
+  if (unknownFormat)
+    throw Object.assign(new Error(`unknown composition format "${unknownFormat}"`), { statusCode: 422 })
   const assets = {}
   for (const scheme of ['light', 'dark']) {
     const artifact = renderCompositionArtifact(rendered, { settings, scheme, viewport, container })
     const svg = artifact.svg
-    const png = await renderCompositionPng(svg)
     assets[scheme] = {
       svg,
-      png,
       svg_sha256: sha256(svg),
-      png_sha256: sha256(png),
-      svg_url: emit ? emit(svg, { scheme, format: 'svg' }) : null,
-      png_url: emit ? emit(png, { scheme, format: 'png' }) : null,
+      svg_url: emit && requestedFormats.has('svg') ? emit(svg, { scheme, format: 'svg' }) : null,
       layout_tree: artifact.layout_tree,
       render_tree: artifact.render_tree,
       diagnostics: artifact.diagnostics,
     }
+    if (requestedFormats.has('png')) {
+      const png = await renderCompositionPng(svg)
+      assets[scheme].png = png
+      assets[scheme].png_sha256 = sha256(png)
+      assets[scheme].png_url = emit ? emit(png, { scheme, format: 'png' }) : null
+    }
   }
-  const html = `${rendered.html}<aside class="composition-representations" aria-label="Visual representations"><strong>Visual composition</strong>${assets.light.svg_url ? `<a href="${escapeHtml(assets.light.svg_url)}" type="image/svg+xml">SVG</a><a href="${escapeHtml(assets.light.png_url)}" type="image/png">PNG</a>` : ''}</aside>`
+  const representationLinks = [
+    assets.light.svg_url ? `<a href="${escapeHtml(assets.light.svg_url)}" type="image/svg+xml">SVG</a>` : '',
+    assets.light.png_url ? `<a href="${escapeHtml(assets.light.png_url)}" type="image/png">PNG</a>` : '',
+  ].join('')
+  const html = `${rendered.html}<aside class="composition-representations" aria-label="Visual representations"><strong>Visual composition</strong>${representationLinks}</aside>`
   const layoutDiagnostics = assets.light.diagnostics || []
   return {
     ...rendered,
@@ -113,6 +126,12 @@ export async function compileCompositionMarkdown(
   ) {
     throw Object.assign(new Error('capabilities must be a list of at most 16 strings'), { statusCode: 422 })
   }
+  if (!Array.isArray(outputs) || !outputs.length) {
+    throw Object.assign(new Error('outputs must be a non-empty array'), { statusCode: 422 })
+  }
+  const chosen = new Set(outputs)
+  const unknown = [...chosen].find((entry) => !['model', 'html', 'svg', 'png', 'print'].includes(entry))
+  if (unknown) throw Object.assign(new Error(`unknown composition output "${unknown}"`), { statusCode: 422 })
   const parsed = await renderMarkdown(markdown)
   if (!parsed.composition) throw Object.assign(new Error('compile requires layout: composition'), { statusCode: 422 })
   const resolved =
@@ -120,13 +139,12 @@ export async function compileCompositionMarkdown(
       ? reResolveComposition(parsed, { viewport, container, capabilities })
       : parsed
   const charted = materializeReportCharts(resolved, { settings, locale: parsed.meta.locale })
-  const result = await materializeComposition(charted, { settings, viewport, container })
-  if (!Array.isArray(outputs) || !outputs.length) {
-    throw Object.assign(new Error('outputs must be a non-empty array'), { statusCode: 422 })
-  }
-  const chosen = new Set(outputs)
-  const unknown = [...chosen].find((entry) => !['model', 'html', 'svg', 'png', 'print'].includes(entry))
-  if (unknown) throw Object.assign(new Error(`unknown composition output "${unknown}"`), { statusCode: 422 })
+  const result = await materializeComposition(charted, {
+    settings,
+    viewport,
+    container,
+    formats: chosen.has('png') ? ['svg', 'png'] : chosen.has('svg') ? ['svg'] : [],
+  })
   const asset = result.composition_assets[scheme]
   return {
     schema_version: '1',

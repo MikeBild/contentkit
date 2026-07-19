@@ -1623,8 +1623,8 @@ describe('published read API', () => {
         calls.push(['list', siteId, query])
         return { items: [{ item_id: 'item-1', slug: 'hello' }], next_cursor: null }
       },
-      async getPublished(siteId, kind, locale, slug) {
-        calls.push(['doc', siteId, kind, locale, slug])
+      async getPublished(siteId, kind, locale, slug, options) {
+        calls.push(['doc', siteId, kind, locale, slug, options])
         return slug === 'hello' && kind === 'post' && locale === 'de' ? { ...PUBLISHED_DOC } : null
       },
     }
@@ -1678,7 +1678,8 @@ describe('published read API', () => {
   })
 
   test('the single document carries markdown and html, a strong ETag and a dedicated 404', async () => {
-    await withApp({ repo: publishedApiRepo(), auth: scopedAuth(['content:read']) }, async (request) => {
+    const calls = []
+    await withApp({ repo: publishedApiRepo(calls), auth: scopedAuth(['content:read']) }, async (request) => {
       const response = await request('/v1/sites/my-site/published/post/de/hello', {
         headers: { 'x-api-key': 'valid' },
       })
@@ -1690,6 +1691,7 @@ describe('published read API', () => {
       assert.equal(body.markdown, '# Hello')
       assert.equal(body.html, '<h1>Hello</h1>')
       assert.equal(body.source_sha256, undefined, 'the ETag ingredient must not leak into the body')
+      assert.deepEqual(calls[0], ['doc', 'site-1', 'post', 'de', 'hello', { formats: [] }])
 
       const cached = await request('/v1/sites/my-site/published/post/de/hello', {
         headers: { 'x-api-key': 'valid', 'if-none-match': etag },
@@ -1706,7 +1708,8 @@ describe('published read API', () => {
   })
 
   test('published composition representations are binary, scheme-aware and cacheable', async () => {
-    await withApp({ repo: publishedApiRepo(), auth: scopedAuth(['content:read']) }, async (request) => {
+    const calls = []
+    await withApp({ repo: publishedApiRepo(calls), auth: scopedAuth(['content:read']) }, async (request) => {
       const response = await request('/v1/sites/my-site/published/post/de/hello/composition.svg?scheme=dark', {
         headers: { 'x-api-key': 'valid' },
       })
@@ -1714,11 +1717,13 @@ describe('published read API', () => {
       assert.equal(response.headers.get('content-type'), 'image/svg+xml')
       assert.equal(await response.text(), '<svg data-dark="true"/>')
       assert.equal(response.headers.get('etag'), '"dark-svg"')
+      assert.deepEqual(calls[0], ['doc', 'site-1', 'post', 'de', 'hello', { formats: ['svg'] }])
 
       const cached = await request('/v1/sites/my-site/published/post/de/hello/composition.svg?scheme=dark', {
         headers: { 'x-api-key': 'valid', 'if-none-match': '"dark-svg"' },
       })
       assert.equal(cached.status, 304)
+      const callsBeforeInvalidScheme = calls.length
       assert.equal(
         (
           await request('/v1/sites/my-site/published/post/de/hello/composition.png?scheme=sepia', {
@@ -1727,6 +1732,7 @@ describe('published read API', () => {
         ).status,
         422,
       )
+      assert.equal(calls.length, callsBeforeInvalidScheme, 'an invalid scheme must fail before rendering')
     })
   })
 

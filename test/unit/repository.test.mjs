@@ -716,6 +716,16 @@ test('getPublished materializes report charts as self-contained data images', as
   assert.match(doc.html, /<picture class="report-chart-picture">/)
   assert.match(doc.html, /data:image\/svg\+xml;base64,/)
   assert.doesNotMatch(doc.html, /data-report-chart/)
+  assert.match(doc._composition_assets.light.svg, /^<svg/)
+  assert.equal(doc._composition_assets.light.png, undefined, 'ordinary document reads must not rasterize PNGs')
+  assert.match(doc.representations.png, /composition\.png$/)
+})
+
+test('getPublished rasterizes PNG only when that representation is requested', async () => {
+  const repo = publishedRepo()
+  const doc = await repo.getPublished('site-1', 'page', 'de', 'five', { formats: ['png'] })
+  assert.ok(Buffer.isBuffer(doc._composition_assets.light.png))
+  assert.ok(doc._composition_assets.light.png.length > 0)
 })
 
 test('getPublished is null for drafts and for a kind/locale/slug mismatch', async () => {

@@ -1200,7 +1200,7 @@ test('wiki, knowledge, landing and changelog layouts receive controlled routes',
     assert.ok(result.files.has(path), path)
 })
 
-test('report compositions emit static themed SVG and PNG assets while preserving authored Markdown', async () => {
+test('report compositions emit static themed SVG assets while preserving authored Markdown', async () => {
   const markdown = `---
 kind: page
 layout: composition
@@ -1261,8 +1261,10 @@ Revenue is above the January baseline.`
   assert.equal(
     [...result.files.keys()].filter((path) => /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.png$/.test(path))
       .length,
-    2,
+    0,
   )
+  assert.match(page, /type="image\/svg\+xml">SVG<\/a>/)
+  assert.doesNotMatch(page, /type="image\/png">PNG<\/a>/)
   assert.match(page, /class="composition-page"/)
   assert.match(page, /<picture class="report-chart-picture">/)
   assert.match(page, /prefers-color-scheme: dark/)

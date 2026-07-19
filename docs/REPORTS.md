@@ -153,9 +153,10 @@ Report HTML consumes the normal theme tokens. Charts additionally use
 `chart_1` through `chart_5`, each as one color or a light/dark pair. Pattern
 geometry does not come from theme CSS.
 
-Release builds emit content-hashed light/dark chart SVGs and complete composition
-SVG/PNG assets. No visualization runtime, remote font or third-party request is
-sent to readers. Graphics use Contentkit's standard font stack (`Inter`,
+Release builds emit content-hashed light/dark chart and composition SVGs beside
+responsive semantic HTML/CSS. PNG is generated only when a headless caller
+explicitly requests the raster representation. No visualization runtime, remote
+font or third-party request is sent to readers. Graphics use Contentkit's standard font stack (`Inter`,
 `ui-sans-serif`, `system-ui`, platform UI fallbacks and `sans-serif`); the
 bundled Inter primary face makes raster output independent from system fonts.
 Typed data shapes also emit a structurally reflowed 390-pixel

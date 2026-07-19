@@ -957,7 +957,7 @@ export function createRepository(config, db, storage) {
       const page = after.slice(0, limit)
       return { items: page, next_cursor: after.length > limit ? publishedCursor(page.at(-1)) : null }
     },
-    async getPublished(siteId, kind, locale, slug) {
+    async getPublished(siteId, kind, locale, slug, { formats = [] } = {}) {
       const items = await db.select('ck_content_items', {
         site_id: `eq.${siteId}`,
         kind: `eq.${kind}`,
@@ -982,7 +982,7 @@ export function createRepository(config, db, storage) {
         settings: site?.settings || {},
         locale: parsed.meta.locale,
       })
-      const rendered = await materializeComposition(charted, { settings: site?.settings || {} })
+      const rendered = await materializeComposition(charted, { settings: site?.settings || {}, formats })
       const representations = rendered.composition
         ? {
             svg: `/v1/sites/${siteId}/published/${item.kind}/${item.locale}/${revision.slug}/composition.svg`,

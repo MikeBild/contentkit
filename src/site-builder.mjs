@@ -460,6 +460,11 @@ export async function buildSite({
     })
     const result = await materializeComposition(charted, {
       settings: site.settings || {},
+      // Static pages use semantic HTML/CSS as their primary representation and
+      // materialize lightweight standalone SVGs. PNG remains an explicitly
+      // selected headless output; eagerly rasterizing every historical
+      // composition would make additive release time grow with site history.
+      formats: ['svg'],
       emit: (body, { scheme, format }) =>
         emitHashedAsset(
           files,

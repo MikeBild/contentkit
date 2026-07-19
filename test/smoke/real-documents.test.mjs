@@ -76,7 +76,7 @@ test('real documentation, wiki, knowledge, landing, changelog, and composition e
     [...result.files.keys()].filter((path) =>
       /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.(?:svg|png)$/.test(path),
     ).length,
-    4,
+    2,
   )
   assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /customer-runbook/)
   assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Customer runbook/)

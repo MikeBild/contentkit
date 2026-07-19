@@ -973,18 +973,19 @@ export function createRequestHandler(ctx) {
       const site = await repo.getSite(publishedRepresentationMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'content:read', site.id))) return
-      const record = await repo.getPublished(
-        site.id,
-        publishedRepresentationMatch[2],
-        publishedRepresentationMatch[3],
-        publishedRepresentationMatch[4],
-      )
-      if (!record?._composition_assets) return sendJson(res, 404, { error: 'composition representation not found' })
       const scheme = url.searchParams.get('scheme') || 'light'
       if (!['light', 'dark'].includes(scheme)) {
         throw Object.assign(new Error('scheme must be light or dark'), { statusCode: 422 })
       }
       const format = publishedRepresentationMatch[5]
+      const record = await repo.getPublished(
+        site.id,
+        publishedRepresentationMatch[2],
+        publishedRepresentationMatch[3],
+        publishedRepresentationMatch[4],
+        { formats: [format] },
+      )
+      if (!record?._composition_assets) return sendJson(res, 404, { error: 'composition representation not found' })
       const body = record._composition_assets[scheme][format]
       const hash = record._composition_assets[scheme][`${format}_sha256`]
       const etag = `"${hash}"`
@@ -1000,7 +1001,15 @@ export function createRequestHandler(ctx) {
       const site = await repo.getSite(publishedDocMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'content:read', site.id))) return
-      const record = await repo.getPublished(site.id, publishedDocMatch[2], publishedDocMatch[3], publishedDocMatch[4])
+      const record = await repo.getPublished(
+        site.id,
+        publishedDocMatch[2],
+        publishedDocMatch[3],
+        publishedDocMatch[4],
+        {
+          formats: [],
+        },
+      )
       if (!record) return sendJson(res, 404, { error: 'published content not found' })
       // Strong ETag: the source hash names the revision bytes, the service
       // version covers renderer changes that alter the on-demand HTML.
