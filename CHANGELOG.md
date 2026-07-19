@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.0 - 2026-07-19
+
+### Added
+
+- Semantic visual composition pipeline: Markdown → Semantic AST → Narrative →
+  Composition → deterministic responsive HTML and standalone light/dark SVG/PNG.
+- 81 repository-owned declarative Markdown+YAML Pattern Packages with semantic
+  and narrative contracts, content budgets, typed input and unit rules,
+  selection metadata, responsive fallbacks, accessibility contracts, examples,
+  counterexamples, and agent guidance. Public registry and site-scoped
+  recommend, validate, and headless compile APIs make the decision process
+  usable by external AI agents.
+- Published composition models, diagnostics, accessible text and authorized
+  ETag-cached SVG/PNG representation endpoints.
+- Formal resolved Layout Tree and Render Tree models that separate semantic
+  interpretation and geometry from HTML/SVG serialization.
+- Semantic FAQ, code example, pricing, gallery, data table, dashboard section,
+  and application shell families with controlled Markdown authoring.
+- Declarative publishing guides for decision, status and analytical reports;
+  process, sequence, architecture, state and data-model diagrams; and
+  reproducible code walkthroughs.
+- A generated neutral review gallery covering every pattern at six container
+  widths in both schemes: 972 real SVG/PNG cases, 1,097 semantic HTML cases,
+  and 12 complete responsive gallery scenarios with deterministic browser
+  validation.
+- Fifteen typed data shapes for range, change, divergence, Likert, XY,
+  boxplots, matrices, waterfalls, hierarchies, flows, uncertainty, calendars,
+  geographic points, equal-area regional tiles and sample distributions. The
+  same semantic SVG geometry is used by headless compositions and report HTML.
+
+### Changed
+
+- Reports now prefer `layout: composition` with `composition.format: report`;
+  existing `layout: report`, `report-grid` and `report-card` documents are
+  normalized to the same semantic pipeline for compatibility.
+- Contentkit remains a headless Markdown mini-CMS and adds semantic visual
+  composition with controlled, executable-code-free information Pattern Packages.
+- Composition narratives now preserve audience, question, communication goal,
+  thesis, conclusion, action, limitations and disclosure. Chart and technical
+  diagram instances expose their own question, insight, action and limitation
+  for human and machine interpretation.
+- Visual resolution now uses the actual embedding container in addition to the
+  viewport and reports structured fallback, degradation and content-budget
+  diagnostics.
+
 ## 1.14.5
 
 ### Added
@@ -102,8 +147,8 @@ and this project adheres to
 - **Visual reports and dashboards from Markdown.** Pages can select the
   controlled `report` layout and compose responsive metric cards, badges,
   progress, cards and grids. `bar`, `line`, `area` and `donut` charts use an
-  ordinary GFM table as their complete data contract; Apache ECharts renders
-  deterministic, accessible light/dark SVG release assets server-side, so no
+  ordinary GFM table as their complete data contract; the server renders
+  deterministic, accessible light/dark SVG release assets, so no
   chart runtime or executable specification reaches the browser. The existing
   shadcn-style token contract now includes `chart_1` through `chart_5`, and
   report pages retain their source tables, print cleanly and receive Markdown
@@ -650,6 +695,7 @@ atomic activation and pointer-based rollback.
 - Tag links on content cards now use the same slug as the generated tag pages;
   multi-word tags previously linked to a non-existent URL.
 
+[1.15.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.15.0
 [1.2.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.2.0
 [1.1.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.1
 [1.1.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.0

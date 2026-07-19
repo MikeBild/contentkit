@@ -232,7 +232,7 @@ function safeUrl(value, { relative = false, protocols = [] } = {}) {
   }
 }
 
-// The theme exposes `--primary` as a shadcn-style "H S% L%" triple and consumes
+// The theme exposes `--primary` as an "H S% L%" triple and consumes
 // it via `hsl(var(--primary))` throughout site.css (e.g. the submit button
 // background). settings.accent is authored as a hex color, so it must be
 // converted to an HSL triple before it is injected into `--primary` — feeding a
@@ -348,7 +348,7 @@ function presetSectionLink(preset, locale) {
 
 function latestReportLink(ctx) {
   const report = [...(ctx.pages || [])]
-    .filter((page) => page.layout === 'report')
+    .filter((page) => page.layout === 'composition' && page.composition?.format === 'report')
     .sort(
       (left, right) =>
         compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
@@ -380,8 +380,9 @@ function reportCatalogCard(item, t) {
 }
 
 function reportCatalogBody(ctx, title, visible) {
-  const reports = visible.filter((page) => page.layout === 'report').sort(reportSort)
-  const otherPages = visible.filter((page) => page.layout !== 'report')
+  const isReport = (page) => page.layout === 'composition' && page.composition?.format === 'report'
+  const reports = visible.filter(isReport).sort(reportSort)
+  const otherPages = visible.filter((page) => !isReport(page))
   const newestByCadence = new Map()
   for (const report of reports) {
     const key = REPORT_CADENCES.includes(report.report_cadence) ? report.report_cadence : 'other'
@@ -651,6 +652,7 @@ export function layout(ctx, body, options = {}) {
   // Pages with a copy affordance only: the AI share row's copy-Markdown button
   // and the subscribe rows' copy-feed-URL button share one clipboard module.
   if (options.aiActions) scripts.push(`<script src="${asset('ai-actions.js')}" defer></script>`)
+  if (options.composition) scripts.push(`<script src="${asset('composition.js')}" defer></script>`)
   // Post pages with the feedback widget only: reveals and drives the vote buttons.
   if (options.feedback) scripts.push(`<script src="${asset('feedback.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)
@@ -767,7 +769,10 @@ export function presetHomeBody(ctx) {
       compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||
       String(b.title || '').localeCompare(String(a.title || '')),
   )
-  if (preset === 'product' && visible.some((page) => page.layout === 'report')) {
+  if (
+    preset === 'product' &&
+    visible.some((page) => page.layout === 'composition' && page.composition?.format === 'report')
+  ) {
     return reportCatalogBody(ctx, title, visible)
   }
   return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
@@ -1211,7 +1216,8 @@ function reportSectionNavigation(item, ctx) {
 
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
-  const isReport = item.layout === 'report'
+  const isReport = item.layout === 'composition' && item.composition?.format === 'report'
+  const isComposition = item.layout === 'composition'
   const locale = item.locale || ctx.locale
   const updated = item.updated_at && item.updated_at > item.published_at ? item.updated_at : ''
   const meta = [
@@ -1246,7 +1252,7 @@ export function contentBody(item, ctx, comments = []) {
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
   const reportNavigation = isReport ? reportSectionNavigation(item, ctx) : ''
-  return `<article${isReport ? ' class="report-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isReport ? 'report' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
+  return `<article${isComposition ? ' class="composition-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isComposition ? item.composition?.format || 'composition' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isComposition ? ' composition-prose' : ''}${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

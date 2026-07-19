@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
+import { materializeComposition } from './composition-output.mjs'
 import { hashApiKey } from './auth.mjs'
 import { sha256, slugify } from './utils.mjs'
 import { assertDeliverableUrl, decryptSecret, encryptSecret, generateWebhookSecret } from './secrets.mjs'
@@ -977,14 +978,28 @@ export function createRepository(config, db, storage) {
       // even when it predates today's frontmatter rules.
       const parsed = await renderMarkdown(revision.markdown, { lenient: true })
       const site = await one('ck_sites', { id: `eq.${siteId}` })
-      const rendered = materializeReportCharts(parsed, {
+      const charted = materializeReportCharts(parsed, {
         settings: site?.settings || {},
         locale: parsed.meta.locale,
       })
+      const rendered = await materializeComposition(charted, { settings: site?.settings || {} })
+      const representations = rendered.composition
+        ? {
+            svg: `/v1/sites/${siteId}/published/${item.kind}/${item.locale}/${revision.slug}/composition.svg`,
+            png: `/v1/sites/${siteId}/published/${item.kind}/${item.locale}/${revision.slug}/composition.png`,
+          }
+        : null
       return {
         ...publishedEntry(item, revision),
         markdown: revision.markdown,
         html: rendered.html,
+        semantic: rendered.semantic,
+        narrative: rendered.narrative,
+        composition: rendered.composition,
+        diagnostics: rendered.diagnostics,
+        accessible_text: rendered.accessible_text || null,
+        representations,
+        _composition_assets: rendered.composition_assets || null,
         source_sha256: revision.source_sha256,
       }
     },

@@ -824,7 +824,8 @@ test('extraFieldText collapses newlines — a block scalar stays one display lin
 test('report pages derive a localized section navigation from level-two headings', () => {
   const item = {
     kind: 'page',
-    layout: 'report',
+    layout: 'composition',
+    composition: { format: 'report' },
     title: 'Mission report',
     summary: 'A controlled report.',
     html: '<h2 id="status"><a class="heading-anchor" href="#status">Status &amp; technology</a></h2><p>A</p><h3 id="detail"><a class="heading-anchor" href="#detail">Detail</a></h3><h2 id="business"><a class="heading-anchor" href="#business"><em>Business</em></a></h2>',

@@ -4,11 +4,12 @@
 [![Release](https://img.shields.io/github/v/release/MikeBild/contentkit)](https://github.com/MikeBild/contentkit/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Markdown in, multilingual static website out.** Contentkit is an API-first
-mini-CMS for portfolios, blogs, product documentation, wikis, knowledge bases,
-product pages, changelogs and visual reports: you upload Markdown through an HTTP API,
-Contentkit renders it into an immutable static-site release and activates it
-atomically — with instant, pointer-based rollback.
+**A headless Markdown mini-CMS with semantic visual composition and declarative
+information patterns.** Contentkit publishes websites, documentation, reports
+and infographics through one API-first content model. Semantic Markdown can
+become a versioned AST, a validated visual composition, responsive HTML and
+standalone SVG/PNG inside an immutable release that activates atomically—with
+instant, pointer-based rollback.
 
 It is deliberately not a WYSIWYG CMS: there is no admin UI, no page builder
 and no plugin system. Content lives as portable Markdown, the API is the
@@ -56,12 +57,16 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   sessions. Protected content is excluded from public discovery outputs; a
   signed-in reader sees only same-grant navigation and home-page cards.
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
-- Responsive reports and dashboards from Markdown: shadcn-style metric cards,
-  status badges and progress, plus table-driven bar, line, area and donut charts
-  rendered server-side as accessible light/dark SVGs with no client chart runtime;
-  major report headings become a responsive local section navigation. Product
-  sites automatically turn cadence-tagged reports into a localized current-report
-  overview and immutable history without site-specific templates.
+- Semantic visual compositions from Markdown: Semantic AST → Narrative →
+  declarative Pattern Package → deterministic layout → responsive HTML and
+  standalone light/dark SVG/PNG. The repository-owned registry contains 81
+  information patterns with constraints, content budgets, typed value and time
+  semantics, responsive fallbacks, spec examples and machine-readable
+  selection reasons for external AI agents.
+- Composition reports and dashboards with neutral metric cards, status,
+  progress and table-driven charts with direct values and accessible source
+  tables. Product sites turn cadence-tagged reports into a localized
+  current-report overview and immutable history.
 - Locale-prefixed routes, translation alternates, a year-grouped archive with
   client-side tag filtering, a tag index and tag pages.
 - Reading time, related posts by tag similarity, older/newer navigation and a
@@ -81,9 +86,18 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Content modeling light: author-owned `extra:` custom fields and `related:`
   post references in frontmatter — no schema builder; page rendering of the
   extra fields is a per-site opt-in via `settings.content.show_extra`.
-- Optional headless JSON read API: list and fetch published content (metadata
-  verbatim, Markdown source, on-demand rendered HTML, ETag/304 caching) via
-  scoped `content:read` keys — site delivery itself stays static.
+- Headless composition APIs to discover patterns, recommend and validate a
+  visual narrative, compile HTML/SVG/PNG, and fetch published binary
+  representations with ETag/304 caching. Published JSON includes the semantic,
+  narrative and resolved composition models. The gallery uses the validated SVG
+  composition as its visual baseline with PNG as its byte-stable raster export;
+  semantic HTML remains available through the API but is not presented as
+  pixel-equivalent until it passes the same fidelity gate.
+- Public story-selection APIs at `GET /v1/publishing-guides` describe the
+  question, story arc, evidence contract, rejection conditions, compatible
+  patterns and examples for reports, diagrams and code explanations. Chart
+  directives and Mermaid fences can additionally preserve their instance-level
+  question, insight, action and limitation in the Semantic AST.
 - Server-side full-text search over published content with locale-aware
   PostgreSQL stemming (de/en), relevance ranking and `<mark>` headlines via
   `GET /v1/sites/{site}/search` — published sites keep their client-side search.
@@ -198,13 +212,32 @@ uploaded executable code.
 ```
 
 A Markdown page can use the controlled layouts `standard`, `docs`, `wiki`,
-`knowledge`, `landing`, `changelog` or `report`. Documentation hierarchy uses `docKey`,
+`knowledge`, `landing`, `changelog` or `composition`; `report` remains a
+compatibility alias for report compositions. Documentation hierarchy uses `docKey`,
 `docsVersion`, `parent`, `navTitle` and `navOrder`. See
 [docs/TEMPLATES.md](docs/TEMPLATES.md) for routes, complete frontmatter and the
 real example documents in `examples/docs`, `examples/wiki`,
-`examples/knowledge`, `examples/landing`, `examples/changelog` and
-`examples/reports`. The focused [report guide](docs/REPORTS.md) documents every
-dashboard primitive, chart option, theme token and resource limit.
+`examples/knowledge`, `examples/landing`, `examples/changelog`,
+`examples/reports` and `examples/compositions`. The
+[visual-composition guide](docs/VISUAL_COMPOSITIONS.md) documents the pipeline,
+all 81 patterns, declarative Pattern Packages and the AI-agent workflow. The
+[semantic information-block guide](docs/INFORMATION_BLOCKS.md) documents
+dashboards, application shells, pricing, galleries, stats, FAQ, code examples,
+data tables, agent content budgets, typed units and responsive verification. The
+[report guide](docs/REPORTS.md) covers dashboard primitives and charts. Generate
+the complete neutral review gallery with `npm run review:patterns`. It includes
+highlighted code, a technical diagram, a server-rendered chart, a semantic
+report, nine human- and machine-readable story-selection guides, and every
+information pattern. `npm run validate:visuals` verifies 972
+SVG/PNG combinations, 1,097 semantic HTML cases and 12 full gallery-page cases.
+The gate opens every standalone SVG in Chromium and rejects measured clipping,
+overlap, text truncation, container overflow, separator crossings, navigation
+defects and missing capability output. Open
+`examples/pattern-gallery/index.html`.
+
+All authored and generated review material is organized under
+[`examples/`](examples/README.md). Trusted runtime Pattern Packages remain under
+`patterns/`; they are executable configuration, not examples.
 
 ## Protect reader content
 

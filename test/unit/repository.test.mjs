@@ -592,7 +592,7 @@ function publishedRepo() {
       'five',
       'Five',
       [],
-      '---\nkind: page\nlayout: report\ntitle: Five\nlocale: de\nslug: five\n---\n:::chart{type="bar" title="Werte" description="Werte nach Monat"}\n| Monat | Wert |\n|-|-:|\n| Jan | 5 |\n:::',
+      '---\nkind: page\nlayout: composition\ntitle: Five\nlocale: de\nslug: five\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n---\n:::chart{type="bar" title="Werte" description="Werte nach Monat"}\n| Monat | Wert |\n|-|-:|\n| Jan | 5 |\n:::',
     ),
   ]
   const db = {

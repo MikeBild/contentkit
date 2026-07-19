@@ -3,6 +3,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
+import { materializeComposition } from './composition-output.mjs'
+import { contentkitFontAssetName, contentkitFontFaceCss, contentkitFontFile } from './typography.mjs'
 import {
   archiveBody,
   blogBody,
@@ -147,7 +149,9 @@ async function staticAssets(root) {
   const emit = (name, body, type) => {
     assets[name] = emitHashedAsset(files, name, body, type)
   }
-  const css = await readFile(join(root, 'assets/site.css'), 'utf8')
+  const fontUrl = emitHashedAsset(files, contentkitFontAssetName, await readFile(contentkitFontFile), 'font/woff2')
+  assets[contentkitFontAssetName] = fontUrl
+  const css = `${contentkitFontFaceCss(fontUrl, { display: 'swap' })}\n${await readFile(join(root, 'assets/site.css'), 'utf8')}`
   const katexCss = (await readFile(join(root, 'node_modules/katex/dist/katex.min.css'), 'utf8')).replaceAll(
     'url(fonts/',
     'url(/assets/katex/',
@@ -165,6 +169,7 @@ async function staticAssets(root) {
     'audio.js',
     'ai-actions.js',
     'feedback.js',
+    'composition.js',
   ]) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
@@ -336,7 +341,8 @@ function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
 // are separated by a horizontal rule: without it the boundary between two posts is
 // indistinguishable from a section break inside one.
 const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^\n]*\n+/, '')
-const hasMarkdownTwin = (item) => !item.noindex && (item.kind === 'post' || item.layout === 'report')
+const hasMarkdownTwin = (item) =>
+  !item.noindex && (item.kind === 'post' || (item.layout === 'composition' && item.composition?.format === 'report'))
 
 // One document as Markdown: title heading, canonical URL, the authored TL;DR
 // bullets (frontmatter, so they are absent from `source`), then the body. The
@@ -447,10 +453,20 @@ export async function buildSite({
     // malformed `extra:`) renders without the offending field instead of
     // failing the release — write-time validation stays strict.
     const parsed = await renderMarkdown(revision.markdown, { lenient: true })
-    const result = materializeReportCharts(parsed, {
+    const charted = materializeReportCharts(parsed, {
       settings: site.settings || {},
       locale: parsed.meta.locale,
       emit: (svg, { scheme }) => emitHashedAsset(files, `report-chart-${scheme}.svg`, svg, 'image/svg+xml'),
+    })
+    const result = await materializeComposition(charted, {
+      settings: site.settings || {},
+      emit: (body, { scheme, format }) =>
+        emitHashedAsset(
+          files,
+          `composition-${scheme}.${format}`,
+          body,
+          format === 'svg' ? 'image/svg+xml' : 'image/png',
+        ),
     })
     for (const warning of result.warnings) {
       logger?.warn?.(warning, { siteId: site.id, itemId: revision.item_id, slug: result.meta.slug })
@@ -462,6 +478,11 @@ export async function buildSite({
       html: result.html,
       source: result.source,
       hasMermaid: result.hasMermaid,
+      semantic: result.semantic,
+      narrative: result.narrative,
+      composition: result.composition || result.meta.composition,
+      diagnostics: result.diagnostics,
+      accessible_text: result.accessible_text || null,
       // An authored reporting/content date is semantic and therefore wins over
       // the database activation time. Older documents without one must retain
       // their repository timestamps instead of having the parser's null
@@ -1011,6 +1032,7 @@ export async function buildSite({
               // The copy button only enhances a page that has a Markdown twin,
               // and only when the share row is not switched off per site.
               aiActions: Boolean(markdownUrl) && site.settings?.ai?.share_buttons !== false,
+              composition: item.layout === 'composition',
             },
           ),
         ),

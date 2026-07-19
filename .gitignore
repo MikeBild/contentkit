@@ -7,3 +7,7 @@ payload.tgz
 *.log
 .DS_Store
 .claude/
+
+# Reproducible visual-review output. Regenerate with `npm run review:patterns`.
+examples/pattern-gallery/
+examples/composition-patterns.json

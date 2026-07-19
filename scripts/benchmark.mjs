@@ -102,12 +102,16 @@ const reportRevisions = Array.from({ length: reportCount }, (_, index) => ({
   translation_key: `benchmark-report-${index}`,
   markdown: `---
 kind: page
-layout: report
+layout: composition
 title: Benchmark report ${index}
 locale: en
 slug: benchmark-report-${index}
 translationKey: benchmark-report-${index}
 summary: Reproducible report benchmark
+composition:
+  format: report
+  canvas: flow
+  intent: status
 ---
 ${reportTypes
   .map(

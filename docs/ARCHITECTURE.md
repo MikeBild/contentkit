@@ -55,16 +55,21 @@ element. The generated inline block rides each page while `site.css` itself
 stays shared and content-hashed — deliberately no template or layout overrides,
 which would be a plugin system through the back door.
 
-Reports follow the same static-release boundary. With explicit
-`layout: report`, the Markdown pipeline maps a fixed set of report directives
-onto sanitized semantic HTML and normalizes each chart's single GFM table into
-a bounded descriptor. During the release build, modular Apache ECharts SSR
-renders a light and dark SVG from that descriptor; Contentkit canonicalizes the
-renderer IDs and stores the SVG as a content-hashed release asset. The page
-receives only a `<picture>` and the authored table, never a chart runtime or an
-author-supplied visualization specification. The authenticated read API uses
-the same renderer but embeds the SVGs as data URLs because it has no release
-asset namespace.
+Visual compositions follow the same static-release boundary. With explicit
+`layout: composition`, Markdown directives become a versioned Semantic AST.
+Contentkit derives a Narrative, scores the repository-owned Pattern Registry,
+resolves constraints and responsive fallbacks into a Composition AST, and only
+then computes concrete layout and render trees. Release builds emit responsive
+semantic HTML plus content-hashed standalone light/dark SVG and PNG assets.
+Charts are bounded table-driven evidence nodes and retain their source table;
+they are not the composition architecture and no browser chart runtime is
+exposed to authors.
+
+Pattern Packages are strict Markdown plus YAML under `patterns/`. The loader
+accepts only known layout primitives and validates IDs, versions, semantic
+compatibility, fallback references and cycles. Pattern prose is available to
+humans and agents, while all executable layout and rendering code remains owned
+by Contentkit. Uploaded executable code is outside the trust boundary.
 
 ## Migration ownership
 
@@ -86,10 +91,10 @@ provision the database and login; they do not copy or execute migration files.
   expired key gets `401 unauthorized`; a valid key missing the required scope
   gets `403 insufficient_scope` — two distinct failure modes.
 - Markdown raw HTML is discarded; Mermaid uses strict mode.
-- Report directives have closed names and attributes, numeric table parsing and
-  build-time limits (24 charts, 200 rows and eight series per chart). SVG markup
-  comes only from Contentkit's server-side renderer; authored chart text is
-  escaped and the browser receives no chart JavaScript.
+- Composition directives have closed names and attributes. Authors cannot
+  supply geometry, CSS, executable code or renderer specifications. Markdown,
+  viewport and chart limits bound compile work; SVG markup comes only from the
+  Contentkit renderer and PNG uses a bundled font rather than host fonts.
 - Preview tokens are random, stored only as hashes, expiring and revocable.
 - Public writes pass Turnstile, honeypot, length and in-memory IP rate limits.
 - Contentkit signs exact webhook bytes using Standard Webhooks HMAC-SHA256; the
@@ -107,15 +112,23 @@ graph before any release object is uploaded. Missing parents, cycles, unknown
 versions/groups, and duplicate generated URLs fail the build without moving the
 active release pointer.
 
-### Static report rendering
+### Deterministic visual composition
 
-Report cards use the same controlled DOM and shadcn-style CSS variables as the
-rest of the site. `chart_1` through `chart_5` extend the existing theme-token
-allowlist and are resolved separately for light and dark SVG output. Fixed
-dimensions, locale-explicit number formatting, disabled animation and
-canonical renderer IDs make identical inputs byte-reproducible. Each chart
-keeps its source table in a semantic disclosure, supplies an accessible name,
-collapses responsively and expands the table for print/PDF output.
+Semantics, composition and theme are separate inputs. Patterns select visual
+structure; the existing token contract selects appearance. The neutral theme is
+the reference rendering, and every pattern owns a distinct visual grammar. A
+deterministic score orders pattern candidates by semantic fit, intent, item
+count, canvas and density with lexical tie-breaking. Responsive rules can select
+a declared structural fallback without changing source meaning. Fixed viewports,
+Contentkit's standard font stack with its bundled Inter primary face, stable
+source ordering and registry hashing make identical inputs byte-reproducible.
+Accessible text and source-order HTML remain available even when a visual
+representation cannot be consumed.
+
+The headless planning API exposes registry discovery, recommendation, validation
+and compilation independently from release publishing. Published reads expose
+the Semantic AST, Narrative, resolved Composition, diagnostics and authorized
+SVG/PNG representation links. See [VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md).
 
 ### Release-scoped reader access
 

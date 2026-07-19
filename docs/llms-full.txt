@@ -4,8 +4,9 @@ This single file contains the complete Contentkit documentation for LLM
 consumption. A concise index is in `docs/llms.txt`; the committed OpenAPI
 snapshot is in `docs/openapi.json`.
 
-Contentkit is an API-first Markdown mini-CMS for personal websites, blogs,
-project portfolios, documentation and visual reports. It stores CMS metadata and immutable content revisions in a
+Contentkit is an API-first headless Markdown mini-CMS with semantic visual
+composition and declarative information patterns. It publishes websites,
+documentation, reports and infographics, stores metadata and immutable content revisions in a
 dedicated PostgreSQL database, stores assets and release objects in private
 Supabase Storage, and serves clean static websites through atomically activated
 release pointers.
@@ -37,9 +38,10 @@ release changes the URL and returning visitors always fetch the current build
 instead of a stale cached copy. Rollback activates a known release pointer
 without re-rendering or copying files.
 
-Report charts are also static output: authors provide one Markdown table, and a
-release emits content-hashed light/dark SVGs plus the accessible source table.
-Published report pages load no chart JavaScript.
+Visual compositions are static output. Semantic Markdown becomes a versioned
+Semantic AST, Narrative and validated Composition before responsive HTML and
+standalone light/dark SVG/PNG are rendered. The declarative Pattern Registry is
+repository-owned; published pages load no composition or chart runtime.
 
 Contentkit is not a visual page builder and not a generic Supabase application.
 It is a focused, API-first Markdown-to-static-site CMS with explicit operational
@@ -199,7 +201,16 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | GET | `/v1/content/{item}/revisions` | `content:read` | List immutable revisions for one content item |
 | PUT | `/v1/content/{item}/revisions` | `content:write` | Create another immutable revision for an existing content item |
 | GET | `/v1/sites/{site}/published` | `content:read` | List published content as JSON (read API): `kind`, `locale`, exact `tag`, `updated_since`, keyset `limit`/`cursor` |
-| GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}` | `content:read` | Read one published document as JSON incl. `markdown` source and on-demand rendered `html` |
+| GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}` | `content:read` | Read one document including Markdown, HTML, Semantic AST, Narrative, Composition, diagnostics and representation links |
+| GET | `/v1/composition-patterns` | public | List/filter declarative Pattern Packages with a registry ETag |
+| GET | `/v1/composition-patterns/{pattern}` | public | Read one machine- and human-readable Pattern Package |
+| GET | `/v1/publishing-guides` | public | List/filter semantic report, diagram and code story-selection guides |
+| GET | `/v1/publishing-guides/{guide}` | public | Read one guide with question, story arc, evidence contract, rejection rules and examples |
+| POST | `/v1/sites/{site}/compositions/recommend` | `content:write` | Rank compatible patterns with scores, reasons and rejections |
+| POST | `/v1/sites/{site}/compositions/validate` | `content:write` | Validate semantics and resolve a requested pattern or safe fallback |
+| POST | `/v1/sites/{site}/compositions/compile` | `content:write` | Headlessly compile models, responsive HTML, SVG and/or PNG |
+| GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.svg` | `content:read` | Fetch a published standalone light/dark SVG |
+| GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.png` | `content:read` | Fetch a published deterministic light/dark PNG |
 | GET | `/v1/sites/{site}/search` | `content:read` | Full-text search over published content: required `q`, optional `locale`, `kind`, `limit`; ranked results with `<mark>` headlines |
 | POST | `/v1/sites/{site}/previews` | `release:write` | Build an expiring preview release and return a preview URL |
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
@@ -272,12 +283,16 @@ there is no anonymous delivery path, and static site delivery is unaffected.
   tiebreak. Pages default to 50 entries (values above 200 are clamped);
   `cursor` is opaque — pass `next_cursor` back verbatim.
 - The single document adds `markdown` (the immutable revision source verbatim)
-  and `html` (rendered on demand; HTML is never stored). An unknown,
+  and `html` (rendered on demand; HTML is never stored). Composition documents
+  also add `semantic`, `narrative`, `composition`, `diagnostics`,
+  `accessible_text` and authorized `representations`. An unknown,
   unpublished or mismatched kind/locale/slug answers
   `404 {"error":"published content not found"}`.
 - Caching: the list responds with a weak ETag over the site's publish epoch,
   the single document with a strong ETag over the revision source hash plus the
-  service version; both honour `If-None-Match` with `304`.
+  service version, theme and Pattern Registry hash; both honour `If-None-Match`
+  with `304`. Published `.svg` and `.png` use strong content ETags and accept
+  `scheme=light|dark`.
 
 ### Search
 
@@ -356,7 +371,7 @@ Important site fields:
 | `settings.eyebrow` | Small hero label |
 | `settings.hero_title` | Home hero headline |
 | `settings.hero_text` | Home hero copy |
-| `settings.accent` | Primary/accent color. Authored as a hex (`#2563eb`); the site builder converts it to the shadcn-style `H S% L%` triple that `--primary` expects (the theme consumes it via `hsl(var(--primary))`). An HSL triple (`221 83% 53%`) is also accepted verbatim. Injecting a raw hex into `--primary` unconverted breaks every `hsl(var(--primary))` rule (e.g. an invisible submit button). |
+| `settings.accent` | Primary/accent color. Authored as a hex (`#2563eb`); the site builder converts it to the structured `H S% L%` triple that `--primary` expects (the theme consumes it via `hsl(var(--primary))`). An HSL triple (`221 83% 53%`) is also accepted verbatim. Injecting a raw hex into `--primary` unconverted breaks every `hsl(var(--primary))` rule (e.g. an invisible submit button). |
 | `settings.theme_color` | `<meta name="theme-color">` |
 | `settings.profile_image` | Optional hero image/avatar URL |
 | `settings.profile_image_alt` | Alt text for profile image |
@@ -423,7 +438,8 @@ Supported YAML frontmatter:
 | Field | Required | Function |
 |---|---:|---|
 | `kind` | no | `page`, `post` or `project`; defaults to `page` |
-| `layout` | no | Controlled layout: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` or `report` |
+| `layout` | no | Controlled layout: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` or `composition`; `report` is a compatibility alias for report compositions |
+| `composition` | composition only | `{ format, canvas, intent, density?, preferredPattern? }`; geometry and executable code are forbidden |
 | `title` | yes | Title, navigation label and SEO title basis |
 | `locale` | yes | IETF-ish tag such as `de`, `en` or `en-us` |
 | `slug` | no | URL segment; generated from title when omitted |
@@ -480,51 +496,189 @@ The Markdown renderer supports:
 - math with KaTeX;
 - fenced code highlighting via Shiki using GitHub light/dark themes;
 - safe `:::note`, `:::tip` and `:::warning` directives rendered as callouts;
-- report-only visual directives described below;
+- semantic composition directives described below;
 - Mermaid code fences rendered client-side only on pages that contain Mermaid;
 - autolinked headings with stable heading IDs.
 
 Raw HTML is sanitized. Script URLs and arbitrary unsafe markup are not passed
 through. Mermaid runs with strict initialization in the browser.
 
-### Report authoring contract
+### Visual composition authoring contract
 
-Set `layout: report` to compose a responsive report from the controlled
-`report-grid`, `report-card`, `metric`, `badge`, `progress` and `chart`
-directives. Report directives are rejected outside that layout. Unknown report
-directives or attributes fail the write with 422.
+Set `layout: composition` and a `composition` map with `format:
+infographic|report`, `canvas: portrait|landscape|square|flow`, `intent:
+explain|compare|sequence|status|explore`, optional `density:
+compact|balanced|spacious` and optional `preferredPattern`. Semantic directives
+are `hero`, `metric`, `process`, `comparison` with nested `side`, `timeline`,
+`hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`,
+`faq`/`question`, `code-example`/`variant`, `pricing`/`plan`,
+`gallery`/`figure`, `data-table`, `dashboard-section`, and
+`application-shell`/`region`.
+Roles are `primary`, `supporting` or `evidence`. A composition needs at least one
+semantic directive. Unknown names or attributes fail the write with 422.
+
+The pipeline is Markdown → Semantic AST → Narrative → Composition → Layout →
+Render Tree → responsive HTML/standalone SVG/PNG. Semantic meaning, visual
+structure and structured theme tokens stay separate. Authors and agents cannot
+provide coordinates, CSS, executable code or renderer specifications.
+
+The neutral theme is the reference rendering. Each pattern must keep its own
+visual grammar instead of degrading to a generic card grid. Narrow viewports may
+resolve to a declared structural fallback. Export text stays at least 14 px up
+to 800 px, 15 px up to 1100 px, and 16 px on wider canvases; meaningful connectors remain
+visible; every SVG has a title, description and source-order text equivalent.
+`npm run validate:visuals` recompiles 972 six-width light/dark SVG/PNG cases,
+verifies 1,097 semantic HTML cases and 12 complete gallery-page cases, and
+measures each standalone SVG in Chromium. Actual clipping, overlap, authored
+truncation, container overflow, separator crossings, navigation defects and
+missing capability output fail validation.
+
+The implemented semantic contracts for dashboards, application shells,
+pricing, galleries, stats, FAQ, code examples and data tables are documented in
+`docs/INFORMATION_BLOCKS.md`. Authored and generated review artifacts live under
+`examples/`; trusted runtime Pattern Packages remain under `patterns/`.
+
+The 81 repository-owned Markdown+YAML Pattern Packages are:
+`sidebar-shell`, `split-pane-shell`, `topbar-shell`, `code-walkthrough`,
+`file-code`, `tabbed-code`,
+`editorial-poster`, `stratified-story`, `bento-summary`, `grouped-dashboard`,
+`table-dashboard`, `executive-brief`, `magazine-story`, `hero-banner`,
+`metric-card`, `metric-wall`, `scorecard`, `kpi-strip`, `progress-rings`,
+`bullet-scoreboard`, `connected-process`, `vertical-journey`,
+`circular-lifecycle`, `funnel`, `chevron-process`, `swimlane-process`,
+`split-comparison`, `before-after`, `comparison-matrix`, `feature-table`,
+`spectrum-comparison`, `horizontal-timeline`, `vertical-timeline`, `roadmap`,
+`milestone-roadmap`, `phase-timeline`, `tree-hierarchy`, `layer-stack`,
+`pyramid`, `hub-and-spoke`, `concentric-layers`, `architecture-map`,
+`detailed-chart`, `ranked-bars`, `lollipop-chart`, `slope-chart`,
+`small-multiples`, `range-dot-plot`, `dumbbell-change`, `diverging-bars`,
+`likert-distribution`, `scatter-correlation`, `distribution-boxplot`,
+`data-heatmap`, `waterfall`, `treemap`, `sankey-flow`, `uncertainty-band`,
+`calendar-heatmap`, `coordinate-map`, `tile-choropleth` and
+`beeswarm-distribution`, `analytics-dashboard`, `dashboard-detail`,
+`operations-dashboard`, `faq-categorized`, `faq-columns`, `faq-list`,
+`captioned-gallery`, `editorial-gallery`, `gallery-grid`, `pricing-addons`,
+`pricing-cards`, `pricing-comparison`, `pricing-spotlight`, `featured-stat`,
+`stat-timeline`, `stats-inline`, `grouped-data-table`, `record-cards` and
+`responsive-data-table`. Each declares semantic types, accepted data shapes,
+item limits, conveyed/invalid
+meanings, canvas/density fit, responsive rules, fallbacks, layout primitive and
+accessible text equivalent. It also exposes slots, output capabilities,
+dependencies, character/word/item/series/category budgets, typed field and unit
+semantics, temporal formats, positive Markdown spec examples, counterexamples,
+agent hints, a narrative contract and a static fallback. `narrative` contains
+the question answered, communication goal, ordered story arc, reader takeaway,
+and decision support. Chart narratives distinguish ranking, paired change,
+distribution, uncertainty, correlation, flow, geography, matrix intensity,
+part-to-whole, and cumulative contribution rather than recommending a generic
+chart for every quantitative story.
+
+`GET /v1/publishing-guides` adds declarative story-selection guides for
+decision, status and analytical reports; process, sequence, architecture,
+state and data-model diagrams; and reproducible code walkthroughs. Each guide
+states `use_when`, `reject_when`, required and optional input, semantic
+constraints, compatible patterns and examples. An agent selects the question
+and story before selecting a technical authoring syntax.
+
+Pattern guidance is complemented by instance-level intent. A chart directive
+may author `question`, `insight`, `action` and `limitation`; its normalized
+Semantic AST node always contains a narrative question, communication goal and
+intended insight. Contentkit classifies Mermaid fences as process, sequence,
+state, data-model, architecture or generic technical evidence and links each
+node to its publishing guide. Quoted fence metadata accepts `title`, `question`,
+`insight`, `action` and `limitation`. These fields explain the story to humans
+and agents without changing the technical diagram source or its geometry.
+At document level, `composition` may author `audience`, `question`, `goal`,
+`thesis`, `conclusion`, `action`, a bounded `limitations` list and
+`disclosure`. The resulting Narrative Plan preserves these fields together with
+primary/supporting/evidence stages, ordered nodes and support relationships.
+
+`rendering_strategy.primary_output` is a recommendation, not an output
+restriction. Document and interface patterns normally recommend semantic HTML
+and CSS. Patterns whose meaning depends on spatial geometry, connectors, axes, or
+graphical relationships normally recommend SVG. `alternatives` lists other
+supported outputs and `png_role` identifies PNG as a deterministic derived
+static export. A caller may explicitly request any supported subset of HTML,
+SVG, PNG, and model output from the compile endpoint.
+
+The generated review gallery currently exposes SVG and PNG only. SVG is the
+last fully validated visual-composition baseline and PNG is rasterized from
+those exact bytes. Semantic HTML remains a compile output, but must not be
+described as pixel-equivalent to the resolved visual composition until the
+renderer-neutral HTML layout passes the same cross-output screenshot gate.
+
+For agent authoring, treat `content_budget` as a hard preflight contract. It
+contains `max_items`, `max_text_characters`, `max_words_per_item`,
+`max_code_lines`, `max_table_rows`, `max_media`, `max_columns`,
+`max_title_characters`, `max_summary_characters`, `max_label_characters`,
+`max_body_characters`, `max_series`, and `max_categories`. Do not fill a pattern
+and hope that layout will repair excessive content.
+
+`input_contract.fields` identifies required semantic roles and accepted value
+kinds. Its unit contract distinguishes count, percentage, percentage-point,
+currency, duration, rate, data-size, distance, area, volume, temperature,
+angle, and custom values. Currency uses an ISO 4217 code; durations require a
+numeric value and explicit unit; comparable series keep compatible units.
+Temporal values use ISO 8601 dates or timezone-aware datetimes, 24-hour clock
+time, or a numeric duration with unit. Sortable values remain separate from
+localized labels. Supported granularities are minute, hour, day, week, month,
+quarter, and year.
+
+Use `spec_examples` as specification by example: start from a positive Markdown
+example with its `expected_pattern`, adapt only the semantic content, then check
+the counterexamples before selection. Call recommendation and validation even
+when the example appears to fit; examples explain the contract but do not
+override eligibility or responsive fallback.
+
+AI agents first fetch `GET /v1/composition-patterns`, call
+`/v1/sites/{site}/compositions/recommend`, select only an eligible candidate,
+call `/validate`, and finally `/compile`. They retain returned scores, reasons,
+rejections and fallback diagnostics rather than inventing visual fit. Compile
+supports `outputs: [model, html, svg, png]`, light/dark scheme and a bounded
+viewport (320–4096 per side, maximum 16 megapixels; Markdown maximum 256 KiB).
+Identical source, registry, viewport and theme inputs reproduce bytes.
 
 Optional `reportCadence` is restricted to `hourly`, `daily`, `weekly`,
-`monthly`, `quarterly` or `yearly` and requires `layout: report`. Under the
-`product` preset, cadence-tagged reports automatically produce a localized
-current-report catalog and a bounded twelve-item recent history. Sorting uses
-the semantic frontmatter `date`; no product name, title or slug is interpreted.
-
-`report-grid` accepts `columns="1..4"`. Cards require `title` and accept
-`span="1..4"`. Metrics require `label` and `value`, and optionally accept
-`trend`, `tone` and `span`. Badges contain visible inline text. Progress requires
-`label` and numeric `value`, optionally `max` and `span`; value must be in the
-zero-to-max range. Tones are `neutral`, `positive`, `warning` or `negative`.
+`monthly`, `quarterly` or `yearly` and requires
+`composition.format: report`. Reports use `group`, `card`, `metric`, `badge`,
+`progress` and `chart`; group accepts 1–4 columns and card accepts a 1–4 span.
+Under the `product` preset, cadence-tagged reports produce a localized current
+catalog and bounded history.
 
 A chart contains exactly one GFM table. Its first column is the category and all
-remaining cells are finite numbers; an em dash (`—`) represents a missing
-point. Required attributes are `type`, `title` and `description`. `type` is
+remaining cells are finite numbers for the default `series` shape; an em dash
+(`—`) represents a missing point. Required attributes are `type`, `title` and
+`description`. `type` is
 `bar`, `line`, `area` or `donut`; optional attributes are `unit`, `span`, bar-only
 `orientation="vertical|horizontal"`, and bar/area-only
 `stacked="true|false"`. Donuts require exactly one value series. Limits are 24
 charts per report, 200 data rows per chart and eight value series per chart.
 
-Apache ECharts is an internal SSR implementation detail rather than an
-authoring surface. Every release creates deterministic content-hashed light and
-dark SVG assets, an accessible `<picture>`, caption and collapsible source
-table; no client chart runtime is shipped. The table expands for print/PDF. The
-authenticated document read API uses the same renderer with SVG data URLs.
-Indexable reports receive `/{locale}/{slug}/index.md`, and their authored source
+Optional `shape` declares a typed information form rather than renderer syntax:
+`range`, `change`, `diverging`, `likert`, `xy`, `boxplot`, `matrix`,
+`waterfall`, `hierarchy`, `flow`, `uncertainty`, `calendar`, `geo-point`,
+`geo-region` or `samples`. Each shape has an exact table-column contract and
+validated ordering or bounds. The Semantic AST stores it as `data_shape`.
+Pattern Packages expose compatible values through `accepts.data_shapes`;
+recommendation adds `data.<shape>` for a match and `semantic.data_shape` for a
+rejection. Geographic points require real latitude/longitude. Region tiles are
+explicitly equal-area tiles, not invented administrative boundaries.
+
+Charts are evidence nodes, not the composition architecture. Every release
+creates deterministic light/dark composition SVG/PNG and content-hashed chart SVGs with
+accessible text and source tables; no client runtime ships. Bars retain a zero
+baseline, line axes use the observed range, short series show direct values,
+multiple lines also differ by stroke pattern, and donut labels include category,
+value and percentage. Typed data shapes include a structurally reflowed mobile
+SVG in report HTML rather than shrinking desktop geometry. Indexable reports
+receive `/{locale}/{slug}/index.md`, and their authored source
 is retained in the site's `llms-full.txt`. When a report contains at least two
 level-two headings, Contentkit derives a responsive localized section
 navigation from them; level-three headings remain detail-only. The navigation
-uses ordinary anchors, no JavaScript, and is omitted from print. See `docs/REPORTS.md` and
-`examples/reports/quarterly.en.md` for the complete guide and example.
+uses ordinary anchors, no JavaScript, and is omitted from print. See
+`docs/VISUAL_COMPOSITIONS.md`, `docs/REPORTS.md`, the 972-case six-width
+light/dark gallery under `examples/pattern-gallery/`, its machine-readable
+validation reports and examples under `examples/compositions/`.
 
 ---
 
@@ -1283,8 +1437,8 @@ Archived documentation remains reachable but is
 
 A page can override the preset default with `layout: standard`, `layout: docs`,
 `layout: wiki`, `layout: knowledge`, `layout: landing`, `layout: changelog` or
-`layout: report`.
-Report pages may additionally declare
+`layout: composition`.
+Report compositions may additionally declare
 `reportCadence: hourly|daily|weekly|monthly|quarterly|yearly`.
 Hierarchical layouts accept `docKey`, `parent`, `navTitle` and `navOrder`;
 documentation also requires `docsVersion`. Changelog pages accept `category`,
@@ -1293,10 +1447,10 @@ documentation also requires `docsVersion`. Changelog pages accept `category`,
 `steps` and `cta` directives. Invalid versions, missing parents, cycles,
 duplicate keys and duplicate routes fail the build before activation.
 
-Report pages use the normal page route and the closed visual directive contract
-from section 7. Table-driven charts are rendered to static light/dark SVGs at
-build time, use `chart_1` through `chart_5`, retain their accessible source data
-and add no chart JavaScript to the page. Two or more level-two headings become
+Composition pages use the normal page route and the closed semantic directive
+contract from section 7. They render HTML and standalone light/dark SVG/PNG;
+table-driven charts retain their accessible source data and add no chart
+JavaScript. Two or more report level-two headings become
 a responsive localized section navigation; level-three headings remain out of
 that navigation. A `product` preset containing reports also derives a localized
 period catalog: one newest report per cadence plus a bounded recent history,
@@ -1308,12 +1462,13 @@ Generated routes:
 - wiki: `/{locale}/wiki/{hierarchy}/`;
 - knowledge base: `/{locale}/help/{hierarchy}/`;
 - changelog: `/{locale}/changelog/{slug}/`;
-- landing, report and standard pages: `/{locale}/{slug}/`.
+- landing, composition and standard pages: `/{locale}/{slug}/`.
 
 See `docs/TEMPLATES.md` and the real documents under `examples/docs`,
 `examples/wiki`, `examples/knowledge`, `examples/landing` and
-`examples/changelog`; the complete report guide and example are
-`docs/REPORTS.md` and `examples/reports/quarterly.en.md`.
+`examples/changelog`; visual composition architecture and generated examples
+are in `docs/VISUAL_COMPOSITIONS.md`, `examples/pattern-gallery/` and
+`examples/compositions/`. The report guide is `docs/REPORTS.md`.
 
 ### Reader authorization model
 

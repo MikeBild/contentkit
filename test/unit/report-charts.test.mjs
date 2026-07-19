@@ -17,12 +17,14 @@ const bar = {
   ],
 }
 
-test('ECharts report SVGs are deterministic, static and accessible', () => {
+test('report SVGs are deterministic, static and accessible', () => {
   const first = renderReportChartSvg(bar, { locale: 'en', scheme: 'light' })
   const second = renderReportChartSvg(bar, { locale: 'en', scheme: 'light' })
   assert.equal(first.svg, second.svg)
-  assert.match(first.svg, /^<svg[^>]+width="800"[^>]+height="360"/)
-  assert.match(first.svg, /aria-label="Revenue by month"/)
+  assert.match(first.svg, /^<svg[^>]+width="960"[^>]+height="480"/)
+  assert.match(first.svg, /aria-labelledby="chart-title chart-description"/)
+  assert.match(first.svg, /<title id="chart-title">Revenue by month<\/title>/)
+  assert.match(first.svg, /<desc id="chart-description">/)
   assert.doesNotMatch(first.svg, /<script|javascript:|(?:href|src)="https?:\/\//i)
 })
 
@@ -39,7 +41,7 @@ test('authored labels and descriptions stay text inside the generated SVG', () =
   assert.match(rendered.svg, /&lt;script&gt;/)
 })
 
-test('chart themes consume allowlisted light and dark shadcn-style tokens', () => {
+test('chart themes consume allowlisted light and dark design tokens', () => {
   const settings = {
     theme: {
       tokens: {
@@ -56,6 +58,38 @@ test('chart themes consume allowlisted light and dark shadcn-style tokens', () =
 test('all-missing data renders a localized empty SVG state', () => {
   const empty = renderReportChartSvg({ ...bar, rows: [['Jan', null]] }, { locale: 'de' })
   assert.match(empty.svg, />Keine Daten<\/text>/)
+})
+
+test('specialized data shapes use their semantic SVG geometry in report HTML', () => {
+  const chart = {
+    ...bar,
+    type: 'line',
+    data_shape: 'uncertainty',
+    headers: ['Quarter', 'Lower', 'Estimate', 'Upper'],
+    rows: [
+      ['Q1', 10, 14, 19],
+      ['Q2', 12, 17, 23],
+    ],
+  }
+  const rendered = renderReportChartSvg(chart)
+  assert.match(rendered.svg, /<polygon points=/)
+  assert.match(rendered.svg, /<polyline points=/)
+  assert.match(
+    rendered.svg,
+    /font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif/,
+  )
+  assert.doesNotMatch(rendered.svg, /echarts|ck-chart-/)
+
+  const html = materializeReportCharts({
+    meta: { locale: 'en' },
+    charts: [chart],
+    html: '<figure><div class="report-chart-visual" data-report-chart="0"></div></figure>',
+  }).html
+  assert.match(html, /media="\(max-width: 760px\)"/)
+  assert.match(html, /width="960" height="480"/)
+  const mobile = html.match(/media="\(max-width: 760px\)" srcset="data:image\/svg\+xml;base64,([^"]+)/)?.[1]
+  assert.ok(mobile)
+  assert.match(Buffer.from(mobile, 'base64').toString(), /viewBox="0 0 390 620"/)
 })
 
 test('materialization replaces only trusted placeholders with light and dark images', () => {

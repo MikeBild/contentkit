@@ -7,6 +7,7 @@ import { createRepository } from '../../src/repository.mjs'
 import { releaseContentType } from '../../src/routes.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
+import { contentkitFontFamily } from '../../src/typography.mjs'
 
 test('clientIp trusts only the rightmost X-Forwarded-For hop behind a proxy', () => {
   const req = { headers: { 'x-forwarded-for': 'spoofed, 9.9.9.9, 1.2.3.4' }, socket: { remoteAddress: '10.0.0.1' } }
@@ -708,6 +709,7 @@ test('site reader login sets a session cookie and validates the return path', as
     assert.equal(form.headers.get('x-frame-options'), 'DENY')
     assert.match(form.headers.get('content-security-policy'), /form-action 'self'/)
     const html = await form.text()
+    assert.match(html, new RegExp(`font:16px ${contentkitFontFamily.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
     const csrf = html.match(/name="csrf" value="([^"]+)"/)[1]
     const csrfCookie = form.headers.get('set-cookie').split(';')[0]
     const signedIn = await request('/_contentkit/login', {
@@ -1480,6 +1482,110 @@ test('feed.xml is served as RSS while other xml stays application/xml', () => {
   assert.equal(releaseContentType('assets/logo.woff2'), undefined)
 })
 
+describe('visual composition APIs', () => {
+  const markdown = `---
+kind: page
+layout: composition
+title: Tool call
+locale: en
+slug: tool-call
+composition:
+  format: infographic
+  canvas: landscape
+  intent: sequence
+  preferredPattern: connected-process
+---
+:::process{title="Tool call" role="primary"}
+- Client
+- Server
+- Tool
+:::`
+
+  test('the public Pattern Registry is filterable and cacheable', async () => {
+    await withApp({}, async (request) => {
+      const response = await request('/v1/composition-patterns?category=process&nodeType=process')
+      assert.equal(response.status, 200)
+      const etag = response.headers.get('etag')
+      const body = await response.json()
+      assert.ok(body.patterns.length >= 4)
+      assert.ok(body.patterns.every((pattern) => pattern.category === 'process'))
+      assert.ok(body.patterns.every((pattern) => pattern.accepts.node_types.includes('process')))
+
+      const staticPatterns = await request('/v1/composition-patterns?capability=svg')
+      assert.equal(staticPatterns.status, 200)
+      assert.ok((await staticPatterns.json()).patterns.every((pattern) => pattern.capabilities.outputs.includes('svg')))
+
+      const cached = await request('/v1/composition-patterns', { headers: { 'if-none-match': etag } })
+      assert.equal(cached.status, 304)
+      assert.equal(await cached.text(), '')
+      assert.equal((await request('/v1/composition-patterns/not-a-pattern')).status, 404)
+    })
+  })
+
+  test('publishing guides expose semantic story selection to humans and agents', async () => {
+    await withApp({}, async (request) => {
+      const response = await request('/v1/publishing-guides?kind=diagram')
+      assert.equal(response.status, 200)
+      const etag = response.headers.get('etag')
+      const body = await response.json()
+      assert.ok(body.guides.length >= 5)
+      assert.ok(body.guides.every((guide) => guide.kind === 'diagram'))
+      assert.ok(body.guides.every((guide) => guide.narrative.question && guide.selection.use_when.length))
+      const guide = await request('/v1/publishing-guides/decision-report')
+      assert.equal(guide.status, 200)
+      assert.equal((await guide.json()).kind, 'report')
+      const cached = await request('/v1/publishing-guides', { headers: { 'if-none-match': etag } })
+      assert.equal(cached.status, 304)
+      assert.equal((await request('/v1/publishing-guides/not-a-guide')).status, 404)
+    })
+  })
+
+  test('site-scoped agents can recommend, validate and compile', async () => {
+    const repo = {
+      async getSite(slug) {
+        return slug === 'my-site' ? { id: 'site-1', slug, settings: {} } : null
+      },
+    }
+    await withApp({ repo, auth: scopedAuth(['content:write']) }, async (request) => {
+      const headers = { 'x-api-key': 'valid', 'content-type': 'application/json' }
+      const recommended = await request('/v1/sites/my-site/compositions/recommend', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown, viewport: { width: 1200, height: 800 } }),
+      })
+      assert.equal(recommended.status, 200)
+      assert.ok((await recommended.json()).recommendations.some((entry) => entry.pattern === 'connected-process'))
+
+      const validated = await request('/v1/sites/my-site/compositions/validate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown, pattern: 'connected-process' }),
+      })
+      assert.equal(validated.status, 200)
+      assert.equal((await validated.json()).valid, true)
+
+      const compiled = await request('/v1/sites/my-site/compositions/compile', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          markdown,
+          outputs: ['svg', 'print'],
+          scheme: 'light',
+          viewport: { width: 1200, height: 800 },
+          container: { width: 720, height: 680 },
+          capabilities: ['svg'],
+        }),
+      })
+      assert.equal(compiled.status, 200)
+      const compileBody = await compiled.json()
+      assert.match(compileBody.renders.svg, /^<svg/)
+      assert.match(compileBody.renders.print_html, /composition-print/)
+      assert.equal(compileBody.layout.responsive.container.width, 720)
+      assert.equal(compileBody.render_tree.type, 'svg')
+    })
+  })
+})
+
 describe('published read API', () => {
   const PUBLISHED_DOC = {
     item_id: 'item-1',
@@ -1497,6 +1603,15 @@ describe('published read API', () => {
     markdown: '# Hello',
     html: '<h1>Hello</h1>',
     source_sha256: 'abc123',
+    _composition_assets: {
+      light: { svg: '<svg/>', png: Buffer.from('png'), svg_sha256: 'svg-hash', png_sha256: 'png-hash' },
+      dark: {
+        svg: '<svg data-dark="true"/>',
+        png: Buffer.from('dark-png'),
+        svg_sha256: 'dark-svg',
+        png_sha256: 'dark-png',
+      },
+    },
   }
 
   function publishedApiRepo(calls = []) {
@@ -1569,23 +1684,49 @@ describe('published read API', () => {
       })
       assert.equal(response.status, 200)
       // config.version is 'test' in withApp.
-      assert.equal(response.headers.get('etag'), '"abc123:test"')
+      const etag = response.headers.get('etag')
+      assert.match(etag, /^"abc123:test:[0-9a-f]{16}:[0-9a-f]{16}"$/)
       const body = await response.json()
       assert.equal(body.markdown, '# Hello')
       assert.equal(body.html, '<h1>Hello</h1>')
       assert.equal(body.source_sha256, undefined, 'the ETag ingredient must not leak into the body')
 
       const cached = await request('/v1/sites/my-site/published/post/de/hello', {
-        headers: { 'x-api-key': 'valid', 'if-none-match': '"abc123:test"' },
+        headers: { 'x-api-key': 'valid', 'if-none-match': etag },
       })
       assert.equal(cached.status, 304)
-      assert.equal(cached.headers.get('etag'), '"abc123:test"')
+      assert.equal(cached.headers.get('etag'), etag)
 
       const missing = await request('/v1/sites/my-site/published/post/de/nope', {
         headers: { 'x-api-key': 'valid' },
       })
       assert.equal(missing.status, 404)
       assert.deepEqual(await missing.json(), { error: 'published content not found' })
+    })
+  })
+
+  test('published composition representations are binary, scheme-aware and cacheable', async () => {
+    await withApp({ repo: publishedApiRepo(), auth: scopedAuth(['content:read']) }, async (request) => {
+      const response = await request('/v1/sites/my-site/published/post/de/hello/composition.svg?scheme=dark', {
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('content-type'), 'image/svg+xml')
+      assert.equal(await response.text(), '<svg data-dark="true"/>')
+      assert.equal(response.headers.get('etag'), '"dark-svg"')
+
+      const cached = await request('/v1/sites/my-site/published/post/de/hello/composition.svg?scheme=dark', {
+        headers: { 'x-api-key': 'valid', 'if-none-match': '"dark-svg"' },
+      })
+      assert.equal(cached.status, 304)
+      assert.equal(
+        (
+          await request('/v1/sites/my-site/published/post/de/hello/composition.png?scheme=sepia', {
+            headers: { 'x-api-key': 'valid' },
+          })
+        ).status,
+        422,
+      )
     })
   })
 

@@ -46,15 +46,18 @@ test('every documented access operation has a routable method', () => {
   }
 })
 
-test('the OpenAPI authoring contract documents report cadence, charts and their theme tokens', () => {
+test('the OpenAPI authoring contract documents semantic compositions, charts and theme tokens', () => {
   const serialized = JSON.stringify(spec)
   for (const term of [
+    '`composition`',
+    '`infographic`',
     '`report`',
     '`reportCadence`',
     '`hourly`',
     '`daily`',
     '`yearly`',
-    '`report-grid`',
+    '`group`',
+    '`process`',
     '`chart`',
     '`bar`',
     '`line`',
@@ -64,5 +67,17 @@ test('the OpenAPI authoring contract documents report cadence, charts and their 
   ]) {
     assert.match(serialized, new RegExp(term), term)
   }
-  assert.match(serialized, /static light\/dark SVG assets without client JavaScript/)
+  assert.match(serialized, /standalone light\/dark SVG and PNG/)
+  const pattern = spec.components.schemas.PatternDescriptor
+  assert.ok(pattern.required.includes('rendering_strategy'))
+  assert.ok(pattern.required.includes('narrative'))
+  assert.ok(pattern.required.includes('input_contract'))
+  assert.ok(pattern.required.includes('spec_examples'))
+  assert.deepEqual(pattern.properties.rendering_strategy.properties.primary_output.enum, ['html', 'svg'])
+  assert.equal(pattern.properties.rendering_strategy.properties.png_role.const, 'derived-static-export')
+  assert.ok(pattern.properties.content_budget.required.includes('max_title_characters'))
+  assert.ok(pattern.properties.content_budget.required.includes('max_series'))
+  assert.ok(spec.components.schemas.PublishingGuide)
+  assert.ok(spec.paths['/v1/publishing-guides'])
+  assert.ok(spec.paths['/v1/publishing-guides/{guide}'])
 })

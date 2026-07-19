@@ -280,13 +280,21 @@ test('consent.js is emitted as a content-hashed asset and no per-site init file 
   assert.ok(!result.files.has('assets/analytics.js'))
 })
 
-test('first-party assets are content-hashed while katex fonts keep stable URLs', async () => {
+test('first-party assets and Inter are content-hashed while katex fonts keep stable URLs', async () => {
   const result = await build()
   const keys = [...result.files.keys()]
   assert.ok(
     keys.some((k) => /^assets\/site-[0-9a-f]{10}\.css$/.test(k)),
     'hashed site.css missing',
   )
+  const interKey = keys.find((key) => /^assets\/inter-latin-variable-[0-9a-f]{10}\.woff2$/.test(key))
+  assert.ok(interKey, 'hashed Inter font missing')
+  assert.equal(result.files.get(interKey).contentType, 'font/woff2')
+  assert.equal(result.files.get(interKey).cacheControl, 'public,max-age=31536000,immutable')
+  const siteCssKey = keys.find((key) => /^assets\/site-[0-9a-f]{10}\.css$/.test(key))
+  const siteCss = result.files.get(siteCssKey).body.toString()
+  assert.match(siteCss, new RegExp(`@font-face\\{[^}]+src:url\\(\\/${interKey}`))
+  assert.match(siteCss, /font-family:\s*Inter,\s*ui-sans-serif,\s*system-ui/)
   assert.ok(
     keys.some((k) => /^assets\/katex\/[^/]+\.woff2$/.test(k)),
     'katex fonts missing',
@@ -1117,7 +1125,7 @@ test('a fully private product home renders a cadence catalog for only same-grant
     // node-postgres returns timestamptz columns as Date instances while
     // authored frontmatter dates are normalized strings.
     published_at: new Date(publishedAt),
-    markdown: `---\nkind: page\nlayout: report\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n## Facts\n\nReport ${hour}.`,
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Facts\n\nReport ${hour}.\n:::`,
   })
   const result = await build({
     site: { ...site, settings: { presentation: { preset: 'product' } } },
@@ -1192,15 +1200,19 @@ test('wiki, knowledge, landing and changelog layouts receive controlled routes',
     assert.ok(result.files.has(path), path)
 })
 
-test('report pages emit static themed SVG assets while preserving authored Markdown', async () => {
+test('report compositions emit static themed SVG and PNG assets while preserving authored Markdown', async () => {
   const markdown = `---
 kind: page
-layout: report
+layout: composition
 title: Quarterly report
 summary: Auditable business snapshot
 locale: en
 slug: quarterly-report
 translationKey: quarterly-report
+composition:
+  format: report
+  canvas: flow
+  intent: status
 ---
 # Quarterly report
 
@@ -1241,7 +1253,17 @@ Revenue is above the January baseline.`
     assert.equal(result.files.get(path).contentType, 'image/svg+xml')
     assert.match(result.files.get(path).body.toString(), /^<svg role="img"/)
   }
-  assert.match(page, /class="report-page"/)
+  assert.equal(
+    [...result.files.keys()].filter((path) => /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path))
+      .length,
+    2,
+  )
+  assert.equal(
+    [...result.files.keys()].filter((path) => /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.png$/.test(path))
+      .length,
+    2,
+  )
+  assert.match(page, /class="composition-page"/)
   assert.match(page, /<picture class="report-chart-picture">/)
   assert.match(page, /prefers-color-scheme: dark/)
   assert.match(page, /<details class="report-chart-data">/)

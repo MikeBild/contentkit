@@ -45,8 +45,10 @@ the sitemap. A page can opt out of its preset with `layout: standard`.
 
 The following fields are validated on upload:
 
-- `layout`: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, or `report`.
-- `reportCadence`: optional report-only frequency: `hourly`, `daily`, `weekly`,
+- `layout`: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, or
+  `composition`; `report` is a compatibility alias for a report composition.
+- `composition`: visual contract with `format`, `canvas`, `intent`, `density` and optional `preferredPattern`.
+- `reportCadence`: optional when `composition.format` is `report`: `hourly`, `daily`, `weekly`,
   `monthly`, `quarterly`, or `yearly`.
 - `docKey`: stable page identity within a documentation version or hierarchy.
 - `docsVersion`: an ID declared in `settings.presentation.docs.versions`.
@@ -68,22 +70,22 @@ release before activation.
 - Wiki: `/{locale}/wiki/{hierarchy}/`
 - Knowledge base: `/{locale}/help/{hierarchy}/`
 - Changelog: `/{locale}/changelog/{slug}/`
-- Landing, report and standard pages: `/{locale}/{slug}/`
+- Landing, composition and standard pages: `/{locale}/{slug}/`
 
 Docs, wiki, and knowledge pages render a hierarchy sidebar, breadcrumbs, and a
 heading table of contents. Landing pages can use the sanitized `hero`,
 `features`, `steps`, and `cta` container directives. These directives add only
 Contentkit-owned elements and classes; they cannot inject scripts or raw HTML.
 
-Reports use explicit `layout: report` and the sanitized `report-grid`,
-`report-card`, `metric`, `badge`, `progress` and `chart` directives. Charts take
-one ordinary Markdown table and become content-hashed light/dark SVG assets at
-release build time; the table remains as accessible source data and no chart
-JavaScript ships to readers. Two or more level-two headings additionally become
-a responsive local report navigation; level-three headings remain detail-only.
-See [REPORTS.md](REPORTS.md) for the complete authoring and validation contract.
+Visual publications use explicit `layout: composition` and semantic `hero`,
+`metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`,
+`chart`, `progress`, `badge`, `card` and `group` directives. Contentkit resolves
+these through its declarative Pattern Registry and emits responsive HTML plus
+standalone light/dark SVG and PNG. See
+[VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md) for all 81 patterns and the
+AI-agent contract; [REPORTS.md](REPORTS.md) covers report-specific authoring.
 
-When the `product` preset contains report pages, its home page becomes a report
+When the `product` preset contains `composition.format: report` pages, its home page becomes a report
 catalog automatically. `reportCadence` selects the newest report for each period
 and creates localized period navigation; older reports remain in a bounded recent
 history. Reports without the optional field remain compatible and appear as
@@ -104,7 +106,9 @@ fixtures:
 - `examples/changelog/2-0-0.en.md`
 - `examples/reports/quarterly.en.md`
 
-The smoke suite builds all of them together. The compiled-binary E2E suite
+The generated review corpus also contains all 81 patterns under
+`examples/compositions/` and `examples/pattern-gallery/`. The smoke suite builds the
+production-shaped documents together. The compiled-binary E2E suite
 uploads and publishes the three documentation files and the quarterly report,
 signs in as a real reader, and verifies public/protected delivery plus the
 static report SVG contract.
