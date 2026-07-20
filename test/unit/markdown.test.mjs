@@ -313,6 +313,22 @@ test('reportCadence is a bounded report-only catalog field', async () => {
   )
 })
 
+test('reportSeries is a bounded report-only catalog field exposed as report_series', async () => {
+  const { meta } = await renderMarkdown(reportDoc(':::hero\n## Status\n\nStable.\n:::', 'reportSeries: operations\n'))
+  assert.equal(meta.report_series, 'operations')
+  await assert.rejects(
+    () => renderMarkdown(reportDoc(':::hero\n## Status\n:::', 'reportSeries: Operations Team\n')),
+    /reportSeries must contain lowercase letters, numbers and hyphens/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        '---\nkind: page\nlayout: landing\ntitle: Product\nlocale: en\nslug: product\nreportSeries: operations\n---\nBody.',
+      ),
+    /reportSeries requires composition\.format: report/,
+  )
+})
+
 test('legacy report authoring normalizes into the semantic composition pipeline', async () => {
   const rendered = await renderMarkdown(`---
 kind: page

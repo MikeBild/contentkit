@@ -25,6 +25,12 @@ const words = {
     reportNextStep: 'Nächster Schritt',
     reportOpen: 'Report öffnen',
     reportOtherPages: 'Weitere Seiten',
+    reportSeries: 'Reportserien',
+    reportSeriesHint: 'Jede Serie bündelt ihren aktuellen Stand und ihre unveränderliche Historie.',
+    reportSeriesOpen: 'Serie öffnen',
+    reportSeriesEmpty: 'Für diese Serie ist noch kein aktueller Lead-Report veröffentlicht.',
+    reportLegacy: 'Weitere Reports',
+    reportLegacyHint: 'Nicht zugeordnete Reports bleiben verfügbar, ohne einer Serie zugerechnet zu werden.',
     reportCadenceHourly: 'Stündlich',
     reportCadenceDaily: 'Täglich',
     reportCadenceWeekly: 'Wöchentlich',
@@ -120,6 +126,12 @@ const words = {
     reportNextStep: 'Next step',
     reportOpen: 'Open report',
     reportOtherPages: 'Other pages',
+    reportSeries: 'Report series',
+    reportSeriesHint: 'Each series keeps its current state and immutable history together.',
+    reportSeriesOpen: 'Open series',
+    reportSeriesEmpty: 'No current lead report has been published for this series yet.',
+    reportLegacy: 'Other reports',
+    reportLegacyHint: 'Unassigned reports remain available without being attributed to a series.',
     reportCadenceHourly: 'Hourly',
     reportCadenceDaily: 'Daily',
     reportCadenceWeekly: 'Weekly',
@@ -378,6 +390,16 @@ function latestReportLink(ctx) {
 
 const REPORT_CADENCES = ['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly']
 
+export function reportSeriesSettings(site) {
+  const series = site?.settings?.presentation?.report_series
+  if (!Array.isArray(series) || !series.length) return []
+  return [...series].sort((left, right) => left.nav_order - right.nav_order || left.id.localeCompare(right.id))
+}
+
+function reportSeriesUrl(locale, id) {
+  return `/${locale}/reports/${id}/`
+}
+
 function reportCadenceLabel(t, cadence) {
   const suffix = cadence ? `${cadence[0].toUpperCase()}${cadence.slice(1)}` : 'Other'
   return t[`reportCadence${suffix}`] || t.reportCadenceOther
@@ -482,6 +504,73 @@ function reportFeatureCard(item, ctx) {
   return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p>${reportPrimaryMetrics(item)}</div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
 }
 
+function reportCurrentByCadence(reports) {
+  const current = new Map()
+  for (const report of [...reports].sort(reportSort)) {
+    const cadence = REPORT_CADENCES.includes(report.report_cadence) ? report.report_cadence : 'other'
+    if (!current.has(cadence)) current.set(cadence, report)
+  }
+  return current
+}
+
+function reportSeriesSummary(series, reports, ctx) {
+  const current = reportCurrentByCadence(reports)
+  const lead = current.get(series.lead_cadence) || null
+  const seriesUrl = reportSeriesUrl(ctx.locale, series.id)
+  if (!lead) {
+    return `<article class="card report-series-empty"><div class="report-catalog-card-meta"><span>${escapeHtml(series.label)}</span><span class="report-cadence-badge">${escapeHtml(reportCadenceLabel(ctx.t, series.lead_cadence))}</span></div><h3>${escapeHtml(series.label)}</h3><p>${escapeHtml(ctx.t.reportSeriesEmpty)}</p><a class="button" href="${escapeHtml(seriesUrl)}">${escapeHtml(ctx.t.reportSeriesOpen)}</a></article>`
+  }
+  const assessment = lead.narrative?.conclusion || lead.narrative?.thesis || lead.summary
+  const action = lead.narrative?.action
+  return `<article class="card report-catalog-card"><div class="report-catalog-card-meta"><span>${escapeHtml(series.label)}</span><span class="report-cadence-badge">${escapeHtml(reportCadenceLabel(ctx.t, lead.report_cadence))}</span>${lead.published_at ? `<time datetime="${escapeHtml(lead.published_at)}">${escapeHtml(formatDate(lead.published_at, lead.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(lead, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(lead.narrative?.question || lead.summary)}</p>${reportPrimaryMetrics(lead)}<p><strong>${escapeHtml(ctx.t.reportAssessment)}:</strong> ${escapeHtml(assessment)}</p>${action ? `<p><strong>${escapeHtml(ctx.t.reportNextStep)}:</strong> ${escapeHtml(action)}</p>` : ''}<p><a class="button" href="${escapeHtml(seriesUrl)}">${escapeHtml(ctx.t.reportSeriesOpen)}</a> · <a href="${escapeHtml(lead.url)}">${escapeHtml(ctx.t.reportOpen)}</a></p></article>`
+}
+
+function reportSeriesOverviewBody(ctx, title, visible) {
+  const isReport = (page) => page.layout === 'composition' && page.composition?.format === 'report'
+  const reports = visible.filter(isReport)
+  const otherPages = visible.filter((page) => !isReport(page))
+  const series = reportSeriesSettings(ctx.site)
+  const legacy = reports
+    .filter((report) => !report.report_series)
+    .sort(reportSort)
+    .slice(0, 6)
+  const settings = ctx.site.settings || {}
+  return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.reportOverview)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p></div></section>
+<section id="report-series" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportSeries)}</h2><p>${escapeHtml(ctx.t.reportSeriesHint)}</p></div></div><div class="grid">${series
+    .map((entry) =>
+      reportSeriesSummary(
+        entry,
+        reports.filter((report) => report.report_series === entry.id),
+        ctx,
+      ),
+    )
+    .join('')}</div></section>
+${legacy.length ? `<section id="other-reports" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportLegacy)}</h2><p>${escapeHtml(ctx.t.reportLegacyHint)}</p></div></div><div class="grid">${legacy.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}
+${otherPages.length ? `<section class="container section"><div class="section-head"><h2>${escapeHtml(ctx.t.reportOtherPages)}</h2></div><div class="grid">${otherPages.slice(0, 12).map(card).join('')}</div></section>` : ''}`
+}
+
+export function reportSeriesBody(ctx, series) {
+  const reports = (ctx.pages || [])
+    .filter(
+      (page) =>
+        page.layout === 'composition' && page.composition?.format === 'report' && page.report_series === series.id,
+    )
+    .sort(reportSort)
+  const currentByCadence = reportCurrentByCadence(reports)
+  const lead = currentByCadence.get(series.lead_cadence) || null
+  const horizons = REPORT_CADENCES.filter((cadence) => cadence !== series.lead_cadence)
+    .map((cadence) => currentByCadence.get(cadence))
+    .filter(Boolean)
+  const other = currentByCadence.get('other')
+  if (other) horizons.push(other)
+  const currentIds = new Set([lead, ...horizons].filter(Boolean).map((report) => report.item_id))
+  const history = reports.filter((report) => !currentIds.has(report.item_id)).slice(0, 6)
+  return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.reportSeries)}</div><h1>${escapeHtml(series.label)}</h1><p class="hero-copy">${escapeHtml(ctx.t.reportSeriesHint)}</p></div></section>
+${lead ? `<section id="current-state" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportCurrentState)}</h2><p>${escapeHtml(ctx.t.reportCurrentStateHint)}</p></div></div>${reportFeatureCard(lead, ctx)}</section>` : `<section id="current-state" class="container section report-catalog"><div class="card report-series-empty"><h2>${escapeHtml(series.label)}</h2><p>${escapeHtml(ctx.t.reportSeriesEmpty)}</p></div></section>`}
+${horizons.length ? `<section id="decision-horizons" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHorizons)}</h2><p>${escapeHtml(ctx.t.reportHorizonsHint)}</p></div></div><div class="grid report-current-grid">${horizons.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}
+${history.length ? `<section id="report-history" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}`
+}
+
 function reportCatalogBody(ctx, title, visible) {
   const isReport = (page) => page.layout === 'composition' && page.composition?.format === 'report'
   const reports = visible.filter(isReport).sort(reportSort)
@@ -517,23 +606,29 @@ function navLinks(ctx) {
   const preset = site.settings?.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
   const report = latestReportLink(ctx)
+  const reportSeries = reportSeriesSettings(site)
   const hasDecks = (ctx.decks || []).length > 0
   // Non-portfolio presets lead with their single hub (weight 20); portfolio
   // spreads blog/archive/projects across 20…40; product carries no built-in hub.
   const presetLinks = primary
     ? [[...primary, 20]]
-    : preset === 'product' && report
+    : preset === 'product' && reportSeries.length
       ? [
-          [t.overview, `/${locale}/`, 20],
-          [...report, 30],
+          [t.overview, `/${locale}/`, 0],
+          ...reportSeries.map((series) => [series.label, reportSeriesUrl(locale, series.id), series.nav_order]),
         ]
-      : preset === 'portfolio'
+      : preset === 'product' && report
         ? [
-            [t.blog, `/${locale}/blog/`, 20],
-            [t.archive, `/${locale}/archive/`, 30],
-            [t.projects, `/${locale}/projects/`, 40],
+            [t.overview, `/${locale}/`, 20],
+            [...report, 30],
           ]
-        : []
+        : preset === 'portfolio'
+          ? [
+              [t.blog, `/${locale}/blog/`, 20],
+              [t.archive, `/${locale}/archive/`, 30],
+              [t.projects, `/${locale}/projects/`, 40],
+            ]
+          : []
   const links = [
     ...pages
       .filter((p) => p.nav_order != null && p.nav_order <= 60)
@@ -569,6 +664,7 @@ function siteFooter(ctx) {
   const preset = settings.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
   const report = latestReportLink(ctx)
+  const reportSeries = reportSeriesSettings(site)
   const posts = ctx.posts || []
   const hasPosts = posts.length > 0
   const hasProjects = (ctx.projects || []).length > 0
@@ -576,7 +672,15 @@ function siteFooter(ctx) {
   const hasTags = posts.some((p) => (p.tags || []).length > 0)
   const navigation = [
     ...(primary ? [primary] : []),
-    ...(!primary && preset === 'product' && report ? [[t.overview, `/${locale}/`], report] : []),
+    ...(!primary && preset === 'product' && reportSeries.length
+      ? [
+          [t.overview, `/${locale}/`],
+          ...reportSeries.map((series) => [series.label, reportSeriesUrl(locale, series.id)]),
+        ]
+      : []),
+    ...(!primary && preset === 'product' && !reportSeries.length && report
+      ? [[t.overview, `/${locale}/`], report]
+      : []),
     ...(!primary && preset !== 'product' && report ? [report] : []),
     ...(hasPosts ? [[t.blog, `/${locale}/blog/`]] : []),
     ...(hasProjects ? [[t.projects, `/${locale}/projects/`]] : []),
@@ -874,6 +978,9 @@ export function presetHomeBody(ctx) {
       compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||
       String(b.title || '').localeCompare(String(a.title || '')),
   )
+  if (preset === 'product' && reportSeriesSettings(ctx.site).length) {
+    return reportSeriesOverviewBody(ctx, title, visible)
+  }
   if (
     preset === 'product' &&
     visible.some((page) => page.layout === 'composition' && page.composition?.format === 'report')

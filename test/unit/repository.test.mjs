@@ -672,10 +672,52 @@ test('listPublished merges items with their published revisions and skips drafts
     summary: 'One summary',
     tags: ['a', 'b'],
     metadata: { kind: 'post', title: 'One', extra: { series: 'one' } },
+    report_series: null,
     revision_id: 'rev-1',
     published_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-03T10:00:00.000Z',
   })
+})
+
+test('published reads expose the authored report series as report_series', async () => {
+  const repo = publishedRepo()
+  const listed = await repo.listPublished('site-1', {})
+  const report = listed.items.find((entry) => entry.item_id === 'item-5')
+  assert.equal(report.report_series, null)
+
+  const db = {
+    async select(table) {
+      if (table === 'ck_content_items')
+        return [
+          {
+            id: 'report-item',
+            site_id: 'site-1',
+            kind: 'page',
+            locale: 'en',
+            translation_key: 'report',
+            published_revision_id: 'report-revision',
+            updated_at: '2026-07-20T10:00:00.000Z',
+          },
+        ]
+      if (table === 'ck_content_revisions')
+        return [
+          {
+            id: 'report-revision',
+            item_id: 'report-item',
+            slug: 'report',
+            title: 'Report',
+            summary: 'Report summary',
+            tags: [],
+            metadata: { report_series: 'operations' },
+            published_at: '2026-07-20T09:00:00.000Z',
+          },
+        ]
+      return []
+    },
+  }
+  const seriesRepo = createRepository({}, db, {})
+  const result = await seriesRepo.listPublished('site-1', {})
+  assert.equal(result.items[0].report_series, 'operations')
 })
 
 test('listPublished filters by kind, tag and updated_since (strictly greater)', async () => {

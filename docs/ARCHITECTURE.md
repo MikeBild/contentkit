@@ -186,13 +186,19 @@ combinations of reader groups. A protected home or content page may embed
 navigation and cards only for documents with the exact same canonicalized
 group/user grant (plus public pages); the gateway enforces that grant before it
 serves the bytes. Cross-grant unions remain reader-specific and are exposed only
-through the private catalog endpoints. Product report sites additionally derive
-one newest-report navigation link and, when `reportCadence` is present, one
-current report per cadence plus a bounded recent history from that same-grant
-set. The current-state card may project up to four `role="primary"` metric nodes
-from the lead report's Semantic AST; it does not copy or reinterpret their values.
-Cadence is explicit metadata and is never inferred from tenant-specific
-titles or slugs.
+through the private catalog endpoints. Product report sites without configured
+series retain one newest-report navigation link and, when `reportCadence` is
+present, one current report per cadence plus a bounded recent history from that
+same-grant set. With `settings.presentation.report_series`, the builder instead
+generates one `/{locale}/reports/{series}/` catalog per registered ID and derives
+its lead from `lead_cadence`, its other current cadences and at most six
+historical cards. The product home projects one compact lead state per series.
+The current-state cards may project up to four `role="primary"` metric nodes from
+their lead reports' Semantic AST; they do not copy or reinterpret values. Series
+and cadence are explicit generic metadata and are never inferred from
+tenant-specific titles or slugs. Unregistered series fail preview/release;
+unassigned reports remain valid legacy content. Access and discovery projections
+are unchanged.
 
 Pages render without JavaScript except for the header search, which needs it:
 `search.js` ships on every page and fetches the search index lazily on the first

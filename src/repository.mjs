@@ -102,6 +102,7 @@ function publishedEntry(item, revision) {
     summary: revision.summary,
     tags: revision.tags,
     metadata: revision.metadata,
+    report_series: revision.metadata?.report_series ?? null,
     revision_id: revision.id,
     published_at: revision.published_at,
     updated_at: item.updated_at,
@@ -149,6 +150,7 @@ const THEME_CUSTOM_CSS_MAX_BYTES = 8192
 const THEME_TOKEN_VALUE_MAX_BYTES = 256
 const PRESENTATION_PRESETS = new Set(['portfolio', 'product-docs', 'wiki', 'knowledge-base', 'product', 'changelog'])
 const PRESENTATION_ID = /^[a-z0-9](?:[a-z0-9-]{0,94}[a-z0-9])?$/
+const REPORT_CADENCES = new Set(['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'])
 
 // Settings are one jsonb blob and unknown keys pass through untouched — but
 // keys the builder reads are validated on every write (create and PATCH), so
@@ -210,6 +212,35 @@ function validateSiteSettings(settings) {
       throw Object.assign(new Error('product-docs preset requires settings.presentation.docs.versions'), {
         statusCode: 422,
       })
+    }
+    const reportSeries = presentation.report_series
+    if (reportSeries !== undefined) {
+      const allowed = new Set(['id', 'label', 'nav_order', 'lead_cadence'])
+      if (
+        !Array.isArray(reportSeries) ||
+        reportSeries.length > 32 ||
+        reportSeries.some(
+          (entry) =>
+            !entry ||
+            typeof entry !== 'object' ||
+            Array.isArray(entry) ||
+            Object.keys(entry).some((key) => !allowed.has(key)) ||
+            !PRESENTATION_ID.test(String(entry.id || '')) ||
+            typeof entry.label !== 'string' ||
+            !entry.label.trim() ||
+            entry.label.trim().length > 120 ||
+            !Number.isInteger(entry.nav_order) ||
+            !REPORT_CADENCES.has(entry.lead_cadence),
+        ) ||
+        new Set(reportSeries.map((entry) => entry.id)).size !== reportSeries.length
+      ) {
+        throw Object.assign(
+          new Error(
+            'settings.presentation.report_series needs at most 32 unique labeled series with integer nav_order and a valid lead_cadence',
+          ),
+          { statusCode: 422 },
+        )
+      }
     }
   }
   const tokens = settings.theme?.tokens

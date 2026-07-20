@@ -16,6 +16,8 @@ import {
   dictionary,
   extraFieldText,
   presetHomeBody,
+  reportSeriesBody,
+  reportSeriesSettings,
   layout,
   listingBody,
   blogcastPage,
@@ -581,6 +583,15 @@ export async function buildSite({
   }
 
   assignContentRoutes(rendered, site)
+  const configuredReportSeries = reportSeriesSettings(site)
+  const configuredReportSeriesIds = new Set(configuredReportSeries.map((series) => series.id))
+  for (const item of rendered) {
+    if (item.report_series && !configuredReportSeriesIds.has(item.report_series)) {
+      throw Object.assign(new Error(`unknown report series "${item.report_series}" on "${item.title}"`), {
+        statusCode: 422,
+      })
+    }
+  }
   const knownGroups = new Set(accessGroups.map((group) => group.slug))
   for (const item of rendered) {
     if ((item.access || []).some((group) => !knownGroups.has(group))) {
@@ -723,6 +734,61 @@ export async function buildSite({
       translations: staticAlternates((l) => `/${l}/`),
       updated_at: lastUpdated(local),
     })
+
+    for (const series of configuredReportSeries) {
+      const seriesPath = `/${locale}/reports/${series.id}/`
+      const seriesGrant = matchingRule(accessRules, seriesPath)
+      const seriesPages = pagesVisibleWithGrant(pages, allPages, seriesGrant)
+      const visibleReports = seriesPages.filter(
+        (item) =>
+          item.layout === 'composition' &&
+          item.composition?.format === 'report' &&
+          item.report_series === series.id &&
+          !item.noindex,
+      )
+      const seriesBase = { ...base, pages: seriesPages }
+      files.set(
+        `${locale}/reports/${series.id}/index.html`,
+        text(
+          layout(
+            {
+              ...seriesBase,
+              title: series.label,
+              description: series.label,
+              canonical: absolute(site, seriesPath),
+              currentPath: seriesPath,
+              robots: visibleReports.length ? '' : 'noindex,follow',
+            },
+            reportSeriesBody(seriesBase, series),
+          ),
+        ),
+      )
+      if (visibleReports.length) {
+        sitemapItems.push({
+          canonical: absolute(site, seriesPath),
+          translations: locales
+            .map((entry) => ({
+              locale: entry.locale,
+              pathname: `/${entry.locale}/reports/${series.id}/`,
+            }))
+            .filter(
+              (entry) =>
+                !protectedPath(entry.pathname) &&
+                rendered.some(
+                  (item) =>
+                    item.locale === entry.locale &&
+                    !item.protected &&
+                    !item.noindex &&
+                    item.layout === 'composition' &&
+                    item.composition?.format === 'report' &&
+                    item.report_series === series.id,
+                ),
+            )
+            .map((entry) => ({ locale: entry.locale, canonical: absolute(site, entry.pathname) })),
+          updated_at: lastUpdated(visibleReports),
+        })
+      }
+    }
 
     // The blog is a feed (capped, with topic chips), the projects listing is a
     // plain grid — so only the latter still uses listingBody(), which also serves

@@ -40,8 +40,8 @@ Pattern Package and export as an independent visual.
   inputs, the visual gallery and the registry snapshot.
 - [Reports and dashboards](docs/REPORTS.md): `layout: composition` with
   `composition.format: report`, controlled dashboard primitives, table-driven
-  charts, cadence catalogs, primary-metric projection on product home pages,
-  tokens and limits.
+  charts, generic configured report series, cadence catalogs, primary-metric
+  projection on product home and series pages, tokens and limits.
 - [Semantic slide decks](docs/SLIDE_DECKS.md): `kind: deck`, deterministic
   DeckPlan, semantic SVG/PNG components, bounded Slidev compiler, async jobs,
   publishing, security, telemetry and the permanent public example.
@@ -87,6 +87,12 @@ Pattern Package and export as an independent visual.
   membership and session-revocation endpoints, all with `site:admin`.
 - Management flow: create site → upload Markdown + assets → build preview →
   publish release → optionally activate an older release for rollback.
+- Report-series contract: configure
+  `settings.presentation.report_series[] = {id,label,nav_order,lead_cadence}`;
+  author `reportSeries` only on `composition.format: report`. Published reads
+  expose `report_series`; preview/release reject unregistered IDs. Contentkit
+  generates `/{locale}/reports/{series}/`, while unassigned reports remain
+  valid legacy/Other reports and empty configuration preserves old output.
 - Markdown upload accepts raw `text/markdown` or `multipart/form-data` with a
   `document` field and optional `asset:<path>` file fields.
 - API keys are scoped. Use `site:admin` for site/key administration,

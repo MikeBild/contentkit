@@ -1196,6 +1196,151 @@ test('a fully private product home renders a cadence catalog for only same-grant
   assert.doesNotMatch(reportPage, /Other team secret/)
 })
 
+test('configured report series render ordered overview cards, series pages and bounded history', async () => {
+  const report = ({ slug, title, series, cadence, date }) => ({
+    id: `revision-${slug}`,
+    item_id: `item-${slug}`,
+    kind: 'page',
+    locale: 'en',
+    translation_key: slug,
+    published_at: new Date(date),
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  intent: status\n  question: What changed in ${title}?\n  conclusion: ${title} is assessed.\n  action: Review ${title}.\n${series ? `reportSeries: ${series}\n` : ''}${cadence ? `reportCadence: ${cadence}\n` : ''}title: ${title}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: ${title} summary.\ndate: ${date}\naudio: false\n---\n\n:::hero\n## Status\n\n${title}.\n:::`,
+  })
+  const settings = {
+    presentation: {
+      preset: 'product',
+      report_series: [
+        { id: 'growth', label: 'Growth', nav_order: 30, lead_cadence: 'weekly' },
+        { id: 'operations', label: 'Operations', nav_order: 10, lead_cadence: 'hourly' },
+        { id: 'infrastructure', label: 'Infrastructure', nav_order: 20, lead_cadence: 'daily' },
+      ],
+    },
+  }
+  const revisions = [
+    report({
+      slug: 'operations-hourly-current',
+      title: 'Operations current',
+      series: 'operations',
+      cadence: 'hourly',
+      date: '2026-07-20T10:00:00Z',
+    }),
+    report({
+      slug: 'operations-daily-current',
+      title: 'Operations daily',
+      series: 'operations',
+      cadence: 'daily',
+      date: '2026-07-20T09:00:00Z',
+    }),
+    report({
+      slug: 'growth-weekly-current',
+      title: 'Growth current',
+      series: 'growth',
+      cadence: 'weekly',
+      date: '2026-07-20T08:00:00Z',
+    }),
+    report({ slug: 'legacy-report', title: 'Legacy report', cadence: 'monthly', date: '2026-07-20T07:00:00Z' }),
+    ...Array.from({ length: 8 }, (_, index) =>
+      report({
+        slug: `operations-hourly-history-${index}`,
+        title: `Operations history ${index}`,
+        series: 'operations',
+        cadence: 'hourly',
+        date: `2026-07-${String(19 - index).padStart(2, '0')}T10:00:00Z`,
+      }),
+    ),
+  ]
+  const result = await build({ site: { ...site, settings }, revisions })
+  const home = result.files.get('en/index.html').body.toString()
+  assert.ok(home.indexOf('Operations') < home.indexOf('Infrastructure'))
+  assert.ok(home.indexOf('Infrastructure') < home.indexOf('Growth'))
+  for (const id of ['operations', 'infrastructure', 'growth']) {
+    assert.match(home, new RegExp(`href="/en/reports/${id}/"`))
+    assert.ok(result.files.has(`en/reports/${id}/index.html`))
+  }
+  assert.match(home, /Operations current/)
+  assert.match(home, /Growth current/)
+  assert.match(home, /No current lead report has been published for this series yet/)
+  assert.match(home, /Other reports/)
+  assert.match(home, /Legacy report/)
+
+  const operations = result.files.get('en/reports/operations/index.html').body.toString()
+  assert.match(operations, /id="current-state"/)
+  assert.match(operations, /Operations current/)
+  assert.match(operations, /id="decision-horizons"/)
+  assert.match(operations, /Operations daily/)
+  assert.match(operations, /id="report-history"/)
+  assert.equal(
+    (operations.match(/class="card report-catalog-card"/g) || []).length,
+    7,
+    'one horizon plus six history cards',
+  )
+  assert.doesNotMatch(operations, /Operations history 6|Operations history 7/)
+
+  const infrastructure = result.files.get('en/reports/infrastructure/index.html').body.toString()
+  assert.match(infrastructure, /<meta name="robots" content="noindex,follow">/)
+  assert.match(infrastructure, /No current lead report has been published for this series yet/)
+  const sitemap = result.files.get('sitemap.xml').body.toString()
+  assert.match(sitemap, /\/en\/reports\/operations\//)
+  assert.match(sitemap, /\/en\/reports\/growth\//)
+  assert.doesNotMatch(sitemap, /\/en\/reports\/infrastructure\//)
+})
+
+test('release rejects reports assigned to an unregistered series', async () => {
+  const revision = {
+    id: 'revision-rogue',
+    item_id: 'item-rogue',
+    kind: 'page',
+    locale: 'en',
+    translation_key: 'rogue',
+    markdown:
+      '---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  intent: status\nreportSeries: rogue\nreportCadence: daily\ntitle: Rogue report\nlocale: en\nslug: rogue\ntranslationKey: rogue\nsummary: Rogue.\n---\n\n:::hero\n## Status\n\nRogue.\n:::',
+  }
+  await assert.rejects(
+    () =>
+      build({
+        site: {
+          ...site,
+          settings: {
+            presentation: {
+              preset: 'product',
+              report_series: [{ id: 'operations', label: 'Operations', nav_order: 10, lead_cadence: 'hourly' }],
+            },
+          },
+        },
+        revisions: [revision],
+      }),
+    (error) => error.statusCode === 422 && /unknown report series "rogue"/.test(error.message),
+  )
+})
+
+test('sites without configured report series keep the legacy product output byte-compatible', async () => {
+  const revision = {
+    id: 'revision-report',
+    item_id: 'item-report',
+    kind: 'page',
+    locale: 'en',
+    translation_key: 'report',
+    markdown:
+      '---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  intent: status\nreportCadence: hourly\ntitle: Current report\nlocale: en\nslug: report\ntranslationKey: report\nsummary: Current.\n---\n\n:::hero\n## Status\n\nCurrent.\n:::',
+  }
+  const omitted = await build({
+    site: { ...site, settings: { presentation: { preset: 'product' } } },
+    revisions: [revision],
+  })
+  const empty = await build({
+    site: { ...site, settings: { presentation: { preset: 'product', report_series: [] } } },
+    revisions: [revision],
+  })
+  assert.deepEqual([...empty.files.keys()], [...omitted.files.keys()])
+  for (const [path, file] of omitted.files) {
+    assert.equal(empty.files.get(path).body.compare(file.body), 0, `${path} changed with an empty series configuration`)
+    assert.equal(empty.files.get(path).contentType, file.contentType)
+    assert.equal(empty.files.get(path).cacheControl, file.cacheControl)
+  }
+  assert.match(omitted.files.get('en/index.html').body.toString(), /Latest report/)
+  assert.ok(![...omitted.files.keys()].some((path) => path.includes('/reports/')))
+})
+
 test('legacy German machine dates become readable report titles without changing authored semantic content', async () => {
   const report = ({ cadence, slug, title, date }) => ({
     id: `revision-${slug}`,

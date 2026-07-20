@@ -68,6 +68,45 @@ Two or more level-two headings create a responsive same-page section navigation
 without JavaScript. Use level-three headings for details that should stay out of
 that navigation.
 
+## Report series
+
+Series are an optional, generic grouping above cadence. They let a product site
+publish separate operational, commercial or domain-specific report histories
+without encoding tenant concepts in Contentkit. Configure the registry in the
+site's settings:
+
+```json
+{
+  "presentation": {
+    "preset": "product",
+    "report_series": [
+      { "id": "business", "label": "Business", "nav_order": 10, "lead_cadence": "quarterly" },
+      { "id": "reliability", "label": "Reliability", "nav_order": 20, "lead_cadence": "daily" }
+    ]
+  }
+}
+```
+
+`reportSeries` is valid only when `composition.format: report`; it is stored and
+returned by the read API as `report_series`. Ingest validates the lowercase slug
+syntax. Preview and release additionally reject a series ID that is not in the
+site registry, so configuration and content cannot silently drift. Existing
+reports without `reportSeries` remain valid legacy/Other reports.
+
+Every configured series gets `/{locale}/reports/{series}/`, whether or not it
+already has reports. The newest report matching `lead_cadence` is the lead; the
+newest reports at other cadences are the additional horizons; at most six
+remaining reports form history. The product home renders a compact lead state
+for every configured series in `nav_order` and a bounded legacy section. An
+empty series page uses `noindex,follow` and stays out of the sitemap until it has
+an indexable report.
+
+An absent or empty `report_series` array preserves the previous home, header,
+footer, files and asset references byte-for-byte. Report series do not change
+access rules, `noindex`, private navigation/search discovery or reader sessions.
+They are also independent of Publishing Guides: a guide describes how to author
+a report story; a series groups immutable published reports.
+
 ## Dashboard primitives
 
 ```md

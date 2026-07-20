@@ -251,9 +251,18 @@ all 81 patterns, declarative Pattern Packages and the AI-agent workflow. The
 dashboards, application shells, pricing, galleries, stats, FAQ, code examples,
 data tables, agent content budgets, typed units and responsive verification. The
 [report guide](docs/REPORTS.md) covers dashboard primitives and charts. For
-product report sites, the home page also projects up to four primary metric
-nodes from the newest report's Semantic AST, keeping the overview and report on
-one authored data contract. Generate
+product report sites, optional generic report series group reports independently
+of cadence. Configure `settings.presentation.report_series` with stable IDs,
+labels, navigation order and a lead cadence, then author `reportSeries` only on
+`composition.format: report` documents. Contentkit generates
+`/{locale}/reports/{series}/`, rejects unregistered IDs during preview/release,
+and keeps reports without the field as legacy “Other reports”. The product home
+shows one compact lead state per configured series; each series page shows its
+lead, other current cadences and at most six historical cards. Sites without a
+non-empty series configuration retain the previous report catalog byte for
+byte. The home page also projects up to four primary metric nodes from each lead
+report's Semantic AST, keeping the overview and report on one authored data
+contract. Generate
 the complete neutral review gallery with `npm run review:patterns`. It includes
 highlighted code, a technical diagram, a server-rendered chart, a semantic
 report, nine human- and machine-readable story-selection guides, and every

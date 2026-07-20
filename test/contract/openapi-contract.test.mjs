@@ -65,6 +65,8 @@ test('the OpenAPI authoring contract documents semantic compositions, charts and
     '`infographic`',
     '`report`',
     '`reportCadence`',
+    '`reportSeries`',
+    '`report_series`',
     '`hourly`',
     '`daily`',
     '`yearly`',
@@ -91,6 +93,12 @@ test('the OpenAPI authoring contract documents semantic compositions, charts and
   assert.ok(pattern.properties.content_budget.required.includes('max_title_characters'))
   assert.ok(pattern.properties.content_budget.required.includes('max_series'))
   assert.ok(spec.components.schemas.PublishingGuide)
+  assert.ok(spec.components.schemas.ReportSeriesSetting)
+  assert.equal(spec.components.schemas.PublishedEntry.properties.report_series.type[1], 'null')
+  assert.equal(
+    spec.paths['/v1/sites/{site}/published'].get.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/PublishedList',
+  )
   assert.ok(spec.paths['/v1/publishing-guides'])
   assert.ok(spec.paths['/v1/publishing-guides/{guide}'])
 })

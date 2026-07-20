@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.20.0 - 2026-07-20
+
+### Added
+
+- Add generic configured report series with the report-only `reportSeries`
+  frontmatter field, snake-case Read API projection and per-locale series pages.
+- Add series-aware product overview cards, exact lead-cadence selection, other
+  current cadences, bounded history and explicit empty states.
+
+### Changed
+
+- Validate report-series registries in site settings and reject unregistered
+  series during preview/release while retaining legacy unassigned reports.
+- Document report series consistently in README, guides, LLM documentation and
+  the typed OpenAPI read contract.
+
+### Security
+
+- Keep access grants, noindex behavior, private discovery and reader sessions
+  unchanged for the new generated series routes.
+
 ## 1.19.1 - 2026-07-20
 
 ### Fixed

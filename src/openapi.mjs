@@ -147,6 +147,92 @@ export function openApi(config) {
             rebuild_required: { type: 'boolean' },
           },
         },
+        ReportSeriesSetting: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'label', 'nav_order', 'lead_cadence'],
+          properties: {
+            id: {
+              type: 'string',
+              pattern: '^[a-z0-9](?:[a-z0-9-]{0,94}[a-z0-9])?$',
+              description: 'Stable series ID used in frontmatter and `/{locale}/reports/{id}/`.',
+            },
+            label: { type: 'string', minLength: 1, maxLength: 120 },
+            nav_order: { type: 'integer', description: 'Ascending navigation order.' },
+            lead_cadence: {
+              type: 'string',
+              enum: ['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
+            },
+          },
+        },
+        PublishedEntry: {
+          type: 'object',
+          required: [
+            'item_id',
+            'kind',
+            'locale',
+            'translation_key',
+            'slug',
+            'title',
+            'summary',
+            'tags',
+            'metadata',
+            'report_series',
+            'revision_id',
+            'published_at',
+            'updated_at',
+          ],
+          properties: {
+            item_id: { type: 'string', format: 'uuid' },
+            kind: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
+            locale: { type: 'string' },
+            translation_key: { type: 'string' },
+            slug: { type: 'string' },
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            tags: { type: 'array', items: { type: 'string' } },
+            metadata: {
+              type: 'object',
+              description: 'Validated revision metadata using snake_case field names.',
+              additionalProperties: true,
+            },
+            report_series: {
+              type: ['string', 'null'],
+              description:
+                'Registered report-series ID authored as frontmatter `reportSeries`; null for legacy/unassigned reports and non-report content.',
+            },
+            revision_id: { type: 'string', format: 'uuid' },
+            published_at: { type: ['string', 'null'], format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        PublishedList: {
+          type: 'object',
+          required: ['items', 'next_cursor'],
+          properties: {
+            items: { type: 'array', items: { $ref: '#/components/schemas/PublishedEntry' } },
+            next_cursor: { type: ['string', 'null'] },
+          },
+        },
+        PublishedDocument: {
+          allOf: [
+            { $ref: '#/components/schemas/PublishedEntry' },
+            {
+              type: 'object',
+              required: ['markdown', 'html', 'semantic', 'narrative', 'composition', 'diagnostics', 'accessible_text'],
+              properties: {
+                markdown: { type: 'string' },
+                html: { type: 'string' },
+                semantic: { type: ['object', 'null'] },
+                narrative: { type: ['object', 'null'] },
+                composition: { type: ['object', 'null'] },
+                diagnostics: { type: 'array', items: { type: 'object' } },
+                accessible_text: { type: ['string', 'null'] },
+                representations: { type: ['object', 'null'] },
+              },
+            },
+          ],
+        },
         ProductStats: {
           type: 'object',
           required: ['bucket', 'tz', 'from', 'to', 'buckets', 'totals'],
@@ -892,7 +978,7 @@ export function openApi(config) {
         patch: {
           summary: 'Update site metadata, settings and domains',
           description:
-            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),
@@ -1041,7 +1127,7 @@ export function openApi(config) {
         post: {
           summary: 'Create content and its first draft revision',
           description:
-            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.",
+            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` and may select a configured series with `reportSeries`. `reportSeries` is invalid on non-report compositions; a preview or release rejects IDs absent from `settings.presentation.report_series`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.",
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
@@ -1304,7 +1390,7 @@ export function openApi(config) {
         get: {
           summary: 'List published content as JSON (read API)',
           description:
-            'Headless read access to everything currently published. Entries carry the item identity, the published revision fields and the revision `metadata` verbatim — the full frontmatter contract including author-owned `extra` fields. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.',
+            'Headless read access to everything currently published. Entries carry the item identity, the published revision fields, top-level `report_series` (null for legacy/unassigned content), and the revision `metadata` verbatim — the full frontmatter contract including author-owned `extra` fields. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.',
           security: secured,
           parameters: [
             siteParameter,
@@ -1339,7 +1425,10 @@ export function openApi(config) {
             },
           ],
           responses: {
-            200: { description: 'Published entries and `next_cursor` (null on the last page)' },
+            200: {
+              description: 'Published entries and `next_cursor` (null on the last page)',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/PublishedList' } } },
+            },
             304: { description: 'Not modified (If-None-Match matched the publish-epoch ETag)' },
             404: { description: 'Site not found' },
             422: { description: 'Invalid kind, updated_since, limit or cursor' },
@@ -1364,7 +1453,10 @@ export function openApi(config) {
             { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
           ],
           responses: {
-            200: { description: 'Published document with markdown and rendered html' },
+            200: {
+              description: 'Published document with markdown and rendered html',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/PublishedDocument' } } },
+            },
             304: { description: 'Not modified' },
             404: { description: 'Published content not found' },
           },
@@ -1459,7 +1551,7 @@ export function openApi(config) {
         put: {
           summary: 'Create another immutable revision',
           description:
-            'Accepts the same controlled-layout, semantic-composition, semantic-deck, report-cadence, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
+            'Accepts the same controlled-layout, semantic-composition, semantic-deck, report-cadence, report-series, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,

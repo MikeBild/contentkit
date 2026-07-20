@@ -41,6 +41,26 @@ limited to 120 characters:
 Archived version pages remain available but use `noindex,follow` and stay out of
 the sitemap. A page can opt out of its preset with `layout: standard`.
 
+Report sites may declare up to 32 generic series. A series is an information
+architecture grouping; cadence remains an independent property of each report:
+
+```json
+{
+  "presentation": {
+    "preset": "product",
+    "report_series": [
+      { "id": "operations", "label": "Operations", "nav_order": 10, "lead_cadence": "hourly" },
+      { "id": "growth", "label": "Growth", "nav_order": 20, "lead_cadence": "weekly" }
+    ]
+  }
+}
+```
+
+IDs use lowercase slug syntax, labels are 1–120 characters, `nav_order` is an
+integer, and `lead_cadence` uses the report-cadence vocabulary. IDs must be
+unique. An absent or empty array enables none of the series behavior and leaves
+existing generated output byte-compatible.
+
 ## Frontmatter
 
 The following fields are validated on upload:
@@ -54,6 +74,9 @@ The following fields are validated on upload:
   templates validate ordered per-slide `deckRole` slots before rendering.
 - `reportCadence`: optional when `composition.format` is `report`: `hourly`, `daily`, `weekly`,
   `monthly`, `quarterly`, or `yearly`.
+- `reportSeries`: optional lowercase series ID when `composition.format` is
+  `report`. The ID must exist in `settings.presentation.report_series` when a
+  preview or release is built. Reports without it remain valid legacy/Other reports.
 - `docKey`: stable page identity within a documentation version or hierarchy.
 - `docsVersion`: an ID declared in `settings.presentation.docs.versions`.
 - `parent`: the parent page's `docKey` in the same locale, layout, and version.
@@ -76,6 +99,7 @@ release before activation.
 - Changelog: `/{locale}/changelog/{slug}/`
 - Landing, composition and standard pages: `/{locale}/{slug}/`
 - Semantic slide decks (`deck`): `/{locale}/slides/{slug}/`
+- Configured report series: `/{locale}/reports/{series}/`
 
 Docs, wiki, and knowledge pages render a hierarchy sidebar, breadcrumbs, and a
 heading table of contents. Landing pages can use the sanitized `hero`,
@@ -90,17 +114,21 @@ standalone light/dark SVG and PNG. See
 [VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md) for all 81 patterns and the
 AI-agent contract; [REPORTS.md](REPORTS.md) covers report-specific authoring.
 
-When the `product` preset contains `composition.format: report` pages, its home page becomes a report
-narrative automatically. `reportCadence` selects the newest report for each
-period. The newest closed interval becomes the primary current-state card and
-uses its authored question, conclusion and action; the other cadences form the
-remaining decision horizons, and at most six superseded reports form the recent
-history. Up to four primary semantic metrics from the lead report are rendered
-inside the current-state card, so publishers do not have to maintain separate
-home-page values. Reports without the optional field remain compatible and appear as
-“Other report”. The home uses only pages visible under its exact reader grant,
-so private titles cannot cross access boundaries. No separate home-page model is
-required from the workflow that publishes the report Markdown.
+When the `product` preset contains `composition.format: report` pages, its home
+page becomes a report narrative automatically. Without configured series,
+`reportCadence` retains the legacy behavior: the newest closed interval is the
+primary current-state card, other cadences are decision horizons and at most six
+superseded reports form history.
+
+With `report_series`, the product home instead renders one compact state card
+per configured series in `nav_order`. Each `/{locale}/reports/{series}/` page
+uses the newest report at `lead_cadence` as its lead, adds the newest report for
+each other cadence, and shows at most six remaining historical cards. A series
+without a published lead renders an explicit empty state and is `noindex` until
+it has an indexable report. Unassigned reports remain visible in a bounded
+legacy “Other reports” section. Up to four primary semantic metrics from each
+lead report are projected from the same Semantic AST. Access grants, `noindex`,
+private discovery and reader sessions follow the existing release rules.
 
 ## Complete examples
 

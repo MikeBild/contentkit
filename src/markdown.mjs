@@ -1484,6 +1484,10 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   if (reportCadence && composition?.format !== 'report') {
     throw Object.assign(new Error('frontmatter reportCadence requires composition.format: report'), { statusCode: 422 })
   }
+  const reportSeries = optionalSlug(data.reportSeries, 'reportSeries')
+  if (reportSeries && composition?.format !== 'report') {
+    throw Object.assign(new Error('frontmatter reportSeries requires composition.format: report'), { statusCode: 422 })
+  }
   const meta = {
     kind,
     title,
@@ -1569,6 +1573,7 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
         }
       : {}),
     report_cadence: reportCadence,
+    report_series: reportSeries,
     doc_key: optionalSlug(data.docKey, 'docKey'),
     docs_version: optionalSlug(data.docsVersion, 'docsVersion'),
     parent: optionalSlug(data.parent, 'parent'),

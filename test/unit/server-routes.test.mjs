@@ -2040,7 +2040,7 @@ describe('published search', () => {
   })
 })
 
-describe('theme settings', () => {
+describe('site presentation and theme settings', () => {
   // The real repository over a stub db, so the PATCH exercises the actual
   // settings validation; `updates` records whether a write got through.
   function siteRepo(updates = []) {
@@ -2147,6 +2147,40 @@ describe('theme settings', () => {
       assert.equal(response.status, 200)
       assert.equal(updates.length, 1)
       assert.deepEqual(updates[0][2].settings, settings)
+    })
+  })
+
+  test('report series settings require unique registered series with bounded presentation fields', async () => {
+    const updates = []
+    await withApp({ repo: siteRepo(updates), auth: scopedAuth(['site:admin']) }, async (request) => {
+      const settings = {
+        presentation: {
+          preset: 'product',
+          report_series: [
+            { id: 'operations', label: 'Operations', nav_order: 10, lead_cadence: 'hourly' },
+            { id: 'growth', label: 'Growth', nav_order: 20, lead_cadence: 'weekly' },
+          ],
+        },
+      }
+      const valid = await patchSettings(request, settings)
+      assert.equal(valid.status, 200)
+      assert.deepEqual(updates.at(-1)[2].settings, settings)
+
+      for (const report_series of [
+        [{ id: 'Operations', label: 'Operations', nav_order: 10, lead_cadence: 'hourly' }],
+        [
+          { id: 'operations', label: 'Operations', nav_order: 10, lead_cadence: 'hourly' },
+          { id: 'operations', label: 'Duplicate', nav_order: 20, lead_cadence: 'daily' },
+        ],
+        [{ id: 'growth', label: '', nav_order: 20, lead_cadence: 'weekly' }],
+        [{ id: 'growth', label: 'Growth', nav_order: 20.5, lead_cadence: 'weekly' }],
+        [{ id: 'growth', label: 'Growth', nav_order: 20, lead_cadence: 'realtime' }],
+      ]) {
+        const response = await patchSettings(request, { presentation: { report_series } })
+        assert.equal(response.status, 422)
+        assert.match((await response.json()).error, /settings\.presentation\.report_series/)
+      }
+      assert.equal(updates.length, 1, 'invalid series settings must not reach the database')
     })
   })
 })
