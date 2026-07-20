@@ -7,8 +7,8 @@
 **A headless Markdown mini-CMS with semantic visual composition and declarative
 information patterns.** Contentkit publishes websites, documentation, reports
 and infographics through one API-first content model. Semantic Markdown can
-become a versioned AST, a validated visual composition, responsive HTML and
-standalone SVG inside an immutable release that activates atomically—with
+become a versioned AST, a validated visual composition, semantic or visual
+HTML and standalone SVG inside an immutable release that activates atomically—with
 instant, pointer-based rollback. PNG remains an explicit deterministic
 headless export.
 
@@ -97,12 +97,12 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   post references in frontmatter — no schema builder; page rendering of the
   extra fields is a per-site opt-in via `settings.content.show_extra`.
 - Headless composition APIs to discover patterns, recommend and validate a
-  visual narrative, compile HTML/SVG/PNG, and fetch published binary
+  visual narrative, compile semantic HTML, layout-equivalent visual HTML,
+  SVG or PNG, and fetch published binary
   representations with ETag/304 caching. Published JSON includes the semantic,
-  narrative and resolved composition models. The gallery uses the validated SVG
-  composition as its visual baseline with PNG as its byte-stable raster export;
-  semantic HTML remains available through the API but is not presented as
-  pixel-equivalent until it passes the same fidelity gate.
+  narrative and resolved composition models. SVG is the canonical static
+  representation, PNG is its byte-stable raster export, and visual HTML uses
+  the same resolved layout contract without imitating SVG markup.
 - Public story-selection APIs at `GET /v1/publishing-guides` describe the
   question, story arc, evidence contract, rejection conditions, compatible
   patterns and examples for reports, diagrams and code explanations. Chart
@@ -242,7 +242,7 @@ the complete neutral review gallery with `npm run review:patterns`. It includes
 highlighted code, a technical diagram, a server-rendered chart, a semantic
 report, nine human- and machine-readable story-selection guides, and every
 information pattern. `npm run validate:visuals` verifies 972
-SVG/PNG combinations, 1,097 semantic HTML cases and 12 full gallery-page cases.
+HTML/SVG/PNG combinations, 1,097 visual HTML cases and 12 full gallery-page cases.
 The gate opens every standalone SVG in Chromium and rejects measured clipping,
 overlap, text truncation, container overflow, separator crossings, navigation
 defects and missing capability output. Open

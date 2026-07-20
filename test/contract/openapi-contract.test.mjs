@@ -74,6 +74,7 @@ test('the OpenAPI authoring contract documents semantic compositions, charts and
   assert.ok(pattern.required.includes('input_contract'))
   assert.ok(pattern.required.includes('spec_examples'))
   assert.deepEqual(pattern.properties.rendering_strategy.properties.primary_output.enum, ['html', 'svg'])
+  assert.equal(pattern.properties.rendering_strategy.properties.html_fidelity.const, 'layout-equivalent')
   assert.equal(pattern.properties.rendering_strategy.properties.png_role.const, 'derived-static-export')
   assert.ok(pattern.properties.content_budget.required.includes('max_title_characters'))
   assert.ok(pattern.properties.content_budget.required.includes('max_series'))

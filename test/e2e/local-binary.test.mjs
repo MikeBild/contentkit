@@ -332,7 +332,17 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.match(await previewPage.text(), /Lokaler E2E Beitrag/)
       const previewReport = await fetch(`${preview.url}en/q2-business-review/`)
       assert.equal(previewReport.status, 200)
-      assert.match(await previewReport.text(), /report-chart-picture/)
+      const previewReportHtml = await previewReport.text()
+      assert.match(previewReportHtml, /report-chart-picture/)
+      const previewAssetPaths = [...previewReportHtml.matchAll(/(?:src|srcset)="([^" ]*\/assets\/[^" ,]+)/g)].map(
+        (match) => match[1],
+      )
+      assert.ok(previewAssetPaths.length >= 2)
+      assert.ok(previewAssetPaths.every((path) => path.startsWith(new URL(preview.url).pathname)))
+      for (const assetPath of [...new Set(previewAssetPaths)].slice(0, 4)) {
+        const previewAsset = await fetch(new URL(assetPath, origin))
+        assert.equal(previewAsset.status, 200, assetPath)
+      }
 
       const release = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, {

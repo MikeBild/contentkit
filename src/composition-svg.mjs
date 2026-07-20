@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { getPattern, patternRegistryHash } from './composition-registry.mjs'
 import { buildCompositionLayoutTree } from './composition-layout.mjs'
-import { createCompositionRenderTree, publicRenderTree, serializeCompositionRenderTree } from './render-tree.mjs'
+import {
+  createCompositionRenderTree,
+  publicRenderTree,
+  renderPrimitivesFromLayout,
+  serializeCompositionRenderTree,
+} from './render-tree.mjs'
 import { renderInformationPattern } from './composition-information-svg.mjs'
 import { contentkitFontFaceCss, contentkitFontFamilyCompact, contentkitFontFile } from './typography.mjs'
 import { escapeXml } from './utils.mjs'
@@ -2232,6 +2237,7 @@ export function renderCompositionArtifact(rendered, { settings = {}, scheme = 'l
           adapter: pattern.id,
           box: frame,
           source_node_ids: layout.tree.children[1].node_ids,
+          children: renderPrimitivesFromLayout(layout.tree.children[1]),
           markup: body,
         },
         {

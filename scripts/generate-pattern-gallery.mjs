@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patternRegistry } from '../src/composition-registry.mjs'
 import { publishingGuideRegistry } from '../src/publishing-guides.mjs'
-import { contentkitFontFamilyCompact } from '../src/typography.mjs'
+import { contentkitFontFaceCss, contentkitFontFamilyCompact, contentkitFontFile } from '../src/typography.mjs'
 import { compileCompositionMarkdown } from '../src/composition-output.mjs'
 import { renderMarkdown } from '../src/markdown.mjs'
 import { renderReportChartSvg } from '../src/report-charts.mjs'
@@ -15,6 +15,8 @@ const exampleDir = join(root, 'examples/compositions')
 const sourcesOnly = process.env.CONTENTKIT_GALLERY_SOURCES_ONLY === '1'
 const skipAssets = process.env.CONTENTKIT_GALLERY_SKIP_ASSETS === '1'
 const assetPattern = process.env.CONTENTKIT_GALLERY_PATTERN || ''
+const galleryFont = (await readFile(contentkitFontFile)).toString('base64')
+const galleryFontCss = contentkitFontFaceCss(`data:font/woff2;base64,${galleryFont}`)
 
 const themes = {
   'neutral-editorial': {
@@ -1420,11 +1422,16 @@ for (const pattern of patternRegistry) {
             settings: { theme: { tokens } },
             scheme,
             viewport,
-            outputs: ['svg', 'png'],
+            outputs: ['html', 'svg', 'png'],
+            html_presentation: 'visual',
           })
           const stem = `${pattern.id}--${theme}--${scheme}--${viewportName}`
           await writeFile(join(assetDir, `${stem}.svg`), result.renders.svg)
           await writeFile(join(assetDir, `${stem}.png`), Buffer.from(result.renders.png_base64, 'base64'))
+          await writeFile(
+            join(assetDir, `${stem}.html`),
+            `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>${galleryFontCss}html,body{margin:0;min-height:100%;background:${scheme === 'dark' ? '#09090b' : '#fff'}}</style></head><body>${result.renders.html}</body></html>`,
+          )
         }
       }
     }
@@ -1438,7 +1445,7 @@ for (const pattern of patternRegistry) {
     : 'Geometry reflows responsively within the same pattern.'
   cards.push({
     category: pattern.category,
-    html: `<article class="pattern" id="pattern-${pattern.id}" data-category="${pattern.category}" data-id="${pattern.id}" data-search="${escapeHtml(`${pattern.title} ${pattern.summary} ${pattern.narrative.question}`)}" aria-label="${escapeHtml(pattern.title)} review"><header class="pattern-head"><div><span class="pattern-index">${String(cards.filter((card) => card.category === pattern.category).length + 1).padStart(2, '0')}</span><div class="pattern-copy"><p>${pattern.category}</p><h3>${pattern.title}</h3><p>${pattern.summary}</p></div></div><div class="pattern-tools"><code>${pattern.id}</code></div></header><div class="pattern-question"><span>Question it answers</span><strong>${escapeHtml(pattern.narrative.question)}</strong></div><div class="preview preview-export" data-preview="export"><img loading="lazy" width="1600" height="900" src="assets/${pattern.id}--neutral-editorial--light--1600.svg" alt="${pattern.title}: rendered example"></div><div class="pattern-context"><div><span>Use when</span><strong>${useWhen}</strong></div><div><span>Reader takeaway</span><strong>${escapeHtml(pattern.narrative.reader_takeaway)}</strong></div><div><span>Semantic meaning</span><strong>${semanticMeaning}</strong></div></div><div class="review-actions"><span>${responsive}</span><footer><a class="svg" href="assets/${pattern.id}--neutral-editorial--light--1600.svg">SVG</a><a class="png" href="assets/${pattern.id}--neutral-editorial--light--1600.png">PNG</a></footer></div><details><summary>Semantic source</summary><pre>${escapeHtml(source)}</pre></details><details class="technical"><summary>Machine-readable contract</summary><pre>${escapeHtml(JSON.stringify(pattern, null, 2))}</pre></details></article>`,
+    html: `<article class="pattern" id="pattern-${pattern.id}" data-category="${pattern.category}" data-id="${pattern.id}" data-search="${escapeHtml(`${pattern.title} ${pattern.summary} ${pattern.narrative.question}`)}" aria-label="${escapeHtml(pattern.title)} review"><header class="pattern-head"><div><span class="pattern-index">${String(cards.filter((card) => card.category === pattern.category).length + 1).padStart(2, '0')}</span><div class="pattern-copy"><p>${pattern.category}</p><h3>${pattern.title}</h3><p>${pattern.summary}</p></div></div><div class="pattern-tools"><code>${pattern.id}</code></div></header><div class="pattern-question"><span>Question it answers</span><strong>${escapeHtml(pattern.narrative.question)}</strong></div><div class="preview preview-export" data-preview="export"><img loading="lazy" width="1600" height="900" src="assets/${pattern.id}--neutral-editorial--light--1600.svg" alt="${pattern.title}: rendered example"><iframe title="${escapeHtml(pattern.title)} visual HTML rendering" loading="lazy" hidden></iframe></div><div class="pattern-context"><div><span>Use when</span><strong>${useWhen}</strong></div><div><span>Reader takeaway</span><strong>${escapeHtml(pattern.narrative.reader_takeaway)}</strong></div><div><span>Semantic meaning</span><strong>${semanticMeaning}</strong></div></div><div class="review-actions"><span>${responsive}</span><footer><a class="html" href="assets/${pattern.id}--neutral-editorial--light--1600.html">HTML</a><a class="svg" href="assets/${pattern.id}--neutral-editorial--light--1600.svg">SVG</a><a class="png" href="assets/${pattern.id}--neutral-editorial--light--1600.png">PNG</a></footer></div><details><summary>Semantic source</summary><pre>${escapeHtml(source)}</pre></details><details class="technical"><summary>Machine-readable contract</summary><pre>${escapeHtml(JSON.stringify(pattern, null, 2))}</pre></details></article>`,
   })
 }
 
@@ -1517,6 +1524,7 @@ const redesignedHtml = `<!doctype html>
 @media(max-width:900px){.controls{display:grid;grid-template-columns:1fr 1fr}.controls label:first-child{grid-column:1/-1}.controls input,.controls select{width:100%;min-width:0}.result-count{display:none}}
 @media(max-width:760px){.pattern-head>div{min-width:0}.pattern-copy{min-width:0}.pattern-copy h3{font-size:1.05rem}.pattern-head code{max-width:9rem;overflow:hidden;text-overflow:ellipsis}.pattern-tools>span{display:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+.pattern iframe{display:block;width:100%;border:0;background:#fff}.pattern iframe[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -1526,7 +1534,7 @@ const redesignedHtml = `<!doctype html>
     <header class="mobile-bar"><a class="brand" href="#introduction"><i></i>ContentKit Patterns</a><details><summary>Browse</summary><nav class="mobile-menu"><a href="#introduction">Introduction</a><a href="#semantic-publishing">Stories and selection</a>${familyNavigation}</nav></details></header>
     <main>
       <section class="intro content" id="introduction"><span class="eyebrow">Pattern review · ${patternRegistry.length} patterns</span><h1>Information patterns for clear communication.</h1><p>Start with what people need to understand. Then review the visual form at six real container widths, in light and dark, from one deterministic semantic model.</p><div class="pipeline"><article><span>01</span><strong>Semantics</strong><p>Identify the meaning and relationships.</p></article><article><span>02</span><strong>Narrative</strong><p>Choose the key message and evidence order.</p></article><article><span>03</span><strong>Composition</strong><p>Select a truthful visual form.</p></article><article><span>04</span><strong>Layout</strong><p>Resolve geometry for the actual container.</p></article><article><span>05</span><strong>Rendering</strong><p>Publish matching HTML, SVG, and PNG.</p></article></div></section>
-      <div class="review-bar"><div class="controls"><label>Find a pattern<input id="search" type="search" placeholder="Search by purpose or name"></label><label>Family<select id="category"><option value="">All families</option>${categoryOptions}</select></label><label>Appearance<select id="scheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Render as<select id="output"><option value="svg">SVG</option><option value="png">PNG</option></select></label><label>Container<select id="viewport"><option value="1600">1600 × 900</option><option value="1440">1440 × 1024</option><option value="1024">1024 × 1024</option><option value="768">768 × 1024</option><option value="390">390 × 844</option><option value="320">320 × 900</option></select></label><p class="result-count"><b id="visible-count">${patternRegistry.length}</b> visible</p></div></div>
+      <div class="review-bar"><div class="controls"><label>Find a pattern<input id="search" type="search" placeholder="Search by purpose or name"></label><label>Family<select id="category"><option value="">All families</option>${categoryOptions}</select></label><label>Appearance<select id="scheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Render as<select id="output"><option value="svg">SVG</option><option value="html">HTML + CSS</option><option value="png">PNG</option></select></label><label>Container<select id="viewport"><option value="1600">1600 × 900</option><option value="1440">1440 × 1024</option><option value="1024">1024 × 1024</option><option value="768">768 × 1024</option><option value="390">390 × 844</option><option value="320">320 × 900</option></select></label><p class="result-count"><b id="visible-count">${patternRegistry.length}</b> visible</p></div></div>
       <div class="gallery content">${renderingCapabilities}${categorySections}</div>
     </main>
   </div>
@@ -1534,7 +1542,7 @@ const redesignedHtml = `<!doctype html>
 <script src="../../node_modules/mermaid/dist/mermaid.min.js"></script><script>
 const q=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
 let renderedMermaidTheme='';async function renderMermaid(theme){const host=q('.mermaid-live');if(!host||!window.mermaid||renderedMermaidTheme===theme)return;renderedMermaidTheme=theme;host.innerHTML=decodeURIComponent(host.dataset.source);host.removeAttribute('data-processed');window.mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:theme==='dark'?'dark':'neutral'});await window.mermaid.run({nodes:[host]})}
-function update(){const scheme=q('#scheme').value,viewport=q('#viewport').value,output=q('#output').value,search=q('#search').value.trim().toLowerCase(),category=q('#category').value,heights={320:900,390:844,768:1024,1024:1024,1440:1024,1600:900};document.documentElement.dataset.theme=scheme;document.body.classList.toggle('viewport-mobile',Number(viewport)<=390);let visible=0;all('.pattern').forEach(card=>{const id=card.dataset.id,haystack=(id+' '+card.dataset.search+' '+card.textContent).toLowerCase(),matchesCategory=!category||card.dataset.category===category,stem=id+'--neutral-editorial--'+scheme+'--'+viewport,show=matchesCategory&&haystack.includes(search),preview=card.querySelector('.preview-export>img');card.hidden=!show;if(show)visible+=1;preview.width=Number(viewport);preview.height=heights[viewport];preview.src='assets/'+stem+'.'+output;card.querySelector('.svg').href='assets/'+stem+'.svg';card.querySelector('.png').href='assets/'+stem+'.png'});all('.family').forEach(section=>{section.hidden=!section.querySelector('.pattern:not([hidden])')});q('#visible-count').textContent=visible;renderMermaid(scheme)}
+function update(){const scheme=q('#scheme').value,viewport=q('#viewport').value,output=q('#output').value,search=q('#search').value.trim().toLowerCase(),category=q('#category').value,heights={320:900,390:844,768:1024,1024:1024,1440:1024,1600:900};document.documentElement.dataset.theme=scheme;document.body.classList.toggle('viewport-mobile',Number(viewport)<=390);let visible=0;all('.pattern').forEach(card=>{const id=card.dataset.id,haystack=(id+' '+card.dataset.search+' '+card.textContent).toLowerCase(),matchesCategory=!category||card.dataset.category===category,stem=id+'--neutral-editorial--'+scheme+'--'+viewport,show=matchesCategory&&haystack.includes(search),image=card.querySelector('.preview-export>img'),frame=card.querySelector('.preview-export>iframe'),isHtml=output==='html';card.hidden=!show;if(show)visible+=1;image.hidden=isHtml;frame.hidden=!isHtml;image.width=Number(viewport);image.height=heights[viewport];frame.width=Number(viewport);frame.height=heights[viewport];if(isHtml)frame.src='assets/'+stem+'.html';else image.src='assets/'+stem+'.'+output;card.querySelector('.html').href='assets/'+stem+'.html';card.querySelector('.svg').href='assets/'+stem+'.svg';card.querySelector('.png').href='assets/'+stem+'.png'});all('.family').forEach(section=>{section.hidden=!section.querySelector('.pattern:not([hidden])')});q('#visible-count').textContent=visible;renderMermaid(scheme)}
 all('select,input').forEach(el=>el.addEventListener('input',update));
 all('.mobile-menu a').forEach(link=>link.addEventListener('click',()=>link.closest('details').removeAttribute('open')));
 const observer=new IntersectionObserver(entries=>{const current=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!current)return;all('[data-family-link]').forEach(link=>link.classList.toggle('active',link.dataset.familyLink===current.target.dataset.family))},{rootMargin:'-15% 0px -70% 0px',threshold:[0,.1,.5]});all('.family').forEach(section=>observer.observe(section));update();

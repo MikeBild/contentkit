@@ -637,6 +637,7 @@
             "required": [
               "primary_output",
               "alternatives",
+              "html_fidelity",
               "png_role",
               "rationale"
             ],
@@ -658,6 +659,9 @@
                     "png"
                   ]
                 }
+              },
+              "html_fidelity": {
+                "const": "layout-equivalent"
               },
               "png_role": {
                 "const": "derived-static-export"
@@ -1061,7 +1065,14 @@
               "content.budget-exceeded",
               "capability.unavailable",
               "pattern.degraded",
-              "asset.missing"
+              "asset.missing",
+              "narrative.evidence-missing",
+              "narrative.story-mismatch",
+              "semantic.unit-incompatible",
+              "content.density-exceeded",
+              "container.height-insufficient",
+              "rendering.degraded",
+              "preview.asset-unresolved"
             ]
           },
           "severity": {
@@ -1105,11 +1116,68 @@
           "children": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/LayoutPrimitive"
             }
           },
           "responsive": {
             "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "LayoutPrimitive": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "layout-region",
+              "region",
+              "text",
+              "shape",
+              "image",
+              "chart",
+              "table",
+              "disclosure",
+              "connector",
+              "connector-group"
+            ]
+          },
+          "semantic_type": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "box": {
+            "type": "object"
+          },
+          "source_node_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "style": {
+            "type": "object"
+          },
+          "from": {
+            "type": "object"
+          },
+          "to": {
+            "type": "object"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LayoutPrimitive"
+            }
           }
         },
         "additionalProperties": true
@@ -1134,11 +1202,154 @@
           "children": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/RenderPrimitive"
             }
           },
           "accessibility": {
             "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RenderPrimitive": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "layer",
+              "adapter",
+              "region",
+              "text",
+              "shape",
+              "image",
+              "chart",
+              "table",
+              "disclosure",
+              "connector",
+              "connector-group"
+            ]
+          },
+          "semantic_type": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "box": {
+            "type": "object"
+          },
+          "source_node_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "style": {
+            "type": "object"
+          },
+          "from": {
+            "type": "object"
+          },
+          "to": {
+            "type": "object"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RenderPrimitive"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "NarrativePlan": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": "1"
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "explain",
+              "compare",
+              "sequence",
+              "status",
+              "explore"
+            ]
+          },
+          "target_audience": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 240
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "communication_goal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "thesis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "conclusion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "limitations": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "disclosure": {
+            "type": "string",
+            "enum": [
+              "overview",
+              "progressive",
+              "complete"
+            ]
+          },
+          "story_arc": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "maxLength": 120
+            }
           }
         },
         "additionalProperties": true
@@ -1164,6 +1375,9 @@
           },
           "semantic": {
             "$ref": "#/components/schemas/SemanticDocument"
+          },
+          "narrative": {
+            "$ref": "#/components/schemas/NarrativePlan"
           },
           "pattern": {
             "type": "string"
@@ -1268,6 +1482,15 @@
                 "print"
               ]
             }
+          },
+          "html_presentation": {
+            "type": "string",
+            "enum": [
+              "semantic",
+              "visual"
+            ],
+            "default": "semantic",
+            "description": "Semantic preserves document-native HTML. Visual uses the resolved layout contract while retaining native HTML accessibility."
           }
         }
       },
@@ -1295,6 +1518,7 @@
           "render_tree",
           "diagnostics",
           "accessible_text",
+          "rendering",
           "renders",
           "hashes"
         ],
@@ -1325,6 +1549,37 @@
           },
           "accessible_text": {
             "type": "string"
+          },
+          "rendering": {
+            "type": "object",
+            "required": [
+              "html_presentation",
+              "fidelity",
+              "canonical_static_output",
+              "png_role"
+            ],
+            "properties": {
+              "html_presentation": {
+                "type": "string",
+                "enum": [
+                  "semantic",
+                  "visual"
+                ]
+              },
+              "fidelity": {
+                "type": "string",
+                "enum": [
+                  "semantic",
+                  "layout-equivalent"
+                ]
+              },
+              "canonical_static_output": {
+                "const": "svg"
+              },
+              "png_role": {
+                "const": "derived-static-export"
+              }
+            }
           },
           "renders": {
             "type": "object",

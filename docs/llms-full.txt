@@ -536,7 +536,7 @@ resolve to a declared structural fallback. Export text stays at least 14 px up
 to 800 px, 15 px up to 1100 px, and 16 px on wider canvases; meaningful connectors remain
 visible; every SVG has a title, description and source-order text equivalent.
 `npm run validate:visuals` recompiles 972 six-width light/dark SVG/PNG cases,
-verifies 1,097 semantic HTML cases and 12 complete gallery-page cases, and
+verifies 1,097 visual HTML cases and 12 complete gallery-page cases, and
 measures each standalone SVG in Chromium. Actual clipping, overlap, authored
 truncation, container overflow, separator crossings, navigation defects and
 missing capability output fail validation.
@@ -609,11 +609,11 @@ supported outputs and `png_role` identifies PNG as a deterministic derived
 static export. A caller may explicitly request any supported subset of HTML,
 SVG, PNG, and model output from the compile endpoint.
 
-The generated review gallery currently exposes SVG and PNG only. SVG is the
-last fully validated visual-composition baseline and PNG is rasterized from
-those exact bytes. Semantic HTML remains a compile output, but must not be
-described as pixel-equivalent to the resolved visual composition until the
-renderer-neutral HTML layout passes the same cross-output screenshot gate.
+The generated review gallery exposes HTML + CSS, SVG and PNG. SVG is the
+canonical static representation and PNG is rasterized from those exact bytes.
+Visual HTML is `layout-equivalent`: it uses the same resolved pattern,
+hierarchy, tokens and responsive decisions while retaining native HTML flow and
+accessibility. Do not describe different renderer markup as pixel-identical.
 
 For agent authoring, treat `content_budget` as a hard preflight contract. It
 contains `max_items`, `max_text_characters`, `max_words_per_item`,
@@ -644,6 +644,9 @@ call `/validate`, and finally `/compile`. They retain returned scores, reasons,
 rejections and fallback diagnostics rather than inventing visual fit. Compile
 supports `outputs: [model, html, svg, png]`, light/dark scheme and a bounded
 viewport (320–4096 per side, maximum 16 megapixels; Markdown maximum 256 KiB).
+Set `html_presentation` to `semantic` (the compatibility default) or `visual`.
+Direct Semantic-AST recommendation requests may also include a Narrative Plan;
+Contentkit uses it deterministically and never invokes an internal LLM runtime.
 Identical source, registry, viewport and theme inputs reproduce bytes.
 
 Optional `reportCadence` is restricted to `hourly`, `daily`, `weekly`,

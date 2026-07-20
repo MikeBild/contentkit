@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from '../../src/server.mjs'
 import { createRepository } from '../../src/repository.mjs'
-import { releaseContentType } from '../../src/routes.mjs'
+import { releaseContentType, rewritePreviewCss, rewritePreviewHtml, validateNarrativePlan } from '../../src/routes.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
 import { contentkitFontFamily } from '../../src/typography.mjs'
@@ -14,6 +14,31 @@ test('clientIp trusts only the rightmost X-Forwarded-For hop behind a proxy', ()
   assert.equal(clientIp(req, true), '1.2.3.4')
   // Without trustProxy the header is ignored entirely.
   assert.equal(clientIp(req, false), '10.0.0.1')
+})
+
+test('preview rewriting covers responsive and styled release assets without capturing API routes', () => {
+  const html = `<picture><source srcset="/assets/chart-small.svg 390w, /assets/chart.svg 1200w"><img src="/assets/chart.svg" style="background:url('/assets/grid.svg')"></picture><form action="/public/v1/contact"><a href="/de/report/">Report</a><a href="/_contentkit/login">Sign in</a></form>`
+  const rewritten = rewritePreviewHtml(html, '/p/token')
+  assert.match(rewritten, /\/p\/token\/assets\/chart-small\.svg 390w/)
+  assert.match(rewritten, /src="\/p\/token\/assets\/chart\.svg"/)
+  assert.match(rewritten, /url\('\/p\/token\/assets\/grid\.svg'\)/)
+  assert.match(rewritten, /href="\/p\/token\/de\/report\/"/)
+  assert.match(rewritten, /action="\/public\/v1\/contact"/)
+  assert.match(rewritten, /href="\/_contentkit\/login"/)
+  assert.equal(
+    rewritePreviewCss('.hero{background:url(/assets/hero.svg)}', '/p/token'),
+    '.hero{background:url(/p/token/assets/hero.svg)}',
+  )
+})
+
+test('direct agent narratives are bounded before deterministic recommendation', () => {
+  assert.equal(
+    validateNarrativePlan({ question: 'Which option best answers the reader question?', disclosure: 'progressive' })
+      .disclosure,
+    'progressive',
+  )
+  assert.throws(() => validateNarrativePlan({ question: 'x'.repeat(501) }), /at most 500/)
+  assert.throws(() => validateNarrativePlan({ disclosure: 'animated' }), /disclosure is invalid/)
 })
 
 test('public submission fails closed without a Turnstile secret or dev bypass', async () => {

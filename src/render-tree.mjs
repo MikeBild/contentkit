@@ -4,7 +4,23 @@ const finite = (value) => Number.isFinite(Number(value))
 
 function validateNode(node, path = 'root') {
   if (!node || typeof node !== 'object') throw new Error(`render tree ${path} must be an object`)
-  if (!['svg', 'layer', 'adapter', 'markup'].includes(node.type)) {
+  if (
+    ![
+      'svg',
+      'layer',
+      'adapter',
+      'markup',
+      'region',
+      'text',
+      'shape',
+      'image',
+      'chart',
+      'table',
+      'disclosure',
+      'connector',
+      'connector-group',
+    ].includes(node.type)
+  ) {
     throw new Error(`render tree ${path} has unknown type ${node.type}`)
   }
   if (node.box) {
@@ -49,6 +65,10 @@ export function publicRenderTree(tree) {
     ...(node.adapter ? { adapter: node.adapter } : {}),
     ...(node.box ? { box: node.box } : {}),
     ...(node.source_node_ids ? { source_node_ids: node.source_node_ids } : {}),
+    ...(node.semantic_type ? { semantic_type: node.semantic_type } : {}),
+    ...(node.style ? { style: node.style } : {}),
+    ...(node.from ? { from: node.from } : {}),
+    ...(node.to ? { to: node.to } : {}),
     ...((node.children || []).length ? { children: node.children.map(project) } : {}),
   })
   return {
@@ -56,6 +76,21 @@ export function publicRenderTree(tree) {
     ...project(tree),
     accessibility: tree.accessibility,
   }
+}
+
+export function renderPrimitivesFromLayout(layoutRegion) {
+  return (layoutRegion?.children || []).map((node) => ({
+    type: node.type === 'region' ? 'region' : node.type,
+    id: node.id,
+    role: node.role,
+    semantic_type: node.semantic_type,
+    box: node.box,
+    source_node_ids: node.source_node_ids,
+    style: node.style,
+    from: node.from,
+    to: node.to,
+    children: renderPrimitivesFromLayout(node),
+  }))
 }
 
 export function serializeCompositionRenderTree(tree) {

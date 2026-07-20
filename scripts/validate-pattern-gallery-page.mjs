@@ -83,20 +83,28 @@ for (const width of widths) {
           const roadmap = document.querySelector('#pattern-roadmap')
           return {
             roadmapSource: roadmap.querySelector('.preview-export > img').getAttribute('src'),
+            roadmapHtmlSource: roadmap.querySelector('.preview-export > iframe').getAttribute('src'),
+            imageHidden: roadmap.querySelector('.preview-export > img').hidden,
+            frameHidden: roadmap.querySelector('.preview-export > iframe').hidden,
           }
         })
+      await page.selectOption('#output', 'html')
+      const html = await previewState()
       await page.selectOption('#output', 'svg')
       const svg = await previewState()
       await page.selectOption('#output', 'png')
       const png = await previewState()
       await page.selectOption('#category', 'timeline')
       await page.locator('#pattern-roadmap').scrollIntoViewIfNeeded()
+      await page.selectOption('#output', 'html')
+      await page.screenshot({ path: join(screenshots, '1440-roadmap-html.png'), fullPage: false })
+      await page.selectOption('#output', 'png')
       await page.screenshot({ path: join(screenshots, '1440-roadmap-png.png'), fullPage: false })
       await page.selectOption('#output', 'svg')
       await page.screenshot({ path: join(screenshots, '1440-roadmap-svg.png'), fullPage: false })
       await page.selectOption('#category', '')
       await page.locator('#semantic-publishing').scrollIntoViewIfNeeded()
-      outputSelection = { svg, png }
+      outputSelection = { html, svg, png }
     }
 
     const issues = []
@@ -116,7 +124,13 @@ for (const width of widths) {
     if (consoleErrors.length) issues.push('browser emitted console errors')
     if (
       outputSelection &&
-      (!outputSelection.svg.roadmapSource.endsWith('.svg') || !outputSelection.png.roadmapSource.endsWith('.png'))
+      (!outputSelection.html.roadmapHtmlSource.endsWith('.html') ||
+        !outputSelection.html.imageHidden ||
+        outputSelection.html.frameHidden ||
+        !outputSelection.svg.roadmapSource.endsWith('.svg') ||
+        outputSelection.svg.imageHidden ||
+        !outputSelection.svg.frameHidden ||
+        !outputSelection.png.roadmapSource.endsWith('.png'))
     ) {
       issues.push('SVG and PNG output selection is inconsistent')
     }
@@ -129,6 +143,9 @@ for (const width of widths) {
     }
     if (width === 390 && scheme === 'light') {
       await page.selectOption('#category', 'faq')
+      await page.selectOption('#output', 'html')
+      await page.locator('#pattern-faq-list').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(screenshots, '390-faq-html.png'), fullPage: false })
       await page.selectOption('#output', 'svg')
       await page.locator('#pattern-faq-list').scrollIntoViewIfNeeded()
       await page.screenshot({ path: join(screenshots, '390-faq-svg.png'), fullPage: false })
@@ -163,7 +180,7 @@ await writeFile(
         'sticky-anchor visibility',
         'semantic and narrative guidance for humans and machine agents',
         'code, diagram, chart, and report story examples',
-        'explicit SVG and PNG preview selection from one validated composition baseline',
+        'explicit HTML, SVG, and PNG preview selection from one validated composition baseline',
         'browser console errors',
         'review screenshots at 390 px and 1440 px',
       ],

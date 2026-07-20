@@ -79,7 +79,7 @@ function canonicalSvg(svg, description) {
       /(<svg\b[^>]*>)/,
       `$1<title id="chart-title">${escapeXml(description)}</title><desc id="chart-description">${escapeXml(description)}. The source data follows the chart in an accessible table.</desc>`,
     )
-    .replace(/zr\d+-[a-z]+-\d+/g, (name) => {
+    .replace(/zr\d+-[a-z]+-?\d+/g, (name) => {
       if (!names.has(name)) names.set(name, `ck-chart-${names.size}`)
       return names.get(name)
     })

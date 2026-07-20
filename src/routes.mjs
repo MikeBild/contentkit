@@ -72,6 +72,78 @@ export function releaseContentType(releasePath) {
   return RELEASE_CONTENT_TYPES.find(([suffix]) => releasePath.endsWith(suffix))?.[1]
 }
 
+const PREVIEW_PASSTHROUGH = /^\/(?:media\/|public\/|_contentkit\/|v1\/)/
+
+function previewUrl(value, previewBase) {
+  const input = String(value || '')
+  if (!input.startsWith('/') || input.startsWith('//') || input.startsWith(`${previewBase}/`)) return input
+  if (PREVIEW_PASSTHROUGH.test(input)) return input
+  return `${previewBase}${input}`
+}
+
+function previewSrcset(value, previewBase) {
+  if (/^\s*data:/i.test(value)) return value
+  return String(value)
+    .split(',')
+    .map((candidate) => {
+      const match = candidate.trim().match(/^(\S+)(\s+.+)?$/)
+      return match ? `${previewUrl(match[1], previewBase)}${match[2] || ''}` : candidate
+    })
+    .join(', ')
+}
+
+export function rewritePreviewCss(css, previewBase) {
+  return String(css).replace(/url\(\s*(["']?)(\/[^)'"\s]+)\1\s*\)/gi, (_match, quote, url) => {
+    const rewritten = previewUrl(url, previewBase)
+    return `url(${quote}${rewritten}${quote})`
+  })
+}
+
+export function rewritePreviewHtml(html, previewBase) {
+  let value = String(html).replace(
+    /\b(href|xlink:href|src|action|poster|data|data-index)=(['"])(.*?)\2/gi,
+    (_match, attribute, quote, url) => `${attribute}=${quote}${previewUrl(url, previewBase)}${quote}`,
+  )
+  value = value.replace(/\bsrcset=(['"])(.*?)\1/gi, (_match, quote, srcset) => {
+    return `srcset=${quote}${previewSrcset(srcset, previewBase)}${quote}`
+  })
+  return value.replace(/\bstyle=(['"])(.*?)\1/gi, (_match, quote, css) => {
+    return `style=${quote}${rewritePreviewCss(css, previewBase)}${quote}`
+  })
+}
+
+export function validateNarrativePlan(value) {
+  if (value == null) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new Error('narrative must be an object'), { statusCode: 422 })
+  }
+  const result = { ...value }
+  for (const field of ['target_audience', 'question', 'communication_goal', 'goal', 'thesis', 'conclusion', 'action']) {
+    if (result[field] != null && (typeof result[field] !== 'string' || result[field].length > 500)) {
+      throw Object.assign(new Error(`narrative.${field} must be a string of at most 500 characters`), {
+        statusCode: 422,
+      })
+    }
+  }
+  if (result.intent != null && !['explain', 'compare', 'sequence', 'status', 'explore'].includes(result.intent)) {
+    throw Object.assign(new Error('narrative.intent is invalid'), { statusCode: 422 })
+  }
+  if (result.disclosure != null && !['overview', 'progressive', 'complete'].includes(result.disclosure)) {
+    throw Object.assign(new Error('narrative.disclosure is invalid'), { statusCode: 422 })
+  }
+  for (const field of ['limitations', 'story_arc']) {
+    if (
+      result[field] != null &&
+      (!Array.isArray(result[field]) ||
+        result[field].length > 16 ||
+        result[field].some((entry) => typeof entry !== 'string' || entry.length > 500))
+    ) {
+      throw Object.assign(new Error(`narrative.${field} must be a bounded string list`), { statusCode: 422 })
+    }
+  }
+  return result
+}
+
 // One deployment serves the admin API *and* every published tenant site, on
 // different hostnames. Routes that describe contentkit itself — its docs, its
 // OpenAPI spec, its metrics — belong to the API host alone. Served
@@ -544,11 +616,9 @@ export function createRequestHandler(ctx) {
     if (preview && body.length && (contentType.includes('html') || contentType.includes('css'))) {
       let value = body.toString('utf8')
       if (contentType.includes('html')) {
-        // `action` covers the header search form; the lookahead keeps the public
-        // contact/comment endpoints pointing at the real API.
-        value = value.replace(/(href|src|action|data-index)="\/(?!media\/|public\/)/g, `$1="${previewBase}/`)
+        value = rewritePreviewHtml(value, previewBase)
       } else {
-        value = value.replaceAll('url(/assets/', `url(${previewBase}/assets/`)
+        value = rewritePreviewCss(value, previewBase)
       }
       body = Buffer.from(value)
     }
@@ -890,9 +960,11 @@ export function createRequestHandler(ctx) {
             container: input.container,
             capabilities: input.capabilities,
             outputs: input.outputs,
+            html_presentation: input.html_presentation,
           }),
         )
       }
+      const narrative = validateNarrativePlan(input.narrative)
       const rendered = input.markdown
         ? await renderMarkdown(input.markdown)
         : {
@@ -918,6 +990,7 @@ export function createRequestHandler(ctx) {
         ...(rendered.meta?.composition || {}),
         preferred_pattern: input.pattern || rendered.meta?.composition?.preferred_pattern || null,
         capabilities: input.capabilities || [],
+        narrative: narrative || rendered.narrative || null,
       }
       if (action === 'recommend') {
         const recommendations = recommendPatterns(rendered.semantic, preferences, {
@@ -938,6 +1011,7 @@ export function createRequestHandler(ctx) {
           viewport: input.viewport,
           container: input.container,
           capabilities: input.capabilities,
+          narrative,
         },
       )
       const requested = resolved.composition.requested_pattern

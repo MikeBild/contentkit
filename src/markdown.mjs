@@ -1619,7 +1619,11 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
       ],
     }
     const preferred = meta.composition.preferred_pattern || primary.preferred_pattern || null
-    const resolved = resolvePattern(semantic, { ...meta.composition, preferred_pattern: preferred })
+    const resolved = resolvePattern(semantic, {
+      ...meta.composition,
+      preferred_pattern: preferred,
+      narrative,
+    })
     composition = {
       schema_version: '1',
       format: meta.composition.format,

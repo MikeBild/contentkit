@@ -121,18 +121,32 @@ active release pointer.
 Semantics, composition and theme are separate inputs. Patterns select visual
 structure; the existing token contract selects appearance. The neutral theme is
 the reference rendering, and every pattern owns a distinct visual grammar. A
-deterministic score orders pattern candidates by semantic fit, intent, item
-count, canvas and density with lexical tie-breaking. Responsive rules can select
+deterministic score orders pattern candidates by semantic fit, narrative
+question and goal, evidence roles, intent, item count, canvas, density and
+container bounds with lexical tie-breaking. Responsive rules can select
 a declared structural fallback without changing source meaning. Fixed viewports,
 Contentkit's standard font stack with its bundled Inter primary face, stable
 source ordering and registry hashing make identical inputs byte-reproducible.
 Accessible text and source-order HTML remain available even when a visual
-representation cannot be consumed.
+representation cannot be consumed. The resolved Layout Tree contains regions,
+semantic node references, boxes, styles and renderer-neutral primitives. SVG
+and visual HTML consume that shared contract; semantic HTML remains the
+backward-compatible default.
 
 The headless planning API exposes registry discovery, recommendation, validation
 and compilation independently from release publishing. Published reads expose
 the Semantic AST, Narrative, resolved Composition, diagnostics and authorized
 SVG/PNG representation links. See [VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md).
+
+### Consumer boundary
+
+Contentkit exposes domain-neutral semantic nodes, narratives, patterns, layout
+primitives and renderers. A consuming site owns its data sources, vocabulary,
+navigation, routes, workflow cadence and editorial copy. Consumer names,
+metrics, connectors and route conventions never enter the renderer or pattern
+selection code. A real site may therefore assemble an operational cockpit, an
+editorial publication, a knowledge base or another information product from
+the same public contracts without creating a privileged product template.
 
 ### Release-scoped reader access
 

@@ -429,6 +429,7 @@ function renderingStrategy(category, capabilities) {
   return {
     primary_output: primaryOutput,
     alternatives: capabilities.outputs.filter((output) => output !== 'print' && output !== primaryOutput),
+    html_fidelity: 'layout-equivalent',
     png_role: 'derived-static-export',
     rationale:
       primaryOutput === 'html'
@@ -784,7 +785,55 @@ function candidateContext(semantic) {
   const primary = nodes.find((node) => node.role === 'primary') || nodes[0]
   const peerCount =
     primary?.type === 'metric' ? nodes.filter((node) => node.type === 'metric').length : nodeItemCount(primary || {})
-  return { nodes, primary, nodeTypes: new Set(nodes.map((node) => node.type)), itemCount: peerCount }
+  const currencies = new Set(
+    nodes
+      .map((node) => node.currency)
+      .filter(Boolean)
+      .map((value) => String(value).toUpperCase()),
+  )
+  return {
+    nodes,
+    primary,
+    nodeTypes: new Set(nodes.map((node) => node.type)),
+    itemCount: peerCount,
+    evidenceCount: nodes.filter((node) => node.role === 'evidence').length,
+    currencies,
+  }
+}
+
+const narrativeTokens = (value) =>
+  new Set(
+    String(value || '')
+      .toLocaleLowerCase('en')
+      .match(/[\p{L}\p{N}]{4,}/gu) || [],
+  )
+
+function narrativeFit(pattern, narrative) {
+  if (!narrative) return { score: 0, matched: false }
+  const authored = narrativeTokens(
+    [
+      narrative.question,
+      narrative.communication_goal || narrative.goal,
+      narrative.thesis,
+      narrative.conclusion,
+      narrative.action,
+      ...(narrative.story_arc || []),
+    ]
+      .filter(Boolean)
+      .join(' '),
+  )
+  const described = narrativeTokens(
+    [
+      pattern.narrative.question,
+      pattern.narrative.communication_goal,
+      pattern.narrative.reader_takeaway,
+      pattern.narrative.decision_support,
+      ...pattern.narrative.story_arc,
+      ...pattern.semantics.conveys,
+    ].join(' '),
+  )
+  const overlap = [...authored].filter((token) => described.has(token)).length
+  return { score: Math.min(12, overlap * 3), matched: overlap > 0 }
 }
 
 export function recommendPatterns(semantic, preferences = {}, viewport = {}) {
@@ -800,6 +849,8 @@ export function recommendPatterns(semantic, preferences = {}, viewport = {}) {
     throw Object.assign(new Error(`unknown composition capability "${unknownCapability}"`), { statusCode: 422 })
   }
   const effectiveWidth = Number(viewport.container_width || viewport.container?.width || viewport.width || 0)
+  const effectiveHeight = Number(viewport.container_height || viewport.container?.height || viewport.height || 0)
+  const narrative = preferences.narrative || null
   return patternRegistry
     .map((pattern) => {
       const relevant =
@@ -820,6 +871,7 @@ export function recommendPatterns(semantic, preferences = {}, viewport = {}) {
       const eligible = relevant && dataShapeOk && countOk && canvasOk && capabilityOk
       const reasons = []
       const rejections = []
+      const warnings = []
       let score = 0
       if (relevant) {
         score += 40
@@ -853,8 +905,33 @@ export function recommendPatterns(semantic, preferences = {}, viewport = {}) {
         score += 10
         reasons.push(`density.${density}`)
       }
+      const story = narrativeFit(pattern, narrative)
+      if (story.matched) reasons.push('narrative.story-fit')
+      score += story.score
+      if (narrative?.action && context.evidenceCount === 0) warnings.push('narrative.evidence-missing')
+      if (narrative?.disclosure === 'progressive') {
+        if (pattern.capabilities.interactions.includes('disclosure')) {
+          score += 6
+          reasons.push('narrative.progressive-disclosure')
+        } else warnings.push('narrative.story-mismatch')
+      }
+      if (context.currencies.size > 1) warnings.push('semantic.unit-incompatible')
+      const estimatedRows = Math.max(
+        1,
+        Math.ceil(context.itemCount / (effectiveWidth >= 960 ? 3 : effectiveWidth >= 640 ? 2 : 1)),
+      )
+      const estimatedHeight = 180 + estimatedRows * 180
+      if (effectiveHeight && effectiveHeight < estimatedHeight) warnings.push('container.height-insufficient')
       const responsive = pattern.responsive.find((rule) => effectiveWidth && effectiveWidth <= rule.max_width)
-      return { pattern: pattern.id, score, eligible, reasons, rejections, responsive_pattern: responsive?.use || null }
+      return {
+        pattern: pattern.id,
+        score,
+        eligible,
+        reasons,
+        rejections,
+        warnings,
+        responsive_pattern: responsive?.use || null,
+      }
     })
     .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score || a.pattern.localeCompare(b.pattern))
 }
@@ -867,6 +944,13 @@ export function resolvePattern(semantic, preferences = {}, viewport = {}) {
   if (!selected) throw Object.assign(new Error('composition has no eligible pattern'), { statusCode: 422 })
   const resolved = selected.responsive_pattern || selected.pattern
   const diagnostics = []
+  for (const code of selected.warnings || []) {
+    diagnostics.push({
+      code,
+      severity: code === 'semantic.unit-incompatible' ? 'warning' : 'info',
+      pattern: selected.pattern,
+    })
+  }
   if (requested && !requestedCandidate) {
     diagnostics.push({ code: 'pattern.unknown', severity: 'error', requested_pattern: requested })
   } else if (requested && !requestedCandidate.eligible) {

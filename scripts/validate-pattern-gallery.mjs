@@ -126,6 +126,7 @@ for (const pattern of patternRegistry) {
         scheme,
         viewport,
         outputs: ['model', 'html', 'svg', 'png'],
+        html_presentation: 'visual',
       })
       const svg = compiled.renders.svg
       const png = Buffer.from(compiled.renders.png_base64, 'base64')
@@ -138,9 +139,10 @@ for (const pattern of patternRegistry) {
       invariant(/<desc id="composition-description">[^<]+<\/desc>/.test(svg), `${pattern.id}: no SVG description`)
       invariant(compiled.accessible_text.length >= 20, `${pattern.id}: accessible text is too short`)
       invariant(
-        /class="(?:composition|report)-/.test(compiled.renders.html),
-        `${pattern.id}: responsive semantic HTML is missing`,
+        /class="ck-visual-composition/.test(compiled.renders.html),
+        `${pattern.id}: responsive visual HTML is missing`,
       )
+      invariant(compiled.rendering.fidelity === 'layout-equivalent', `${pattern.id}: HTML fidelity is not declared`)
       invariant(
         !/<script\b|\bon\w+=/i.test(compiled.renders.html),
         `${pattern.id}: unsafe author-controlled HTML escaped the renderer`,
@@ -196,8 +198,10 @@ for (const pattern of patternRegistry) {
       const stem = `${pattern.id}--neutral-editorial--${scheme}--${viewportName}`
       const generatedSvg = await readFile(join(gallery, 'assets', `${stem}.svg`), 'utf8')
       const generatedPng = await readFile(join(gallery, 'assets', `${stem}.png`))
+      const generatedHtml = await readFile(join(gallery, 'assets', `${stem}.html`), 'utf8')
       invariant(generatedSvg === svg, `${pattern.id}: generated SVG drift`)
       invariant(generatedPng.equals(png), `${pattern.id}: generated PNG drift`)
+      invariant(generatedHtml.includes(compiled.renders.html), `${pattern.id}: generated visual HTML drift`)
       if (scheme === 'light' && viewportName === '1600') desktopHashes.add(compiled.hashes.svg_sha256)
       records.push({
         pattern: pattern.id,
@@ -209,6 +213,7 @@ for (const pattern of patternRegistry) {
         height: expectedHeight,
         svg_sha256: compiled.hashes.svg_sha256,
         png_sha256: compiled.hashes.png_sha256,
+        html_fidelity: compiled.rendering.fidelity,
         status: 'passed',
       })
     }
@@ -227,7 +232,7 @@ await writeFile(
       schema_version: '1',
       status: 'passed',
       checks: [
-        'fresh headless compile equals generated SVG and PNG',
+        'fresh headless compile equals generated visual HTML, SVG and PNG',
         'finite geometry and valid viewport',
         'shape, line, text and PNG bounds match the viewport',
         'likely text clipping and overlap detection',
@@ -235,7 +240,7 @@ await writeFile(
         'SVG title and description',
         'responsive SVG type floor: 14px compact and tablet, 15px desktop and 16px wide',
         'accessible text representation',
-        'responsive semantic HTML structure without author-controlled script or event handlers',
+        'responsive visual HTML structure without author-controlled script or event handlers',
         'embedded desktop and mobile report-chart SVG geometry',
         'distinct pattern geometry',
       ],

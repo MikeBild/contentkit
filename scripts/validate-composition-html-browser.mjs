@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { patternRegistry } from '../src/composition-registry.mjs'
-import { renderMarkdown } from '../src/markdown.mjs'
+import { compileCompositionMarkdown } from '../src/composition-output.mjs'
 import { contentkitFontFaceCss, contentkitFontFile } from '../src/typography.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -33,11 +33,27 @@ const informationCategories = new Set([
   'application',
 ])
 const informationPatterns = patternRegistry.filter((pattern) => informationCategories.has(pattern.category))
+const sources = new Map()
 const rendered = new Map()
 
 for (const pattern of patternRegistry) {
   const source = await readFile(join(root, 'examples/compositions', `${pattern.id}.en.md`), 'utf8')
-  rendered.set(pattern.id, await renderMarkdown(source))
+  sources.set(pattern.id, source)
+}
+
+async function visualHtml(pattern, viewport, scheme) {
+  const key = `${pattern.id}:${viewport.width}:${viewport.height}:${scheme}`
+  if (!rendered.has(key)) {
+    const result = await compileCompositionMarkdown(sources.get(pattern.id), {
+      scheme,
+      viewport,
+      container: viewport,
+      outputs: ['html'],
+      html_presentation: 'visual',
+    })
+    rendered.set(key, result.renders.html)
+  }
+  return rendered.get(key)
 }
 
 function pageSource(html, { scheme, zoom = false } = {}) {
@@ -114,7 +130,9 @@ for (const pattern of patternRegistry) {
   for (const scheme of schemes) {
     for (const viewport of viewports) {
       await page.setViewportSize(viewport)
-      await page.setContent(pageSource(rendered.get(pattern.id).html, { scheme }), { waitUntil: 'domcontentloaded' })
+      await page.setContent(pageSource(await visualHtml(pattern, viewport, scheme), { scheme }), {
+        waitUntil: 'domcontentloaded',
+      })
       await page.evaluate(() => document.fonts.ready)
       const result = await inspect(page)
       const issues = []
@@ -155,7 +173,7 @@ for (const pattern of patternRegistry) {
 for (const pattern of informationPatterns) {
   for (const viewport of [viewports[0], viewports[2], viewports[5]]) {
     await page.setViewportSize(viewport)
-    await page.setContent(pageSource(rendered.get(pattern.id).html, { scheme: 'light', zoom: true }), {
+    await page.setContent(pageSource(await visualHtml(pattern, viewport, 'light'), { scheme: 'light', zoom: true }), {
       waitUntil: 'domcontentloaded',
     })
     await page.evaluate(() => document.fonts.ready)
@@ -176,9 +194,12 @@ for (const pattern of informationPatterns) {
   }
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.setContent(pageSource(rendered.get(pattern.id).html, { scheme: 'light' }), {
-    waitUntil: 'domcontentloaded',
-  })
+  await page.setContent(
+    pageSource(await visualHtml(pattern, { width: 390, height: 844 }, 'light'), { scheme: 'light' }),
+    {
+      waitUntil: 'domcontentloaded',
+    },
+  )
   await page.addScriptTag({ content: compositionJs })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const enhancedIssues = []
@@ -275,7 +296,7 @@ await writeFile(
       renderer: 'chromium',
       status: failed.length ? 'failed' : 'passed',
       checks: [
-        'six widths and light/dark semantic HTML',
+        'six widths and light/dark visual HTML',
         'no-JavaScript content completeness',
         '200% browser root text zoom',
         'minimum text and 44px interactive targets',
@@ -301,5 +322,5 @@ if (failed.length) {
   console.error(`HTML browser validation found ${failed.length} failing cases of ${cases.length}.`)
   process.exitCode = 1
 } else {
-  console.log(`Browser-validated ${cases.length} semantic HTML cases across ${patternRegistry.length} patterns.`)
+  console.log(`Browser-validated ${cases.length} visual HTML cases across ${patternRegistry.length} patterns.`)
 }

@@ -73,6 +73,7 @@ test('the declarative registry exposes 81 unique, versioned and agent-readable p
     assert.ok(pattern.capabilities.outputs.includes('svg'))
     assert.ok(['html', 'svg'].includes(pattern.rendering_strategy.primary_output))
     assert.ok(pattern.rendering_strategy.alternatives.length)
+    assert.equal(pattern.rendering_strategy.html_fidelity, 'layout-equivalent')
     assert.equal(pattern.rendering_strategy.png_role, 'derived-static-export')
     assert.ok(pattern.requires.primitives.length)
     assert.ok(pattern.content_budget.max_items >= pattern.accepts.min_items)
@@ -117,6 +118,8 @@ test('formal layout and render trees are deterministic, bounded and container-aw
   assert.deepEqual(first.layout.responsive.viewport, { width: 1440, height: 1024 })
   assert.deepEqual(first.layout.responsive.container, { width: 390, height: 844 })
   assert.equal(first.render_tree.type, 'svg')
+  assert.ok(first.layout.children.find((node) => node.role === 'main').children.length)
+  assert.ok(first.render_tree.children.find((node) => node.role === 'main').children.length)
   assert.deepEqual(
     first.render_tree.children.map((node) => node.role),
     ['banner', 'main', 'contentinfo'],
@@ -126,6 +129,47 @@ test('formal layout and render trees are deterministic, bounded and container-aw
     assert.ok(node.box.width >= 0)
     assert.ok(node.box.height >= 0)
   }
+})
+
+test('visual HTML is an explicit layout-equivalent representation with a semantic compatibility default', async () => {
+  const visual = await compileCompositionMarkdown(markdown, {
+    viewport: { width: 1200, height: 800 },
+    container: { width: 720, height: 680 },
+    outputs: ['html', 'print'],
+    html_presentation: 'visual',
+  })
+  assert.equal(visual.rendering.html_presentation, 'visual')
+  assert.equal(visual.rendering.fidelity, 'layout-equivalent')
+  assert.match(visual.renders.html, /class="ck-visual-composition ck-layout-sequence"/)
+  assert.match(visual.renders.html, new RegExp(`data-pattern="${visual.composition.resolved_pattern}"`))
+  assert.match(visual.renders.html, /container-type:inline-size/)
+  assert.match(visual.renders.print_html, /composition-print/)
+
+  const semantic = await compileCompositionMarkdown(markdown, { outputs: ['html'] })
+  assert.equal(semantic.rendering.html_presentation, 'semantic')
+  assert.doesNotMatch(semantic.renders.html, /ck-visual-composition/)
+  await assert.rejects(
+    () => compileCompositionMarkdown(markdown, { outputs: ['html'], html_presentation: 'canvas' }),
+    /html_presentation must be semantic or visual/,
+  )
+})
+
+test('recommendation uses authored narrative without requiring an internal LLM runtime', () => {
+  const recommendations = recommendPatterns(semanticProcess, {
+    intent: 'sequence',
+    canvas: 'landscape',
+    density: 'balanced',
+    narrative: {
+      question: 'How does work move through ordered stages and handoffs?',
+      communication_goal: 'Explain a directed process from trigger to outcome.',
+      action: 'Review the handoff that blocks the outcome.',
+      disclosure: 'progressive',
+    },
+  })
+  const connected = recommendations.find((entry) => entry.pattern === 'connected-process')
+  assert.ok(connected.reasons.includes('narrative.story-fit'))
+  assert.ok(connected.warnings.includes('narrative.evidence-missing'))
+  assert.ok(connected.warnings.includes('narrative.story-mismatch'))
 })
 
 test('capability selection is strict and explains unavailable progressive behavior', () => {

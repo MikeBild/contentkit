@@ -250,16 +250,16 @@ pipeline and contains:
 - nine declarative report, diagram, and code story-selection guides;
 - all 81 declarative information patterns grouped by communication purpose;
 - light/dark and six real container choices;
-- semantic source, pattern contract, SVG, and PNG review links.
+- semantic source, pattern contract, HTML, SVG, and PNG review links.
 
 The gallery is an example application only. Compilation, recommendation,
-validation, SVG, and PNG remain available headlessly.
+validation, HTML, SVG, and PNG remain available headlessly.
 
-The gallery's `Render as` control currently offers `SVG` and `PNG`. SVG is the
-known-good visual-composition baseline and PNG is rasterized from those exact
-SVG bytes. Semantic HTML remains available through the compile API, but the
-gallery does not claim pixel equivalence while renderer-neutral HTML visual
-layout is being rebuilt.
+The gallery's `Render as` control offers `HTML + CSS`, `SVG` and `PNG`. SVG is
+the canonical static representation and PNG is rasterized from those exact SVG
+bytes. Visual HTML consumes the same resolved pattern and layout contract while
+remaining native, responsive and accessible; layout equivalence does not imply
+pixel-identical renderer markup.
 
 `GET /v1/publishing-guides` exposes the same story-selection model shown in the
 gallery. Agents select by question, semantics, required evidence, and rejection
@@ -269,8 +269,8 @@ conditions before choosing a technical authoring form.
 
 `npm run validate:visuals` verifies the currently generated reference matrix:
 
-- 81 patterns × 2 appearances × 6 widths = 972 SVG and 972 PNG outputs;
-- 1,097 semantic HTML cases, including no-JavaScript, zoom, print, reduced
+- 81 patterns × 2 appearances × 6 widths = 972 visual HTML, 972 SVG and 972 PNG outputs;
+- 1,097 visual HTML cases, including no-JavaScript, zoom, print, reduced
   motion, keyboard, and resilience fixtures;
 - 12 complete gallery-page cases across six widths and both appearances;
 - browser screenshots at 390 px and 1440 px in light and dark;

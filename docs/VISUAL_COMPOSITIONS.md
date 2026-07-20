@@ -327,11 +327,11 @@ HTML + CSS; processes, structures, and data geometry normally recommend SVG.
 PNG is a derived static export. This is never a lock-in: a headless caller may
 request any supported subset of `html`, `svg`, and `png`.
 
-The review gallery currently displays SVG and PNG only. This restores the last
-validated visual baseline: generic semantic HTML is not shown as if it were the
-same resolved composition. HTML remains a supported publishing output but must
-pass cross-renderer geometry and screenshot equivalence before it returns to
-the visual pattern switch.
+The review gallery exposes HTML + CSS, SVG and PNG. Visual HTML is explicitly
+`layout-equivalent`: it preserves the resolved pattern, hierarchy, tokens,
+breakpoints and reading order while using native HTML layout and interaction.
+It is not described as pixel-identical to SVG. Semantic HTML remains available
+as the compatibility-first document representation.
 
 Every descriptor also exposes `narrative`: a natural-language question,
 communication goal, ordered story arc, reader takeaway, and decision-support
@@ -355,7 +355,8 @@ The site-scoped planning endpoints require `content:write`:
 - `POST /v1/sites/{site}/compositions/compile`
 
 Compile accepts any supported subset of `outputs: ["model", "html", "svg",
-"png", "print"]`, a `scheme` and a
+"png", "print"]`, a `scheme`, an optional `html_presentation` of `semantic`
+or `visual`, and a
 bounded `viewport`. PNG is base64 in JSON; SVG and HTML are strings. Maximum
 Markdown size is 256 KiB, viewport sides are 320–4096 pixels and total viewport
 area is limited to 16 megapixels.
@@ -397,12 +398,12 @@ browser zoom and text resizing remain available.
 
 Run `npm run review:patterns`, then open
 `examples/pattern-gallery/index.html`. It contains 81 authored examples at 320,
-390, 768, 1024, 1440, and 1600 px in both appearances: 972 standalone SVGs and
-972 PNGs. It also demonstrates highlighted code, a technical diagram, a
+390, 768, 1024, 1440, and 1600 px in both appearances: 972 visual HTML
+documents, 972 standalone SVGs and 972 PNGs. It also demonstrates highlighted code, a technical diagram, a
 server-rendered chart, and a semantic report. Each is introduced by the question
 it answers and its story arc; nine declarative publishing guides expose the same
 selection logic to humans and machines. Run `npm run validate:visuals` to compare exact
-bytes, validate 1,097 semantic HTML cases, measure all 972 SVGs in Chromium, and
+bytes, validate 1,097 visual HTML cases, measure all 972 SVGs in Chromium, and
 check the complete gallery in 12 responsive appearance cases. Clipping, text
 collisions, authored truncation, container overflow, separator crossings,
 missing capability output, or sticky-navigation defects fail the command. The

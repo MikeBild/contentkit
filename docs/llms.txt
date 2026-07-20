@@ -111,8 +111,9 @@ Pattern Package and export as an independent visual.
   container-aware structural fallbacks, neutral light/dark themes, standalone
   SVG/PNG, typed units and time, content budgets, spec examples and
   AI-readable diagnostics. Every pattern includes a narrative contract. The
-  review gallery uses the validated SVG baseline and its PNG export; semantic
-  HTML remains available but is not advertised as pixel-equivalent.
+  review gallery exposes layout-equivalent visual HTML, canonical SVG and its
+  deterministic PNG export; visual HTML remains native rather than imitating
+  SVG markup.
 - Visual reports: neutral groups, cards, metrics, badges and progress;
   `bar`, `line`, `area` and `donut` charts take one Markdown table and become
   accessible light/dark SVG assets at build time. Source tables remain visible;

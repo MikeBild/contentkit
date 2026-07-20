@@ -25,6 +25,7 @@ test('report SVGs are deterministic, static and accessible', () => {
   assert.match(first.svg, /aria-labelledby="chart-title chart-description"/)
   assert.match(first.svg, /<title id="chart-title">Revenue by month<\/title>/)
   assert.match(first.svg, /<desc id="chart-description">/)
+  assert.doesNotMatch(first.svg, /zr\d+-/)
   assert.doesNotMatch(first.svg, /<script|javascript:|(?:href|src)="https?:\/\//i)
 
   const mobile = renderReportChartSvg(bar, { locale: 'en', scheme: 'light', width: 390, height: 360 })

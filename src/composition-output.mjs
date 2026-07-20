@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Resvg, initWasm } from '@resvg/resvg-wasm'
 import { accessibleCompositionText, compositionFont, renderCompositionArtifact } from './composition-svg.mjs'
+import { renderVisualCompositionHtml } from './composition-html.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
 import { patternRegistryHash, resolvePattern } from './composition-registry.mjs'
@@ -74,10 +75,21 @@ export async function materializeComposition(
 
 export async function compileCompositionMarkdown(
   markdown,
-  { settings = {}, scheme = 'light', viewport, container, capabilities = [], outputs = ['model', 'html'] } = {},
+  {
+    settings = {},
+    scheme = 'light',
+    viewport,
+    container,
+    capabilities = [],
+    outputs = ['model', 'html'],
+    html_presentation = 'semantic',
+  } = {},
 ) {
   if (!['light', 'dark'].includes(scheme)) {
     throw Object.assign(new Error('scheme must be light or dark'), { statusCode: 422 })
+  }
+  if (!['semantic', 'visual'].includes(html_presentation)) {
+    throw Object.assign(new Error('html_presentation must be semantic or visual'), { statusCode: 422 })
   }
   if (Buffer.byteLength(String(markdown)) > 256 * 1024) {
     throw Object.assign(new Error('composition markdown must be at most 256 KiB'), { statusCode: 422 })
@@ -142,6 +154,8 @@ export async function compileCompositionMarkdown(
     formats: chosen.has('png') ? ['svg', 'png'] : chosen.has('svg') ? ['svg'] : [],
   })
   const asset = result.composition_assets[scheme]
+  const html =
+    html_presentation === 'visual' ? renderVisualCompositionHtml(result, asset.layout_tree, { scheme }) : result.html
   return {
     schema_version: '1',
     semantic: result.semantic,
@@ -151,9 +165,15 @@ export async function compileCompositionMarkdown(
     render_tree: result.render_tree,
     diagnostics: result.diagnostics,
     accessible_text: result.accessible_text,
+    rendering: {
+      html_presentation,
+      fidelity: html_presentation === 'visual' ? 'layout-equivalent' : 'semantic',
+      canonical_static_output: 'svg',
+      png_role: 'derived-static-export',
+    },
     renders: {
-      ...(chosen.has('html') ? { html: result.html } : {}),
-      ...(chosen.has('print') ? { print_html: `<div class="composition-print">${result.html}</div>` } : {}),
+      ...(chosen.has('html') ? { html } : {}),
+      ...(chosen.has('print') ? { print_html: `<div class="composition-print">${html}</div>` } : {}),
       ...(chosen.has('svg') ? { svg: asset.svg } : {}),
       ...(chosen.has('png') ? { png_base64: asset.png.toString('base64'), png_media_type: 'image/png' } : {}),
     },
@@ -166,11 +186,15 @@ export async function compileCompositionMarkdown(
   }
 }
 
-export function reResolveComposition(rendered, { preferred_pattern, viewport, container, capabilities } = {}) {
+export function reResolveComposition(
+  rendered,
+  { preferred_pattern, viewport, container, capabilities, narrative } = {},
+) {
   const preferences = {
     ...rendered.meta.composition,
     preferred_pattern: preferred_pattern || rendered.meta.composition.preferred_pattern,
     capabilities: capabilities || [],
+    narrative: narrative || rendered.narrative || null,
   }
   const resolved = resolvePattern(rendered.semantic, preferences, {
     ...(viewport || {}),
