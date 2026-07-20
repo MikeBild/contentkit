@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.18.0 - 2026-07-20
+
+### Added
+
+- Absorb SlideKit into ContentKit as a first-class `deck` content kind with a
+  deterministic, source-addressed DeckPlan, information architecture,
+  narrative roles and immutable release artifacts.
+- Compile semantic slide regions through ContentKit's controlled Composition
+  pipeline into accessible light/dark SVG and PNG representations before a
+  bounded Slidev build produces one self-contained, presenter-capable deck.
+- Add synchronous and bounded asynchronous plan, validate and compile APIs,
+  deck theme discovery, released deck listings, Markdown twins and Read API
+  metadata under the dedicated `deck:render` trust scope.
+- Add deck build telemetry, site-scoped aggregate statistics, Prometheus
+  counters/gauges, readiness queue state and publication/failure webhooks
+  without retaining source Markdown or author identity in telemetry.
+- Add the ordered PostgreSQL deck migration, a deterministic SlideKit source
+  migration CLI, production canary procedure, authoring reference, example
+  deck and binary lifecycle verification.
+
+### Changed
+
+- Integrate slide collections into generated navigation, sitemap, search,
+  `llms.txt`, `llms-full.txt`, OpenAPI and the unified CMS documentation.
+- Package the Slidev renderer, controlled offline themes and all semantic deck
+  assets in the self-contained ContentKit binary.
+
+### Security
+
+- Run trusted deck compilation with bounded concurrency, queue and process
+  timeouts, process-tree termination, ephemeral workspaces and a sanitized
+  child environment; published decks receive a path-specific offline CSP.
+
 ## 1.15.8 - 2026-07-19
 
 ### Added

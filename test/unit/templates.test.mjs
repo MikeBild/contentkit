@@ -10,7 +10,7 @@ import {
   layout,
   searchBody,
 } from '../../src/templates.mjs'
-import { contentCsp } from '../../src/security.mjs'
+import { contentCsp, deckContentCsp } from '../../src/security.mjs'
 
 function render(ctxOverrides = {}, options = {}) {
   const site = {
@@ -404,6 +404,14 @@ test('contentCsp widens script/connect only for the configured provider', () => 
   const ga = contentCsp({ provider: 'ga4', id: 'G-X' })
   assert.match(ga, /script-src[^;]*https:\/\/www\.googletagmanager\.com/)
   assert.match(ga, /connect-src[^;]*https:\/\/www\.google-analytics\.com/)
+})
+
+test('deck CSP permits the self-contained runtime without widening normal pages', () => {
+  assert.doesNotMatch(contentCsp(null), /script-src[^;]*unsafe-inline/)
+  const deck = deckContentCsp()
+  assert.match(deck, /script-src 'unsafe-inline'/)
+  assert.match(deck, /connect-src 'none'/)
+  assert.match(deck, /form-action 'none'/)
 })
 
 test('contentBody survives a bare item: no tags, no relations, no injected clock', () => {

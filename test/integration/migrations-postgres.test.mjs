@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { runMigrations } from '../../src/db/migrate.mjs'
 import { EMBEDDED_MIGRATIONS } from '../../src/db/migrations/embedded.mjs'
@@ -62,6 +63,21 @@ test(
         [synthetic.tag],
       )
       assert.equal(journal.rows[0].count, 1)
+      const suffix = randomUUID().slice(0, 8)
+      const site = (
+        await pool.query(
+          "INSERT INTO ck_sites (slug,name,base_url,default_locale) VALUES ($1,'Deck',$2,'en') RETURNING id",
+          [`deck-migration-${suffix}`, `https://deck-${suffix}.test`],
+        )
+      ).rows[0]
+      await pool.query(
+        "INSERT INTO ck_content_items (site_id,kind,locale,translation_key) VALUES ($1,'deck','en','deck')",
+        [site.id],
+      )
+      await pool.query(
+        "INSERT INTO ck_deck_build_events (site_id,mode,result,execution) VALUES ($1,'compile','success','async')",
+        [site.id],
+      )
     } finally {
       await pool.end()
     }

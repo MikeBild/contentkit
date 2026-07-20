@@ -27,6 +27,12 @@ Only the latest release receives security fixes.
   client-supplied geometry, runtime specifications or executable callbacks;
   Contentkit's validation, resource limits and deterministic SVG/PNG boundary
   are part of the security model.
+- Treat slide-deck rendering as trusted code execution. Keep planning and
+  validation available to normal authors, but grant `deck:render` only to
+  trusted automation. The queue, timeout, process-tree kill, secret-free child
+  environment and temporary-file cleanup reduce impact; they are not an OS
+  sandbox. Use a dedicated unprivileged service account and stronger host-level
+  isolation when multiple trust domains share a deployment.
 - Configure Turnstile in production; without it public writes fail closed unless
   the explicit development bypass is enabled outside production.
 - Rotate scoped API keys rather than sharing the bootstrap key.

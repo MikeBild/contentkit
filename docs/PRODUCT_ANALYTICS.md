@@ -14,6 +14,7 @@ All endpoints are `GET /v1/sites/{site}/stats/{kind}`:
 |---|---|
 | `releases` | builds started/completed/failed/activated, release vs preview builds, files, bytes and build duration |
 | `content` | items, revisions, publications, assets and asset bytes |
+| `decks` | plans, validations, sync/async compiles, previews, releases, outcomes, cache results, slides, SVG/PNG components, duration and output bytes |
 | `readers` | successful, failed and rate-limited authentication attempts plus sessions created |
 | `webhooks` | outbox events, deliveries and their current outcome |
 | `audio` | jobs and current outcome, synthesized characters and audio duration |
@@ -57,6 +58,11 @@ reader-auth fact table itself stores only site, one of
 session ID or failure detail. These events are removed by the existing
 maintenance run after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (400 by
 default).
+
+Deck build facts follow the same retention. They contain only site, operation,
+sync/async execution, outcome, cache result and bounded numeric counters. They
+never store source Markdown, a deck title or URL, a job ID, an API key or an
+author/reader identity.
 
 The API continues an incoming W3C `traceparent`, returns the server span in a
 `traceparent` response header and emits `trace_id`, `span_id` and

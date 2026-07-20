@@ -47,7 +47,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 
 ## Features
 
-- Pages, posts and projects with immutable draft revisions.
+- Pages, posts, projects and semantic slide decks with immutable draft revisions.
 - Controlled site presets for portfolios, versioned product documentation,
   wikis, knowledge bases, product landing pages and changelogs, plus a
   per-document layout override.
@@ -69,6 +69,15 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   accessible responsive HTML plus a machine-readable Semantic AST. The surrounding
   document remains editorial prose; full-canvas SVG and PNG stay an explicit
   `layout: composition` concern.
+- Deterministic slide-deck publishing with `kind: deck` and `layout: deck`:
+  source evidence becomes a versioned information architecture, narrative and
+  DeckPlan; semantic slide regions reuse the controlled pattern registry to
+  produce canonical SVG plus layout-equivalent PNG before ContentKit builds one
+  self-contained offline Slidev HTML deck with presenter mode.
+  The controlled deck layout is `deck`; rendering requires the additional
+  `deck:render` scope because a real Slidev/Vite build executes trusted source.
+  See [semantic slide decks](docs/SLIDE_DECKS.md) and the
+  [SlideKit retirement runbook](docs/SLIDEKIT_MIGRATION.md).
 - Composition reports and dashboards with neutral metric cards, status,
   progress and table-driven charts with direct values and accessible source
   tables. Static report pages use semantic HTML for their information hierarchy
@@ -111,7 +120,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Server-side full-text search over published content with locale-aware
   PostgreSQL stemming (de/en), relevance ranking and `<mark>` headlines via
   `GET /v1/sites/{site}/search` — published sites keep their client-side search.
-- Bounded site-scoped product analytics for releases, content, reader auth,
+- Bounded site-scoped product analytics for releases, content, decks, reader auth,
   webhooks, audio and engagement through `/v1/sites/{site}/stats/*`, reusing
   `content:read` keys and returning aggregate counts only. See
   [docs/PRODUCT_ANALYTICS.md](docs/PRODUCT_ANALYTICS.md).
@@ -144,6 +153,7 @@ For production, use two scoped keys instead of the bootstrap key:
 export CONTENTKIT_URL="https://contentkit-api.example.com"
 export CONTENTKIT_SITE_ADMIN_KEY="ck_..."      # site:admin
 export CONTENTKIT_PUBLISH_API_KEY="ck_..."     # content:read content:write release:write
+export CONTENTKIT_DECK_API_KEY="ck_..."        # content:read content:write release:write deck:render
 ```
 
 `site:admin` can create/update sites and create more keys. It cannot publish

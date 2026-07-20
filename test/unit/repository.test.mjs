@@ -727,7 +727,7 @@ test('listPublished rejects malformed query parameters with 422 and clamps overs
         return true
       },
     )
-  await rejects({ kind: 'article' }, 'kind must be page, post or project')
+  await rejects({ kind: 'article' }, 'kind must be page, post, project or deck')
   await rejects({ updated_since: 'not-a-date' }, 'updated_since must be an ISO 8601 timestamp')
   await rejects({ limit: 'abc' }, 'limit must be a positive integer')
   await rejects({ limit: '0' }, 'limit must be a positive integer')

@@ -4,6 +4,8 @@ A robots.txt-style index of the Contentkit documentation for LLMs. Contentkit is
 an API-first headless Markdown mini-CMS with semantic visual composition and
 declarative information patterns. It turns immutable revisions into multilingual
 websites, documentation, reports and infographics.
+Semantic decks additionally compile source-addressed information architecture
+and narrative into SVG/PNG-enhanced, self-contained Slidev HTML.
 Visual content follows Semantic AST → Narrative → Composition → deterministic
 HTML/SVG/PNG, using a declarative repository-owned Pattern Registry. Each entry
 below has a title, path and one-line summary. For the complete
@@ -40,6 +42,11 @@ Pattern Package and export as an independent visual.
   `composition.format: report`, controlled dashboard primitives, table-driven
   charts, cadence catalogs, primary-metric projection on product home pages,
   tokens and limits.
+- [Semantic slide decks](docs/SLIDE_DECKS.md): `kind: deck`, deterministic
+  DeckPlan, semantic SVG/PNG components, bounded Slidev compiler, async jobs,
+  publishing, security and telemetry.
+- [SlideKit migration](docs/SLIDEKIT_MIGRATION.md): compatibility matrix,
+  production cutover, deployment cleanup and GitHub archival gate.
 - [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
   release, content, reader, webhook, audio and engagement aggregates for
   external collectors using the existing `content:read` scope.
@@ -61,6 +68,10 @@ Pattern Package and export as an independent visual.
   `GET /v1/composition-patterns/{pattern}`. Site-scoped agents use
   `/v1/sites/{site}/compositions/recommend`, `/validate` and `/compile`, then
   fetch published `.svg` or `.png` representations with `content:read`.
+- Deck authoring: `GET /v1/deck-themes`; site-scoped `/decks/plan`,
+  `/decks/validate` and `/decks/compile`; async status/results under
+  `/deck-jobs/{job}`. Compilation and explicit publication require
+  `deck:render` in addition to the normal authoring/release scopes.
 - Story selection: `GET /v1/publishing-guides` and
   `GET /v1/publishing-guides/{guide}` describe the question, story arc,
   required evidence, rejection conditions, compatible patterns, and examples
@@ -81,7 +92,8 @@ Pattern Package and export as an independent visual.
 - Markdown upload accepts raw `text/markdown` or `multipart/form-data` with a
   `document` field and optional `asset:<path>` file fields.
 - API keys are scoped. Use `site:admin` for site/key administration,
-  `content:read content:write release:write` for publishing, and
+  `content:read content:write release:write` for publishing, add
+  `deck:render` only to trusted deck automation, and use
   `moderation:write` for comments/contact moderation. Send the key as
   `Authorization: Bearer ck_...` or `X-API-Key: ck_...`; the raw key is shown
   only once by `POST /v1/api-keys`.
@@ -130,7 +142,7 @@ Pattern Package and export as an independent visual.
   render only exact same-grant navigation/home cards; product report sites link
   a cadence-aware current-report catalog plus history from exact same-grant
   reports.
-- Content authoring: immutable revisions for `page`, `post` and `project`
+- Content authoring: immutable revisions for `page`, `post`, `project` and `deck`
   Markdown documents, scheduled revisions, tags, translations and asset uploads.
 - Static generation: home, blog, project, archive, tag index, tag, search,
   contact, content pages, RSS, per-tag feeds, sitemap, robots, 404, canonical
@@ -160,7 +172,7 @@ Pattern Package and export as an independent visual.
   published content with locale-aware PostgreSQL stemming (de/en) and returns
   `<mark>`-highlighted headlines, behind `content:read` scoped keys — published
   sites keep their static client-side search. See llms-full section 4.
-- Product analytics API: `GET /v1/sites/{site}/stats/{releases|content|readers|webhooks|audio|engagement}`
+- Product analytics API: `GET /v1/sites/{site}/stats/{releases|content|decks|readers|webhooks|audio|engagement}`
   returns privacy-safe dense UTC aggregates for bounded `from`/`to` windows,
   behind existing site-scoped `content:read` keys. ContentKit does not own the
   downstream cockpit or reporting store. See llms-full section 21.
@@ -175,7 +187,7 @@ Pattern Package and export as an independent visual.
 
 - [Architecture](docs/ARCHITECTURE.md): Content lifecycle, migration ownership,
   security boundaries and static output model.
-- Pages, posts and projects are content items. Each write creates an immutable
+- Pages, posts, projects and decks are content items. Each write creates an immutable
   revision. Releases render selected revisions into a new immutable storage
   prefix and atomically move the active release pointer.
 - A release overlays `revision_ids` on the published set and removes

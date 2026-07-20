@@ -90,6 +90,11 @@ export function createMaintenance(config, db, storage, logger) {
           created_at: `lte.${new Date(now - PRODUCT_STATS_RETENTION_DAYS * 86400 * 1000).toISOString()}`,
         })
         .catch((error) => logger.warn?.('reader auth metric retention failed', { error: String(error) }))
+      await db
+        .remove('ck_deck_build_events', {
+          created_at: `lte.${new Date(now - PRODUCT_STATS_RETENTION_DAYS * 86400 * 1000).toISOString()}`,
+        })
+        .catch((error) => logger.warn?.('deck metric retention failed', { error: String(error) }))
       const reaped = await reapStuckBuilds(now)
       const { removed, objects } = await collectGarbage(now)
       logger.info?.('storage gc complete', { reaped, removed, objects })

@@ -94,3 +94,26 @@ test('the OpenAPI authoring contract documents semantic compositions, charts and
   assert.ok(spec.paths['/v1/publishing-guides'])
   assert.ok(spec.paths['/v1/publishing-guides/{guide}'])
 })
+
+test('semantic deck, async job and statistics paths are documented and routable', () => {
+  for (const path of [
+    '/v1/deck-themes',
+    '/v1/sites/{site}/decks/plan',
+    '/v1/sites/{site}/decks/validate',
+    '/v1/sites/{site}/decks/compile',
+    '/v1/sites/{site}/deck-jobs/{job}',
+    '/v1/sites/{site}/deck-jobs/{job}/result',
+    '/v1/sites/{site}/stats/decks',
+  ]) {
+    const item = spec.paths[path]
+    assert.ok(item, path)
+    const sample = path.replaceAll(/\{[^}]+\}/g, 'value')
+    for (const method of Object.keys(item)) {
+      const route = API_ROUTES.find((candidate) => candidate.pattern.test(sample))
+      assert.ok(route, `${method.toUpperCase()} ${path}`)
+      assert.ok(route.methods.includes(method.toUpperCase()), `${method.toUpperCase()} ${path}`)
+    }
+  }
+  assert.match(spec.paths['/v1/sites/{site}/decks/compile'].post.description, /deck:render/)
+  assert.ok(spec.paths['/v1/sites/{site}/decks/compile'].post.responses[202])
+})

@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
 import { materializeComposition } from './composition-output.mjs'
+import { planDeck } from './decks.mjs'
 import { hashApiKey } from './auth.mjs'
 import { sha256, slugify } from './utils.mjs'
 import { assertDeliverableUrl, decryptSecret, encryptSecret, generateWebhookSecret } from './secrets.mjs'
@@ -908,8 +909,8 @@ export function createRepository(config, db, storage) {
     // buildSnapshot; filtering and keyset paging happen in JS at blog scale
     // (precedent: the /v1/feedback aggregation).
     async listPublished(siteId, query = {}) {
-      if (query.kind && !['page', 'post', 'project'].includes(query.kind)) {
-        throw invalidQuery('kind must be page, post or project')
+      if (query.kind && !['page', 'post', 'project', 'deck'].includes(query.kind)) {
+        throw invalidQuery('kind must be page, post, project or deck')
       }
       let updatedSince = null
       if (query.updated_since) {
@@ -983,6 +984,7 @@ export function createRepository(config, db, storage) {
         locale: parsed.meta.locale,
       })
       const rendered = await materializeComposition(charted, { settings: site?.settings || {}, formats })
+      const deckPlan = item.kind === 'deck' ? await planDeck(revision.markdown) : null
       const representations = rendered.composition
         ? {
             svg: `/v1/sites/${siteId}/published/${item.kind}/${item.locale}/${revision.slug}/composition.svg`,
@@ -1001,6 +1003,13 @@ export function createRepository(config, db, storage) {
         representations,
         _composition_assets: rendered.composition_assets || null,
         source_sha256: revision.source_sha256,
+        ...(deckPlan
+          ? {
+              deck_plan: deckPlan,
+              slide_count: deckPlan.slides.length,
+              artifacts: { deck_html: `/${item.locale}/slides/${revision.slug}/` },
+            }
+          : {}),
       }
     },
     // Full-text search over what is currently published. Validation lives here
@@ -1014,8 +1023,8 @@ export function createRepository(config, db, storage) {
       if (q.length > SEARCH_QUERY_MAX_CHARS) {
         throw invalidQuery(`q must be at most ${SEARCH_QUERY_MAX_CHARS} characters`)
       }
-      if (query.kind && !['page', 'post', 'project'].includes(query.kind)) {
-        throw invalidQuery('kind must be page, post or project')
+      if (query.kind && !['page', 'post', 'project', 'deck'].includes(query.kind)) {
+        throw invalidQuery('kind must be page, post, project or deck')
       }
       let limit = SEARCH_LIMIT_DEFAULT
       if (query.limit !== undefined) {

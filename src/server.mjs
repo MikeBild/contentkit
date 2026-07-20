@@ -11,6 +11,8 @@ import { createOutboxWorker } from './webhooks.mjs'
 import { createAudioWorker } from './audio.mjs'
 import { createMaintenance } from './maintenance.mjs'
 import { createMetrics } from './metrics.mjs'
+import { createDeckRenderer } from './deck-renderer.mjs'
+import { createDeckJobStore } from './deck-jobs.mjs'
 import { sendJson } from './http.mjs'
 import { createLimiter } from './security.mjs'
 import { createRequestHandler, routeName } from './routes.mjs'
@@ -24,6 +26,14 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const db = database.db
   const storage = dependencies.storage || createStorage(config).storage
   const repo = dependencies.repo || createRepository(config, db, storage)
+  const metrics = createMetrics()
+  const deckRenderer =
+    dependencies.deckRenderer ||
+    createDeckRenderer(config, logger, {
+      cache: (result) => metrics.deckCache(result),
+      build: (event) => metrics.deckBuild(event),
+    })
+  const deckJobs = dependencies.deckJobs || createDeckJobStore({ max: config.deckJobsMax, ttlMs: config.deckJobTtlMs })
   const audio = dependencies.audio || createAudioWorker(config, db, repo, storage, logger)
   // Publishing enqueues read-aloud jobs fire-and-forget; the hook can never
   // fail a release (see build() in releases.mjs).
@@ -31,6 +41,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     dependencies.releases ||
     createReleaseManager(config, repo, db, storage, logger, {
       onPublished: (published) => audio.enqueueAudioJobs(published),
+      deckRenderer,
     })
   // Worker ↔ releases is mutual: publishing enqueues audio jobs (hook above),
   // finished audio schedules a debounced rebuild release. The worker exists
@@ -43,7 +54,6 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()
   const loginLimiter = dependencies.loginLimiter || createLimiter(15 * 60 * 1000, 5)
-  const metrics = createMetrics()
   const state = { draining: false, storageReady: false }
 
   const handle = createRequestHandler({
@@ -60,6 +70,8 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     metrics,
     state,
     audio,
+    deckRenderer,
+    deckJobs,
   })
 
   const server = createServer((req, res) => {
@@ -111,10 +123,12 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     limiter,
     loginLimiter,
     releases,
+    deckRenderer,
+    deckJobs,
     database,
     handle,
     async ensureStorage() {
-      await storage.ensureBucket()
+      await Promise.all([storage.ensureBucket(), deckRenderer.sweep?.()])
       state.storageReady = true
     },
   }
@@ -167,6 +181,7 @@ export async function start(config = loadConfig()) {
     app.state.draining = true
     app.outbox.stop()
     app.audio.stop()
+    app.deckJobs.stop()
     app.limiter.stop()
     app.loginLimiter.stop()
     app.server.close(async () => {

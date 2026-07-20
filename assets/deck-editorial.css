@@ -1,0 +1,32 @@
+:root {
+  --ck-deck-bg: #fbfaf7;
+  --ck-deck-fg: #1a1714;
+  --ck-deck-muted: #6b6660;
+  --ck-deck-border: #e6e1d8;
+  --ck-deck-accent: #4f46e5;
+  --slidev-theme-primary: var(--ck-deck-accent);
+}
+html.dark {
+  --ck-deck-bg: #14110d;
+  --ck-deck-fg: #efe9df;
+  --ck-deck-muted: #a39c8f;
+  --ck-deck-border: #2c2620;
+  --ck-deck-accent: #818cf8;
+}
+.slidev-layout {
+  background: var(--ck-deck-bg) !important;
+  color: var(--ck-deck-fg) !important;
+}
+.slidev-layout :is(h1, h2, h3, h4) {
+  color: var(--ck-deck-fg);
+  font-family: 'Inter Variable', Inter, sans-serif;
+  font-weight: 750;
+}
+.slidev-layout a {
+  color: var(--ck-deck-accent);
+}
+.slidev-layout.cover,
+.slidev-layout.intro {
+  background-image: none !important;
+  background-color: var(--ck-deck-bg) !important;
+}

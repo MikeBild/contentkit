@@ -4,6 +4,7 @@ const words = {
   de: {
     blog: 'Blog',
     projects: 'Projekte',
+    slides: 'Präsentationen',
     archive: 'Archiv',
     search: 'Suche',
     contact: 'Kontakt',
@@ -34,6 +35,7 @@ const words = {
     selected: 'Ausgewählte Projekte',
     allPosts: 'Alle Beiträge',
     allProjects: 'Alle Projekte',
+    allDecks: 'Alle Präsentationen',
     published: 'Veröffentlicht',
     updated: 'Aktualisiert',
     searchPlaceholder: 'Website durchsuchen …',
@@ -98,6 +100,7 @@ const words = {
   en: {
     blog: 'Blog',
     projects: 'Projects',
+    slides: 'Slide decks',
     archive: 'Archive',
     search: 'Search',
     contact: 'Contact',
@@ -127,6 +130,7 @@ const words = {
     selected: 'Selected projects',
     allPosts: 'All posts',
     allProjects: 'All projects',
+    allDecks: 'All slide decks',
     published: 'Published',
     updated: 'Updated',
     searchPlaceholder: 'Search this site …',
@@ -513,6 +517,7 @@ function navLinks(ctx) {
   const preset = site.settings?.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
   const report = latestReportLink(ctx)
+  const hasDecks = (ctx.decks || []).length > 0
   // Non-portfolio presets lead with their single hub (weight 20); portfolio
   // spreads blog/archive/projects across 20…40; product carries no built-in hub.
   const presetLinks = primary
@@ -534,6 +539,7 @@ function navLinks(ctx) {
       .filter((p) => p.nav_order != null && p.nav_order <= 60)
       .map((p) => [p.nav_title || p.title, p.url, p.nav_order]),
     ...presetLinks,
+    ...(hasDecks ? [[t.slides, `/${locale}/slides/`, 45]] : []),
   ].sort((a, b) => a[2] - b[2])
   return links
     .map(
@@ -566,6 +572,7 @@ function siteFooter(ctx) {
   const posts = ctx.posts || []
   const hasPosts = posts.length > 0
   const hasProjects = (ctx.projects || []).length > 0
+  const hasDecks = (ctx.decks || []).length > 0
   const hasTags = posts.some((p) => (p.tags || []).length > 0)
   const navigation = [
     ...(primary ? [primary] : []),
@@ -573,6 +580,7 @@ function siteFooter(ctx) {
     ...(!primary && preset !== 'product' && report ? [report] : []),
     ...(hasPosts ? [[t.blog, `/${locale}/blog/`]] : []),
     ...(hasProjects ? [[t.projects, `/${locale}/projects/`]] : []),
+    ...(hasDecks ? [[t.slides, `/${locale}/slides/`]] : []),
     ...(hasPosts ? [[t.archive, `/${locale}/archive/`]] : []),
     ...(hasTags ? [[t.tags, `/${locale}/tags/`]] : []),
   ]
@@ -841,7 +849,8 @@ export function homeBody(ctx) {
 <p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p>
 </div>${settings.profile_image ? `<img class="avatar" src="${escapeHtml(safeUrl(settings.profile_image, { relative: true }))}" alt="${escapeHtml(settings.profile_image_alt || ctx.site.name)}">` : ''}</section>
 <section class="section"><div class="container"><div class="section-head"><h2>${escapeHtml(ctx.t.selected)}</h2><a href="/${ctx.locale}/projects/">${escapeHtml(ctx.t.allProjects)}</a></div><div class="grid">${ctx.projects.slice(0, 3).map(card).join('')}</div></div></section>
-<section class="section"><div class="container"><div class="section-head"><h2>${escapeHtml(ctx.t.latest)}</h2><a href="/${ctx.locale}/blog/">${escapeHtml(ctx.t.allPosts)}</a></div><div class="grid">${ctx.posts.slice(0, 6).map(card).join('')}</div></div></section>`
+<section class="section"><div class="container"><div class="section-head"><h2>${escapeHtml(ctx.t.latest)}</h2><a href="/${ctx.locale}/blog/">${escapeHtml(ctx.t.allPosts)}</a></div><div class="grid">${ctx.posts.slice(0, 6).map(card).join('')}</div></div></section>
+${ctx.decks?.length ? `<section class="section"><div class="container"><div class="section-head"><h2>${escapeHtml(ctx.t.slides)}</h2><a href="/${ctx.locale}/slides/">${escapeHtml(ctx.t.allDecks)}</a></div><div class="grid">${ctx.decks.slice(0, 6).map(card).join('')}</div></div></section>` : ''}`
 }
 
 export function listingBody(title, items) {
@@ -859,7 +868,7 @@ export function presetHomeBody(ctx) {
     changelog: 'Changelog',
   }
   const title = labels[preset] || ctx.site.name
-  const visible = [...(ctx.pages || [])].sort(
+  const visible = [...(ctx.pages || []), ...(ctx.decks || [])].sort(
     (a, b) =>
       (a.nav_order ?? 1000) - (b.nav_order ?? 1000) ||
       compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||

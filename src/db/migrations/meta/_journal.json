@@ -61,6 +61,12 @@
       "tag": "0009_contentkit_named_previews",
       "when": 1784538000000,
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "tag": "0010_contentkit_decks",
+      "when": 1784548800000,
+      "breakpoints": true
     }
   ]
 }

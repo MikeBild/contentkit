@@ -14,7 +14,9 @@ only shares a signing secret with Contentkit.
 | `contentkit.comment.submitted` | A comment was submitted for moderation |
 | `contentkit.comment.approved` | A comment was approved |
 | `contentkit.release.failed` | A release or preview build failed |
+| `contentkit.deck.release_failed` | A release containing a deck failed (best-effort companion to the release event) |
 | `contentkit.content.published` | An item's published revision changed during release activation |
+| `contentkit.deck.published` | A deck revision was activated; includes its plan hash and artifact counts |
 | `contentkit.content.unpublished` | A published item was retired by a release |
 | `contentkit.release.published` | A release was activated (including rollbacks and empty releases) |
 
@@ -50,6 +52,13 @@ published revision emits nothing. A `contentkit.content.published` payload:
 `revision_id` set to the until-now published (retired) revision. Payloads
 deliberately contain no absolute URLs — the URL layout belongs to the site
 builder, not the CMS.
+
+For a newly activated deck, `contentkit.deck.published` is enqueued in the same
+activation transaction. Its data extends the content transition with the
+relative deck `url`, `slide_count`, `plan_sha256` and `component_count`.
+Consumers can therefore bind automation to a stable plan without downloading
+the HTML artifact. `contentkit.deck.release_failed` is best-effort because a
+failed build has no pointer transition to commit atomically.
 
 Boundary: a rollback and a release with empty `revision_ids` move no item
 pointers, so they emit no `content.*` events — only

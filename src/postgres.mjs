@@ -28,6 +28,7 @@ const TABLES = new Set([
   'ck_reader_sessions',
   'ck_release_access_catalog',
   'ck_reader_auth_events',
+  'ck_deck_build_events',
 ])
 
 function assertKnownContentkitIdentifiers(text) {

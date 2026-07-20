@@ -46,7 +46,8 @@ the sitemap. A page can opt out of its preset with `layout: standard`.
 The following fields are validated on upload:
 
 - `layout`: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, or
-  `composition`; `report` is a compatibility alias for a report composition.
+  `composition`; deck documents use the dedicated `deck` layout. `report` is a
+  compatibility alias for a report composition.
 - `composition`: visual contract with `format`, `canvas`, `intent`, `density` and optional `preferredPattern`.
 - `reportCadence`: optional when `composition.format` is `report`: `hourly`, `daily`, `weekly`,
   `monthly`, `quarterly`, or `yearly`.
@@ -71,6 +72,7 @@ release before activation.
 - Knowledge base: `/{locale}/help/{hierarchy}/`
 - Changelog: `/{locale}/changelog/{slug}/`
 - Landing, composition and standard pages: `/{locale}/{slug}/`
+- Semantic slide decks (`deck`): `/{locale}/slides/{slug}/`
 
 Docs, wiki, and knowledge pages render a hierarchy sidebar, breadcrumbs, and a
 heading table of contents. Landing pages can use the sanitized `hero`,

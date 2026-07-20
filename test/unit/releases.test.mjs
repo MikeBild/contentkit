@@ -286,6 +286,7 @@ test('activation enqueues content.published for changed pointers plus one releas
     reason: 'first publish',
     published_count: 1,
     unpublished_count: 0,
+    deck_count: 0,
   })
 })
 
@@ -306,6 +307,72 @@ test('a no-op republish emits only release.published', async () => {
     ['contentkit.release.published'],
   )
   assert.equal(events[0].data.published_count, 0)
+})
+
+test('deck activation emits the source-addressed deck event and build statistics', async () => {
+  const markdown = `---
+kind: deck
+layout: deck
+title: Release deck
+locale: en
+slug: release-deck
+---
+# Release deck
+
+---
+
+# Decision
+`
+  const revision = {
+    id: 'deck-rev-1',
+    item_id: 'deck-item-1',
+    kind: 'deck',
+    locale: 'en',
+    translation_key: 'release-deck',
+    slug: 'release-deck',
+    title: 'Release deck',
+    markdown,
+  }
+  const db = makeDb()
+  const repo = makeRepo(
+    makeSnapshot({
+      revisions: [revision],
+      overlay: [revision],
+      items: [
+        {
+          id: revision.item_id,
+          kind: 'deck',
+          locale: 'en',
+          translation_key: 'release-deck',
+          published_revision_id: null,
+        },
+      ],
+    }),
+  )
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger, {
+    deckRenderer: {
+      async render() {
+        return { html: '<!doctype html><html><head></head><body>deck</body></html>', cache: 'miss' }
+      },
+    },
+  })
+
+  await releases.publish({ siteId: 'site-1', revisionIds: [revision.id] })
+  const events = repo.enqueued[0].events
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['contentkit.content.published', 'contentkit.deck.published', 'contentkit.release.published'],
+  )
+  const deckEvent = events[1]
+  assert.equal(deckEvent.data.slide_count, 2)
+  assert.match(deckEvent.data.plan_sha256, /^[0-9a-f]{64}$/)
+  assert.equal(deckEvent.data.url, '/en/slides/release-deck/')
+  assert.ok(
+    db.calls.inserts.some(
+      (call) =>
+        call.table === 'ck_deck_build_events' && call.body.mode === 'release' && call.body.cache_result === 'miss',
+    ),
+  )
 })
 
 test('retiring a published item emits content.unpublished with the retired revision', async () => {
@@ -344,6 +411,7 @@ test('retiring a published item emits content.unpublished with the retired revis
     reason: '',
     published_count: 0,
     unpublished_count: 1,
+    deck_count: 0,
   })
 })
 

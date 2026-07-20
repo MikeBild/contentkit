@@ -17,12 +17,13 @@ test('real documentation, wiki, knowledge, landing, changelog, and composition e
     ['changelog/2-0-0.en.md', 'release-2-0-0'],
     ['landing/product.en.md', 'product'],
     ['reports/quarterly.en.md', 'q2-business-review'],
+    ['decks/decision.en.md', 'verified-product-decision', 'deck'],
   ]
   const revisions = await Promise.all(
-    sources.map(async ([path, id]) => ({
+    sources.map(async ([path, id, kind = 'page']) => ({
       id: `revision-${id}`,
       item_id: `item-${id}`,
-      kind: 'page',
+      kind,
       locale: 'en',
       translation_key: id,
       markdown: await readFile(join(root, 'examples', path), 'utf8'),
@@ -52,6 +53,15 @@ test('real documentation, wiki, knowledge, landing, changelog, and composition e
     revisions,
     comments: [],
     accessGroups: [{ slug: 'customers' }],
+    deckRenderer: {
+      async render(markdown) {
+        assert.match(markdown, /routerMode: "hash"/)
+        return {
+          html: '<!doctype html><html><head><title>Verified product decision</title></head><body><div id="app"></div><script type="module">globalThis.deckReady=true</script></body></html>',
+          cache: 'miss',
+        }
+      },
+    },
   })
   for (const path of [
     'en/docs/v2/getting-started/index.html',
@@ -62,6 +72,8 @@ test('real documentation, wiki, knowledge, landing, changelog, and composition e
     'en/changelog/2-0-0/index.html',
     'en/atlas/index.html',
     'en/q2-business-review/index.html',
+    'en/slides/verified-product-decision/index.html',
+    'en/slides/index.html',
   ])
     assert.ok(result.files.has(path), path)
   const report = result.files.get('en/q2-business-review/index.html').body.toString()
@@ -82,4 +94,12 @@ test('real documentation, wiki, knowledge, landing, changelog, and composition e
   assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /customer-runbook/)
   assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Customer runbook/)
   assert.equal(result.accessCatalog.length, 1)
+  const deck = result.files.get('en/slides/verified-product-decision/index.html').body.toString()
+  assert.match(deck, /globalThis\.deckReady/)
+  assert.match(deck, /canonical/)
+  assert.ok(result.files.has('en/slides/verified-product-decision/index.md'))
+  assert.match(result.files.get('en/llms-full.txt').body.toString(), /Verified product decision/)
+  const builtDeck = result.content.find((item) => item.kind === 'deck')
+  assert.equal(builtDeck.slide_count, 5)
+  assert.ok(builtDeck.deck_artifacts.length >= 2)
 })

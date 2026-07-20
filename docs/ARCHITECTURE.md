@@ -73,7 +73,21 @@ Pattern Packages are strict Markdown plus YAML under `patterns/`. The loader
 accepts only known layout primitives and validates IDs, versions, semantic
 compatibility, fallback references and cycles. Pattern prose is available to
 humans and agents, while all executable layout and rendering code remains owned
-by Contentkit. Uploaded executable code is outside the trust boundary.
+by Contentkit. Uploaded executable code is outside the normal page/composition
+trust boundary.
+
+Slide decks form an explicit trusted-code boundary. A `kind: deck` revision is
+first transformed into a deterministic, source-addressed DeckPlan. Semantic
+slide nodes reuse the Pattern Registry and become light/dark SVG with PNG
+fallback before the bounded Slidev/Vite child build produces one self-contained
+HTML file. Upload, planning and validation require only `content:write`; the
+executable compile/release boundary additionally requires `deck:render` for a
+newly selected revision. The runner strips ContentKit secrets from the child
+environment, bounds concurrency/queue/time, kills the child process group and
+cleans temporary files. This is not an OS sandbox, so operators grant the scope
+only to trusted automation. Published deck HTML remains inside the immutable
+release and receives a path-specific offline CSP without weakening normal
+pages.
 
 ## Migration ownership
 
@@ -99,6 +113,8 @@ provision the database and login; they do not copy or execute migration files.
   supply geometry, CSS, executable code or renderer specifications. Markdown,
   viewport and chart limits bound compile work; SVG markup comes only from the
   Contentkit renderer and PNG uses a bundled font rather than host fonts.
+- Deck compilation is executable trusted source gated by `deck:render`; its
+  child process never receives database, storage, webhook or API secrets.
 - Preview invitation and session tokens are random, stored only as separate
   hashes, expiring and revocable. A one-time invitation exchanges into a
   path-scoped HttpOnly cookie before the browser reaches the named preview URL.
@@ -256,8 +272,11 @@ reuse `content:read`; they are not a consumer-specific reporting API and do not
 query another product's database. The response boundary contains only numeric
 UTC time series. A downstream collector may join them with other product or
 marketing APIs and persist report snapshots elsewhere, but ContentKit has no
-dependency on that topology. The only new event table records privacy-safe
-reader-auth outcomes because failed logins do not otherwise create a session.
+dependency on that topology. Dedicated event tables record privacy-safe
+reader-auth outcomes (because failed logins do not otherwise create a session)
+and numeric deck-build facts (because headless plans/compiles do not create
+content rows). Neither stores source or identity, and both follow the configured
+statistics retention.
 See `docs/PRODUCT_ANALYTICS.md`.
 
 ### Derived, not authored

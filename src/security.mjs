@@ -69,3 +69,11 @@ export function contentCsp(analytics) {
   }
   return `default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src ${script.join(' ')}; frame-src https://challenges.cloudflare.com; connect-src ${connect.join(' ')}; object-src 'none'; base-uri 'self'; form-action 'self'`
 }
+
+// Slidev's self-contained output deliberately contains inline module scripts,
+// styles, fonts and images. Deck publishing is therefore protected by the
+// dedicated deck:render scope and served under this offline-only policy instead
+// of weakening the policy used by ordinary ContentKit pages.
+export function deckContentCsp() {
+  return "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+}

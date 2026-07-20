@@ -281,6 +281,28 @@ test(
         }),
         201,
       )
+      const deckSource = await readFile(join(root, 'examples', 'decks', 'decision.en.md'), 'utf8')
+      const deckEntry = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/content`, {
+          method: 'POST',
+          headers: { ...auth, 'content-type': 'text/markdown' },
+          body: deckSource,
+        }),
+        201,
+      )
+
+      // Exercise the deck authoring boundary independently of publishing. The
+      // same source must compile to a self-contained, content-addressed result.
+      const compiledDeckResponse = await fetch(`${origin}/v1/sites/${site.id}/decks/compile`, {
+        method: 'POST',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ markdown: deckSource }),
+      })
+      const compiledDeck = await responseJson(compiledDeckResponse, 200, logs.join(''))
+      assert.equal(compiledDeck.plan.slides.length, 5)
+      assert.ok(compiledDeck.artifacts.length >= 2)
+      assert.match(compiledDeck.html_sha256, /^[0-9a-f]{64}$/)
+      assert.match(compiledDeckResponse.headers.get('etag') || '', /^"[0-9a-f]{64}"$/)
 
       const markdown = `---
 kind: post
@@ -320,7 +342,12 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
           body: JSON.stringify({
-            revision_ids: [ingested.revision.id, reportEntry.revision.id, ...docs.map((entry) => entry.revision.id)],
+            revision_ids: [
+              ingested.revision.id,
+              reportEntry.revision.id,
+              deckEntry.revision.id,
+              ...docs.map((entry) => entry.revision.id),
+            ],
             expires_in: 600,
             slug: 'local-release-review',
           }),
@@ -352,6 +379,11 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.equal(previewReport.status, 200)
       const previewReportHtml = await previewReport.text()
       assert.match(previewReportHtml, /report-chart-picture/)
+      const previewDeck = await fetch(`${preview.preview_url}en/slides/verified-product-decision/`, {
+        headers: { cookie: previewCookie },
+      })
+      assert.equal(previewDeck.status, 200)
+      assert.match(await previewDeck.text(), /data-contentkit-deck-theme/)
       const previewAssetPaths = [...previewReportHtml.matchAll(/(?:src|srcset)="([^" ]*\/assets\/[^" ,]+)/g)].map(
         (match) => match[1],
       )
@@ -367,7 +399,12 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
           body: JSON.stringify({
-            revision_ids: [ingested.revision.id, reportEntry.revision.id, ...docs.map((entry) => entry.revision.id)],
+            revision_ids: [
+              ingested.revision.id,
+              reportEntry.revision.id,
+              deckEntry.revision.id,
+              ...docs.map((entry) => entry.revision.id),
+            ],
             reason: 'local E2E with real documentation and report',
           }),
         }),
@@ -402,6 +439,26 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.equal(reportMarkdown.status, 200)
       assert.match(reportMarkdown.body, /:::chart\{type="bar"/)
       assert.match(reportMarkdown.body, /\| Apr \| 438 \| 425 \|/)
+
+      const deckPage = await requestWithHost(origin, '/en/slides/verified-product-decision/', 'e2e.local')
+      assert.equal(deckPage.status, 200)
+      assert.match(deckPage.body, /data-contentkit-deck-theme/)
+      assert.match(deckPage.body, /presenter/)
+      assert.doesNotMatch(deckPage.body, /<script\b[^>]*\bsrc=["']https?:/i)
+      assert.doesNotMatch(deckPage.body, /<img\b[^>]*\bsrc=["']https?:/i)
+      for (const [link] of deckPage.body.matchAll(/<link\b[^>]*>/gi)) {
+        if (/\brel=["'](?:stylesheet|modulepreload|preload|icon)["']/i.test(link)) {
+          assert.doesNotMatch(link, /\bhref=["']https?:/i)
+        }
+      }
+      assert.match(deckPage.headers['content-security-policy'], /script-src 'unsafe-inline' 'wasm-unsafe-eval'/)
+      assert.match(deckPage.headers['content-security-policy'], /connect-src 'none'/)
+      const deckMarkdown = await requestWithHost(origin, '/en/slides/verified-product-decision/index.md', 'e2e.local')
+      assert.equal(deckMarkdown.status, 200)
+      assert.match(deckMarkdown.body, /:::metric\{label="Successful canary checks"/)
+      const deckListing = await requestWithHost(origin, '/en/slides/', 'e2e.local')
+      assert.equal(deckListing.status, 200)
+      assert.match(deckListing.body, /Verified product decision/)
 
       const docsPage = await requestWithHost(origin, '/en/docs/v2/getting-started/installation/', 'e2e.local')
       assert.equal(docsPage.status, 200)
@@ -564,6 +621,16 @@ Markdown rein, veröffentlichte HTML-Seite raus.
         200,
       )
       assert.equal(audioStats.totals.jobs_created, 0)
+      const deckStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/decks?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.ok(deckStats.totals.compiles >= 1)
+      assert.ok(deckStats.totals.previews >= 1)
+      assert.ok(deckStats.totals.releases >= 1)
+      assert.ok(deckStats.totals.slides >= 15)
+      assert.ok(deckStats.totals.svg_components >= 2)
+      assert.ok(deckStats.totals.png_components >= 2)
 
       const releaseList = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, { headers: auth }),
@@ -631,9 +698,10 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       // The built-in env endpoint receives every event: contact, comment
       // submit + approve, and the content lifecycle of this flow — publish,
       // comment-approval republish, pointer rollback, unpublish and republish give
-      // 5 release.published; the report adds one initial content.published event.
-      // The managed endpoint receives exactly the contact fan-out, for 16 total.
-      const webhooks = await waitForWebhooks(webhookEvents, 16)
+      // 5 release.published; the report and deck add initial content events,
+      // plus the deck-specific publication event. The managed endpoint receives
+      // exactly the contact fan-out, for 18 deliveries in total.
+      const webhooks = await waitForWebhooks(webhookEvents, 18)
       const envHooks = webhooks.filter((event) => event.path === '/hooks/contentkit-notifications')
       const managedHooks = webhooks.filter((event) => event.path === '/hooks/managed')
       assert.deepEqual(
@@ -644,6 +712,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           'contentkit.comment.approved',
           'contentkit.content.published',
           'contentkit.content.unpublished',
+          'contentkit.deck.published',
           'contentkit.release.published',
         ]),
       )
@@ -672,7 +741,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           delivered = (
             await pool.query("SELECT count(*)::int AS n FROM public.ck_webhook_deliveries WHERE status = 'delivered'")
           ).rows[0].n
-          if (delivered >= 16) break
+          if (delivered >= 18) break
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
         const state = await pool.query(`
@@ -687,9 +756,9 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           // migration (the audio migration broke it once already).
           migrations: listEmbeddedMigrations().length,
           active_releases: 1,
-          events: 15,
+          events: 17,
         })
-        assert.equal(delivered, 16, 'all fan-out deliveries succeed')
+        assert.equal(delivered, 18, 'all fan-out deliveries succeed')
       } finally {
         await pool.end()
       }

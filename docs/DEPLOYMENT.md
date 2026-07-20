@@ -69,8 +69,15 @@ proxy must preserve the original site `Host` header.
 Set `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` to the stable environment name used by
 your log backend (for example `production`). Structured request logs carry the
 service name/version, environment and W3C trace/span IDs. Reader-auth product
-facts contain no identity or IP and are pruned by the existing maintenance run
+facts and deck-build product facts contain no identity/source and are pruned by the existing maintenance run
 after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (default 400).
+
+Deck rendering executes trusted Slidev/Vite source. Run the binary as an
+unprivileged account, grant `deck:render` only to trusted site automation and
+size CPU/memory for the configured queue. The default permits one active build,
+eight waiters and a two-minute build/queue timeout. The child environment omits
+ContentKit's database, storage and API secrets; this is defense in depth, not an
+OS sandbox. See `docs/SLIDE_DECKS.md`.
 
 ## Release pipeline
 
@@ -85,6 +92,12 @@ ships it to the production host, restarts the systemd unit and smoke-tests
 `/ready`, `/health`, `/openapi.json` and an unauthorized write. Smoke-test
 `/openapi.json` against `CONTENTKIT_PUBLIC_URL`, not against a published site
 domain — see below.
+
+For releases that change the deck compiler, the production canary must also
+plan/validate the committed example, run sync and async compilation, publish a
+named preview, exercise navigation and presenter mode in a real browser, assert
+zero runtime network dependencies, inspect deck metrics/statistics and perform
+release rollback/reactivation before a legacy SlideKit service is removed.
 
 ## API host vs. site hosts
 

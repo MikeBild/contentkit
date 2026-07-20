@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
 import { materializeComposition } from './composition-output.mjs'
+import { compileDeck } from './decks.mjs'
 import { contentkitFontAssetName, contentkitFontFaceCss, contentkitFontFile } from './typography.mjs'
 import {
   archiveBody,
@@ -22,7 +23,7 @@ import {
   tagsBody,
   structuredContentBody,
 } from './templates.mjs'
-import { compareDateDesc, escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
+import { compareDateDesc, escapeHtml, escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
 
 const text = (body, contentType = 'text/html; charset=utf-8', cacheControl = 'public,max-age=60,must-revalidate') => ({
   body: Buffer.from(body),
@@ -42,6 +43,7 @@ const PRESET_LAYOUT = {
 function route(item) {
   if (item.kind === 'post') return `/${item.locale}/blog/${item.slug}/`
   if (item.kind === 'project') return `/${item.locale}/projects/${item.slug}/`
+  if (item.kind === 'deck') return `/${item.locale}/slides/${item.slug}/`
   const nested = (item.route_segments || [item.slug]).join('/')
   if (item.layout === 'docs') return `/${item.locale}/docs/${item.docs_version}/${nested}/`
   if (item.layout === 'wiki') return `/${item.locale}/wiki/${nested}/`
@@ -55,7 +57,10 @@ function assignContentRoutes(items, site) {
   const versions = site.settings?.presentation?.docs?.versions || []
   const versionIds = new Set(versions.map((entry) => entry.id))
   for (const item of items) {
-    item.layout = item.layout || (item.kind === 'page' ? PRESET_LAYOUT[preset] : 'standard') || 'standard'
+    item.layout =
+      item.layout ||
+      (item.kind === 'deck' ? 'deck' : item.kind === 'page' ? PRESET_LAYOUT[preset] : 'standard') ||
+      'standard'
     if (item.layout === 'docs') {
       if (!item.doc_key || !item.docs_version)
         throw Object.assign(new Error(`docs page "${item.title}" needs docKey and docsVersion`), { statusCode: 422 })
@@ -122,6 +127,7 @@ function pagesVisibleWithGrant(publicPages, allPages, grant) {
 }
 
 function absolute(site, path) {
+  if (/^https?:\/\//i.test(String(path))) return String(path)
   return `${site.base_url.replace(/\/$/, '')}${path}`
 }
 
@@ -309,7 +315,7 @@ const LLMS_OPTIONAL_SECTION = 'Optional'
 const llmsLink = (title, url, note) =>
   `- [${String(title).replaceAll('[', '').replaceAll(']', '')}](${url})${note ? `: ${excerpt(note, 200)}` : ''}`
 
-function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
+function llmsTxt(site, locale, { t, posts, projects, pages, decks }, locales) {
   const blocks = [`# ${site.name}`, `> ${excerpt(site.description || site.name, 300)}`]
   const linksFor = (items) => items.map((item) => llmsLink(item.title, item.canonical, item.summary))
   const section = (heading, links) => {
@@ -318,6 +324,7 @@ function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
   section(t.blog, linksFor(posts))
   section(t.projects, linksFor(projects))
   section(t.pages, linksFor(pages))
+  section(locale.startsWith('de') ? 'Präsentationen' : 'Slide decks', linksFor(decks))
   section(LLMS_OPTIONAL_SECTION, [
     llmsLink(t.archive, absolute(site, `/${locale}/archive/`)),
     llmsLink(t.allTags, absolute(site, `/${locale}/tags/`)),
@@ -342,7 +349,10 @@ function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
 // indistinguishable from a section break inside one.
 const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^\n]*\n+/, '')
 const hasMarkdownTwin = (item) =>
-  !item.noindex && (item.kind === 'post' || (item.layout === 'composition' && item.composition?.format === 'report'))
+  !item.noindex &&
+  (item.kind === 'post' ||
+    item.kind === 'deck' ||
+    (item.layout === 'composition' && item.composition?.format === 'report'))
 
 // One document as Markdown: title heading, canonical URL, the authored TL;DR
 // bullets (frontmatter, so they are absent from `source`), then the body. The
@@ -428,6 +438,39 @@ function sitemap(items) {
   return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">${items.map((item) => `<url><loc>${escapeXml(item.canonical)}</loc>${(item.translations || []).map((alt) => `<xhtml:link rel="alternate" hreflang="${escapeXml(alt.locale)}" href="${escapeXml(alt.canonical)}"/>`).join('')}${item.updated_at ? `<lastmod>${escapeXml(item.updated_at)}</lastmod>` : ''}</url>`).join('')}</urlset>`
 }
 
+function deckDocumentHtml(item, site) {
+  const title = escapeHtml(item.title)
+  const summary = escapeHtml(item.summary || '')
+  const canonical = escapeHtml(item.canonical)
+  const image = item.cover ? escapeHtml(absolute(site, item.cover)) : ''
+  const head = [
+    `<link rel="canonical" href="${canonical}">`,
+    `<meta name="description" content="${summary}">`,
+    `<meta name="author" content="${escapeHtml(site.name)}">`,
+    `<meta property="og:title" content="${title}">`,
+    `<meta property="og:description" content="${summary}">`,
+    '<meta property="og:type" content="website">',
+    `<meta property="og:url" content="${canonical}">`,
+    `<meta property="og:site_name" content="${escapeHtml(site.name)}">`,
+    `<meta property="og:locale" content="${escapeHtml(item.locale)}">`,
+    `<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}">`,
+    `<meta name="twitter:title" content="${title}">`,
+    `<meta name="twitter:description" content="${summary}">`,
+    ...(image
+      ? [
+          `<meta property="og:image" content="${image}">`,
+          `<meta property="og:image:alt" content="${escapeHtml(item.cover_alt || item.title)}">`,
+          `<meta name="twitter:image" content="${image}">`,
+          `<meta name="twitter:image:alt" content="${escapeHtml(item.cover_alt || item.title)}">`,
+        ]
+      : []),
+    ...(item.noindex || item.protected ? ['<meta name="robots" content="noindex,nofollow">'] : []),
+  ].join('')
+  return item.deck_html
+    .replace(/<html(?![^>]*\blang=)/i, `<html lang="${escapeHtml(item.locale)}"`)
+    .replace('</head>', `${head}</head>`)
+}
+
 // `now` is injectable so builds are testable and reproducible. It drives the
 // post-age notice and the footer's copyright year, which means generated HTML
 // varies with build time even when content does not. That is intended: a release
@@ -444,6 +487,7 @@ export async function buildSite({
   accessGroups = [],
   now = new Date(),
   logger,
+  deckRenderer,
 }) {
   const { files, assets } = await staticAssets(root)
   const audioByItem = new Map(audio.map((entry) => [entry.item_id, entry]))
@@ -500,6 +544,26 @@ export async function buildSite({
       // The read-aloud asset for this item, if one exists — the frontmatter
       // opt-out (audio: false) wins even over an already-generated asset.
       audio: result.meta.audio === false ? null : audioByItem.get(revision.item_id) || null,
+    }
+    if (item.kind === 'deck') {
+      if (!deckRenderer) throw Object.assign(new Error('deck renderer is unavailable'), { statusCode: 503 })
+      let deckRender = null
+      const compile = async (render) =>
+        compileDeck(revision.markdown, {
+          settings: site.settings || {},
+          renderHtml: async (markdown, theme) => {
+            deckRender = await render(markdown, theme)
+            return deckRender.html
+          },
+        })
+      const compilation = deckRenderer.run
+        ? await deckRenderer.run(compile)
+        : await compile(deckRenderer.render.bind(deckRenderer))
+      item.deck_plan = compilation.plan
+      item.deck_artifacts = compilation.artifacts
+      item.deck_html = compilation.html
+      item.slide_count = compilation.plan.slides.length
+      item.deck_cache_result = deckRender?.cache || null
     }
     rendered.push(item)
   }
@@ -568,6 +632,7 @@ export async function buildSite({
       .sort((a, b) => Number(b.featured) - Number(a.featured))
     const pages = publicLocal.filter((item) => item.kind === 'page')
     const allPages = local.filter((item) => item.kind === 'page')
+    const decks = publicLocal.filter((item) => item.kind === 'deck' && !item.noindex)
 
     // Related posts and prev/next are read off `posts`, which excludes noindex
     // items — so a draft is never recommended, and a draft's own page gets no
@@ -614,7 +679,7 @@ export async function buildSite({
     // Whether this locale's blogcast feed will exist at all (same condition as
     // the blogcast.xml emit below) — templates hide every blogcast link without it.
     const blogcast = site.settings?.audio?.enabled === true && posts.some((post) => post.audio)
-    const base = { site, locale, t, posts, projects, pages, allPages, assets, now, blogcast }
+    const base = { site, locale, t, posts, projects, pages, allPages, decks, assets, now, blogcast }
     const personData = {
       '@context': 'https://schema.org',
       '@type': 'Person',
@@ -793,6 +858,26 @@ export async function buildSite({
       sitemapItems.push({ canonical: absolute(site, collectionPath), updated_at: lastUpdated(items) })
     }
 
+    if (decks.length) {
+      const slidesPath = `/${locale}/slides/`
+      files.set(
+        `${locale}/slides/index.html`,
+        text(
+          layout(
+            {
+              ...base,
+              title: t.slides,
+              description: t.slides,
+              canonical: absolute(site, slidesPath),
+              currentPath: slidesPath,
+            },
+            listingBody(t.slides, decks),
+          ),
+        ),
+      )
+      sitemapItems.push({ canonical: absolute(site, slidesPath), updated_at: lastUpdated(decks) })
+    }
+
     const docVersions = site.settings?.presentation?.docs?.versions || []
     if (docVersions.length) {
       const docsRoot = `/${locale}/docs/`
@@ -884,9 +969,9 @@ export async function buildSite({
     // `posts`/`projects` already exclude noindex; `pages` does not, so filter here.
     const llmsPages = pages.filter((page) => !page.noindex)
     const localeCodes = locales.map((entry) => entry.locale)
-    const indexable = [...posts, ...projects, ...llmsPages]
+    const indexable = [...posts, ...projects, ...llmsPages, ...decks]
     const llmsIndex = text(
-      llmsTxt(site, locale, { t, posts, projects, pages: llmsPages }, localeCodes),
+      llmsTxt(site, locale, { t, posts, projects, pages: llmsPages, decks }, localeCodes),
       'text/plain; charset=utf-8',
     )
     const llmsFull = text(llmsFullTxt(site, indexable), 'text/plain; charset=utf-8')
@@ -1009,37 +1094,39 @@ export async function buildSite({
       files.set(
         item.url.replace(/^\//, '') + 'index.html',
         text(
-          layout(
-            {
-              ...itemBase,
-              title: item.title,
-              description: item.summary,
-              canonical: item.canonical,
-              type: item.kind === 'post' ? 'article' : 'website',
-              translations: item.translations,
-              currentPath: item.url,
-              image: item.cover,
-              imageAlt: item.cover_alt,
-              noindex: item.noindex || item.protected,
-              robots: archivedDocs ? 'noindex,follow' : undefined,
-              publishedTime: item.published_at,
-              modifiedTime: item.updated_at || item.published_at,
-              articleTags: item.kind === 'post' ? item.tags : [],
-              markdownUrl,
-            },
-            structuredContentBody(item, itemBase, itemComments),
-            {
-              structured,
-              mermaid: item.hasMermaid,
-              forms: item.kind === 'post' && commentsEnabled(site),
-              feedback: item.kind === 'post' && feedbackEnabled(site),
-              audio: Boolean(item.audio),
-              // The copy button only enhances a page that has a Markdown twin,
-              // and only when the share row is not switched off per site.
-              aiActions: Boolean(markdownUrl) && site.settings?.ai?.share_buttons !== false,
-              composition: item.layout === 'composition',
-            },
-          ),
+          item.kind === 'deck'
+            ? deckDocumentHtml(item, site)
+            : layout(
+                {
+                  ...itemBase,
+                  title: item.title,
+                  description: item.summary,
+                  canonical: item.canonical,
+                  type: item.kind === 'post' ? 'article' : 'website',
+                  translations: item.translations,
+                  currentPath: item.url,
+                  image: item.cover,
+                  imageAlt: item.cover_alt,
+                  noindex: item.noindex || item.protected,
+                  robots: archivedDocs ? 'noindex,follow' : undefined,
+                  publishedTime: item.published_at,
+                  modifiedTime: item.updated_at || item.published_at,
+                  articleTags: item.kind === 'post' ? item.tags : [],
+                  markdownUrl,
+                },
+                structuredContentBody(item, itemBase, itemComments),
+                {
+                  structured,
+                  mermaid: item.hasMermaid,
+                  forms: item.kind === 'post' && commentsEnabled(site),
+                  feedback: item.kind === 'post' && feedbackEnabled(site),
+                  audio: Boolean(item.audio),
+                  // The copy button only enhances a page that has a Markdown twin,
+                  // and only when the share row is not switched off per site.
+                  aiActions: Boolean(markdownUrl) && site.settings?.ai?.share_buttons !== false,
+                  composition: item.layout === 'composition',
+                },
+              ),
         ),
       )
       if (!item.noindex && !item.protected && !archivedDocs) sitemapItems.push(item)

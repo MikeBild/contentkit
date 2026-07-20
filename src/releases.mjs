@@ -112,11 +112,18 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     reason = '',
   }) {
     await acquire()
+    const buildStarted = Date.now()
     const releaseId = randomUUID()
     let prefix
+    let deckCount = 0
+    let deckSlides = 0
+    let deckSvg = 0
+    let deckPng = 0
+    let deckCacheResult
     const entries = []
     try {
       const snapshot = await repo.buildSnapshot(siteId, revisionIds, retireItemIds)
+      deckCount = snapshot.revisions.filter((revision) => revision.kind === 'deck').length
       await db.insert('ck_releases', {
         id: releaseId,
         site_id: snapshot.site.id,
@@ -125,7 +132,17 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         reason,
         revision_ids: revisionIds,
       })
-      const built = await buildSite({ root: config.root, logger, ...snapshot })
+      const built = await buildSite({ root: config.root, logger, deckRenderer: hooks.deckRenderer, ...snapshot })
+      const decks = built.content.filter((item) => item.kind === 'deck')
+      deckCount = decks.length
+      deckSlides = decks.reduce((sum, item) => sum + (item.slide_count || 0), 0)
+      deckSvg = decks.reduce(
+        (sum, item) =>
+          sum + (item.deck_artifacts?.length || 0) * (item.deck_plan?.settings?.visual_scheme === 'auto' ? 2 : 1),
+        0,
+      )
+      deckPng = deckSvg
+      deckCacheResult = decks.length ? (decks.every((item) => item.deck_cache_result === 'hit') ? 'hit' : 'miss') : null
       prefix = `sites/${snapshot.site.id}/releases/${releaseId}`
       for (const [path, file] of built.files) {
         await storage.upload(`${prefix}/${path}`, file.body, file.contentType, file.cacheControl, false)
@@ -165,7 +182,26 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       )
       if (kind === 'release') {
         const events = await contentTransitionEvents(db, snapshot, retireItemIds, releaseId)
-        const publishedCount = events.filter((event) => event.type === 'contentkit.content.published').length
+        const published = events.filter((event) => event.type === 'contentkit.content.published')
+        const publishedCount = published.length
+        const unpublishedCount = events.filter((event) => event.type === 'contentkit.content.unpublished').length
+        const builtDecks = new Map(decks.map((deck) => [deck.item_id, deck]))
+        for (const event of published.filter((entry) => entry.data.kind === 'deck')) {
+          const deck = builtDecks.get(event.resourceId)
+          events.push({
+            type: 'contentkit.deck.published',
+            resourceKind: 'deck',
+            resourceId: event.resourceId,
+            summary: 'Slide deck published',
+            data: {
+              ...event.data,
+              url: deck?.url || null,
+              slide_count: deck?.slide_count || 0,
+              plan_sha256: deck?.deck_plan?.plan_sha256 || null,
+              component_count: deck?.deck_artifacts?.length || 0,
+            },
+          })
+        }
         events.push({
           type: 'contentkit.release.published',
           resourceKind: 'release',
@@ -175,7 +211,8 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
             release_id: releaseId,
             reason,
             published_count: publishedCount,
-            unpublished_count: events.length - publishedCount,
+            unpublished_count: unpublishedCount,
+            deck_count: deckCount,
           },
         })
         try {
@@ -227,12 +264,50 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           },
           { upsert: true, onConflict: 'slug' },
         )
+        if (deckCount) {
+          await db.insert(
+            'ck_deck_build_events',
+            {
+              site_id: snapshot.site.id,
+              mode: 'preview',
+              result: 'success',
+              cache_result: deckCacheResult,
+              slide_count: deckSlides,
+              svg_count: deckSvg,
+              png_count: deckPng,
+              output_bytes: entries
+                .filter((entry) => entry.path.includes('/slides/'))
+                .reduce((sum, entry) => sum + Number(entry.byte_size), 0),
+              duration_ms: Date.now() - buildStarted,
+            },
+            { returning: false },
+          )
+        }
         return {
           release_id: releaseId,
           preview_url: `${config.publicUrl}/previews/${slug}/`,
           invitation_url: `${config.publicUrl}/preview-invitations/${token}`,
           expires_in: effectiveExpiresIn,
         }
+      }
+      if (deckCount) {
+        await db.insert(
+          'ck_deck_build_events',
+          {
+            site_id: snapshot.site.id,
+            mode: 'release',
+            result: 'success',
+            cache_result: deckCacheResult,
+            slide_count: deckSlides,
+            svg_count: deckSvg,
+            png_count: deckPng,
+            output_bytes: entries
+              .filter((entry) => entry.path.includes('/slides/'))
+              .reduce((sum, entry) => sum + Number(entry.byte_size), 0),
+            duration_ms: Date.now() - buildStarted,
+          },
+          { returning: false },
+        )
       }
       return { release_id: releaseId, file_count: entries.length, active: true }
     } catch (error) {
@@ -262,6 +337,26 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       await repo
         .createOutbox(siteId, 'contentkit.release.failed', 'release', releaseId, 'Site release failed')
         .catch(() => {})
+      if (deckCount) {
+        await repo
+          .createOutbox(siteId, 'contentkit.deck.release_failed', 'release', releaseId, 'Slide deck release failed')
+          .catch(() => {})
+        await db
+          .insert(
+            'ck_deck_build_events',
+            {
+              site_id: siteId,
+              mode: kind === 'preview' ? 'preview' : 'release',
+              result: error.code === 'TIMEOUT' ? 'timeout' : 'error',
+              slide_count: deckSlides,
+              svg_count: deckSvg,
+              png_count: deckPng,
+              duration_ms: Date.now() - buildStarted,
+            },
+            { returning: false },
+          )
+          .catch(() => {})
+      }
       throw error
     } finally {
       release()

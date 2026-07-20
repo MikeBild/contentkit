@@ -58,7 +58,7 @@ Use these service endpoints for discovery and health checks:
 |---|---|---|
 | GET | `/` | JSON service descriptor on the configured API host |
 | GET | `/health` | Liveness; returns `ok` while the process is up |
-| GET | `/ready` | Readiness; returns status, version and in-flight release count |
+| GET | `/ready` | Readiness; returns status, version and release/deck in-flight plus queued counts |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/openapi.json` | Generated OpenAPI 3.1 spec |
 | GET | `/llms.txt` | Concise LLM documentation index |
@@ -134,7 +134,8 @@ admin-only endpoint returns `403 insufficient_scope` with `"scope":"site:admin"`
 |---|---|
 | `site:admin` | Create/read/update sites and create scoped API keys |
 | `content:read` | List content items and revisions, read site metadata |
-| `content:write` | Upload Markdown/assets and create immutable revisions |
+| `content:write` | Upload Markdown/assets, create immutable revisions and plan/validate decks |
+| `deck:render` | Execute trusted deck source through the bounded Slidev/Vite compiler |
 | `release:write` | Build previews, publish releases, run scheduled publish and roll back |
 | `moderation:write` | List/moderate comments and contact submissions |
 | `*` | Bootstrap-only global access |
@@ -210,6 +211,12 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | POST | `/v1/sites/{site}/compositions/recommend` | `content:write` | Rank compatible patterns with scores, reasons and rejections |
 | POST | `/v1/sites/{site}/compositions/validate` | `content:write` | Validate semantics and resolve a requested pattern or safe fallback |
 | POST | `/v1/sites/{site}/compositions/compile` | `content:write` | Headlessly compile models, responsive HTML, SVG and/or PNG |
+| GET | `/v1/deck-themes` | public | List the controlled deck themes |
+| POST | `/v1/sites/{site}/decks/plan` | `content:write` | Derive a deterministic information architecture, narrative and source-addressed DeckPlan |
+| POST | `/v1/sites/{site}/decks/validate` | `content:write` | Validate a deck source and return bounded diagnostics |
+| POST | `/v1/sites/{site}/decks/compile` | `content:write deck:render` | Compile semantic SVG/PNG visuals and one self-contained Slidev HTML deck |
+| GET | `/v1/sites/{site}/deck-jobs/{job}` | `content:write deck:render` | Poll a short-lived asynchronous compile job |
+| GET | `/v1/sites/{site}/deck-jobs/{job}/result` | `content:write deck:render` | Fetch its completed compile result with a strong ETag |
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.svg` | `content:read` | Fetch a published standalone light/dark SVG |
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.png` | `content:read` | Fetch a published deterministic light/dark PNG |
 | GET | `/v1/sites/{site}/search` | `content:read` | Full-text search over published content: required `q`, optional `locale`, `kind`, `limit`; ranked results with `<mark>` headlines |
@@ -305,7 +312,7 @@ this route is an API-host feature for headless consumers and changes nothing
 about site delivery.
 
 - Query parameters: `q` (required; websearch syntax, trimmed, 1–200
-  characters), `locale`, `kind` (`page`/`post`/`project`) and `limit`
+  characters), `locale`, `kind` (`page`/`post`/`project`/`deck`) and `limit`
   (default 20; values above 100 are clamped). Missing or overlong `q`,
   an unknown `kind` or a non-numeric `limit` answer `422`.
 - Response: `{ "query": "<q>", "results": [ { item_id, kind, locale, slug,
@@ -423,13 +430,14 @@ files remain unchanged until a new release is built.
 
 ## 6. Content model and frontmatter
 
-Contentkit supports three content kinds:
+Contentkit supports four content kinds:
 
 | Kind | Route |
 |---|---|
 | `page` | `/{locale}/{slug}/` |
 | `post` | `/{locale}/blog/{slug}/` |
 | `project` | `/{locale}/projects/{slug}/` |
+| `deck` | `/{locale}/slides/{slug}/` |
 
 Each Markdown write creates an immutable revision. A content item is identified
 by `site_id + kind + locale + translationKey`. A `PUT /v1/content/{item}/revisions`
@@ -439,8 +447,9 @@ Supported YAML frontmatter:
 
 | Field | Required | Function |
 |---|---:|---|
-| `kind` | no | `page`, `post` or `project`; defaults to `page` |
-| `layout` | no | Controlled layout: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` or `composition`; `report` is a compatibility alias for report compositions |
+| `kind` | no | `page`, `post`, `project` or `deck`; defaults to `page` |
+| `layout` | no | Controlled layout: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` or `deck`; `report` is a compatibility alias for report compositions |
+| `deck` | deck only | Optional `{ theme, visualScheme, maxSlides }`; controlled themes are `neutral` and `editorial`, schemes are `auto`, `light`, `dark` |
 | `composition` | composition only | `{ format, canvas, intent, density?, preferredPattern? }`; geometry and executable code are forbidden |
 | `title` | yes | Title, navigation label and SEO title basis |
 | `locale` | yes | IETF-ish tag such as `de`, `en` or `en-us` |
@@ -466,6 +475,62 @@ Supported YAML frontmatter:
 There are no custom content kinds. A dedicated collection is `kind: post` plus
 a dedicated tag plus `extra` fields — the tag page supplies the listing and its
 feed for free; one-off pages are `kind: page`.
+
+### Semantic slide decks
+
+A deck is Markdown with `kind: deck`, the dedicated controlled layout `deck`
+and blank-line-delimited `---` slide separators. ContentKit first derives a
+deterministic, source-addressed DeckPlan: information architecture, narrative,
+slide roles, communication goals, source hashes and diagnostics. Semantic
+directives on an individual slide are compiled through the same Pattern
+Registry as visual publications and embedded as standalone light/dark SVG with
+PNG fallback. The final artifact is one self-contained Slidev HTML document
+with presenter mode and no runtime network dependency.
+
+Planning and validation are safe authoring operations under `content:write`.
+Compilation, preview and release of explicitly selected deck revisions also
+require `deck:render`, because the real Slidev/Vite compiler executes trusted
+deck source. Builds have bounded concurrency, queue length, wait time and
+runtime. The resulting deck URL is `/{locale}/slides/{slug}/`; its CSP permits
+the artifact's inline runtime without weakening normal pages.
+
+`POST /v1/sites/{site}/decks/compile` accepts `"async": true` and returns 202
+with a job ID, status URL and result URL. `GET
+/v1/sites/{site}/deck-jobs/{job}` reports `queued`, `running`, `done` or
+`error`; `GET /v1/sites/{site}/deck-jobs/{job}/result` returns 409 until done.
+Jobs and headless results are process-local, bounded and expire; only a preview
+or release creates a durable storage artifact.
+
+```md
+---
+kind: deck
+layout: deck
+title: Product decision
+locale: en
+slug: product-decision
+deck:
+  theme: editorial
+  visualScheme: auto
+  maxSlides: 24
+---
+
+# Product decision
+
+What should we ship next?
+
+---
+
+# Evidence
+
+:::metric{label="Conversion" value="18%" trend="+4 pp"}
+:::
+
+---
+
+# Decision
+
+Ship the verified path.
+```
 
 Example post:
 
@@ -1133,8 +1198,10 @@ Events emitted:
 | `contentkit.comment.approved` | A comment was approved | `post_id`, `author_name`, `body` |
 | `contentkit.release.failed` | A release/preview build failed | — |
 | `contentkit.content.published` | An item's published revision changed during release activation (a no-op republish emits nothing) | `item_id`, `kind`, `locale`, `translation_key`, `slug`, `title`, `revision_id`, `release_id` |
+| `contentkit.deck.published` | A deck revision changed during activation; enqueued atomically with its content transition | content fields plus relative `url`, `slide_count`, `plan_sha256`, `component_count` |
 | `contentkit.content.unpublished` | A published item was retired by a release | same as `content.published`; `revision_id` is the retired revision |
-| `contentkit.release.published` | A release was activated (also for rollbacks and empty releases, which move no item pointers and emit no `content.*` events) | `release_id`, `reason`, `published_count`, `unpublished_count` |
+| `contentkit.release.published` | A release was activated (also for rollbacks and empty releases, which move no item pointers and emit no `content.*` events) | `release_id`, `reason`, `published_count`, `unpublished_count`, `deck_count` |
+| `contentkit.deck.release_failed` | A release containing a deck failed; best-effort because activation never occurred | release resource |
 
 Content events are enqueued in the same database transaction as the
 `ck_activate_release()` pointer switch and carry no absolute URLs (the URL
@@ -1294,6 +1361,15 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_TRUST_PROXY` | trust `X-Forwarded-For` behind a reverse proxy |
 | `CONTENTKIT_MAX_BODY_BYTES` | upload body limit |
 | `CONTENTKIT_BUILD_CONCURRENCY` | concurrent release builds |
+| `CONTENTKIT_DECK_BUILD_CONCURRENCY` | concurrent Slidev builds; default 1, maximum 4 because the compiler is CPU/memory intensive |
+| `CONTENTKIT_DECK_BUILD_QUEUE_MAX` | maximum waiting deck builds; default 8 |
+| `CONTENTKIT_DECK_BUILD_TIMEOUT_MS` | per-build timeout; default 120000 |
+| `CONTENTKIT_DECK_QUEUE_TIMEOUT_MS` | maximum queue wait; default 120000 |
+| `CONTENTKIT_DECK_CACHE_MAX` | in-memory compiled deck cache entries; default 32 |
+| `CONTENTKIT_DECK_JOBS_MAX` | bounded in-memory async deck jobs/results; default 8 |
+| `CONTENTKIT_DECK_JOB_TTL_MS` | async job/result lifetime; default 600000 |
+| `CONTENTKIT_DECK_WORK_DIR` | dedicated temporary build directory; defaults below the extracted runtime |
+| `CONTENTKIT_SLIDEV_CLI` | optional explicit Slidev CLI path |
 | `CONTENTKIT_WEBHOOK_POLL_MS` | delivery worker poll interval |
 | `CONTENTKIT_WEBHOOK_TIMEOUT_MS` | per-delivery HTTP timeout; default 10000 |
 | `CONTENTKIT_WEBHOOK_MAX_ATTEMPTS` | attempts before a delivery is marked failed; default 10 |
@@ -1612,6 +1688,7 @@ The six read-only endpoints are:
 - `/v1/sites/{site}/stats/releases`: builds, outcomes, activation, output size
   and build duration;
 - `/v1/sites/{site}/stats/content`: items, revisions, publications and assets;
+- `/v1/sites/{site}/stats/decks`: plans, validations, synchronous/asynchronous compiles, previews, releases, outcomes, cache hits/misses, slides, SVG/PNG components, duration and output bytes;
 - `/v1/sites/{site}/stats/readers`: privacy-safe authentication outcomes and
   sessions created;
 - `/v1/sites/{site}/stats/webhooks`: outbox events and delivery outcomes;

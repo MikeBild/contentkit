@@ -183,6 +183,66 @@ export async function getContentStats(db, siteId, window) {
   return response(window, rows, CONTENT_METRICS)
 }
 
+const DECK_METRICS = [
+  'plans',
+  'validations',
+  'compiles',
+  'sync_compiles',
+  'async_compiles',
+  'previews',
+  'releases',
+  'success',
+  'error',
+  'timeout',
+  'rejected',
+  'cache_hits',
+  'cache_misses',
+  'slides',
+  'svg_components',
+  'png_components',
+  'diagnostics',
+  'output_bytes',
+  'duration_ms_total',
+  'duration_ms_count',
+]
+
+export async function getDeckStats(db, siteId, window) {
+  const rows = await metricQuery(
+    db,
+    `SELECT date_trunc($4, created_at) AS ts, metric, sum(value)::double precision AS value
+       FROM (
+         SELECT site_id, created_at, CASE mode
+           WHEN 'plan' THEN 'plans' WHEN 'validate' THEN 'validations' WHEN 'compile' THEN 'compiles'
+           WHEN 'preview' THEN 'previews' ELSE 'releases' END AS metric, 1::double precision AS value
+           FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, execution || '_compiles', 1
+           FROM ck_deck_build_events WHERE mode = 'compile'
+         UNION ALL SELECT site_id, created_at, result, 1 FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, CASE cache_result WHEN 'hit' THEN 'cache_hits' ELSE 'cache_misses' END, 1
+           FROM ck_deck_build_events WHERE cache_result IS NOT NULL
+         UNION ALL SELECT site_id, created_at, 'slides', slide_count FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, 'svg_components', svg_count FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, 'png_components', png_count FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, 'diagnostics', diagnostic_count FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, 'output_bytes', output_bytes FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, 'duration_ms_total', duration_ms FROM ck_deck_build_events
+         UNION ALL SELECT site_id, created_at, 'duration_ms_count', 1 FROM ck_deck_build_events
+       ) events
+      WHERE site_id = $1 AND created_at >= $2 AND created_at < $3
+      GROUP BY 1, metric ORDER BY 1, metric`,
+    siteId,
+    window,
+  )
+  const result = response(window, rows, DECK_METRICS)
+  const average = (values) => ({
+    ...values,
+    duration_ms_avg: values.duration_ms_count ? values.duration_ms_total / values.duration_ms_count : 0,
+  })
+  result.buckets = result.buckets.map(average)
+  result.totals = average(result.totals)
+  return result
+}
+
 const READER_METRICS = ['auth_success', 'auth_failed', 'auth_rate_limited', 'sessions_created']
 export async function getReaderStats(db, siteId, window) {
   const rows = await metricQuery(

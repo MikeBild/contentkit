@@ -290,6 +290,8 @@ async function withApp(
     audio,
     loginLimiter,
     logger,
+    deckRenderer,
+    deckJobs,
   } = {},
   run,
 ) {
@@ -318,6 +320,8 @@ async function withApp(
       ...(maintenance ? { maintenance } : {}),
       ...(audio ? { audio } : {}),
       ...(loginLimiter ? { loginLimiter } : {}),
+      ...(deckRenderer ? { deckRenderer } : {}),
+      ...(deckJobs ? { deckJobs } : {}),
     },
   )
   await new Promise((resolve, reject) => {
@@ -330,6 +334,7 @@ async function withApp(
   } finally {
     app.limiter.stop()
     app.loginLimiter.stop()
+    app.deckJobs.stop()
     await new Promise((resolve) => app.server.close(resolve))
   }
 }
@@ -686,6 +691,20 @@ test("a served page's CSP stays strict with no analytics configured", async () =
   })
 })
 
+test('a released deck receives the offline runtime CSP without weakening ordinary pages', async () => {
+  const { repo, storage } = gatewayFixture({
+    'prefix/en/slides/decision/index.html': '<script type="module">globalThis.ready=true</script>',
+  })
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/en/slides/decision/')
+    assert.equal(response.status, 200)
+    const csp = response.headers.get('content-security-policy')
+    assert.match(csp, /script-src 'unsafe-inline'/)
+    assert.match(csp, /connect-src 'none'/)
+    assert.match(csp, /form-action 'none'/)
+  })
+})
+
 test('gateway redirects anonymous readers and serves protected pages only to an allowed session', async () => {
   const repo = {
     async getSiteByHost() {
@@ -1022,12 +1041,12 @@ test('API-key minting allows a site:admin to provision content/release keys (doc
       headers: { 'x-api-key': 'valid' },
       body: JSON.stringify({
         name: 'pub',
-        scopes: ['content:read', 'content:write', 'release:write'],
+        scopes: ['content:read', 'content:write', 'release:write', 'deck:render'],
         site_ids: ['site-1'],
       }),
     })
     assert.equal(response.status, 201)
-    assert.deepEqual(created[0].scopes, ['content:read', 'content:write', 'release:write'])
+    assert.deepEqual(created[0].scopes, ['content:read', 'content:write', 'release:write', 'deck:render'])
   })
 })
 
@@ -1640,6 +1659,115 @@ composition:
   })
 })
 
+describe('semantic deck authoring API', () => {
+  const deck = `---
+kind: deck
+layout: deck
+title: Decision deck
+locale: en
+slug: decision-deck
+---
+
+# Question
+
+What should we ship?
+
+---
+
+# Decision
+
+Ship the verified path.
+`
+  const repo = {
+    async getSite(slug) {
+      return ['my-site', 'site-1'].includes(slug) ? { id: 'site-1', slug: 'my-site', settings: {} } : null
+    },
+  }
+  const renderer = {
+    async render(markdown) {
+      assert.match(markdown, /routerMode: "hash"/)
+      return { html: '<!doctype html><html><head></head><body>deck</body></html>', cache: 'miss' }
+    },
+  }
+
+  test('planning is deterministic and compile is protected by deck:render', async () => {
+    await withApp({ repo, auth: scopedAuth(['content:write']), deckRenderer: renderer }, async (request) => {
+      const headers = { 'x-api-key': 'valid', 'content-type': 'application/json' }
+      const first = await request('/v1/sites/my-site/decks/plan', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown: deck }),
+      })
+      const second = await request('/v1/sites/my-site/decks/plan', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown: deck }),
+      })
+      assert.equal(first.status, 200)
+      assert.equal(second.status, 200)
+      assert.equal((await first.json()).plan_sha256, (await second.json()).plan_sha256)
+
+      const forbidden = await request('/v1/sites/my-site/decks/compile', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown: deck }),
+      })
+      assert.equal(forbidden.status, 403)
+      assert.equal((await forbidden.json()).scope, 'deck:render')
+    })
+  })
+
+  test('sync and async compile return equivalent ETagged results and telemetry', async () => {
+    const events = []
+    const db = {
+      async insert(table, row) {
+        if (table === 'ck_deck_build_events') events.push(row)
+        return []
+      },
+    }
+    await withApp(
+      { db, repo, auth: scopedAuth(['content:write', 'deck:render']), deckRenderer: renderer },
+      async (request) => {
+        const headers = { 'x-api-key': 'valid', 'content-type': 'application/json' }
+        const sync = await request('/v1/sites/my-site/decks/compile', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ markdown: deck }),
+        })
+        assert.equal(sync.status, 200)
+        const syncEtag = sync.headers.get('etag')
+        const syncBody = await sync.json()
+        assert.equal(syncBody.plan.slides.length, 2)
+
+        const accepted = await request('/v1/sites/my-site/decks/compile', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ markdown: deck, async: true }),
+        })
+        assert.equal(accepted.status, 202)
+        const acceptedBody = await accepted.json()
+        assert.equal('markdown' in acceptedBody, false)
+
+        let status
+        for (let attempt = 0; attempt < 20; attempt++) {
+          status = await request(acceptedBody.status_url, { headers: { 'x-api-key': 'valid' } })
+          const body = await status.json()
+          if (body.status === 'done') break
+          await new Promise((resolve) => setTimeout(resolve, 5))
+        }
+        assert.equal(status.status, 200)
+        const result = await request(acceptedBody.result_url, { headers: { 'x-api-key': 'valid' } })
+        assert.equal(result.status, 200)
+        assert.equal(result.headers.get('etag'), syncEtag)
+        assert.equal((await result.json()).html_sha256, syncBody.html_sha256)
+      },
+    )
+    assert.ok(events.some((event) => event.mode === 'compile' && event.execution === 'sync'))
+    assert.ok(events.some((event) => event.mode === 'compile' && event.execution === 'async'))
+    assert.ok(events.every((event) => !('markdown' in event)))
+  })
+})
+
 describe('published read API', () => {
   const PUBLISHED_DOC = {
     item_id: 'item-1',
@@ -1896,7 +2024,7 @@ describe('published search', () => {
       await expect422('', 'q is required')
       await expect422('?q=+++', 'q is required')
       await expect422(`?q=${'a'.repeat(201)}`, 'q must be at most 200 characters')
-      await expect422('?q=hallo&kind=article', 'kind must be page, post or project')
+      await expect422('?q=hallo&kind=article', 'kind must be page, post, project or deck')
       await expect422('?q=hallo&limit=abc', 'limit must be a positive integer')
       await expect422('?q=hallo&limit=0', 'limit must be a positive integer')
       assert.deepEqual(rpcCalls, [], 'no search runs for a rejected query')

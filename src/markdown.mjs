@@ -17,7 +17,7 @@ import { assertSlug, excerpt, parseIsoDate, slugify } from './utils.mjs'
 import { resolvePattern } from './composition-registry.mjs'
 import { getPublishingGuide } from './publishing-guides.mjs'
 
-const kinds = new Set(['page', 'post', 'project'])
+const kinds = new Set(['page', 'post', 'project', 'deck'])
 export const layouts = new Set([
   'standard',
   'docs',
@@ -27,6 +27,7 @@ export const layouts = new Set([
   'changelog',
   'report',
   'composition',
+  'deck',
 ])
 const accessSlug = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -57,6 +58,19 @@ const COMPOSITION_DIRECTIVES = new Set([
   'application-shell',
   'region',
 ])
+
+export function hasCompositionSemantics(markdown) {
+  const tree = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkDirective)
+    .parse(String(markdown || ''))
+  let found = false
+  visit(tree, ['containerDirective', 'leafDirective', 'textDirective', 'code'], (node) => {
+    if (COMPOSITION_DIRECTIVES.has(node.name) || (node.type === 'code' && node.lang === 'mermaid')) found = true
+  })
+  return found
+}
 const REPORT_TONES = new Set(['neutral', 'positive', 'warning', 'negative'])
 const REPORT_CHART_TYPES = new Set(['bar', 'line', 'area', 'donut'])
 const REPORT_CHART_SHAPES = new Set([
@@ -1438,7 +1452,7 @@ function validateComposition(value, pageLayout, { legacyReport = false } = {}) {
 function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   const kind = data.kind || 'page'
   if (!kinds.has(kind))
-    throw Object.assign(new Error('frontmatter kind must be page, post or project'), { statusCode: 422 })
+    throw Object.assign(new Error('frontmatter kind must be page, post, project or deck'), { statusCode: 422 })
   const title = String(data.title || '').trim()
   if (!title) throw Object.assign(new Error('frontmatter title is required'), { statusCode: 422 })
   const locale = String(data.locale || '').toLowerCase()
@@ -1455,7 +1469,10 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     throw Object.assign(new Error(`frontmatter layout must be one of ${[...layouts].join(', ')}`), { statusCode: 422 })
   }
   const legacyReport = authoredLayout === 'report'
-  const pageLayout = legacyReport ? 'composition' : authoredLayout
+  const pageLayout = legacyReport ? 'composition' : authoredLayout || (kind === 'deck' ? 'deck' : null)
+  if (kind === 'deck' && pageLayout !== 'deck') {
+    throw Object.assign(new Error('frontmatter kind deck requires layout: deck'), { statusCode: 422 })
+  }
   const composition = validateComposition(data.composition, pageLayout, { legacyReport })
   const reportCadence = data.reportCadence == null ? null : String(data.reportCadence).trim()
   if (reportCadence && !REPORT_CADENCES.has(reportCadence)) {
@@ -1493,6 +1510,57 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     nav_order: Number.isFinite(Number(data.navOrder)) ? Number(data.navOrder) : null,
     layout: pageLayout,
     composition,
+    ...(kind === 'deck'
+      ? {
+          deck: (() => {
+            const value = data.deck == null ? {} : data.deck
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+              throw Object.assign(new Error('frontmatter deck must be an object'), { statusCode: 422 })
+            }
+            const unknown = Object.keys(value).find(
+              (field) => !['theme', 'maxSlides', 'visualScheme', 'firstSlide'].includes(field),
+            )
+            if (unknown)
+              throw Object.assign(new Error(`frontmatter deck has unknown field "${unknown}"`), { statusCode: 422 })
+            const theme = String(value.theme || 'neutral')
+            if (!['neutral', 'editorial'].includes(theme)) {
+              throw Object.assign(new Error('frontmatter deck.theme must be neutral or editorial'), { statusCode: 422 })
+            }
+            const visualScheme = String(value.visualScheme || 'auto')
+            if (!['auto', 'light', 'dark'].includes(visualScheme)) {
+              throw Object.assign(new Error('frontmatter deck.visualScheme must be auto, light or dark'), {
+                statusCode: 422,
+              })
+            }
+            const maxSlides = Number(value.maxSlides ?? 120)
+            if (!Number.isInteger(maxSlides) || maxSlides < 1 || maxSlides > 120) {
+              throw Object.assign(new Error('frontmatter deck.maxSlides must be an integer from 1 to 120'), {
+                statusCode: 422,
+              })
+            }
+            const firstSlide = value.firstSlide == null ? {} : value.firstSlide
+            if (!firstSlide || typeof firstSlide !== 'object' || Array.isArray(firstSlide)) {
+              throw Object.assign(new Error('frontmatter deck.firstSlide must be an object'), { statusCode: 422 })
+            }
+            if (Object.keys(firstSlide).length > 32 || JSON.stringify(firstSlide).length > 16 * 1024) {
+              throw Object.assign(new Error('frontmatter deck.firstSlide exceeds its content budget'), {
+                statusCode: 422,
+              })
+            }
+            const invalidFirstSlideKey = Object.keys(firstSlide).find(
+              (field) =>
+                !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(field) || ['theme', 'routerMode', 'colorSchema'].includes(field),
+            )
+            if (invalidFirstSlideKey) {
+              throw Object.assign(
+                new Error(`frontmatter deck.firstSlide field "${invalidFirstSlideKey}" is invalid or reserved`),
+                { statusCode: 422 },
+              )
+            }
+            return { theme, visual_scheme: visualScheme, max_slides: maxSlides, first_slide: firstSlide }
+          })(),
+        }
+      : {}),
     report_cadence: reportCadence,
     doc_key: optionalSlug(data.docKey, 'docKey'),
     docs_version: optionalSlug(data.docsVersion, 'docsVersion'),

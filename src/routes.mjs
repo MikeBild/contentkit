@@ -4,16 +4,19 @@ import { join } from 'node:path'
 import { keyFingerprint } from './auth.mjs'
 import { canonicalRequestPath, cleanPath, escapeHtml, hmac256, safeEqual, sha256 } from './utils.mjs'
 import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
-import { clientIp, contentCsp, verifyTurnstile } from './security.mjs'
+import { clientIp, contentCsp, deckContentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { compileCompositionMarkdown, reResolveComposition } from './composition-output.mjs'
 import { getPattern, patternRegistry, patternRegistryHash, recommendPatterns } from './composition-registry.mjs'
 import { getPublishingGuide, publishingGuideRegistry, publishingGuideRegistryHash } from './publishing-guides.mjs'
 import { contentkitFontFamily } from './typography.mjs'
+import { compileDeck, DECK_THEMES, planDeck } from './decks.mjs'
+import { publicDeckJob } from './deck-jobs.mjs'
 import {
   getAudioStats,
   getContentStats,
+  getDeckStats,
   getEngagementStats,
   getReaderStats,
   getReleaseStats,
@@ -194,6 +197,10 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/decks\/(plan|validate|compile)$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/deck-jobs\/[^/]+$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/deck-jobs\/[^/]+\/result$/, methods: ['GET'] },
+  { pattern: /^\/v1\/deck-themes$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/published$/, methods: ['GET'] },
   {
     pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+\/composition\.(svg|png)$/,
@@ -213,7 +220,7 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
   {
-    pattern: /^\/v1\/sites\/[^/]+\/stats\/(releases|content|readers|webhooks|audio|engagement)$/,
+    pattern: /^\/v1\/sites\/[^/]+\/stats\/(releases|content|decks|readers|webhooks|audio|engagement)$/,
     methods: ['GET'],
   },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
@@ -235,7 +242,22 @@ export const API_ROUTES = [
 // Builds the single request handler from the app's composed dependencies.
 // All state (draining/storageReady) and services are owned by createApp.
 export function createRequestHandler(ctx) {
-  const { config, logger, db, storage, repo, releases, auth, maintenance, limiter, metrics, state, audio } = ctx
+  const {
+    config,
+    logger,
+    db,
+    storage,
+    repo,
+    releases,
+    auth,
+    maintenance,
+    limiter,
+    metrics,
+    state,
+    audio,
+    deckRenderer,
+    deckJobs,
+  } = ctx
   const loginLimiter = ctx.loginLimiter || limiter
 
   async function recordReaderAuth(siteId, outcome) {
@@ -243,6 +265,84 @@ export function createRequestHandler(ctx) {
     await db
       .insert('ck_reader_auth_events', { site_id: siteId, outcome }, { returning: false })
       .catch((error) => logger.warn('reader auth metric write failed', { siteId, error: String(error) }))
+  }
+
+  async function recordDeckEvent(siteId, event) {
+    metrics.deckOperation(event)
+    if (!db.insert) return
+    await db
+      .insert(
+        'ck_deck_build_events',
+        {
+          site_id: siteId,
+          mode: event.mode,
+          result: event.result,
+          execution: event.execution || 'sync',
+          cache_result: event.cache_result || null,
+          slide_count: event.slide_count || 0,
+          svg_count: event.svg_count || 0,
+          png_count: event.png_count || 0,
+          output_bytes: event.output_bytes || 0,
+          duration_ms: event.duration_ms || 0,
+          diagnostic_count: event.diagnostic_count || 0,
+        },
+        { returning: false },
+      )
+      .catch((error) => logger.warn('deck metric write failed', { siteId, error: String(error) }))
+  }
+
+  async function compileDeckFor(site, input, execution = 'sync') {
+    const started = Date.now()
+    let cacheResult = null
+    try {
+      const compile = async (render) =>
+        compileDeck(input.markdown, {
+          settings: site.settings || {},
+          preferences: input.preferences,
+          includeArtifactData: true,
+          renderHtml: async (markdown, theme) => {
+            const rendered = await render(markdown, theme)
+            cacheResult = rendered.cache
+            return rendered.html
+          },
+        })
+      const compiled = deckRenderer.run
+        ? await deckRenderer.run(compile)
+        : await compile(deckRenderer.render.bind(deckRenderer))
+      const etag = `"${compiled.html_sha256}"`
+      await recordDeckEvent(site.id, {
+        mode: 'compile',
+        execution,
+        result: 'success',
+        cache_result: cacheResult,
+        slide_count: compiled.plan.slides.length,
+        svg_count: compiled.artifacts.length * (compiled.plan.settings.visual_scheme === 'auto' ? 2 : 1),
+        png_count: compiled.artifacts.length * (compiled.plan.settings.visual_scheme === 'auto' ? 2 : 1),
+        output_bytes: Buffer.byteLength(compiled.html),
+        diagnostic_count: compiled.plan.diagnostics.length,
+        duration_ms: Date.now() - started,
+      })
+      return { compiled, etag }
+    } catch (error) {
+      await recordDeckEvent(site.id, {
+        mode: 'compile',
+        execution,
+        result: error.code === 'TIMEOUT' ? 'timeout' : 'error',
+        cache_result: cacheResult,
+        duration_ms: Date.now() - started,
+      })
+      throw error
+    }
+  }
+
+  async function revisionsContainDeck(revisionIds = []) {
+    if (!revisionIds.length || !db.select) return false
+    const revisions = await db.select('ck_content_revisions', { id: `in.(${revisionIds.join(',')})` })
+    if (!revisions.length) return false
+    const items = await db.select('ck_content_items', {
+      id: `in.(${[...new Set(revisions.map((revision) => revision.item_id))].join(',')})`,
+    })
+    return items.some((item) => item.kind === 'deck')
   }
 
   async function bodyFor(req) {
@@ -614,6 +714,7 @@ export function createRequestHandler(ctx) {
     let body = method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
     const contentType =
       releaseContentType(releasePath) || response.headers.get('content-type') || 'application/octet-stream'
+    const isDeck = contentType.includes('html') && /(?:^|\/)slides\/[^/]+\/index\.html$/.test(releasePath)
     const cacheControl =
       preview || privateAccess
         ? 'private,no-store'
@@ -633,7 +734,7 @@ export function createRequestHandler(ctx) {
       'cache-control': cacheControl,
       etag: response.headers.get('etag') || `"${sha256(body)}"`,
       ...(preview ? { 'x-robots-tag': 'noindex,nofollow,noarchive' } : {}),
-      'content-security-policy': contentCsp(analytics),
+      'content-security-policy': isDeck ? deckContentCsp() : contentCsp(analytics),
     })
   }
 
@@ -772,10 +873,14 @@ export function createRequestHandler(ctx) {
     if (req.method === 'GET' && path === '/health') return send(res, 200, 'ok', { 'content-type': 'text/plain' })
     if (req.method === 'GET' && path === '/ready') {
       const ready = !state.draining && state.storageReady
+      const deckInflight = deckRenderer.inflight?.() || 0
+      const deckQueued = deckRenderer.queued?.() || 0
       return sendJson(res, ready ? 200 : 503, {
         status: state.draining ? 'draining' : ready ? 'ready' : 'initializing',
         version: config.version,
         inflight: releases.inflight(),
+        deck_inflight: deckInflight,
+        deck_queued: deckQueued,
       })
     }
     // Everything below is scoped to the API host. On a site host these paths fall
@@ -797,7 +902,15 @@ export function createRequestHandler(ctx) {
       })
     }
     if (apiHost && req.method === 'GET' && path === '/metrics')
-      return send(res, 200, metrics.render(releases.inflight()), { 'content-type': 'text/plain; version=0.0.4' })
+      return send(
+        res,
+        200,
+        metrics.render(releases.inflight(), {
+          deckInflight: deckRenderer.inflight?.() || 0,
+          deckQueued: deckRenderer.queued?.() || 0,
+        }),
+        { 'content-type': 'text/plain; version=0.0.4' },
+      )
     if (apiHost && req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
     if (apiHost && req.method === 'GET' && path === '/llms.txt')
       return send(res, 200, documentation(config, 'llms.txt'), { 'content-type': 'text/plain; charset=utf-8' })
@@ -864,7 +977,9 @@ export function createRequestHandler(ctx) {
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
     }
-    const statsMatch = path.match(/^\/v1\/sites\/([^/]+)\/stats\/(releases|content|readers|webhooks|audio|engagement)$/)
+    const statsMatch = path.match(
+      /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement)$/,
+    )
     if (statsMatch && req.method === 'GET') {
       const site = await repo.getSite(statsMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
@@ -873,6 +988,7 @@ export function createRequestHandler(ctx) {
       const readers = {
         releases: getReleaseStats,
         content: getContentStats,
+        decks: getDeckStats,
         readers: getReaderStats,
         webhooks: getWebhookStats,
         audio: getAudioStats,
@@ -965,6 +1081,110 @@ export function createRequestHandler(ctx) {
         if (!(await requireScope(req, res, 'content:write', site.id))) return
         const { markdown, assets } = await markdownRequest(req)
         return sendJson(res, 201, await repo.ingest(site.id, markdown, assets))
+      }
+    }
+    if (path === '/v1/deck-themes' && req.method === 'GET') {
+      const body = { themes: DECK_THEMES, default: 'neutral' }
+      const etag = `"${sha256(JSON.stringify(body))}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      return sendJson(res, 200, body, { etag, 'cache-control': 'public,max-age=3600' })
+    }
+    const deckJobMatch = path.match(/^\/v1\/sites\/([^/]+)\/deck-jobs\/([^/]+)(\/result)?$/)
+    if (deckJobMatch && req.method === 'GET') {
+      const site = await repo.getSite(deckJobMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:write', site.id))) return
+      if (!(await requireScope(req, res, 'deck:render', site.id))) return
+      const job = deckJobs.get(deckJobMatch[2], site.id)
+      if (!job) return sendJson(res, 404, { error: 'deck job not found' })
+      if (!deckJobMatch[3]) {
+        return sendJson(res, 200, publicDeckJob(job, site.id), { 'cache-control': 'private,no-store' })
+      }
+      if (job.status !== 'done') {
+        return sendJson(
+          res,
+          409,
+          { error: 'deck result is not ready', status: job.status },
+          { 'cache-control': 'private,no-store' },
+        )
+      }
+      if (req.headers['if-none-match'] === job.etag) return send(res, 304, '', { etag: job.etag })
+      return sendJson(res, 200, job.result, { etag: job.etag, 'cache-control': 'private,max-age=3600' })
+    }
+    const deckActionMatch = path.match(/^\/v1\/sites\/([^/]+)\/decks\/(plan|validate|compile)$/)
+    if (deckActionMatch && req.method === 'POST') {
+      const site = await repo.getSite(deckActionMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:write', site.id))) return
+      const action = deckActionMatch[2]
+      if (action === 'compile' && !(await requireScope(req, res, 'deck:render', site.id))) return
+      const input = parseJson(await bodyFor(req))
+      if (typeof input.markdown !== 'string') {
+        throw Object.assign(new Error(`${action} requires markdown`), { statusCode: 422 })
+      }
+      const started = Date.now()
+      try {
+        if (action === 'plan') {
+          const plan = await planDeck(input.markdown, input.preferences)
+          await recordDeckEvent(site.id, {
+            mode: 'plan',
+            result: 'success',
+            slide_count: plan.slides.length,
+            duration_ms: Date.now() - started,
+          })
+          return sendJson(res, 200, plan)
+        }
+        if (action === 'validate') {
+          const plan = await planDeck(input.markdown, input.preferences)
+          const valid = plan.diagnostics.length === 0
+          await recordDeckEvent(site.id, {
+            mode: 'validate',
+            result: valid ? 'success' : 'rejected',
+            slide_count: plan.slides.length,
+            diagnostic_count: plan.diagnostics.length,
+            duration_ms: Date.now() - started,
+          })
+          return sendJson(res, 200, {
+            schema_version: '1',
+            valid,
+            plan_sha256: plan.plan_sha256,
+            diagnostics: plan.diagnostics,
+          })
+        }
+        if (input.async === true) {
+          const job = deckJobs.create(site.id)
+          metrics.deckJob('queued')
+          queueMicrotask(async () => {
+            deckJobs.markRunning(job.id)
+            metrics.deckJob('running')
+            try {
+              const { compiled, etag } = await compileDeckFor(site, input, 'async')
+              deckJobs.setResult(job.id, compiled, etag)
+              metrics.deckJob('done')
+            } catch (error) {
+              deckJobs.fail(job.id, error)
+              metrics.deckJob('error')
+              logger.error('async deck build failed', {
+                siteId: site.id,
+                jobId: job.id,
+                error: String(error.message || error),
+              })
+            }
+          })
+          return sendJson(res, 202, publicDeckJob(job, site.id), { 'cache-control': 'private,no-store' })
+        }
+        const { compiled, etag } = await compileDeckFor(site, input)
+        if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+        return sendJson(res, 200, compiled, { etag, 'cache-control': 'private,max-age=3600' })
+      } catch (error) {
+        if (action !== 'compile') {
+          await recordDeckEvent(site.id, {
+            mode: action,
+            result: error.code === 'TIMEOUT' ? 'timeout' : 'error',
+            duration_ms: Date.now() - started,
+          })
+        }
+        throw error
       }
     }
     const compositionActionMatch = path.match(/^\/v1\/sites\/([^/]+)\/compositions\/(recommend|validate|compile)$/)
@@ -1213,6 +1433,8 @@ export function createRequestHandler(ctx) {
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'release:write', site.id))) return
       const input = parseJson(await bodyFor(req))
+      if ((await revisionsContainDeck(input.revision_ids)) && !(await requireScope(req, res, 'deck:render', site.id)))
+        return
       const started = Date.now()
       const result = await releases.preview({
         siteId: site.id,
@@ -1234,6 +1456,8 @@ export function createRequestHandler(ctx) {
       }
       if (!(await requireScope(req, res, 'release:write', site.id))) return
       const input = parseJson(await bodyFor(req))
+      if ((await revisionsContainDeck(input.revision_ids)) && !(await requireScope(req, res, 'deck:render', site.id)))
+        return
       const started = Date.now()
       const result = await releases.publish({
         siteId: site.id,

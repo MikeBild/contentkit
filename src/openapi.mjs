@@ -60,6 +60,7 @@ export function openApi(config) {
         '|---|---|',
         '| `content:read` | Read content/revisions and site-scoped product statistics |',
         '| `content:write` | Upload Markdown/assets and create revisions |',
+        '| `deck:render` | Compile trusted deck Markdown with the isolated Slidev renderer |',
         '| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |',
         '| `site:admin` | Create/update sites, manage API keys and webhook endpoints |',
         '| `moderation:write` | List/moderate comments and contact submissions |',
@@ -80,8 +81,8 @@ export function openApi(config) {
         'bytes — do not strip `whsec_` or base64-decode it (this differs from the reference Standard',
         'Webhooks libraries). Also reject deliveries whose timestamp is outside your tolerance window.',
         'Release activation additionally emits `contentkit.content.published`,',
-        '`contentkit.content.unpublished` and `contentkit.release.published` events in the same',
-        'transaction as the pointer switch.',
+        '`contentkit.content.unpublished`, `contentkit.deck.published` and',
+        '`contentkit.release.published` events in the same transaction as the pointer switch.',
       ].join('\n'),
     },
     servers: [{ url: config.publicUrl }],
@@ -1040,7 +1041,7 @@ export function openApi(config) {
         post: {
           summary: 'Create content and its first draft revision',
           description:
-            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` and `composition`; `report` remains a compatibility alias for report compositions. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.",
+            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; its semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.",
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
@@ -1162,6 +1163,132 @@ export function openApi(config) {
           },
         },
       },
+      '/v1/deck-themes': {
+        get: {
+          summary: 'List controlled slide-deck themes',
+          responses: {
+            200: { description: 'Theme identifiers and the default theme' },
+            304: { description: 'Strong ETag matched' },
+          },
+        },
+      },
+      '/v1/sites/{site}/decks/plan': {
+        post: {
+          summary: 'Derive a deterministic semantic DeckPlan',
+          description:
+            'Builds a source-addressed information architecture, narrative and slide plan without an LLM or network access.',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['markdown'],
+                  properties: { markdown: { type: 'string' }, preferences: { type: 'object' } },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Versioned deterministic DeckPlan' },
+            422: { description: 'Invalid deck source or preferences' },
+          },
+        },
+      },
+      '/v1/sites/{site}/decks/validate': {
+        post: {
+          summary: 'Validate a deterministic semantic DeckPlan',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['markdown'],
+                  properties: { markdown: { type: 'string' }, preferences: { type: 'object' } },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Validity, plan hash and diagnostics' },
+            422: { description: 'Invalid deck source' },
+          },
+        },
+      },
+      '/v1/sites/{site}/decks/compile': {
+        post: {
+          summary: 'Compile a DeckPlan to self-contained Slidev HTML with SVG and PNG components',
+          description:
+            'Requires content:write and deck:render. Semantic regions use ContentKit pattern recommendation, validation and deterministic SVG/PNG compilation before the bounded trusted-source Slidev build. Set async=true for a short-lived, process-local job; published deck artifacts remain durable releases.',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['markdown'],
+                  properties: {
+                    markdown: { type: 'string' },
+                    preferences: { type: 'object' },
+                    async: { type: 'boolean', default: false },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description:
+                'DeckPlan, SVG/PNG component representations and hashes, compiled Markdown and self-contained HTML',
+            },
+            202: { description: 'Async deck job accepted' },
+            304: { description: 'Strong ETag matched' },
+            422: { description: 'Invalid deck or build failure' },
+            503: { description: 'Build queue unavailable' },
+            504: { description: 'Build timed out' },
+          },
+        },
+      },
+      '/v1/sites/{site}/deck-jobs/{job}': {
+        get: {
+          summary: 'Read short-lived async deck job status',
+          description:
+            'Requires content:write and deck:render for the job site. Job metadata contains no source Markdown.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'job', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: {
+            200: { description: 'Queued, running, done or error status' },
+            404: { description: 'Job not found or expired' },
+          },
+        },
+      },
+      '/v1/sites/{site}/deck-jobs/{job}/result': {
+        get: {
+          summary: 'Read a completed async deck result',
+          description: 'Returns the same compile result and strong ETag as synchronous compilation.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'job', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: {
+            200: { description: 'Completed deck compile result' },
+            304: { description: 'Strong ETag matched' },
+            409: { description: 'Job has not completed' },
+            404: { description: 'Job not found or expired' },
+          },
+        },
+      },
       '/v1/sites/{site}/published': {
         get: {
           summary: 'List published content as JSON (read API)',
@@ -1174,7 +1301,7 @@ export function openApi(config) {
               name: 'kind',
               in: 'query',
               required: false,
-              schema: { type: 'string', enum: ['page', 'post', 'project'] },
+              schema: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
             },
             { name: 'locale', in: 'query', required: false, schema: { type: 'string' } },
             { name: 'tag', in: 'query', required: false, description: 'Exact tag match.', schema: { type: 'string' } },
@@ -1212,11 +1339,16 @@ export function openApi(config) {
         get: {
           summary: 'Read one published document as JSON (read API)',
           description:
-            'The list entry shape plus immutable `markdown`, on-demand `html`, Semantic AST, Narrative Plan, resolved Composition, diagnostics, accessible text and representation links. The strong ETag includes source, service, theme and Pattern Registry versions.',
+            'The list entry shape plus immutable `markdown`, on-demand `html`, Semantic AST, Narrative Plan, resolved Composition, diagnostics, accessible text and representation links. Deck entries additionally expose their deterministic `deck_plan`, slide count and durable released HTML URL. The strong ETag includes source, service, theme and Pattern Registry versions.',
           security: secured,
           parameters: [
             siteParameter,
-            { name: 'kind', in: 'path', required: true, schema: { type: 'string', enum: ['page', 'post', 'project'] } },
+            {
+              name: 'kind',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
+            },
             { name: 'locale', in: 'path', required: true, schema: { type: 'string' } },
             { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
           ],
@@ -1289,7 +1421,7 @@ export function openApi(config) {
               name: 'kind',
               in: 'query',
               required: false,
-              schema: { type: 'string', enum: ['page', 'post', 'project'] },
+              schema: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
             },
             {
               name: 'limit',
@@ -1316,7 +1448,7 @@ export function openApi(config) {
         put: {
           summary: 'Create another immutable revision',
           description:
-            'Accepts the same controlled-layout, semantic-composition, report-cadence, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
+            'Accepts the same controlled-layout, semantic-composition, semantic-deck, report-cadence, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,
@@ -1669,6 +1801,7 @@ export function openApi(config) {
   const stats = {
     releases: 'release builds, activation, output size and build duration',
     content: 'content items, revisions, publications and assets',
+    decks: 'deterministic planning, rendering, cache, SVG/PNG components, duration and output bytes',
     readers: 'privacy-safe reader authentication outcomes and sessions',
     webhooks: 'outbox events and webhook delivery outcomes',
     audio: 'read-aloud jobs, characters and generated duration',
