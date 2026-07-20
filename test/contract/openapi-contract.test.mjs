@@ -94,6 +94,28 @@ test('the OpenAPI authoring contract documents semantic compositions, charts and
   assert.ok(pattern.properties.content_budget.required.includes('max_series'))
   assert.ok(spec.components.schemas.PublishingGuide)
   assert.ok(spec.components.schemas.ReportSeriesSetting)
+  assert.equal(
+    spec.components.schemas.SitePresentationSettings.properties.report_series.items.$ref,
+    '#/components/schemas/ReportSeriesSetting',
+  )
+  assert.equal(
+    spec.components.schemas.SiteSettings.properties.presentation.$ref,
+    '#/components/schemas/SitePresentationSettings',
+  )
+  assert.equal(spec.components.schemas.SitePatch.properties.settings.$ref, '#/components/schemas/SiteSettings')
+  assert.equal(spec.components.schemas.Site.properties.settings.$ref, '#/components/schemas/SiteSettings')
+  assert.equal(
+    spec.paths['/v1/sites/{site}'].get.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/Site',
+  )
+  assert.equal(
+    spec.paths['/v1/sites/{site}'].patch.requestBody.content['application/json'].schema.$ref,
+    '#/components/schemas/SitePatch',
+  )
+  assert.equal(
+    spec.paths['/v1/sites/{site}'].patch.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/Site',
+  )
   assert.equal(spec.components.schemas.PublishedEntry.properties.report_series.type[1], 'null')
   assert.equal(
     spec.paths['/v1/sites/{site}/published'].get.responses[200].content['application/json'].schema.$ref,

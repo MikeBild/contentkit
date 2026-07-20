@@ -165,6 +165,56 @@ export function openApi(config) {
             },
           },
         },
+        SitePresentationSettings: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            preset: {
+              type: 'string',
+              enum: ['portfolio', 'product-docs', 'wiki', 'knowledge-base', 'product', 'changelog'],
+            },
+            report_series: {
+              type: 'array',
+              maxItems: 32,
+              items: { $ref: '#/components/schemas/ReportSeriesSetting' },
+            },
+          },
+        },
+        SiteSettings: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            presentation: { $ref: '#/components/schemas/SitePresentationSettings' },
+          },
+          description:
+            'Site configuration stored as one object. Unknown settings are preserved; builder-owned settings are validated on write.',
+        },
+        SitePatch: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+            base_url: { type: 'string', format: 'uri' },
+            default_locale: { type: 'string' },
+            domains: { type: 'array', items: { type: 'string' } },
+            settings: { $ref: '#/components/schemas/SiteSettings' },
+          },
+        },
+        Site: {
+          type: 'object',
+          additionalProperties: true,
+          required: ['id', 'slug', 'name', 'base_url', 'default_locale', 'settings'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            slug: { type: 'string' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            base_url: { type: 'string', format: 'uri' },
+            default_locale: { type: 'string' },
+            settings: { $ref: '#/components/schemas/SiteSettings' },
+          },
+        },
         PublishedEntry: {
           type: 'object',
           required: [
@@ -973,7 +1023,13 @@ export function openApi(config) {
             'Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object.',
           security: secured,
           parameters: [siteParameter],
-          responses: { 200: { description: 'Site' }, 404: { description: 'Site not found' } },
+          responses: {
+            200: {
+              description: 'Site',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Site' } } },
+            },
+            404: { description: 'Site not found' },
+          },
         },
         patch: {
           summary: 'Update site metadata, settings and domains',
@@ -981,8 +1037,16 @@ export function openApi(config) {
             'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
           security: secured,
           parameters: [siteParameter],
-          requestBody: jsonBody(),
-          responses: { 200: { description: 'Updated' } },
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/SitePatch' } } },
+          },
+          responses: {
+            200: {
+              description: 'Updated',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Site' } } },
+            },
+          },
         },
       },
       '/v1/sites/{site}/access/users': {

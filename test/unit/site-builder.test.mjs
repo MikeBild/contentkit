@@ -1285,6 +1285,61 @@ test('configured report series render ordered overview cards, series pages and b
   assert.doesNotMatch(sitemap, /\/en\/reports\/infrastructure\//)
 })
 
+test('fully private German report series preserve same-grant visibility across mixed grants', async () => {
+  const report = ({ slug, title, series, access = '' }) => ({
+    id: `revision-${slug}`,
+    item_id: `item-${slug}`,
+    kind: 'page',
+    locale: 'de',
+    translation_key: slug,
+    published_at: new Date('2026-07-20T07:55:00Z'),
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  intent: status\n  question: Was erfordert heute eine Entscheidung?\n  conclusion: Der Zustand ist bewertet.\n  action: Prüfe die ausgewiesenen Maßnahmen.\nreportSeries: ${series}\nreportCadence: daily\ntitle: ${title}\nlocale: de\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: Geschlossener Berichtszeitraum.\ndate: 2026-07-20T07:55:00Z\n${access ? `access: [${access}]\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Status\n\n${title}.\n:::\n\n::metric{label="Abdeckung" value="100" unit="%" status="vollständig" role="primary"}`,
+  })
+  const result = await build({
+    site: {
+      ...site,
+      name: 'Mission Cockpit',
+      default_locale: 'de',
+      settings: {
+        presentation: {
+          preset: 'product',
+          report_series: [
+            { id: 'operations', label: 'Produktbetrieb', nav_order: 10, lead_cadence: 'daily' },
+            { id: 'growth', label: 'Wachstum', nav_order: 30, lead_cadence: 'daily' },
+          ],
+        },
+      },
+    },
+    locales: [{ locale: 'de' }],
+    accessGroups: [{ slug: 'cockpit' }, { slug: 'other-team' }],
+    accessRules: [{ match: 'prefix', path: '/', group_slugs: ['cockpit'], user_ids: [] }],
+    revisions: [
+      report({ slug: 'betrieb-heute', title: 'Produktbetrieb heute', series: 'operations' }),
+      report({ slug: 'wachstum-intern', title: 'Geheimes Wachstum', series: 'growth', access: 'other-team' }),
+    ],
+  })
+
+  const home = result.files.get('de/index.html').body.toString()
+  assert.match(home, /Reportserien/)
+  assert.match(home, /Produktbetrieb heute/)
+  assert.match(home, /Serie öffnen/)
+  assert.doesNotMatch(home, /Geheimes Wachstum/)
+  assert.ok(home.indexOf('Produktbetrieb') < home.indexOf('Wachstum'))
+
+  const operations = result.files.get('de/reports/operations/index.html').body.toString()
+  assert.match(operations, /Aktueller Betriebsstand/)
+  assert.match(operations, /Produktbetrieb heute/)
+  assert.doesNotMatch(operations, /Geheimes Wachstum/)
+
+  const growth = result.files.get('de/reports/growth/index.html').body.toString()
+  assert.match(growth, /Für diese Serie ist noch kein aktueller Lead-Report veröffentlicht/)
+  assert.doesNotMatch(growth, /Geheimes Wachstum/)
+  assert.doesNotMatch(
+    result.files.get('de/search-index.json').body.toString(),
+    /Produktbetrieb heute|Geheimes Wachstum/,
+  )
+})
+
 test('release rejects reports assigned to an unregistered series', async () => {
   const revision = {
     id: 'revision-rogue',
