@@ -821,6 +821,32 @@ test('extraFieldText collapses newlines — a block scalar stays one display lin
   assert.equal(extraFieldText({ note: 'x\ny' }), 'note: x y')
 })
 
+test('report pages derive a localized section navigation from level-two headings', () => {
+  const item = {
+    kind: 'page',
+    layout: 'composition',
+    composition: { format: 'report' },
+    title: 'Mission report',
+    summary: 'A controlled report.',
+    html: '<h2 id="status"><a class="heading-anchor" href="#status">Status &amp; technology</a></h2><p>A</p><h3 id="detail"><a class="heading-anchor" href="#detail">Detail</a></h3><h2 id="business"><a class="heading-anchor" href="#business"><em>Business</em></a></h2>',
+  }
+  const de = contentBody(item, { site: { id: 's', settings: {} }, t: dictionary('de'), locale: 'de' })
+  const navigation = de.match(/<nav class="container report-section-nav"[\s\S]*?<\/nav>/)?.[0] || ''
+  assert.match(navigation, /aria-label="Reportbereiche"/)
+  assert.match(navigation, /href="#status">Status &amp; technology<\/a>/)
+  assert.match(navigation, /href="#business">Business<\/a>/)
+  assert.doesNotMatch(navigation, /href="#detail"/)
+  const en = contentBody(item, { site: { id: 's', settings: {} }, t: dictionary('en'), locale: 'en' })
+  assert.match(en, /aria-label="Report sections"/)
+  assert.doesNotMatch(
+    contentBody(
+      { ...item, html: '<h2 id="only"><a class="heading-anchor" href="#only">Only</a></h2>' },
+      { site: { id: 's', settings: {} }, t: dictionary('en'), locale: 'en' },
+    ),
+    /report-section-nav/,
+  )
+})
+
 test('theme tokens emit :root custom properties and a dark override behind prefers-color-scheme', () => {
   const html = render({
     site: {

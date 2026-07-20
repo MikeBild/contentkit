@@ -3,6 +3,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
+import { materializeComposition } from './composition-output.mjs'
+import { contentkitFontAssetName, contentkitFontFaceCss, contentkitFontFile } from './typography.mjs'
 import {
   archiveBody,
   blogBody,
@@ -20,7 +22,7 @@ import {
   tagsBody,
   structuredContentBody,
 } from './templates.mjs'
-import { escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
+import { compareDateDesc, escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
 
 const text = (body, contentType = 'text/html; charset=utf-8', cacheControl = 'public,max-age=60,must-revalidate') => ({
   body: Buffer.from(body),
@@ -102,6 +104,23 @@ function matchingRule(rules, pathname) {
     .sort((a, b) => Number(b.match === 'exact') - Number(a.match === 'exact') || b.path.length - a.path.length)[0]
 }
 
+function sameAccessGrant(left, right) {
+  const normalized = (grant, field) => [...(grant?.[field] || [])].sort()
+  return (
+    JSON.stringify(normalized(left, 'group_slugs')) === JSON.stringify(normalized(right, 'group_slugs')) &&
+    JSON.stringify(normalized(left, 'user_ids')) === JSON.stringify(normalized(right, 'user_ids'))
+  )
+}
+
+// Static HTML cannot vary by reader. A protected page may nevertheless render
+// navigation for documents carrying the exact same release-scoped grant: the
+// gateway checks that grant before serving the HTML, so no title or summary can
+// cross a group boundary. Public pages remain visible alongside those peers.
+function pagesVisibleWithGrant(publicPages, allPages, grant) {
+  if (!grant) return publicPages
+  return [...publicPages, ...allPages.filter((entry) => entry.protected && sameAccessGrant(entry.access_rule, grant))]
+}
+
 function absolute(site, path) {
   return `${site.base_url.replace(/\/$/, '')}${path}`
 }
@@ -130,7 +149,9 @@ async function staticAssets(root) {
   const emit = (name, body, type) => {
     assets[name] = emitHashedAsset(files, name, body, type)
   }
-  const css = await readFile(join(root, 'assets/site.css'), 'utf8')
+  const fontUrl = emitHashedAsset(files, contentkitFontAssetName, await readFile(contentkitFontFile), 'font/woff2')
+  assets[contentkitFontAssetName] = fontUrl
+  const css = `${contentkitFontFaceCss(fontUrl, { display: 'swap' })}\n${await readFile(join(root, 'assets/site.css'), 'utf8')}`
   const katexCss = (await readFile(join(root, 'node_modules/katex/dist/katex.min.css'), 'utf8')).replaceAll(
     'url(fonts/',
     'url(/assets/katex/',
@@ -148,6 +169,7 @@ async function staticAssets(root) {
     'audio.js',
     'ai-actions.js',
     'feedback.js',
+    'composition.js',
   ]) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
@@ -319,7 +341,8 @@ function llmsTxt(site, locale, { t, posts, projects, pages }, locales) {
 // are separated by a horizontal rule: without it the boundary between two posts is
 // indistinguishable from a section break inside one.
 const stripLeadingH1 = (source) => String(source || '').replace(/^\s*#[^\S\n]+[^\n]*\n+/, '')
-const hasMarkdownTwin = (item) => !item.noindex && (item.kind === 'post' || item.layout === 'report')
+const hasMarkdownTwin = (item) =>
+  !item.noindex && (item.kind === 'post' || (item.layout === 'composition' && item.composition?.format === 'report'))
 
 // One document as Markdown: title heading, canonical URL, the authored TL;DR
 // bullets (frontmatter, so they are absent from `source`), then the body. The
@@ -430,10 +453,25 @@ export async function buildSite({
     // malformed `extra:`) renders without the offending field instead of
     // failing the release — write-time validation stays strict.
     const parsed = await renderMarkdown(revision.markdown, { lenient: true })
-    const result = materializeReportCharts(parsed, {
+    const charted = materializeReportCharts(parsed, {
       settings: site.settings || {},
       locale: parsed.meta.locale,
       emit: (svg, { scheme }) => emitHashedAsset(files, `report-chart-${scheme}.svg`, svg, 'image/svg+xml'),
+    })
+    const result = await materializeComposition(charted, {
+      settings: site.settings || {},
+      // Static pages use semantic HTML/CSS as their primary representation and
+      // materialize lightweight standalone SVGs. PNG remains an explicitly
+      // selected headless output; eagerly rasterizing every historical
+      // composition would make additive release time grow with site history.
+      formats: ['svg'],
+      emit: (body, { scheme, format }) =>
+        emitHashedAsset(
+          files,
+          `composition-${scheme}.${format}`,
+          body,
+          format === 'svg' ? 'image/svg+xml' : 'image/png',
+        ),
     })
     for (const warning of result.warnings) {
       logger?.warn?.(warning, { siteId: site.id, itemId: revision.item_id, slug: result.meta.slug })
@@ -445,6 +483,17 @@ export async function buildSite({
       html: result.html,
       source: result.source,
       hasMermaid: result.hasMermaid,
+      semantic: result.semantic,
+      narrative: result.narrative,
+      composition: result.composition || result.meta.composition,
+      diagnostics: result.diagnostics,
+      accessible_text: result.accessible_text || null,
+      // An authored reporting/content date is semantic and therefore wins over
+      // the database activation time. Older documents without one must retain
+      // their repository timestamps instead of having the parser's null
+      // defaults erase them.
+      published_at: result.meta.published_at ?? revision.published_at ?? null,
+      updated_at: result.meta.updated_at ?? revision.updated_at ?? null,
       // Derived, not frontmatter: renderMarkdown's `meta` is the authored
       // contract and must not grow fields the author never wrote.
       reading_minutes: result.meta.kind === 'post' ? readingTime(result.source) : 0,
@@ -513,7 +562,7 @@ export async function buildSite({
     // arrays, and a draft has no business being syndicated or recommended.
     const posts = publicLocal
       .filter((item) => item.kind === 'post' && !item.noindex)
-      .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)))
+      .sort((a, b) => compareDateDesc(a.published_at, b.published_at))
     const projects = publicLocal
       .filter((item) => item.kind === 'project' && !item.noindex)
       .sort((a, b) => Number(b.featured) - Number(a.featured))
@@ -574,18 +623,20 @@ export async function buildSite({
       sameAs: Object.values(site.settings?.socials || {}),
     }
     const homePath = `/${locale}/`
+    const homeGrant = matchingRule(accessRules, homePath)
+    const homeBase = { ...base, pages: pagesVisibleWithGrant(pages, allPages, homeGrant) }
     files.set(
       `${locale}/index.html`,
       text(
         layout(
           {
-            ...base,
+            ...homeBase,
             title: site.name,
             description: site.description,
             canonical: absolute(site, homePath),
             currentPath: homePath,
           },
-          presetHomeBody(base),
+          presetHomeBody(homeBase),
           { structured: personData },
         ),
       ),
@@ -942,6 +993,10 @@ export async function buildSite({
       // Markdown over HTML. noindex content gets none: its HTML page at least carries a robots meta,
       // a bare .md file could not ask crawlers for the same restraint.
       const markdownUrl = hasMarkdownTwin(item) ? `${item.url}index.md` : undefined
+      const itemBase = {
+        ...base,
+        pages: item.protected ? pagesVisibleWithGrant(pages, allPages, item.access_rule) : pages,
+      }
       if (markdownUrl) {
         files.set(
           markdownUrl.replace(/^\//, ''),
@@ -956,7 +1011,7 @@ export async function buildSite({
         text(
           layout(
             {
-              ...base,
+              ...itemBase,
               title: item.title,
               description: item.summary,
               canonical: item.canonical,
@@ -972,26 +1027,7 @@ export async function buildSite({
               articleTags: item.kind === 'post' ? item.tags : [],
               markdownUrl,
             },
-            structuredContentBody(
-              item,
-              {
-                ...base,
-                pages: item.protected
-                  ? [
-                      ...pages,
-                      ...allPages.filter(
-                        (entry) =>
-                          entry.protected &&
-                          JSON.stringify(entry.access_rule?.group_slugs || []) ===
-                            JSON.stringify(item.access_rule?.group_slugs || []) &&
-                          JSON.stringify(entry.access_rule?.user_ids || []) ===
-                            JSON.stringify(item.access_rule?.user_ids || []),
-                      ),
-                    ]
-                  : pages,
-              },
-              itemComments,
-            ),
+            structuredContentBody(item, itemBase, itemComments),
             {
               structured,
               mermaid: item.hasMermaid,
@@ -1001,6 +1037,7 @@ export async function buildSite({
               // The copy button only enhances a page that has a Markdown twin,
               // and only when the share row is not switched off per site.
               aiActions: Boolean(markdownUrl) && site.settings?.ai?.share_buttons !== false,
+              composition: item.layout === 'composition',
             },
           ),
         ),

@@ -64,7 +64,7 @@
   color: hsl(var(--foreground));
 }
 
-/* Custom control bar (shadcn-style, tokens only). Ships hidden; audio.js swaps
+/* Custom control bar (neutral tokens only). Ships hidden; audio.js swaps
  * it in for the native controls. One quiet row, wrapping on narrow screens. */
 .audio-ui {
   display: flex;

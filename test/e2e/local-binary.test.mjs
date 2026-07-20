@@ -322,17 +322,45 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           body: JSON.stringify({
             revision_ids: [ingested.revision.id, reportEntry.revision.id, ...docs.map((entry) => entry.revision.id)],
             expires_in: 600,
+            slug: 'local-release-review',
           }),
         }),
         201,
       )
-      const previewPage = await fetch(`${preview.url}de/blog/lokaler-e2e-beitrag/`)
+      assert.equal(preview.preview_url, `${origin}/previews/local-release-review/`)
+      assert.match(preview.invitation_url, /\/preview-invitations\/[A-Za-z0-9_-]+$/)
+      const unauthenticatedPreview = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`)
+      assert.equal(unauthenticatedPreview.status, 401)
+      const invitation = await fetch(preview.invitation_url, { redirect: 'manual' })
+      assert.equal(invitation.status, 303)
+      assert.equal(invitation.headers.get('location'), '/previews/local-release-review/')
+      const previewCookie = invitation.headers.get('set-cookie')?.split(';')[0]
+      assert.match(previewCookie || '', /^contentkit_preview=/)
+      const consumedInvitation = await fetch(preview.invitation_url, { redirect: 'manual' })
+      assert.equal(consumedInvitation.status, 404)
+      const legacyPreview = await fetch(`${origin}/p/legacy-token/de/blog/lokaler-e2e-beitrag/`)
+      assert.equal(legacyPreview.status, 404)
+      const previewPage = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`, {
+        headers: { cookie: previewCookie },
+      })
       assert.equal(previewPage.status, 200)
       assert.equal(previewPage.headers.get('x-robots-tag'), 'noindex,nofollow,noarchive')
       assert.match(await previewPage.text(), /Lokaler E2E Beitrag/)
-      const previewReport = await fetch(`${preview.url}en/q2-business-review/`)
+      const previewReport = await fetch(`${preview.preview_url}en/q2-business-review/`, {
+        headers: { cookie: previewCookie },
+      })
       assert.equal(previewReport.status, 200)
-      assert.match(await previewReport.text(), /report-chart-picture/)
+      const previewReportHtml = await previewReport.text()
+      assert.match(previewReportHtml, /report-chart-picture/)
+      const previewAssetPaths = [...previewReportHtml.matchAll(/(?:src|srcset)="([^" ]*\/assets\/[^" ,]+)/g)].map(
+        (match) => match[1],
+      )
+      assert.ok(previewAssetPaths.length >= 2)
+      assert.ok(previewAssetPaths.every((path) => path.startsWith(new URL(preview.preview_url).pathname)))
+      for (const assetPath of [...new Set(previewAssetPaths)].slice(0, 4)) {
+        const previewAsset = await fetch(new URL(assetPath, origin), { headers: { cookie: previewCookie } })
+        assert.equal(previewAsset.status, 200, assetPath)
+      }
 
       const release = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, {
@@ -361,7 +389,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
 
       const reportPage = await requestWithHost(origin, '/en/q2-business-review/', 'e2e.local')
       assert.equal(reportPage.status, 200)
-      assert.match(reportPage.body, /class="report-page"/)
+      assert.match(reportPage.body, /class="composition-page"/)
       assert.match(reportPage.body, /<details class="report-chart-data">/)
       assert.doesNotMatch(reportPage.body, /echarts|report-chart[^"']*\.js/i)
       assert.match(reportPage.headers['content-security-policy'], /script-src 'self'/)
@@ -489,6 +517,53 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       const updatedPage = await requestWithHost(origin, '/de/blog/lokaler-e2e-beitrag/', 'e2e.local')
       assert.equal(updatedPage.status, 200)
       assert.match(updatedPage.body, /Freigegebener E2E-Kommentar/)
+
+      // Product analytics cross the compiled HTTP boundary and real PostgreSQL,
+      // using the ordinary read scope carried by the bootstrap key.
+      const statsWindow = new URLSearchParams({
+        bucket: 'hour',
+        from: new Date(Date.now() - 3600_000).toISOString(),
+        to: new Date(Date.now() + 3600_000).toISOString(),
+      })
+      const incomingTrace = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+      const contentStatsResponse = await fetch(`${origin}/v1/sites/${site.id}/stats/content?${statsWindow}`, {
+        headers: { ...auth, traceparent: incomingTrace },
+      })
+      const contentStats = await responseJson(contentStatsResponse, 200)
+      assert.match(
+        contentStatsResponse.headers.get('traceparent'),
+        /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/,
+      )
+      assert.ok(contentStats.totals.items_created >= 5)
+      assert.ok(contentStats.totals.revisions_published >= 5)
+      const releaseStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/releases?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.ok(releaseStats.totals.builds_started >= 3)
+      assert.ok(releaseStats.totals.bytes > 0)
+      const readerStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/readers?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.equal(readerStats.totals.auth_success, 1)
+      assert.equal(readerStats.totals.sessions_created, 1)
+      const webhookStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/webhooks?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.ok(webhookStats.totals.events_created >= 1)
+      const engagementStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/engagement?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.equal(engagementStats.totals.comments_approved, 1)
+      assert.equal(engagementStats.totals.contacts_created, 1)
+      const audioStats = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/audio?${statsWindow}`, { headers: auth }),
+        200,
+      )
+      assert.equal(audioStats.totals.jobs_created, 0)
 
       const releaseList = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, { headers: auth }),

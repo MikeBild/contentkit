@@ -4,11 +4,13 @@
 [![Release](https://img.shields.io/github/v/release/MikeBild/contentkit)](https://github.com/MikeBild/contentkit/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Markdown in, multilingual static website out.** Contentkit is an API-first
-mini-CMS for portfolios, blogs, product documentation, wikis, knowledge bases,
-product pages, changelogs and visual reports: you upload Markdown through an HTTP API,
-Contentkit renders it into an immutable static-site release and activates it
-atomically — with instant, pointer-based rollback.
+**A headless Markdown mini-CMS with semantic visual composition and declarative
+information patterns.** Contentkit publishes websites, documentation, reports
+and infographics through one API-first content model. Semantic Markdown can
+become a versioned AST, a validated visual composition, semantic or visual
+HTML and standalone SVG inside an immutable release that activates atomically—with
+instant, pointer-based rollback. PNG remains an explicit deterministic
+headless export.
 
 It is deliberately not a WYSIWYG CMS: there is no admin UI, no page builder
 and no plugin system. Content lives as portable Markdown, the API is the
@@ -53,11 +55,28 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   contents and current/archived product versions.
 - Release-scoped reader access control for individual pages, path areas and
   media, with personal usernames, salted scrypt passwords, groups and revocable
-  sessions. Protected content is excluded from public discovery outputs.
+  sessions. Protected content is excluded from public discovery outputs; a
+  signed-in reader sees only same-grant navigation and home-page cards.
 - GFM, footnotes, safe directives, KaTeX, Mermaid and Shiki highlighting.
-- Responsive reports and dashboards from Markdown: shadcn-style metric cards,
-  status badges and progress, plus table-driven bar, line, area and donut charts
-  rendered server-side as accessible light/dark SVGs with no client chart runtime.
+- Semantic visual compositions from Markdown: Semantic AST → Narrative →
+  declarative Pattern Package → deterministic layout → responsive HTML and
+  standalone light/dark SVG, with PNG available on demand. The repository-owned
+  registry contains 81 information patterns with constraints, content budgets,
+  typed value and time semantics, responsive fallbacks, spec examples and
+  machine-readable selection reasons for external AI agents.
+- Embedded semantic blocks let normal pages and posts carry selected processes,
+  comparisons, relationships, timelines, hierarchies, metrics and evidence as
+  accessible responsive HTML plus a machine-readable Semantic AST. The surrounding
+  document remains editorial prose; full-canvas SVG and PNG stay an explicit
+  `layout: composition` concern.
+- Composition reports and dashboards with neutral metric cards, status,
+  progress and table-driven charts with direct values and accessible source
+  tables. Static report pages use semantic HTML for their information hierarchy
+  and embed responsive light/dark chart SVGs only where a graphic adds evidence;
+  the complete composition SVG remains a standalone headless representation.
+  Product sites turn cadence-tagged reports into a localized decision flow:
+  current state and action first, additional horizons second, bounded immutable
+  history last.
 - Locale-prefixed routes, translation alternates, a year-grouped archive with
   client-side tag filtering, a tag index and tag pages.
 - Reading time, related posts by tag similarity, older/newer navigation and a
@@ -67,7 +86,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   download link, blogcast feed, a per-locale blogcast page at
   `/{locale}/blogcast/`, budgets and automatic rebuilds.
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
-- Expiring preview links and pointer-based instant rollback.
+- Named, session-protected previews with one-time invitations and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
 - Cloudflare Turnstile, honeypot and rate limits on public writes.
 - Signed Standard Webhooks notifications for contact, comment and release events.
@@ -77,12 +96,25 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - Content modeling light: author-owned `extra:` custom fields and `related:`
   post references in frontmatter — no schema builder; page rendering of the
   extra fields is a per-site opt-in via `settings.content.show_extra`.
-- Optional headless JSON read API: list and fetch published content (metadata
-  verbatim, Markdown source, on-demand rendered HTML, ETag/304 caching) via
-  scoped `content:read` keys — site delivery itself stays static.
+- Headless composition APIs to discover patterns, recommend and validate a
+  visual narrative, compile semantic HTML, layout-equivalent visual HTML,
+  SVG or PNG, and fetch published binary
+  representations with ETag/304 caching. Published JSON includes the semantic,
+  narrative and resolved composition models. SVG is the canonical static
+  representation, PNG is its byte-stable raster export, and visual HTML uses
+  the same resolved layout contract without imitating SVG markup.
+- Public story-selection APIs at `GET /v1/publishing-guides` describe the
+  question, story arc, evidence contract, rejection conditions, compatible
+  patterns and examples for reports, diagrams and code explanations. Chart
+  directives and Mermaid fences can additionally preserve their instance-level
+  question, insight, action and limitation in the Semantic AST.
 - Server-side full-text search over published content with locale-aware
   PostgreSQL stemming (de/en), relevance ranking and `<mark>` headlines via
   `GET /v1/sites/{site}/search` — published sites keep their client-side search.
+- Bounded site-scoped product analytics for releases, content, reader auth,
+  webhooks, audio and engagement through `/v1/sites/{site}/stats/*`, reusing
+  `content:read` keys and returning aggregate counts only. See
+  [docs/PRODUCT_ANALYTICS.md](docs/PRODUCT_ANALYTICS.md).
 - Per-site theming as structured design tokens: `settings.theme.tokens` fills
   the shared stylesheet's custom properties (allowlisted, light/dark aware,
   including `chart_1` through `chart_5`; `settings.accent` stays the primary
@@ -156,13 +188,18 @@ Build a preview or release using the returned revision ID:
 curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/previews" \
   -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"revision_ids":["<revision-id>"],"expires_in":3600}'
+  -d '{"slug":"article-review","revision_ids":["<revision-id>"],"expires_in":3600}'
 
 curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
   -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"revision_ids":["<revision-id>"],"reason":"initial release"}'
 ```
+
+The preview response separates access from navigation. Send the one-time
+`invitation_url` to the reviewer. Opening it creates a path-scoped HttpOnly
+session and redirects to the memorable `preview_url`, for example
+`/previews/article-review/`. The invitation cannot be used a second time.
 
 The full live contract is available at `/openapi.json`. A committed canonical
 snapshot lives in [docs/openapi.json](docs/openapi.json); update it with
@@ -190,13 +227,35 @@ uploaded executable code.
 ```
 
 A Markdown page can use the controlled layouts `standard`, `docs`, `wiki`,
-`knowledge`, `landing`, `changelog` or `report`. Documentation hierarchy uses `docKey`,
+`knowledge`, `landing`, `changelog` or `composition`; `report` remains a
+compatibility alias for report compositions. Documentation hierarchy uses `docKey`,
 `docsVersion`, `parent`, `navTitle` and `navOrder`. See
 [docs/TEMPLATES.md](docs/TEMPLATES.md) for routes, complete frontmatter and the
 real example documents in `examples/docs`, `examples/wiki`,
-`examples/knowledge`, `examples/landing`, `examples/changelog` and
-`examples/reports`. The focused [report guide](docs/REPORTS.md) documents every
-dashboard primitive, chart option, theme token and resource limit.
+`examples/knowledge`, `examples/landing`, `examples/changelog`,
+`examples/reports` and `examples/compositions`. The
+[visual-composition guide](docs/VISUAL_COMPOSITIONS.md) documents the pipeline,
+all 81 patterns, declarative Pattern Packages and the AI-agent workflow. The
+[semantic information-block guide](docs/INFORMATION_BLOCKS.md) documents
+dashboards, application shells, pricing, galleries, stats, FAQ, code examples,
+data tables, agent content budgets, typed units and responsive verification. The
+[report guide](docs/REPORTS.md) covers dashboard primitives and charts. For
+product report sites, the home page also projects up to four primary metric
+nodes from the newest report's Semantic AST, keeping the overview and report on
+one authored data contract. Generate
+the complete neutral review gallery with `npm run review:patterns`. It includes
+highlighted code, a technical diagram, a server-rendered chart, a semantic
+report, nine human- and machine-readable story-selection guides, and every
+information pattern. `npm run validate:visuals` verifies 972
+HTML/SVG/PNG combinations, 1,097 visual HTML cases and 12 full gallery-page cases.
+The gate opens every standalone SVG in Chromium and rejects measured clipping,
+overlap, text truncation, container overflow, separator crossings, navigation
+defects and missing capability output. Open
+`examples/pattern-gallery/index.html`.
+
+All authored and generated review material is organized under
+[`examples/`](examples/README.md). Trusted runtime Pattern Packages remain under
+`patterns/`; they are executable configuration, not examples.
 
 ## Protect reader content
 

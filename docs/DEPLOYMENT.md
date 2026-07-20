@@ -13,6 +13,12 @@ npm ci
 npm run build:binary
 ```
 
+`CONTENTKIT_NODE_BINARY` may select the Node executable embedded in the
+artifact. On macOS the build rejects a Homebrew thin executable that links to
+an external `libnode` dylib; use the self-contained official Node binary from
+setup-node or nvm. This fails during packaging instead of publishing an
+artifact that crashes on another host.
+
 The resulting `dist/contentkit` embeds Node, dependencies, templates, fonts,
 assets and the ordered SQL migration journal. It extracts a content-hashed
 runtime below `$HOME/.cache/contentkit/<hash>` on first start. Prebuilt
@@ -40,7 +46,6 @@ Required production environment values:
 - `CONTENTKIT_SESSION_SECRET`
 - `DATABASE_URL`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-- `CONTENTKIT_WEBHOOK_SECRET` (with `CONTENTKIT_WEBHOOK_URL`)
 - `CONTENTKIT_TURNSTILE_SECRET`
 
 Generate independent random values; never reuse the Supabase service-role key
@@ -48,10 +53,24 @@ as a Contentkit, database or webhook secret. If you embed the database
 password in a connection URL, use at least 32 base64url characters so it needs
 no escaping. See `.env.example` for the full template.
 
+Webhook delivery does not require a global environment endpoint. Prefer
+site-scoped managed endpoints registered through `POST
+/v1/sites/{site}/webhooks`; their signing secrets are encrypted at rest and
+their event filters prevent unrelated sites or event types from reaching a
+consumer. The legacy `CONTENTKIT_WEBHOOK_URL` and
+`CONTENTKIT_WEBHOOK_SECRET` fallback is optional and, when used, both values
+must be configured together.
+
 `CONTENTKIT_SESSION_SECRET` HMAC-hashes reader session tokens. Rotating it logs
 out every reader immediately. Published sites must use HTTPS so the
 `__Host-contentkit_session` cookie can keep its Secure attribute; the reverse
 proxy must preserve the original site `Host` header.
+
+Set `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` to the stable environment name used by
+your log backend (for example `production`). Structured request logs carry the
+service name/version, environment and W3C trace/span IDs. Reader-auth product
+facts contain no identity or IP and are pruned by the existing maintenance run
+after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (default 400).
 
 ## Release pipeline
 

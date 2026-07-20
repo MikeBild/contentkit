@@ -1,6 +1,6 @@
 import { extractSpeechText } from './speech-text.mjs'
 import { createTtsProvider } from './tts.mjs'
-import { sha256 } from './utils.mjs'
+import { compareDateDesc, sha256 } from './utils.mjs'
 
 // Read-aloud audio ("Vorlesen") after the outbox blueprint: publishing enqueues
 // a row in ck_audio_jobs, a setInterval poller synthesizes MP3s minutes later
@@ -33,9 +33,6 @@ const isUniqueViolation = (error) => /duplicate key|unique constraint/i.test(Str
 const JOB_STATUSES = ['pending', 'processing', 'done', 'failed', 'skipped']
 
 const estimatedUsd = (chars) => Math.round((chars / 1_000_000) * USD_PER_MILLION_CHARS * 100) / 100
-
-// Total, locale-independent comparator (see site-builder.mjs for the rationale).
-const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 
 export function createAudioWorker(config, db, repo, storage, logger, ttsFactory = createTtsProvider) {
   let timer
@@ -196,7 +193,7 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     const revisions = revisionIds.length
       ? await db.select('ck_content_revisions', { id: `in.(${revisionIds.join(',')})` })
       : []
-    revisions.sort((a, b) => cmp(String(b.published_at || ''), String(a.published_at || '')))
+    revisions.sort((a, b) => compareDateDesc(a.published_at, b.published_at))
     const slugFilter = Array.isArray(slugs) && slugs.length ? new Set(slugs.map(String)) : null
     const selected = slugFilter ? revisions.filter((revision) => slugFilter.has(revision.slug)) : revisions
     const requested = Number(limitChars ?? settings.monthly_char_budget)

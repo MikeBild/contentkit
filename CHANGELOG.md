@@ -6,6 +6,224 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.15.8 - 2026-07-19
+
+### Added
+
+- Project primary report metrics from the current report's Semantic AST onto
+  product-report home pages without maintaining a second metric payload.
+- Render authored metric units, periods, and statuses consistently in semantic
+  HTML output.
+
+### Changed
+
+- Refine report catalogue spacing and responsive primary-metric presentation
+  for compact desktop and mobile reading.
+- Document the shared Semantic AST projection contract for humans and agents.
+
+## 1.15.7 - 2026-07-19
+
+### Added
+
+- Let normal pages and posts embed bounded semantic information blocks inside
+  editorial prose without changing the whole document to a composition layout.
+- Classify every Semantic AST as `prose`, `embedded`, or `document` so humans
+  and external agents can distinguish plain articles, semantic information
+  islands, and complete visual compositions deterministically.
+
+### Changed
+
+- Document embedded-block authoring, output boundaries, responsive behavior,
+  and the selective editorial rule consistently in the README, visual guides,
+  LLM documentation, and OpenAPI contract.
+
+## 1.15.6 - 2026-07-19
+
+### Fixed
+
+- Refine responsive report presentation with concise overview navigation and
+  bounded report cards across desktop and mobile layouts.
+
+## 1.15.5 - 2026-07-19
+
+### Fixed
+
+- Preserve missing chart cells as missing evidence instead of coercing them to
+  zero in dashboard SVGs.
+- Replace empty dashboard plot scaffolds with a compact, authored empty state
+  so reports without a completed input interval do not imply measured data.
+- Preserve authored bar-chart geometry in dashboard compositions and label all
+  readable categories instead of connecting unrelated categories with a line.
+- Remove duplicative composition overviews and end-user export controls from
+  report pages while retaining headless SVG assets; semantic charts remain
+  embedded only where they add information.
+- Expose overview plus current-report navigation in product report sites.
+- Emit compact mobile variants for ordinary report charts so labels remain
+  readable instead of scaling a 960 px desktop chart into a narrow card.
+
+## 1.15.4 - 2026-07-19
+
+### Fixed
+
+- Reflow the product report-period navigation into a bounded responsive grid
+  instead of widening 320 px and 390 px pages beyond the viewport.
+- Embed the report composition's responsive light/dark SVG as a visual summary
+  while retaining semantic HTML and explicit export links.
+- Remove fabricated live-state, fixed-period and sparkline decorations from
+  dashboard SVGs; only authored reporting periods and measured values render.
+- Replace the duplicate cadence link row on report-catalog homes with concise
+  overview navigation and limit the visible immutable history to six reports.
+
+## 1.15.3 - 2026-07-19
+
+### Fixed
+
+- Keep additive composition-site releases bounded by emitting responsive HTML
+  and standalone SVG without eagerly rasterizing every historical composition.
+  PNG remains available as an explicit headless compile or published-content
+  representation.
+- Rasterize PNG only when a compile or published representation request asks
+  for it; ordinary semantic document reads no longer pay the raster cost.
+
+## 1.15.2 - 2026-07-19
+
+### Fixed
+
+- Keep report section navigation within narrow containers and wrap its links on
+  mobile instead of widening the page.
+- Let semantic data tables span the full composition grid so evidence remains
+  readable rather than occupying a single narrow column.
+- Localize the chart source-data disclosure label for German reports.
+
+## 1.15.1 - 2026-07-19
+
+### Fixed
+
+- Include the declarative publishing-guide registry in standalone binary
+  payloads so report, diagram and code-story guidance is available after the
+  runtime is extracted.
+
+## 1.15.0 - 2026-07-19
+
+### Added
+
+- Semantic visual composition pipeline: Markdown → Semantic AST → Narrative →
+  Composition → deterministic responsive HTML and standalone light/dark SVG/PNG.
+- 81 repository-owned declarative Markdown+YAML Pattern Packages with semantic
+  and narrative contracts, content budgets, typed input and unit rules,
+  selection metadata, responsive fallbacks, accessibility contracts, examples,
+  counterexamples, and agent guidance. Public registry and site-scoped
+  recommend, validate, and headless compile APIs make the decision process
+  usable by external AI agents.
+- Published composition models, diagnostics, accessible text and authorized
+  ETag-cached SVG/PNG representation endpoints.
+- Formal resolved Layout Tree and Render Tree models that separate semantic
+  interpretation and geometry from HTML/SVG serialization.
+- Semantic FAQ, code example, pricing, gallery, data table, dashboard section,
+  and application shell families with controlled Markdown authoring.
+- Declarative publishing guides for decision, status and analytical reports;
+  process, sequence, architecture, state and data-model diagrams; and
+  reproducible code walkthroughs.
+- A generated neutral review gallery covering every pattern at six container
+  widths in both schemes: 972 real SVG/PNG cases, 1,097 semantic HTML cases,
+  and 12 complete responsive gallery scenarios with deterministic browser
+  validation.
+- Fifteen typed data shapes for range, change, divergence, Likert, XY,
+  boxplots, matrices, waterfalls, hierarchies, flows, uncertainty, calendars,
+  geographic points, equal-area regional tiles and sample distributions. The
+  same semantic SVG geometry is used by headless compositions and report HTML.
+
+### Changed
+
+- Reports now prefer `layout: composition` with `composition.format: report`;
+  existing `layout: report`, `report-grid` and `report-card` documents are
+  normalized to the same semantic pipeline for compatibility.
+- Contentkit remains a headless Markdown mini-CMS and adds semantic visual
+  composition with controlled, executable-code-free information Pattern Packages.
+- Composition narratives now preserve audience, question, communication goal,
+  thesis, conclusion, action, limitations and disclosure. Chart and technical
+  diagram instances expose their own question, insight, action and limitation
+  for human and machine interpretation.
+- Visual resolution now uses the actual embedding container in addition to the
+  viewport and reports structured fallback, degradation and content-budget
+  diagnostics.
+
+## 1.14.5
+
+### Added
+
+- **Product report sites derive a cadence-aware catalog.** Report pages can
+  declare the generic `reportCadence` field as hourly, daily, weekly, monthly,
+  quarterly or yearly. A product home then renders one current report per
+  available period, localized period navigation and a bounded immutable
+  history. Reports without the field remain compatible, and protected catalogs
+  still contain only exact same-grant pages.
+
+## 1.14.4
+
+### Added
+
+- **Reports derive a responsive local section navigation.** A report with at
+  least two level-two headings now exposes those major areas as localized,
+  same-page navigation pills. Level-three detail stays out of the navigation;
+  the navigation needs no browser JavaScript and is omitted from print.
+
+## 1.14.3
+
+### Fixed
+
+- **Chronological ordering is stable across PostgreSQL and frontmatter
+  values.** ContentKit now normalizes driver-returned `Date` instances and
+  authored ISO strings to epoch time before sorting reports, product-page
+  cards, posts and audio backfills. This closes the production-only case where
+  a legacy report could sort above a newer semantic reporting period.
+
+## 1.14.2
+
+### Fixed
+
+- **Report navigation follows the semantic reporting period.** An authored
+  `date` now overrides the database activation time while undated legacy
+  documents retain their repository timestamps. Latest-report sorting compares
+  timestamps separately from its deterministic title tie-breaker, so a
+  historical weekly, monthly or yearly report published later cannot displace
+  the newest hourly report.
+
+## 1.14.1
+
+### Fixed
+
+- **Site gateway handlers terminate after sending a response.** A completed
+  host response no longer falls through into later middleware and attempts a
+  second write.
+- **Managed webhooks can be the only production delivery mechanism.** The
+  optional global environment endpoint is no longer incorrectly required in
+  production. If the legacy fallback is used, its URL and secret must still be
+  configured as a pair; managed per-site endpoints remain independently
+  filtered and encrypted at rest.
+- **Fully private sites now have a useful home and navigation after login.** A
+  protected static page renders public pages plus protected pages carrying the
+  exact same release-scoped group/user grant. Product sites with report pages
+  show the newest report in header/footer navigation and render same-grant
+  report cards newest-first on the home page. Public discovery remains empty,
+  anonymous delivery remains gated, and a different reader group cannot leak
+  through the prebuilt HTML.
+- **Binary builds work with macOS Bash 3.2 under `set -u`.** Native builds no
+  longer expand an unset/empty target-argument array; cross-builds still pass
+  the requested Bun target explicitly.
+
+## 1.14.0
+
+### Added
+
+- **Generic site-scoped product analytics.** Six bounded read-only endpoints
+  expose dense UTC aggregates for releases, content, reader authentication,
+  webhooks, audio and engagement using the existing `content:read` scope. The
+  data remains in ContentKit's PostgreSQL database and the API has no reporting
+  consumer or workflow dependency. Reader-auth facts are identity-free and
+  retention-bounded. OpenAPI, LLM docs, indexes, unit/contract/real-PostgreSQL
+  tests and W3C trace propagation cover the surface.
+
 ## 1.13.1
 
 ### Fixed
@@ -26,8 +244,8 @@ and this project adheres to
 - **Visual reports and dashboards from Markdown.** Pages can select the
   controlled `report` layout and compose responsive metric cards, badges,
   progress, cards and grids. `bar`, `line`, `area` and `donut` charts use an
-  ordinary GFM table as their complete data contract; Apache ECharts renders
-  deterministic, accessible light/dark SVG release assets server-side, so no
+  ordinary GFM table as their complete data contract; the server renders
+  deterministic, accessible light/dark SVG release assets, so no
   chart runtime or executable specification reaches the browser. The existing
   shadcn-style token contract now includes `chart_1` through `chart_5`, and
   report pages retain their source tables, print cleanly and receive Markdown
@@ -574,6 +792,8 @@ atomic activation and pointer-based rollback.
 - Tag links on content cards now use the same slug as the generated tag pages;
   multi-word tags previously linked to a non-existent URL.
 
+[1.15.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.15.1
+[1.15.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.15.0
 [1.2.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.2.0
 [1.1.1]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.1
 [1.1.0]: https://github.com/MikeBild/contentkit/releases/tag/v1.1.0

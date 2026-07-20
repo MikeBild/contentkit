@@ -14,17 +14,158 @@ import rehypeShiki from '@shikijs/rehype'
 import rehypeStringify from 'rehype-stringify'
 import { visit } from 'unist-util-visit'
 import { assertSlug, excerpt, parseIsoDate, slugify } from './utils.mjs'
+import { resolvePattern } from './composition-registry.mjs'
+import { getPublishingGuide } from './publishing-guides.mjs'
 
 const kinds = new Set(['page', 'post', 'project'])
-export const layouts = new Set(['standard', 'docs', 'wiki', 'knowledge', 'landing', 'changelog', 'report'])
+export const layouts = new Set([
+  'standard',
+  'docs',
+  'wiki',
+  'knowledge',
+  'landing',
+  'changelog',
+  'report',
+  'composition',
+])
 const accessSlug = /^[a-z0-9][a-z0-9-]{0,63}$/
 
-const REPORT_DIRECTIVES = new Set(['report-grid', 'report-card', 'metric', 'badge', 'progress', 'chart'])
+const COMPOSITION_DIRECTIVES = new Set([
+  'group',
+  'card',
+  'hero',
+  'metric',
+  'badge',
+  'progress',
+  'chart',
+  'process',
+  'comparison',
+  'side',
+  'timeline',
+  'hierarchy',
+  'relationship',
+  'faq',
+  'question',
+  'code-example',
+  'variant',
+  'pricing',
+  'plan',
+  'gallery',
+  'figure',
+  'data-table',
+  'dashboard-section',
+  'application-shell',
+  'region',
+])
 const REPORT_TONES = new Set(['neutral', 'positive', 'warning', 'negative'])
 const REPORT_CHART_TYPES = new Set(['bar', 'line', 'area', 'donut'])
+const REPORT_CHART_SHAPES = new Set([
+  'series',
+  'range',
+  'change',
+  'diverging',
+  'likert',
+  'xy',
+  'boxplot',
+  'matrix',
+  'waterfall',
+  'hierarchy',
+  'flow',
+  'uncertainty',
+  'calendar',
+  'geo-point',
+  'geo-region',
+  'samples',
+])
+const REPORT_CADENCES = new Set(['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'])
 const REPORT_MAX_CHARTS = 24
 const REPORT_MAX_ROWS = 200
 const REPORT_MAX_SERIES = 8
+
+const CHART_STORIES = {
+  range: [
+    'What interval belongs to each category?',
+    'Compare lower and upper bounds without implying one exact value.',
+  ],
+  change: ['What changed between the two states?', 'Compare paired values and make direction and distance explicit.'],
+  diverging: [
+    'Which values fall on either side of a meaningful baseline?',
+    'Compare positive and negative distance from a shared reference.',
+  ],
+  likert: [
+    'How are ordered responses distributed across the response scale?',
+    'Preserve disagreement, neutrality and agreement instead of hiding them in an average.',
+  ],
+  xy: [
+    'How do the two quantitative variables relate?',
+    'Reveal association, clusters and outliers without implying causation.',
+  ],
+  boxplot: [
+    'How do distributions differ in centre, spread and extremes?',
+    'Compare distributions while preserving quartiles and outliers.',
+  ],
+  matrix: [
+    'Where do two dimensions combine into high, low or exceptional values?',
+    'Compare repeated values across two independent dimensions.',
+  ],
+  waterfall: [
+    'Which contributions explain the change from the starting value to the result?',
+    'Make additive and subtractive contributions auditable.',
+  ],
+  hierarchy: ['How is the total divided across nested groups?', 'Show part-to-whole structure at more than one level.'],
+  flow: [
+    'Where does quantity move between sources and destinations?',
+    'Explain weighted movement, transfer or allocation between nodes.',
+  ],
+  uncertainty: [
+    'How does the estimate change, and how uncertain is it?',
+    'Keep the central estimate and its lower and upper bounds together.',
+  ],
+  calendar: [
+    'On which dates does activity concentrate, repeat or disappear?',
+    'Expose daily rhythm, streaks, seasonality and missing observations.',
+  ],
+  'geo-point': [
+    'Where are observations located, and how do their values differ?',
+    'Compare positioned observations without turning proximity into causation.',
+  ],
+  'geo-region': [
+    'How does the measure vary between defined regions?',
+    'Compare regional values while preserving the geographic unit of analysis.',
+  ],
+  samples: [
+    'How are individual observations distributed?',
+    'Show density, clusters and outliers without reducing the data to one aggregate.',
+  ],
+}
+
+function chartStory({ type, shape, title, description, question, insight, action, limitation }) {
+  const typeStory = {
+    bar: ['How do values compare across categories?', 'Compare magnitude on a shared baseline.'],
+    line: [
+      'How does the measure change across an ordered dimension?',
+      'Reveal trend, turning points and continuity across ordered observations.',
+    ],
+    area: [
+      'How does accumulated magnitude change across an ordered dimension?',
+      'Emphasize total magnitude and its development over an ordered sequence.',
+    ],
+    donut: [
+      'How is one whole divided among a small number of parts?',
+      'Compare part-to-whole contribution, not precise differences between similar values.',
+    ],
+  }[type]
+  const [fallbackQuestion, fallbackGoal] = CHART_STORIES[shape] || typeStory
+  const authoredQuestion = boundedText(question, 'chart question', 240)
+  const authoredInsight = boundedText(insight, 'chart insight', 500)
+  return {
+    question: authoredQuestion || fallbackQuestion,
+    communication_goal: fallbackGoal,
+    intended_insight: authoredInsight || description || title,
+    action: boundedText(action, 'chart action', 500) || null,
+    limitation: boundedText(limitation, 'chart limitation', 500) || null,
+  }
+}
 
 const directiveError = (message) => Object.assign(new Error(message), { statusCode: 422 })
 
@@ -93,12 +234,29 @@ function chartDescriptor(node, charts) {
   }
   const attributes = directiveAttributes(
     node,
-    ['type', 'title', 'description', 'orientation', 'stacked', 'unit', 'span'],
+    [
+      'type',
+      'shape',
+      'title',
+      'description',
+      'orientation',
+      'stacked',
+      'unit',
+      'span',
+      'question',
+      'insight',
+      'action',
+      'limitation',
+    ],
     ['type', 'title', 'description'],
   )
   const type = String(attributes.type)
   if (!REPORT_CHART_TYPES.has(type)) {
     throw directiveError(`chart type must be one of ${[...REPORT_CHART_TYPES].join(', ')}`)
+  }
+  const shape = String(attributes.shape || 'series')
+  if (!REPORT_CHART_SHAPES.has(shape)) {
+    throw directiveError(`chart shape must be one of ${[...REPORT_CHART_SHAPES].join(', ')}`)
   }
   const orientation = String(attributes.orientation || 'vertical')
   if (!['vertical', 'horizontal'].includes(orientation)) {
@@ -125,9 +283,10 @@ function chartDescriptor(node, charts) {
   if (headers.length - 1 > REPORT_MAX_SERIES) {
     throw directiveError(`chart table allows at most ${REPORT_MAX_SERIES} data series`)
   }
-  if (type === 'donut' && headers.length !== 2) {
+  if (type === 'donut' && shape === 'series' && headers.length !== 2) {
     throw directiveError('donut chart table needs exactly one category and one value column')
   }
+  const textColumns = shape === 'flow' || shape === 'hierarchy' ? new Set([1]) : new Set()
   const rows = body.map((row, rowIndex) => {
     if (row.children.length !== headers.length) {
       throw directiveError(`chart table row ${rowIndex + 1} must have ${headers.length} cells`)
@@ -137,6 +296,10 @@ function chartDescriptor(node, charts) {
     return [
       cells[0],
       ...cells.slice(1).map((value, valueIndex) => {
+        if (textColumns.has(valueIndex + 1)) {
+          if (!value) throw directiveError(`chart table row ${rowIndex + 1}, column ${valueIndex + 2} needs text`)
+          return boundedText(value, `chart table row ${rowIndex + 1}, column ${valueIndex + 2}`, 120)
+        }
         if (value === '—') return null
         if (!value)
           throw directiveError(`chart table row ${rowIndex + 1}, column ${valueIndex + 2} needs a number or —`)
@@ -148,9 +311,11 @@ function chartDescriptor(node, charts) {
       }),
     ]
   })
+  validateChartShape(shape, headers, rows)
   const chart = {
     id: charts.length,
     type,
+    data_shape: shape,
     title: boundedText(attributes.title, 'chart title', 160),
     description: boundedText(attributes.description, 'chart description', 500),
     orientation,
@@ -159,46 +324,647 @@ function chartDescriptor(node, charts) {
     headers,
     rows,
   }
+  chart.narrative = chartStory({ ...attributes, ...chart })
   charts.push(chart)
   return chart
 }
 
-function reportDirectives(meta, charts) {
+function validateChartShape(shape, headers, rows) {
+  const columns = headers.length
+  const exact = (count) => {
+    if (columns !== count) throw directiveError(`chart shape ${shape} requires exactly ${count} columns`)
+  }
+  if (['range', 'change', 'xy'].includes(shape)) exact(3)
+  if (['diverging', 'waterfall', 'calendar', 'geo-region', 'samples'].includes(shape)) exact(2)
+  if (['flow', 'hierarchy'].includes(shape)) exact(3)
+  if (['uncertainty', 'geo-point'].includes(shape)) exact(4)
+  if (shape === 'boxplot') exact(6)
+  if (shape === 'likert' && (columns < 4 || columns > 7)) {
+    throw directiveError('chart shape likert requires 4-7 columns')
+  }
+  if (shape === 'matrix' && columns < 3) throw directiveError('chart shape matrix requires at least 3 columns')
+  if (shape === 'range' && rows.some((row) => row[1] > row[2])) {
+    throw directiveError('chart shape range requires lower values not greater than upper values')
+  }
+  if (
+    shape === 'boxplot' &&
+    rows.some((row) => row.slice(1).some((value, index, values) => index && value < values[index - 1]))
+  ) {
+    throw directiveError('chart shape boxplot requires min, q1, median, q3 and max in ascending order')
+  }
+  if (shape === 'uncertainty' && rows.some((row) => row[1] > row[2] || row[2] > row[3])) {
+    throw directiveError('chart shape uncertainty requires lower, value and upper in ascending order')
+  }
+  if (['likert', 'hierarchy', 'flow'].includes(shape) && rows.some((row) => Number(row.at(-1)) < 0)) {
+    throw directiveError(`chart shape ${shape} requires non-negative values`)
+  }
+  if (
+    shape === 'calendar' &&
+    rows.some((row) => !/^\d{4}-\d{2}-\d{2}$/.test(row[0]) || Number.isNaN(Date.parse(`${row[0]}T00:00:00Z`)))
+  ) {
+    throw directiveError('chart shape calendar requires ISO dates in the first column')
+  }
+  if (shape === 'geo-point' && rows.some((row) => row[1] < -90 || row[1] > 90 || row[2] < -180 || row[2] > 180)) {
+    throw directiveError('chart shape geo-point requires latitude -90..90 and longitude -180..180')
+  }
+}
+
+function listItems(node) {
+  const list = node.children?.find((child) => child.type === 'list')
+  return (list?.children || []).map((item, index) => ({
+    id: `item-${index + 1}`,
+    label: headingText(item).replace(/\s+/g, ' ').trim(),
+  }))
+}
+
+function childDirectives(node, name) {
+  return (node.children || []).filter((child) => child.type?.endsWith('Directive') && child.name === name)
+}
+
+function normalizedNodeText(node) {
+  if (!node) return ''
+  if (typeof node.value === 'string') return node.value
+  return (node.children || []).map(normalizedNodeText).join(' ').replace(/\s+/g, ' ').trim()
+}
+
+function stateAttribute(value, field) {
+  const state = String(value || 'normal')
+  if (!['normal', 'empty', 'partial', 'invalid', 'stale', 'error', 'loading'].includes(state)) {
+    throw directiveError(`${field} must be normal, empty, partial, invalid, stale, error or loading`)
+  }
+  return state
+}
+
+function collectionBounds(name, state, items, minimum, maximum) {
+  const min = state === 'normal' ? minimum : 0
+  if (items.length < min || items.length > maximum) {
+    throw directiveError(`${name} requires ${min}-${maximum} items for state ${state}`)
+  }
+}
+
+function tableSemantic(node, attributes) {
+  const tables = (node.children || []).filter((child) => child.type === 'table')
+  if (tables.length !== 1) throw directiveError('data-table directive must contain exactly one Markdown table')
+  const [head, ...body] = tables[0].children || []
+  if (!head) throw directiveError('data-table requires a header row')
+  if (body.length > 200) throw directiveError('data-table allows at most 200 rows')
+  const headers = head.children.map(tableCellText)
+  if (headers.length < 2 || headers.length > 12 || headers.some((entry) => !entry)) {
+    throw directiveError('data-table requires 2-12 named columns')
+  }
+  if (new Set(headers).size !== headers.length) throw directiveError('data-table column names must be unique')
+  const rows = body.map((row, rowIndex) => {
+    if (row.children.length !== headers.length) {
+      throw directiveError(`data-table row ${rowIndex + 1} must have ${headers.length} cells`)
+    }
+    return row.children.map((cell, columnIndex) =>
+      boundedText(tableCellText(cell), `data-table row ${rowIndex + 1}, column ${columnIndex + 1}`, 500),
+    )
+  })
+  const rowKey = String(attributes.rowKey || headers[0])
+  if (!headers.includes(rowKey)) throw directiveError('data-table rowKey must name an existing column')
+  const keyIndex = headers.indexOf(rowKey)
+  const keys = rows.map((row) => row[keyIndex])
+  if (keys.some((entry) => !entry) || new Set(keys).size !== keys.length) {
+    throw directiveError('data-table rowKey values must be non-empty and unique')
+  }
+  const keyColumns = String(attributes.keyColumns || rowKey)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+  if (keyColumns.some((entry) => !headers.includes(entry))) {
+    throw directiveError('data-table keyColumns must name existing columns')
+  }
+  const roles = Object.fromEntries(
+    String(attributes.columnRoles || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [column, role] = entry.split(':').map((part) => part?.trim())
+        if (!headers.includes(column) || !['key', 'text', 'number', 'status', 'date', 'link'].includes(role)) {
+          throw directiveError('data-table columnRoles must use Column:key|text|number|status|date|link')
+        }
+        return [column, role]
+      }),
+  )
+  const defaultSort = attributes.defaultSort == null ? null : String(attributes.defaultSort)
+  if (defaultSort && !headers.includes(defaultSort)) {
+    throw directiveError('data-table defaultSort must name an existing column')
+  }
+  return { headers, rows, row_key: rowKey, key_columns: keyColumns, column_roles: roles, default_sort: defaultSort }
+}
+
+function semanticRole(attributes, fallback = 'supporting') {
+  const role = String(attributes.role || fallback)
+  if (!['primary', 'supporting', 'evidence'].includes(role)) {
+    throw directiveError('role must be primary, supporting or evidence')
+  }
+  return role
+}
+
+function compositionDirectives(meta, charts, semanticNodes) {
   return (tree) => {
     visit(tree, ['containerDirective', 'leafDirective', 'textDirective'], (node) => {
       const data = node.data || (node.data = {})
       if (['note', 'tip', 'warning'].includes(node.name)) {
         data.hName = 'aside'
         data.hProperties = { className: ['callout', `callout-${node.name}`], role: 'note' }
-      } else if (['hero', 'features', 'steps', 'cta'].includes(node.name)) {
+      } else if (['hero', 'features', 'steps', 'cta'].includes(node.name) && meta.layout !== 'composition') {
         data.hName = 'section'
         data.hProperties = { className: ['content-block', `content-block-${node.name}`] }
-      } else if (REPORT_DIRECTIVES.has(node.name)) {
-        if (meta.layout !== 'report') throw directiveError(`${node.name} directive requires frontmatter layout: report`)
-        if (node.name === 'report-grid') {
-          const attributes = directiveAttributes(node, ['columns'])
-          const columns = integerAttribute(attributes.columns, 'report-grid columns', { min: 1, max: 4, fallback: 4 })
-          data.hName = 'div'
-          data.hProperties = { className: ['report-grid', `report-columns-${columns}`] }
-        } else if (node.name === 'report-card') {
-          const attributes = directiveAttributes(node, ['title', 'span'], ['title'])
-          const title = boundedText(attributes.title, 'report-card title', 160)
+      } else if (COMPOSITION_DIRECTIVES.has(node.name)) {
+        if (node.name === 'faq') {
+          const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern', 'state'], ['title'])
+          const state = stateAttribute(attributes.state, 'faq state')
+          const questions = childDirectives(node, 'question').map((question, index) => {
+            const questionAttributes = directiveAttributes(question, ['title', 'category'], ['title'])
+            const answer = boundedText(normalizedNodeText(question), `faq answer ${index + 1}`, 2000)
+            if (!answer && state === 'normal') throw directiveError(`faq question ${index + 1} needs an answer`)
+            return {
+              id: `question-${index + 1}`,
+              title: boundedText(questionAttributes.title, `faq question ${index + 1}`, 160),
+              answer,
+              category: boundedText(questionAttributes.category, `faq category ${index + 1}`, 80),
+            }
+          })
+          collectionBounds('faq', state, questions, 2, 24)
           data.hName = 'section'
-          data.hProperties = { className: ['report-card', spanClass(attributes)] }
+          data.hProperties = { className: ['composition-faq', `composition-state-${state}`] }
+          node.children.unshift({ type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] })
+          semanticNodes.push({
+            type: 'faq',
+            role: semanticRole(attributes),
+            title: boundedText(attributes.title, 'faq title', 160),
+            questions,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'question') {
+          const attributes = directiveAttributes(node, ['title', 'category'], ['title'])
+          data.hName = 'details'
+          data.hProperties = { className: ['composition-question'], open: true }
+          node.children.unshift(textNode('summary', ['composition-question-title'], attributes.title))
+        } else if (node.name === 'code-example') {
+          const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern', 'state'], ['title'])
+          const state = stateAttribute(attributes.state, 'code-example state')
+          const variants = childDirectives(node, 'variant').map((variant, index) => {
+            const variantAttributes = directiveAttributes(
+              variant,
+              ['label', 'language', 'file', 'default'],
+              ['label', 'language'],
+            )
+            const blocks = (variant.children || []).filter((child) => child.type === 'code')
+            if (blocks.length !== 1) throw directiveError('code-example variant requires exactly one fenced code block')
+            const code = String(blocks[0].value || '')
+            if (code.split(/\r?\n/).length > 120) throw directiveError('code-example variant allows at most 120 lines')
+            return {
+              id: `variant-${index + 1}`,
+              label: boundedText(variantAttributes.label, `code variant ${index + 1} label`, 80),
+              language: boundedText(variantAttributes.language, `code variant ${index + 1} language`, 32),
+              file: boundedText(variantAttributes.file, `code variant ${index + 1} file`, 160),
+              default: booleanAttribute(variantAttributes.default, 'code variant default'),
+              code,
+            }
+          })
+          collectionBounds('code-example', state, variants, 1, 8)
+          if (variants.filter((variant) => variant.default).length > 1) {
+            throw directiveError('code-example allows at most one default variant')
+          }
+          if (variants.length && !variants.some((variant) => variant.default)) variants[0].default = true
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-code-example', `composition-state-${state}`] }
+          node.children.unshift({ type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] })
+          semanticNodes.push({
+            type: 'code-example',
+            role: semanticRole(attributes, 'evidence'),
+            title: boundedText(attributes.title, 'code-example title', 160),
+            variants,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'variant') {
+          const attributes = directiveAttributes(node, ['label', 'language', 'file', 'default'], ['label', 'language'])
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-code-variant'] }
+          node.children.unshift({ type: 'heading', depth: 3, children: [{ type: 'text', value: attributes.label }] })
+        } else if (node.name === 'pricing') {
+          const attributes = directiveAttributes(
+            node,
+            ['title', 'currency', 'billing', 'role', 'preferredPattern', 'state'],
+            ['title', 'currency', 'billing'],
+          )
+          const state = stateAttribute(attributes.state, 'pricing state')
+          const currency = String(attributes.currency).toUpperCase()
+          if (!/^[A-Z]{3}$/.test(currency))
+            throw directiveError('pricing currency must be an ISO-style three-letter code')
+          const billing = String(attributes.billing)
+          if (!['monthly', 'yearly', 'one-time', 'custom'].includes(billing)) {
+            throw directiveError('pricing billing must be monthly, yearly, one-time or custom')
+          }
+          const plans = childDirectives(node, 'plan').map((plan, index) => {
+            const planAttributes = directiveAttributes(
+              plan,
+              ['name', 'price', 'cadence', 'previousPrice', 'recommended', 'description'],
+              ['name', 'price', 'cadence'],
+            )
+            const cadence = String(planAttributes.cadence)
+            if (!['month', 'year', 'one-time', 'custom'].includes(cadence)) {
+              throw directiveError('plan cadence must be month, year, one-time or custom')
+            }
+            const features = listItems(plan).map((feature, featureIndex) => ({
+              ...feature,
+              id: slugify(feature.label) || `feature-${featureIndex + 1}`,
+            }))
+            if (!features.length || features.length > 16) throw directiveError('plan requires 1-16 features')
+            return {
+              id: `plan-${index + 1}`,
+              name: boundedText(planAttributes.name, `plan ${index + 1} name`, 80),
+              price: boundedText(planAttributes.price, `plan ${index + 1} price`, 40),
+              previous_price: boundedText(planAttributes.previousPrice, `plan ${index + 1} previousPrice`, 40),
+              cadence,
+              recommended: booleanAttribute(planAttributes.recommended, 'plan recommended'),
+              description: boundedText(planAttributes.description, `plan ${index + 1} description`, 240),
+              features,
+            }
+          })
+          collectionBounds('pricing', state, plans, 1, 5)
+          if (plans.filter((plan) => plan.recommended).length > 1) {
+            throw directiveError('pricing allows at most one recommended plan')
+          }
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-pricing', `composition-state-${state}`] }
+          node.children.unshift({ type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] })
+          semanticNodes.push({
+            type: 'pricing',
+            role: semanticRole(attributes, 'primary'),
+            title: boundedText(attributes.title, 'pricing title', 160),
+            currency,
+            billing,
+            plans,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'plan') {
+          const attributes = directiveAttributes(
+            node,
+            ['name', 'price', 'cadence', 'previousPrice', 'recommended', 'description'],
+            ['name', 'price', 'cadence'],
+          )
+          data.hName = 'article'
+          data.hProperties = {
+            className: [
+              'composition-plan',
+              booleanAttribute(attributes.recommended, 'plan recommended') ? 'composition-plan-recommended' : '',
+            ].filter(Boolean),
+          }
+          node.children.unshift({
+            type: 'heading',
+            depth: 3,
+            children: [{ type: 'text', value: `${attributes.name} — ${attributes.price}` }],
+          })
+        } else if (node.name === 'gallery') {
+          const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern', 'state'], ['title'])
+          const state = stateAttribute(attributes.state, 'gallery state')
+          const figures = childDirectives(node, 'figure').map((figure, index) => {
+            const figureAttributes = directiveAttributes(
+              figure,
+              ['src', 'alt', 'caption', 'aspect', 'decorative'],
+              ['src'],
+            )
+            const src = String(figureAttributes.src)
+            if (!/^(?:asset|media):[a-zA-Z0-9/_-]+(?:\.[a-zA-Z0-9]+)?$/.test(src) || src.includes('..')) {
+              throw directiveError('gallery figure src must be a safe asset: or media: reference')
+            }
+            const decorative = booleanAttribute(figureAttributes.decorative, 'gallery figure decorative')
+            const alt = boundedText(figureAttributes.alt, `gallery figure ${index + 1} alt`, 300)
+            if (!decorative && !alt) throw directiveError('informative gallery figures require alt text')
+            const aspect = String(figureAttributes.aspect || '4/3')
+            if (!/^(?:1\/1|4\/3|3\/2|16\/9|9\/16)$/.test(aspect)) {
+              throw directiveError('gallery figure aspect must be 1/1, 4/3, 3/2, 16/9 or 9/16')
+            }
+            return {
+              id: `figure-${index + 1}`,
+              src,
+              alt,
+              caption: boundedText(figureAttributes.caption, `gallery figure ${index + 1} caption`, 240),
+              aspect,
+              decorative,
+            }
+          })
+          collectionBounds('gallery', state, figures, 2, 24)
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-gallery', `composition-state-${state}`] }
+          node.children.unshift({ type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] })
+          semanticNodes.push({
+            type: 'gallery',
+            role: semanticRole(attributes),
+            title: boundedText(attributes.title, 'gallery title', 160),
+            figures,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'figure') {
+          const attributes = directiveAttributes(node, ['src', 'alt', 'caption', 'aspect', 'decorative'], ['src'])
+          const decorative = booleanAttribute(attributes.decorative, 'gallery figure decorative')
+          data.hName = 'figure'
+          data.hProperties = { className: ['composition-figure'] }
+          node.type = 'containerDirective'
+          node.children = [
+            reportNode('div', ['composition-figure-placeholder'], [], {
+              role: decorative ? undefined : 'img',
+              ariaLabel: decorative ? undefined : attributes.alt,
+            }),
+            ...(attributes.caption ? [textNode('figcaption', ['composition-figure-caption'], attributes.caption)] : []),
+          ]
+        } else if (node.name === 'data-table') {
+          const attributes = directiveAttributes(
+            node,
+            [
+              'title',
+              'description',
+              'rowKey',
+              'keyColumns',
+              'columnRoles',
+              'defaultSort',
+              'role',
+              'preferredPattern',
+              'state',
+            ],
+            ['title'],
+          )
+          const state = stateAttribute(attributes.state, 'data-table state')
+          const table = tableSemantic(node, attributes)
+          if (state === 'normal' && !table.rows.length)
+            throw directiveError('normal data-table requires at least one row')
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-data-table', `composition-state-${state}`] }
+          const authoredTable = node.children.find((child) => child.type === 'table')
+          const keyIndex = table.headers.indexOf(table.row_key)
+          const records = reportNode(
+            'div',
+            ['composition-record-list'],
+            table.rows.map((row) =>
+              reportNode(
+                'article',
+                ['composition-record'],
+                [
+                  textNode('strong', ['composition-record-title'], row[keyIndex]),
+                  ...table.headers
+                    .map((header, index) =>
+                      index === keyIndex
+                        ? null
+                        : reportNode(
+                            'div',
+                            ['composition-record-field'],
+                            [
+                              textNode('span', ['composition-record-label'], header),
+                              textNode('span', ['composition-record-value'], row[index]),
+                            ],
+                          ),
+                    )
+                    .filter(Boolean),
+                ],
+              ),
+            ),
+            { ariaHidden: true },
+          )
+          node.children = [
+            { type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] },
+            ...(attributes.description
+              ? [{ type: 'paragraph', children: [{ type: 'text', value: attributes.description }] }]
+              : []),
+            authoredTable,
+            records,
+          ]
+          semanticNodes.push({
+            type: 'data-table',
+            role: semanticRole(attributes, 'evidence'),
+            title: boundedText(attributes.title, 'data-table title', 160),
+            description: boundedText(attributes.description, 'data-table description', 500),
+            ...table,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'dashboard-section') {
+          const attributes = directiveAttributes(
+            node,
+            ['title', 'description', 'role', 'preferredPattern', 'state'],
+            ['title'],
+          )
+          const state = stateAttribute(attributes.state, 'dashboard-section state')
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-dashboard-section', `composition-state-${state}`] }
+          node.children.unshift({ type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] })
+          semanticNodes.push({
+            type: 'dashboard-section',
+            role: semanticRole(attributes),
+            title: boundedText(attributes.title, 'dashboard-section title', 160),
+            description: boundedText(attributes.description, 'dashboard-section description', 500),
+            items:
+              childDirectives(node, 'metric').length +
+              childDirectives(node, 'chart').length +
+              childDirectives(node, 'data-table').length,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'application-shell') {
+          const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern', 'state'], ['title'])
+          const state = stateAttribute(attributes.state, 'application-shell state')
+          const regions = childDirectives(node, 'region').map((region, index) => {
+            const regionAttributes = directiveAttributes(region, ['name', 'label'], ['name', 'label'])
+            const name = String(regionAttributes.name)
+            if (!['navigation', 'breadcrumbs', 'toolbar', 'main', 'secondary'].includes(name)) {
+              throw directiveError('application-shell region name is invalid')
+            }
+            return {
+              id: `region-${index + 1}`,
+              name,
+              label: boundedText(regionAttributes.label, `region ${index + 1} label`, 80),
+              text: boundedText(normalizedNodeText(region), `region ${index + 1} text`, 1200),
+            }
+          })
+          collectionBounds('application-shell', state, regions, 2, 5)
+          if (new Set(regions.map((region) => region.name)).size !== regions.length) {
+            throw directiveError('application-shell region names must be unique')
+          }
+          if (state === 'normal' && !regions.some((region) => region.name === 'main')) {
+            throw directiveError('application-shell requires a main region')
+          }
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-application-shell', `composition-state-${state}`] }
+          node.children.unshift({ type: 'heading', depth: 2, children: [{ type: 'text', value: attributes.title }] })
+          semanticNodes.push({
+            type: 'application-shell',
+            role: semanticRole(attributes, 'primary'),
+            title: boundedText(attributes.title, 'application-shell title', 160),
+            regions,
+            state,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'region') {
+          const attributes = directiveAttributes(node, ['name', 'label'], ['name', 'label'])
+          data.hName = attributes.name === 'navigation' ? 'nav' : 'section'
+          data.hProperties = {
+            className: ['composition-shell-region', `composition-shell-${attributes.name}`],
+            ariaLabel: attributes.label,
+          }
+          node.children.unshift({ type: 'heading', depth: 3, children: [{ type: 'text', value: attributes.label }] })
+        } else if (node.name === 'group') {
+          const attributes = directiveAttributes(node, ['columns', 'role', 'preferredPattern'])
+          const columns = integerAttribute(attributes.columns, 'group columns', { min: 1, max: 4, fallback: 4 })
+          data.hName = 'div'
+          data.hProperties = { className: ['composition-group', `composition-columns-${columns}`] }
+          semanticNodes.push({
+            type: 'group',
+            role: semanticRole(attributes),
+            columns,
+            items: node.children?.length || 0,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'card') {
+          const attributes = directiveAttributes(node, ['title', 'span', 'role'], ['title'])
+          const title = boundedText(attributes.title, 'card title', 160)
+          const text = headingText(node)
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-card', spanClass(attributes)] }
           node.children.unshift({ type: 'heading', depth: 3, children: [{ type: 'text', value: title }] })
+          semanticNodes.push({ type: 'card', role: semanticRole(attributes), title, text })
+        } else if (node.name === 'hero') {
+          const attributes = directiveAttributes(node, ['role', 'preferredPattern'])
+          const heading = node.children?.find((child) => child.type === 'heading')
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-hero'] }
+          semanticNodes.push({
+            type: 'hero',
+            role: semanticRole(attributes, 'primary'),
+            title: headingText(heading),
+            text: (node.children || [])
+              .filter((child) => child !== heading)
+              .map(headingText)
+              .join(' ')
+              .replace(/\s+/g, ' ')
+              .trim(),
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (['process', 'timeline', 'hierarchy', 'relationship'].includes(node.name)) {
+          const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern', 'orientation'])
+          const items = listItems(node)
+          const minimum = node.name === 'process' || node.name === 'timeline' ? 2 : node.name === 'relationship' ? 3 : 2
+          const maximum =
+            node.name === 'timeline' ? 12 : node.name === 'relationship' ? 8 : node.name === 'hierarchy' ? 16 : 8
+          if (items.length < minimum || items.length > maximum) {
+            throw directiveError(`${node.name} requires ${minimum}-${maximum} list items`)
+          }
+          data.hName = 'section'
+          data.hProperties = {
+            className: [
+              'composition-structure',
+              `composition-${node.name}`,
+              `composition-orientation-${attributes.orientation || 'auto'}`,
+            ],
+          }
+          semanticNodes.push({
+            type: node.name,
+            role: semanticRole(attributes),
+            title: boundedText(attributes.title, `${node.name} title`, 160),
+            items,
+            ...(node.name === 'process' ? { steps: items } : {}),
+            ...(node.name === 'timeline' ? { events: items } : {}),
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'comparison') {
+          const attributes = directiveAttributes(node, ['title', 'role', 'preferredPattern'])
+          const sides = (node.children || [])
+            .filter((child) => child.type?.endsWith('Directive') && child.name === 'side')
+            .map((side, index) => ({
+              id: `side-${index + 1}`,
+              label: String(side.attributes?.label || '').trim(),
+              points: listItems(side),
+            }))
+          if (
+            sides.length < 2 ||
+            sides.length > 6 ||
+            sides.some((side) => !side.label || !side.points.length || side.points.length > 8)
+          ) {
+            throw directiveError('comparison requires 2-6 labeled side directives with 1-8 points each')
+          }
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-comparison'] }
+          semanticNodes.push({
+            type: 'comparison',
+            role: semanticRole(attributes),
+            title: boundedText(attributes.title, 'comparison title', 160),
+            sides,
+            preferred_pattern: attributes.preferredPattern || null,
+          })
+        } else if (node.name === 'side') {
+          const attributes = directiveAttributes(node, ['label'], ['label'])
+          data.hName = 'section'
+          data.hProperties = { className: ['composition-side'] }
+          node.children.unshift({ type: 'heading', depth: 3, children: [{ type: 'text', value: attributes.label }] })
         } else if (node.name === 'metric') {
-          const attributes = directiveAttributes(node, ['label', 'value', 'trend', 'tone', 'span'], ['label', 'value'])
+          const attributes = directiveAttributes(
+            node,
+            [
+              'label',
+              'value',
+              'trend',
+              'tone',
+              'span',
+              'role',
+              'preferredPattern',
+              'period',
+              'previous',
+              'target',
+              'unit',
+              'status',
+            ],
+            ['label', 'value'],
+          )
           const tone = toneAttribute(attributes.tone, 'metric tone')
           data.hName = 'article'
           data.hProperties = { className: ['report-metric', `report-tone-${tone}`, spanClass(attributes)] }
           node.type = 'containerDirective'
           node.children = [
             textNode('span', ['report-metric-label'], boundedText(attributes.label, 'metric label', 120)),
-            textNode('strong', ['report-metric-value'], boundedText(attributes.value, 'metric value', 120)),
+            reportNode(
+              'strong',
+              ['report-metric-value'],
+              [
+                { type: 'text', value: boundedText(attributes.value, 'metric value', 120) },
+                ...(attributes.unit
+                  ? [textNode('span', ['report-metric-unit'], boundedText(attributes.unit, 'metric unit', 32))]
+                  : []),
+              ],
+            ),
+            ...(attributes.period || attributes.status
+              ? [
+                  textNode(
+                    'span',
+                    ['report-metric-context'],
+                    [attributes.period, attributes.status].filter(Boolean).join(' · '),
+                  ),
+                ]
+              : []),
             ...(attributes.trend
               ? [textNode('span', ['report-metric-trend'], boundedText(attributes.trend, 'metric trend', 80))]
               : []),
           ]
+          semanticNodes.push({
+            type: 'metric',
+            role: semanticRole(attributes),
+            label: boundedText(attributes.label, 'metric label', 120),
+            value: boundedText(attributes.value, 'metric value', 120),
+            trend: boundedText(attributes.trend, 'metric trend', 80),
+            tone,
+            period: boundedText(attributes.period, 'metric period', 80),
+            previous: boundedText(attributes.previous, 'metric previous', 80),
+            target: boundedText(attributes.target, 'metric target', 80),
+            unit: boundedText(attributes.unit, 'metric unit', 32),
+            status: boundedText(attributes.status, 'metric status', 40),
+            preferred_pattern: attributes.preferredPattern || null,
+          })
         } else if (node.name === 'badge') {
           const attributes = directiveAttributes(node, ['tone'])
           const tone = toneAttribute(attributes.tone, 'badge tone')
@@ -206,7 +972,7 @@ function reportDirectives(meta, charts) {
           data.hName = 'span'
           data.hProperties = { className: ['report-badge', `report-tone-${tone}`] }
         } else if (node.name === 'progress') {
-          const attributes = directiveAttributes(node, ['label', 'value', 'max', 'span'], ['label', 'value'])
+          const attributes = directiveAttributes(node, ['label', 'value', 'max', 'span', 'role'], ['label', 'value'])
           const max = Number(attributes.max ?? 100)
           const value = Number(attributes.value)
           if (!Number.isFinite(max) || max <= 0) throw directiveError('progress max must be a positive number')
@@ -239,23 +1005,25 @@ function reportDirectives(meta, charts) {
               [reportNode('span', ['report-progress-fill'], [], { style: `width:${percentage}%` })],
             ),
           ]
+          semanticNodes.push({ type: 'progress', role: semanticRole(attributes), label: attributes.label, value, max })
         } else if (node.name === 'chart') {
           const chart = chartDescriptor(node, charts)
           const table = node.children[0]
           data.hName = 'figure'
           data.hProperties = { className: ['report-chart', spanClass(node.attributes || {})] }
           node.children = [
-            reportNode('div', ['report-chart-visual'], [], { dataReportChart: chart.id }),
             textNode('figcaption', ['report-chart-caption'], chart.title),
+            reportNode('div', ['report-chart-visual'], [], { dataReportChart: chart.id }),
             reportNode(
               'details',
               ['report-chart-data'],
-              [textNode('summary', ['report-chart-summary'], 'Data'), table],
+              [textNode('summary', ['report-chart-summary'], meta.locale === 'de' ? 'Daten' : 'Data'), table],
             ),
           ]
+          semanticNodes.push({ ...chart, type: 'chart', role: 'evidence', chart_type: chart.type })
         }
-      } else if (meta.layout === 'report') {
-        throw directiveError(`unknown report directive "${node.name}"`)
+      } else if (meta.layout === 'composition') {
+        throw directiveError(`unknown composition directive "${node.name}"`)
       }
     })
   }
@@ -335,6 +1103,74 @@ function mermaidBlocks() {
       if (!(code.properties?.className || []).includes('language-mermaid')) return
       node.properties = { className: ['mermaid'] }
       node.children = [{ type: 'text', value: code.children?.map((child) => child.value || '').join('') || '' }]
+    })
+  }
+}
+
+function fencedMetadata(value, label) {
+  const source = String(value || '').trim()
+  if (!source) return {}
+  const result = {}
+  const consumed = []
+  for (const match of source.matchAll(/([a-z][a-z-]*)=(?:"([^"]*)"|'([^']*)')/g)) {
+    const key = match[1]
+    if (!['title', 'question', 'insight', 'action', 'limitation'].includes(key)) {
+      throw directiveError(`${label} has unknown metadata "${key}"`)
+    }
+    if (key in result) throw directiveError(`${label} metadata "${key}" is duplicated`)
+    result[key] = match[2] ?? match[3] ?? ''
+    consumed.push([match.index, match.index + match[0].length])
+  }
+  let remainder = source
+  for (const [from, to] of consumed.reverse()) remainder = `${remainder.slice(0, from)}${remainder.slice(to)}`
+  if (remainder.trim()) throw directiveError(`${label} metadata must use key="value" pairs`)
+  return result
+}
+
+function diagramKind(source) {
+  const declaration =
+    String(source || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith('%%')) || ''
+  if (/^sequenceDiagram\b/i.test(declaration)) return 'sequence'
+  if (/^stateDiagram(?:-v2)?\b/i.test(declaration)) return 'state'
+  if (/^(?:erDiagram|classDiagram)\b/i.test(declaration)) return 'data-model'
+  if (/^(?:architecture-beta|C4\w*)\b/i.test(declaration)) return 'architecture'
+  if (/^(?:flowchart|graph)\b/i.test(declaration)) return 'process'
+  return 'technical'
+}
+
+function semanticFencedBlocks(semanticNodes) {
+  const guideByKind = {
+    process: 'process-diagram',
+    sequence: 'sequence-diagram',
+    state: 'state-diagram',
+    'data-model': 'data-model-diagram',
+    architecture: 'architecture-diagram',
+    technical: 'architecture-diagram',
+  }
+  return (tree) => {
+    visit(tree, 'code', (node) => {
+      if (node.lang !== 'mermaid') return
+      const metadata = fencedMetadata(node.meta, 'mermaid fence')
+      const kind = diagramKind(node.value)
+      const guide = getPublishingGuide(guideByKind[kind])
+      semanticNodes.push({
+        type: 'diagram',
+        role: 'evidence',
+        diagram_kind: kind,
+        title: boundedText(metadata.title, 'diagram title', 160) || null,
+        publishing_guide: guide.id,
+        semantics: guide.semantics,
+        narrative: {
+          ...guide.narrative,
+          question: boundedText(metadata.question, 'diagram question', 240) || guide.narrative.question,
+          reader_takeaway: boundedText(metadata.insight, 'diagram insight', 500) || guide.narrative.reader_takeaway,
+          action: boundedText(metadata.action, 'diagram action', 500) || null,
+          limitation: boundedText(metadata.limitation, 'diagram limitation', 500) || null,
+        },
+      })
     })
   }
 }
@@ -516,6 +1352,89 @@ function validateRelated(value, slug) {
   return slugs
 }
 
+function validateComposition(value, pageLayout, { legacyReport = false } = {}) {
+  if (pageLayout !== 'composition') {
+    if (value !== undefined)
+      throw Object.assign(new Error('frontmatter composition requires layout: composition'), { statusCode: 422 })
+    return null
+  }
+  if (value == null) value = {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new Error('frontmatter composition must be an object'), { statusCode: 422 })
+  }
+  const allowed = new Set([
+    'format',
+    'canvas',
+    'intent',
+    'density',
+    'preferredPattern',
+    'audience',
+    'question',
+    'goal',
+    'thesis',
+    'conclusion',
+    'action',
+    'limitations',
+    'disclosure',
+  ])
+  const unknown = Object.keys(value).find((key) => !allowed.has(key))
+  if (unknown)
+    throw Object.assign(new Error(`frontmatter composition has unknown field "${unknown}"`), { statusCode: 422 })
+  const format = String(value.format || (legacyReport ? 'report' : 'infographic'))
+  const canvas = String(value.canvas || (format === 'report' ? 'flow' : 'portrait'))
+  const intent = String(value.intent || 'explain')
+  const density = String(value.density || 'balanced')
+  const choices = [
+    ['format', format, ['infographic', 'report']],
+    ['canvas', canvas, ['portrait', 'landscape', 'square', 'flow']],
+    ['intent', intent, ['explain', 'compare', 'sequence', 'status', 'explore']],
+    ['density', density, ['compact', 'balanced', 'spacious']],
+  ]
+  for (const [field, entry, values] of choices) {
+    if (!values.includes(entry)) {
+      throw Object.assign(new Error(`frontmatter composition.${field} must be one of ${values.join(', ')}`), {
+        statusCode: 422,
+      })
+    }
+  }
+  const preferredPattern = value.preferredPattern == null ? null : String(value.preferredPattern)
+  if (preferredPattern && !/^[a-z][a-z0-9-]{1,63}$/.test(preferredPattern)) {
+    throw Object.assign(new Error('frontmatter composition.preferredPattern is invalid'), { statusCode: 422 })
+  }
+  const disclosure = String(value.disclosure || 'complete')
+  if (!['overview', 'progressive', 'complete'].includes(disclosure)) {
+    throw Object.assign(new Error('frontmatter composition.disclosure must be overview, progressive or complete'), {
+      statusCode: 422,
+    })
+  }
+  const limitations = value.limitations == null ? [] : value.limitations
+  if (
+    !Array.isArray(limitations) ||
+    limitations.length > 12 ||
+    limitations.some((entry) => typeof entry !== 'string' || !entry.trim() || entry.trim().length > 300)
+  ) {
+    throw Object.assign(
+      new Error('frontmatter composition.limitations must contain at most 12 non-empty strings of 300 characters'),
+      { statusCode: 422 },
+    )
+  }
+  return {
+    format,
+    canvas,
+    intent,
+    density,
+    preferred_pattern: preferredPattern,
+    audience: boundedText(value.audience, 'composition audience', 120),
+    question: boundedText(value.question, 'composition question', 240),
+    goal: boundedText(value.goal, 'composition goal', 240),
+    thesis: boundedText(value.thesis, 'composition thesis', 500),
+    conclusion: boundedText(value.conclusion, 'composition conclusion', 500),
+    action: boundedText(value.action, 'composition action', 500),
+    limitations: limitations.map((entry) => entry.trim()),
+    disclosure,
+  }
+}
+
 function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   const kind = data.kind || 'page'
   if (!kinds.has(kind))
@@ -531,9 +1450,21 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   const slug = assertSlug(data.slug || slugify(title))
   const translationKey = assertSlug(data.translationKey || data.translation_key || slug, 'translationKey')
   const tags = Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
-  const pageLayout = data.layout == null ? null : String(data.layout)
-  if (pageLayout && !layouts.has(pageLayout)) {
+  const authoredLayout = data.layout == null ? null : String(data.layout)
+  if (authoredLayout && !layouts.has(authoredLayout)) {
     throw Object.assign(new Error(`frontmatter layout must be one of ${[...layouts].join(', ')}`), { statusCode: 422 })
+  }
+  const legacyReport = authoredLayout === 'report'
+  const pageLayout = legacyReport ? 'composition' : authoredLayout
+  const composition = validateComposition(data.composition, pageLayout, { legacyReport })
+  const reportCadence = data.reportCadence == null ? null : String(data.reportCadence).trim()
+  if (reportCadence && !REPORT_CADENCES.has(reportCadence)) {
+    throw Object.assign(new Error(`frontmatter reportCadence must be one of ${[...REPORT_CADENCES].join(', ')}`), {
+      statusCode: 422,
+    })
+  }
+  if (reportCadence && composition?.format !== 'report') {
+    throw Object.assign(new Error('frontmatter reportCadence requires composition.format: report'), { statusCode: 422 })
   }
   const meta = {
     kind,
@@ -561,6 +1492,8 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     external_url: data.externalUrl ? String(data.externalUrl) : null,
     nav_order: Number.isFinite(Number(data.navOrder)) ? Number(data.navOrder) : null,
     layout: pageLayout,
+    composition,
+    report_cadence: reportCadence,
     doc_key: optionalSlug(data.docKey, 'docKey'),
     docs_version: optionalSlug(data.docsVersion, 'docsVersion'),
     parent: optionalSlug(data.parent, 'parent'),
@@ -615,7 +1548,12 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
   const warnings = []
   const meta = validateFrontmatter(parsed.data, { lenient, warnings })
   const charts = []
+  const semanticNodes = []
   if (!meta.summary) meta.summary = excerpt(parsed.content.replace(/[`#>*_[\]()!-]/g, ' '))
+  const content =
+    parsed.data.layout === 'report'
+      ? parsed.content.replace(/(:{2,})report-grid\b/g, '$1group').replace(/(:{2,})report-card\b/g, '$1card')
+      : parsed.content
 
   const processor = unified()
     .use(remarkParse)
@@ -623,7 +1561,8 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
     .use(remarkGfm)
     .use(remarkMath)
     .use(remarkDirective)
-    .use(reportDirectives, meta, charts)
+    .use(compositionDirectives, meta, charts, semanticNodes)
+    .use(semanticFencedBlocks, semanticNodes)
     .use(dropRedundantTitle, meta.title)
     .use(remarkRehype)
     .use(mermaidBlocks)
@@ -634,6 +1573,78 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
     .use(rehypeShiki, { themes: { light: 'github-light', dark: 'github-dark' } })
     .use(rehypeStringify)
 
-  const html = String(await processor.process(parsed.content))
-  return { meta, html, source: parsed.content, hasMermaid: /class="mermaid"/.test(html), charts, warnings }
+  const html = String(await processor.process(content))
+  const semantic = {
+    schema_version: '1',
+    presentation: meta.layout === 'composition' ? 'document' : semanticNodes.length ? 'embedded' : 'prose',
+    title: meta.title,
+    summary: meta.summary,
+    locale: meta.locale,
+    nodes: semanticNodes.map((node, index) => ({ id: `node-${index + 1}`, ...node })),
+  }
+  let narrative = null
+  let composition = null
+  let diagnostics = []
+  if (meta.layout === 'composition') {
+    if (!semantic.nodes.length) throw directiveError('layout: composition requires at least one semantic directive')
+    const primary = semantic.nodes.find((node) => node.role === 'primary') || semantic.nodes[0]
+    narrative = {
+      schema_version: '1',
+      intent: meta.composition.intent,
+      target_audience: meta.composition.audience || null,
+      question: meta.composition.question || null,
+      communication_goal: meta.composition.goal || null,
+      thesis: meta.composition.thesis || null,
+      conclusion: meta.composition.conclusion || null,
+      action: meta.composition.action || null,
+      limitations: meta.composition.limitations,
+      disclosure: meta.composition.disclosure,
+      primary_node: primary.id,
+      sequence: semantic.nodes.map((node) => node.id),
+      evidence: semantic.nodes.filter((node) => node.role === 'evidence').map((node) => node.id),
+      stages: {
+        primary: semantic.nodes.filter((node) => node.role === 'primary').map((node) => node.id),
+        supporting: semantic.nodes.filter((node) => node.role === 'supporting').map((node) => node.id),
+        evidence: semantic.nodes.filter((node) => node.role === 'evidence').map((node) => node.id),
+      },
+      relationships: [
+        ...semantic.nodes.slice(1).map((node, index) => ({
+          from: semantic.nodes[index].id,
+          to: node.id,
+          relation: 'precedes',
+        })),
+        ...semantic.nodes
+          .filter((node) => node.role === 'evidence')
+          .map((node) => ({ from: node.id, to: primary.id, relation: 'supports' })),
+      ],
+    }
+    const preferred = meta.composition.preferred_pattern || primary.preferred_pattern || null
+    const resolved = resolvePattern(semantic, {
+      ...meta.composition,
+      preferred_pattern: preferred,
+      narrative,
+    })
+    composition = {
+      schema_version: '1',
+      format: meta.composition.format,
+      canvas: meta.composition.canvas,
+      density: meta.composition.density,
+      requested_pattern: resolved.requested_pattern,
+      resolved_pattern: resolved.resolved_pattern,
+      recommendations: resolved.recommendations.slice(0, 5),
+    }
+    diagnostics = resolved.diagnostics
+  }
+  return {
+    meta,
+    html,
+    source: parsed.content,
+    hasMermaid: /class="mermaid"/.test(html),
+    charts,
+    semantic,
+    narrative,
+    composition,
+    diagnostics,
+    warnings,
+  }
 }

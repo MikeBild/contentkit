@@ -2,6 +2,18 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { buildSite } from './site-builder.mjs'
 import { sha256 } from './utils.mjs'
 
+export function normalizePreviewSlug(value) {
+  const slug = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (!/^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$/.test(slug)) {
+    throw Object.assign(new Error('preview slug must be 3-80 lowercase letters, numbers or hyphens'), {
+      statusCode: 422,
+    })
+  }
+  return slug
+}
+
 // A permit-handoff semaphore: release() passes its slot straight to the next
 // waiter rather than decrementing and re-incrementing, so a fresh acquire() in
 // the wake-up gap can never over-admit past the limit.
@@ -96,6 +108,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     retireItemIds = [],
     kind = 'release',
     expiresIn = 3600,
+    previewSlug = '',
     reason = '',
   }) {
     await acquire()
@@ -198,13 +211,28 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       if (kind === 'preview') {
         if (!config.previewSecret)
           throw Object.assign(new Error('CONTENTKIT_PREVIEW_SECRET is not configured'), { statusCode: 503 })
+        const slug = normalizePreviewSlug(previewSlug)
         const token = randomBytes(32).toString('base64url')
-        await db.insert('ck_preview_tokens', {
+        const effectiveExpiresIn = Math.max(60, Math.min(Number(expiresIn) || 3600, 7 * 86400))
+        await db.insert(
+          'ck_preview_access',
+          {
+            release_id: releaseId,
+            slug,
+            invite_token_hash: sha256(`${config.previewSecret}:invite:${token}`),
+            expires_at: new Date(Date.now() + effectiveExpiresIn * 1000).toISOString(),
+            consumed_at: null,
+            session_token_hash: null,
+            revoked_at: null,
+          },
+          { upsert: true, onConflict: 'slug' },
+        )
+        return {
           release_id: releaseId,
-          token_hash: sha256(`${config.previewSecret}:${token}`),
-          expires_at: new Date(Date.now() + Math.min(expiresIn, 7 * 86400) * 1000).toISOString(),
-        })
-        return { release_id: releaseId, url: `${config.publicUrl}/p/${token}/`, expires_in: expiresIn }
+          preview_url: `${config.publicUrl}/previews/${slug}/`,
+          invitation_url: `${config.publicUrl}/preview-invitations/${token}`,
+          expires_in: effectiveExpiresIn,
+        }
       }
       return { release_id: releaseId, file_count: entries.length, active: true }
     } catch (error) {
@@ -257,7 +285,8 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
   return {
     inflight: () => semaphore.active(),
     publish,
-    preview: (input) => build({ ...input, kind: 'preview' }),
+    preview: async (input) =>
+      build({ ...input, previewSlug: normalizePreviewSlug(input.previewSlug), kind: 'preview' }),
     async rollback(siteId, releaseId) {
       const target = await repo.getRelease(releaseId)
       if (!target || target.site_id !== siteId || !['ready', 'active', 'superseded'].includes(target.status)) {

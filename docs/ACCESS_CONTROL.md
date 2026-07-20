@@ -20,6 +20,16 @@ text, navigation entry, sitemap entry, feed entry, `llms.txt` content, JSON-LD,
 or protected-only media. Opening the URL redirects to the site-branded login
 form.
 
+Static HTML cannot vary per reader. When a home or content page is itself
+protected, ContentKit therefore pre-renders public pages plus only those
+protected pages whose group and user grants exactly match that page's grant.
+This gives a fully private site useful home cards and navigation after login
+without exposing titles across reader groups. A product site containing report
+pages links its newest visible report as “Aktueller Report”/“Latest report” and
+uses explicit `reportCadence` metadata to render one current report per period
+plus a bounded immutable history. The private JSON endpoints remain available
+for clients that need the reader-specific union of multiple grants.
+
 ## Manage groups and readers
 
 All management endpoints require a `site:admin` API key scoped to the site.

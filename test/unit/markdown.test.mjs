@@ -41,6 +41,28 @@ flowchart LR; A-->B
   assert.match(result.html, /class="mermaid"/)
   assert.match(result.html, /shiki/)
   assert.equal(result.hasMermaid, true)
+  assert.equal(result.semantic.nodes[0].type, 'diagram')
+  assert.equal(result.semantic.nodes[0].diagram_kind, 'process')
+  assert.equal(result.semantic.nodes[0].publishing_guide, 'process-diagram')
+})
+
+test('mermaid fences expose authored narrative intent for agents without changing the technical source', async () => {
+  const result = await renderMarkdown(`${frontmatter}
+\`\`\`mermaid title="Request lifecycle" question="Where can a request fail?" insight="Validation happens before persistence." action="Alert on rejected requests." limitation="Retries are omitted."
+sequenceDiagram
+  Client->>API: Submit
+  API->>Store: Persist
+\`\`\`
+`)
+  const diagram = result.semantic.nodes[0]
+  assert.equal(diagram.diagram_kind, 'sequence')
+  assert.equal(diagram.title, 'Request lifecycle')
+  assert.equal(diagram.publishing_guide, 'sequence-diagram')
+  assert.equal(diagram.narrative.question, 'Where can a request fail?')
+  assert.equal(diagram.narrative.reader_takeaway, 'Validation happens before persistence.')
+  assert.equal(diagram.narrative.action, 'Alert on rejected requests.')
+  assert.equal(diagram.narrative.limitation, 'Retries are omitted.')
+  assert.match(result.html, /Client->>API: Submit/)
 })
 
 test('does not pass through raw HTML or script URLs', async () => {
@@ -264,19 +286,67 @@ test('landing-page directives render only controlled content blocks', async () =
 
 const reportDoc = (body, fields = '') => `---
 kind: page
-layout: report
+layout: composition
 title: Quarterly report
 locale: de
 slug: quarterly-report
+composition:
+  format: report
+  canvas: flow
+  intent: status
 ${fields}---
 ${body}`
 
-test('report directives produce controlled dashboard markup and normalized chart descriptors', async () => {
-  const result = await renderMarkdown(
-    reportDoc(`::::report-grid{columns="4"}
-::metric{label="Umsatz" value="51 Tsd. €" trend="+21%" tone="positive"}
+test('reportCadence is a bounded report-only catalog field', async () => {
+  const { meta } = await renderMarkdown(reportDoc(':::hero\n## Status\n\nStable.\n:::', 'reportCadence: daily\n'))
+  assert.equal(meta.report_cadence, 'daily')
+  await assert.rejects(
+    () => renderMarkdown(reportDoc(':::hero\n## Status\n:::', 'reportCadence: realtime\n')),
+    /reportCadence must be one of hourly, daily, weekly, monthly, quarterly, yearly/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        '---\nkind: page\nlayout: landing\ntitle: Product\nlocale: en\nslug: product\nreportCadence: daily\n---\nBody.',
+      ),
+    /reportCadence requires composition\.format: report/,
+  )
+})
 
-:::report-card{title="Qualität" span="1"}
+test('legacy report authoring normalizes into the semantic composition pipeline', async () => {
+  const rendered = await renderMarkdown(`---
+kind: page
+layout: report
+title: Legacy report
+locale: en
+slug: legacy-report
+reportCadence: monthly
+---
+
+::::report-grid{columns="2"}
+::metric{label="Revenue" value="42"}
+
+:::report-card{title="Decision"}
+Proceed with the release.
+:::
+::::`)
+  assert.equal(rendered.meta.layout, 'composition')
+  assert.equal(rendered.meta.composition.format, 'report')
+  assert.equal(rendered.meta.report_cadence, 'monthly')
+  assert.deepEqual(
+    rendered.semantic.nodes.map((node) => node.type),
+    ['group', 'metric', 'card'],
+  )
+  assert.match(rendered.html, /composition-group/)
+  assert.match(rendered.source, /report-grid/)
+})
+
+test('composition directives produce controlled dashboard markup and normalized chart descriptors', async () => {
+  const result = await renderMarkdown(
+    reportDoc(`::::group{columns="4"}
+::metric{label="Umsatz" value="51" unit="Tsd. €" period="Q1" status="stabil" trend="+21%" tone="positive"}
+
+:::card{title="Qualität" span="1"}
 Status: :badge[Stabil]{tone="positive"}
 
 ::progress{label="Abdeckung" value="92" max="100"}
@@ -290,16 +360,20 @@ Status: :badge[Stabil]{tone="positive"}
 :::
 ::::`),
   )
-  assert.match(result.html, /class="report-grid report-columns-4"/)
+  assert.match(result.html, /class="composition-group composition-columns-4"/)
   assert.match(result.html, /class="report-metric report-tone-positive report-span-1"/)
+  assert.match(result.html, /class="report-metric-unit">Tsd\. €<\/span>/)
+  assert.match(result.html, /class="report-metric-context">Q1 · stabil<\/span>/)
   assert.match(result.html, /role="progressbar"[^>]*aria-valuenow="92"/)
   assert.match(result.html, /class="report-badge report-tone-positive"/)
   assert.match(result.html, /data-report-chart="0"/)
   assert.match(result.html, /<details class="report-chart-data">/)
+  assert.match(result.html, /report-chart-summary">Daten</)
   assert.equal(result.charts.length, 1)
   assert.deepEqual(result.charts[0], {
     id: 0,
     type: 'bar',
+    data_shape: 'series',
     title: 'Umsatz nach Monat',
     description: 'Umsatz und Ziel im ersten Quartal',
     orientation: 'vertical',
@@ -310,10 +384,60 @@ Status: :badge[Stabil]{tone="positive"}
       ['Jan', 42, 45],
       ['Feb', 51, null],
     ],
+    narrative: {
+      question: 'How do values compare across categories?',
+      communication_goal: 'Compare magnitude on a shared baseline.',
+      intended_insight: 'Umsatz und Ziel im ersten Quartal',
+      action: null,
+      limitation: null,
+    },
   })
 })
 
-test('report charts reject malformed tables, unsupported options and unsafe scope expansion', async () => {
+test('specialized chart shapes normalize typed evidence, narrative intent and reject misleading geometry', async () => {
+  const result = await renderMarkdown(
+    reportDoc(`:::chart{type="line" shape="uncertainty" title="Forecast" description="Estimate with interval" unit="%" question="How reliable is the forecast?" insight="Growth continues, but the interval widens." action="Keep reserve capacity." limitation="Bounds are model estimates."}
+| Quarter | Lower | Estimate | Upper |
+|---|---:|---:|---:|
+| Q1 | 10 | 14 | 19 |
+| Q2 | 12 | 17 | 23 |
+:::`),
+  )
+  assert.equal(result.charts[0].data_shape, 'uncertainty')
+  assert.deepEqual(result.charts[0].rows[0], ['Q1', 10, 14, 19])
+  assert.deepEqual(result.charts[0].narrative, {
+    question: 'How reliable is the forecast?',
+    communication_goal: 'Keep the central estimate and its lower and upper bounds together.',
+    intended_insight: 'Growth continues, but the interval widens.',
+    action: 'Keep reserve capacity.',
+    limitation: 'Bounds are model estimates.',
+  })
+
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        reportDoc(`:::chart{type="bar" shape="range" title="Invalid range" description="Lower exceeds upper"}
+| Item | Lower | Upper |
+|---|---:|---:|
+| API | 8 | 3 |
+:::`),
+      ),
+    /lower values not greater than upper values/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        reportDoc(`:::chart{type="bar" shape="geo-point" title="Invalid map" description="Latitude is invalid"}
+| Place | Latitude | Longitude | Value |
+|---|---:|---:|---:|
+| North | 95 | 10 | 2 |
+:::`),
+      ),
+    /latitude -90\.\.90 and longitude -180\.\.180/,
+  )
+})
+
+test('composition charts reject malformed tables, unsupported options and unsafe scope expansion', async () => {
   const rejects = (body, pattern) => assert.rejects(() => renderMarkdown(reportDoc(body)), pattern)
   await rejects(
     ':::chart{type="scatter" title="T" description="D"}\n| A | B |\n|-|-|\n| x | 1 |\n:::',
@@ -335,12 +459,36 @@ test('report charts reject malformed tables, unsupported options and unsafe scop
     ':::chart{type="bar" title="T" description="D" option="raw"}\n| A | B |\n|-|-|\n| x | 1 |\n:::',
     /unknown attribute "option"/,
   )
-  await rejects(':::unknown{title="T"}\nText\n:::', /unknown report directive/)
+  await rejects(':::unknown{title="T"}\nText\n:::', /unknown composition directive/)
 
-  await assert.rejects(
-    () => renderMarkdown('---\ntitle: Normal page\nlocale: de\nslug: normal\n---\n::metric{label="X" value="1"}'),
-    /requires frontmatter layout: report/,
-  )
+  const embedded = await renderMarkdown(`---
+kind: post
+title: Normal article
+locale: de
+slug: normal-article
+summary: A normal article with an embedded semantic comparison.
+---
+
+Introductory prose.
+
+::::comparison{title="Delivery models" role="primary" preferredPattern="split-comparison"}
+:::side{label="Live view"}
+- Question · What is happening now?
+- State · Mutable
+:::
+:::side{label="Published report"}
+- Question · What was approved for this period?
+- State · Immutable
+:::
+::::`)
+  assert.equal(embedded.meta.layout, null)
+  assert.equal(embedded.semantic.presentation, 'embedded')
+  assert.equal(embedded.semantic.nodes.length, 1)
+  assert.equal(embedded.semantic.nodes[0].type, 'comparison')
+  assert.equal(embedded.semantic.nodes[0].preferred_pattern, 'split-comparison')
+  assert.equal(embedded.composition, null)
+  assert.match(embedded.html, /composition-comparison/)
+  assert.match(embedded.html, /composition-side/)
 })
 
 test('report chart resource limits fail at write time', async () => {
@@ -355,5 +503,118 @@ ${rows}
 :::`),
       ),
     /at most 200 data rows/,
+  )
+})
+
+const compositionDocument = (body, composition = '') => `---
+layout: composition
+title: Information contract
+summary: Strict semantic composition fixture.
+locale: de
+slug: information-contract
+composition:
+  format: infographic
+  canvas: portrait
+  intent: explain
+${composition}
+---
+
+${body}`
+
+test('information families preserve authored business semantics and accessible no-JavaScript HTML', async () => {
+  const result = await renderMarkdown(
+    compositionDocument(
+      `::::faq{title="Häufige Fragen" role="primary" preferredPattern="faq-list"}
+:::question{title="Ist HTML vollständig?" category="Ausgabe"}
+Ja. Antworten bleiben im Dokument.
+:::
+:::question{title="Ist SVG statisch?" category="Ausgabe"}
+Ja. Es lädt keine entfernten Ressourcen.
+:::
+::::`,
+      '  audience: Einsteiger\n  question: Welches Muster erklärt die Aussage ehrlich?\n  goal: Sichere Patternwahl\n  thesis: Semantik führt die Darstellung.\n  conclusion: Fallbacks bleiben deterministisch.\n  action: Vor Veröffentlichung validieren.\n  limitations: [Containerbreite muss bekannt sein.]\n  disclosure: progressive',
+    ),
+  )
+  assert.equal(result.semantic.nodes[0].type, 'faq')
+  assert.equal(result.semantic.nodes[0].questions.length, 2)
+  assert.match(result.html, /<details class="composition-question" open>/)
+  assert.match(result.html, /<summary class="composition-question-title">Ist HTML vollständig\?/)
+  assert.equal(result.narrative.target_audience, 'Einsteiger')
+  assert.equal(result.narrative.question, 'Welches Muster erklärt die Aussage ehrlich?')
+  assert.equal(result.narrative.communication_goal, 'Sichere Patternwahl')
+  assert.equal(result.narrative.action, 'Vor Veröffentlichung validieren.')
+  assert.deepEqual(result.narrative.limitations, ['Containerbreite muss bekannt sein.'])
+  assert.equal(result.narrative.disclosure, 'progressive')
+  assert.ok(Array.isArray(result.narrative.relationships))
+})
+
+test('commercial, media, code, table and shell invariants fail before layout', async () => {
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        compositionDocument(`::::pricing{title="Plans" currency="EUR" billing="monthly" role="primary"}
+:::plan{name="A" price="1" cadence="month" recommended="true"}
+- Feature
+:::
+:::plan{name="B" price="2" cadence="month" recommended="true"}
+- Feature
+:::
+::::`),
+      ),
+    /at most one recommended plan/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        compositionDocument(`::::gallery{title="Gallery" role="primary"}
+::figure{src="asset:images/a.png" caption="A"}
+::figure{src="asset:images/b.png" alt="B"}
+::::`),
+      ),
+    /require alt text/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        compositionDocument(`::::code-example{title="Code" role="primary"}
+:::variant{label="A" language="bash" default="true"}
+\`\`\`bash
+echo A
+\`\`\`
+:::
+:::variant{label="B" language="bash" default="true"}
+\`\`\`bash
+echo B
+\`\`\`
+:::
+::::`),
+      ),
+    /at most one default variant/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        compositionDocument(`:::data-table{title="Rows" rowKey="ID" role="primary"}
+| ID | Status |
+| --- | --- |
+| same | ok |
+| same | error |
+:::`),
+      ),
+    /rowKey values must be non-empty and unique/,
+  )
+  await assert.rejects(
+    () =>
+      renderMarkdown(
+        compositionDocument(`::::application-shell{title="Shell" role="primary"}
+:::region{name="navigation" label="Navigation"}
+One
+:::
+:::region{name="secondary" label="Secondary"}
+Two
+:::
+::::`),
+      ),
+    /requires a main region/,
   )
 })

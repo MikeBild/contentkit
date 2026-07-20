@@ -1,28 +1,35 @@
-# Markdown reports and dashboards
+# Reports and dashboards as compositions
 
-Contentkit can turn one auditable Markdown document into a responsive report or
-dashboard. Authors write metrics, cards, progress and ordinary GFM tables. A
-release converts chart tables into content-hashed light and dark SVG assets,
-while the original tables remain available below each chart.
+Contentkit treats a report as a semantic visual composition, not as a special
+renderer. The author states what each block means, Contentkit selects a valid
+visual pattern, then publishes responsive HTML plus standalone SVG and PNG.
+Charts remain table-driven evidence and published pages require no browser chart
+runtime.
 
-The output follows the existing shadcn-style design-token contract. Apache
-ECharts is an internal server-side renderer, not an authoring language: report
-authors never write an ECharts or Vega specification, and published pages load
-no chart JavaScript.
+For the complete architecture, all 81 patterns and the AI-agent workflow, read
+[VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md).
 
 ## Minimal report
-
-Select the controlled `report` layout in frontmatter:
 
 ```md
 ---
 kind: page
-layout: report
+layout: composition
 title: Q2 Business Review
 locale: en
 slug: q2-business-review
 translationKey: q2-business-review
 summary: Revenue, delivery and reliability for Q2.
+reportCadence: quarterly
+composition:
+  format: report
+  canvas: flow
+  intent: status
+  density: compact
+  question: Did revenue outperform the quarterly plan?
+  thesis: Revenue exceeded plan in every reported month.
+  conclusion: Q2 closed above plan with improving monthly momentum.
+  action: Preserve the current plan and investigate the strongest June drivers.
 ---
 
 ::metric{label="Revenue" value="€1.42M" trend="+12.8% QoQ" tone="positive"}
@@ -36,20 +43,38 @@ summary: Revenue, delivery and reliability for Q2.
 :::
 ```
 
-Report directives are accepted only with explicit `layout: report`. Unknown
-directives and unknown attributes fail the Markdown write with HTTP 422, so a
-typo cannot silently produce an incomplete dashboard.
+New composition directives use `layout: composition`. Unknown directives and
+attributes fail the write with HTTP 422. A composition must contain at least one
+semantic directive.
 
-## Layout primitives
+For compatibility, existing `layout: report` documents and their `report-grid`
+and `report-card` directives are normalized internally to `composition`,
+`group` and `card`. New documents should use the explicit contract above.
 
-Use a grid to arrange cards, metrics, progress and charts. It collapses to one
-column on narrow screens and prints without card fragmentation.
+## Report catalog and periods
+
+`reportCadence` is valid only with `composition.format: report`. Its values are
+`hourly`, `daily`, `weekly`, `monthly`, `quarterly` and `yearly`. With the
+`product` site preset, Contentkit lists the newest immutable report for each
+cadence. The home page presents the newest closed interval with its authored
+question, conclusion and action, then the remaining decision horizons, followed
+by at most six older reports. Up to four `metric` nodes marked `role="primary"`
+in that newest report are reused as its compact overview. This is a projection
+of the same Semantic AST, not a second dashboard payload. Untagged reports appear as “Other report”. Access
+rules and `noindex` remain authoritative. This order is derived from report
+Markdown; a workflow or connector does not need a separate home-page payload.
+
+Two or more level-two headings create a responsive same-page section navigation
+without JavaScript. Use level-three headings for details that should stay out of
+that navigation.
+
+## Dashboard primitives
 
 ```md
-::::report-grid{columns="4"}
+::::group{columns="4"}
 ::metric{label="Gross margin" value="68.4%" trend="+2.1 pp" tone="positive"}
 
-:::report-card{title="Review status" span="2"}
+:::card{title="Review status" span="2"}
 Finance :badge[Approved]{tone="positive"}
 
 ::progress{label="Objectives completed" value="8" max="10"}
@@ -59,96 +84,105 @@ Finance :badge[Approved]{tone="positive"}
 
 | Directive | Attributes | Contract |
 |---|---|---|
-| `report-grid` | `columns="1..4"` | Responsive grid; defaults to four columns |
-| `report-card` | required `title`, optional `span="1..4"` | Card for prose, lists, tables or nested inline directives |
-| `metric` | required `label` and `value`; optional `trend`, `tone`, `span` | Compact KPI card |
-| `badge` | optional `tone`; visible inline text is required | Inline status label, for example `:badge[Approved]{tone="positive"}` |
-| `progress` | required `label` and numeric `value`; optional positive `max`, `span` | Accessible progress bar; `value` must be between zero and `max` |
-| `chart` | see below | Static SVG plus an accessible source-data disclosure |
+| `group` | `columns="1..4"`, optional semantic role | responsive document grouping |
+| `card` | required `title`, optional `span="1..4"` and role | titled semantic grouping |
+| `metric` | required `label`, `value`; optional `trend`, `tone`, `span`, role | KPI evidence |
+| `badge` | optional `tone`; visible text required | short inline state |
+| `progress` | required `label`, numeric `value`; optional positive `max`, `span`, role | accessible progress |
+| `chart` | options below | static light/dark SVG plus accessible source data |
 
-`tone` is one of `neutral`, `positive`, `warning` or `negative`. `span` is an
-integer from one through four. The normal `note`, `tip` and `warning` callouts
-remain available in reports.
+`tone` is `neutral`, `positive`, `warning` or `negative`. `role` is `primary`,
+`supporting` or `evidence`.
 
 ## Charts from Markdown tables
 
-A `chart` must contain exactly one GFM table. The first column contains category
-labels; every remaining cell is a finite number. Use an em dash (`—`) for a
-missing point. Formatted strings such as `€1,200`, percentages with `%`, dates
-that should be parsed, formulas and arbitrary JSON are deliberately not
-accepted: the Markdown table is the complete, reviewable data contract.
-
-```md
-:::chart{type="area" title="Delivery throughput" description="Completed work items by month" stacked="true" unit="items" span="2"}
-| Month | Product | Platform |
-|---|---:|---:|
-| Apr | 18 | 11 |
-| May | 22 | 14 |
-| Jun | 25 | — |
-:::
-```
-
-Chart attributes:
+A chart contains exactly one GFM table. The first column is categorical and
+remaining cells are finite numbers; use `—` for a missing value. Authors cannot
+upload renderer-specific specifications.
 
 | Attribute | Required | Values |
 |---|---|---|
-| `type` | yes | `bar`, `line`, `area` or `donut` |
-| `title` | yes | Visible caption, at most 160 characters |
-| `description` | yes | Image alternative and SVG accessible name, at most 500 characters |
-| `unit` | no | Axis/label suffix, at most 16 characters |
-| `span` | no | Grid span from `1` through `4` |
-| `orientation` | no | `vertical` or `horizontal`; bar charts only |
-| `stacked` | no | `true` or `false`; bar and area charts only |
+| `type` | yes | `bar`, `line`, `area`, `donut` |
+| `title` | yes | at most 160 characters |
+| `description` | yes | accessible description, at most 500 characters |
+| `unit` | no | at most 16 characters |
+| `span` | no | `1`–`4` |
+| `orientation` | no | `vertical` or `horizontal`, bar only |
+| `stacked` | no | boolean, bar and area only |
+| `shape` | no | typed information form; defaults to `series` |
+| `question` | no | the decision or analytical question, at most 240 characters |
+| `insight` | no | the intended conclusion, at most 500 characters |
+| `action` | no | the action supported by the evidence, at most 500 characters |
+| `limitation` | no | an evidential boundary or caveat, at most 500 characters |
 
-A donut accepts exactly one value column. A report accepts at most 24 charts;
-each chart accepts at most 200 data rows and eight value series. These bounded
-contracts keep uploads and release builds predictable. An all-missing chart,
-or an all-zero donut, renders a localized empty state.
+A donut accepts exactly one value column. One document accepts at most 24
+charts; one chart accepts at most 200 rows and eight value series. The source
+table remains in a semantic disclosure and expands for print.
 
-## Theme integration
+`shape` describes the meaning and columns of the table, not a renderer. The
+supported forms are `range`, `change`, `diverging`, `likert`, `xy`, `boxplot`,
+`matrix`, `waterfall`, `hierarchy`, `flow`, `uncertainty`, `calendar`,
+`geo-point`, `geo-region` and `samples`. Contentkit validates the exact column
+contract, ordering and bounds before pattern selection. For example:
 
-Report cards consume the same shadcn-style tokens as every Contentkit page.
-Charts additionally use `chart_1` through `chart_5`. Each value can be a scalar
-or a `{ "light": "...", "dark": "..." }` pair:
-
-```json
-{
-  "theme": {
-    "tokens": {
-      "primary": { "light": "221 83% 53%", "dark": "217 91% 60%" },
-      "chart_1": { "light": "221 83% 53%", "dark": "217 91% 60%" },
-      "chart_2": { "light": "160 84% 39%", "dark": "158 64% 52%" },
-      "chart_3": "38 92% 50%",
-      "chart_4": "262 83% 58%",
-      "chart_5": "0 72% 51%"
-    }
-  }
-}
+```md
+:::chart{type="line" shape="uncertainty" title="Capacity forecast" description="Estimate with an 80 percent interval" unit="%" question="Can planned demand be served?" insight="Capacity grows, but uncertainty widens." action="Keep reserve capacity for September." limitation="Bounds are model estimates."}
+| Month | Lower | Estimate | Upper |
+|---|---:|---:|---:|
+| August | 61 | 68 | 75 |
+| September | 64 | 72 | 81 |
+:::
 ```
 
-Colors use the same hex or shadcn-style `H S% L%` triple accepted by the
-existing theme system. `settings.theme.custom_css` can style report HTML, but
-it does not enter the generated SVG assets; use the chart tokens for chart
-colors. `PATCH /v1/sites/{site}` replaces settings wholesale, so read and merge
-the current settings before applying a theme update.
+External agents should read `accepts.data_shapes` from the Pattern Registry and
+choose only a matching eligible pattern. The registry recommendation endpoint
+returns `data.<shape>` as a positive reason or `semantic.data_shape` as a
+rejection. The full contract table is in
+[VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md).
 
-## Output, accessibility and security
+## Chart quality rules
 
-- The release contains content-hashed SVG files and a `<picture>` with separate
-  light/dark sources. Rebuilding identical content is byte-deterministic.
-- Charts have a descriptive image alternative and SVG accessible name. Their
-  source table stays in a `<details>` block and is expanded for print.
-- The report layout is responsive and has print rules for clean PDF export.
-- No chart runtime, tooltip code, remote font or third-party request is shipped
-  to the browser. Existing CSP remains unchanged.
-- Raw HTML is still sanitized. Directive markup and attributes are mapped to a
-  fixed Contentkit-owned DOM; authored text cannot select components or execute
-  code.
-- Indexable report pages receive an `index.md` Markdown twin, and their authored
-  source appears in the site's `llms-full.txt`. `noindex` and reader access
-  rules remove those public discovery surfaces as usual.
-- The authenticated single-document read API renders charts as self-contained
-  SVG data URLs; static site releases use content-hashed SVG files.
+Choose a chart from the question, not from its appearance: bars compare
+magnitudes, lines show ordered change, areas communicate accumulated change and
+donuts show a small part-to-whole set. A chart should support one central claim.
+Its normalized Semantic AST node always contains a narrative question,
+communication goal and intended insight. Explicit `action` and `limitation`
+fields keep an agent from turning evidence into an unsupported recommendation.
 
-See [`examples/reports/quarterly.en.md`](../examples/reports/quarterly.en.md)
-for a complete report using all four chart types.
+Contentkit keeps bar baselines at zero, but scales line axes to the observed
+range so small, meaningful changes remain visible. Short series receive direct
+value labels. Multiple lines differ by stroke pattern as well as color. Donut
+segments carry category, value and percentage directly. Every SVG has a title
+and description, while the complete Markdown table remains the authoritative
+accessible representation.
+
+## Theme, output and headless use
+
+Report HTML consumes the normal theme tokens. Charts additionally use
+`chart_1` through `chart_5`, each as one color or a light/dark pair. Pattern
+geometry does not come from theme CSS.
+
+Release builds emit content-hashed light/dark chart and composition SVGs beside
+responsive semantic HTML/CSS. Report pages embed chart SVGs only for authored
+data evidence; they do not repeat the complete composition SVG above the same
+semantic blocks. The composition SVG remains available through the headless
+API, and PNG is generated only when a headless caller explicitly requests the
+raster representation. No visualization runtime, remote font or third-party
+request is sent to readers. Graphics use Contentkit's standard font stack (`Inter`,
+`ui-sans-serif`, `system-ui`, platform UI fallbacks and `sans-serif`); the
+bundled Inter primary face makes raster output independent from system fonts.
+Every embedded report chart also emits a structurally reflowed 390-pixel mobile
+SVG selected by the responsive `<picture>` element; it is not a scaled desktop
+chart. Generated graphics enforce a responsive type floor of 15 px on
+canvases up to 800 px, 15 px up to 1100 px, and 16 px on wider canvases; layouts reflow instead of reducing
+labels below that threshold.
+
+The authenticated published-document API returns Semantic AST, Narrative,
+resolved Composition, diagnostics, accessible text and representation links.
+The `.svg` and `.png` representation endpoints use the same `content:read`
+authorization and ETag caching. See [VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md)
+for exact paths and compile requests.
+
+See [`examples/reports/quarterly.en.md`](../examples/reports/quarterly.en.md) for
+a complete report. Legacy report Markdown can be checked or rewritten with
+`npm run migrate:reports`.

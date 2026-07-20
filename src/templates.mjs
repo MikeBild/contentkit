@@ -1,4 +1,4 @@
-import { escapeHtml, json, slugify } from './utils.mjs'
+import { compareDateDesc, escapeHtml, json, slugify } from './utils.mjs'
 
 const words = {
   de: {
@@ -8,6 +8,29 @@ const words = {
     search: 'Suche',
     contact: 'Kontakt',
     latest: 'Neueste Beiträge',
+    latestReport: 'Aktueller Report',
+    reportSections: 'Reportbereiche',
+    reportPeriods: 'Zeiträume',
+    reportHistory: 'Reportverlauf',
+    reportHistoryHint: 'Die letzten abgeschlossenen Reports bleiben unverändert und nachvollziehbar.',
+    overview: 'Übersicht',
+    reportOverview: 'Berichtsübersicht',
+    reportCurrentState: 'Aktueller Betriebsstand',
+    reportCurrentStateHint:
+      'Beginne mit dem jüngsten abgeschlossenen Zeitfenster und der daraus folgenden Entscheidung.',
+    reportHorizons: 'Weitere Entscheidungshorizonte',
+    reportHorizonsHint: 'Tag, Woche, Monat und Jahr verdichten dieselben Signale für unterschiedliche Entscheidungen.',
+    reportAssessment: 'Einordnung',
+    reportNextStep: 'Nächster Schritt',
+    reportOpen: 'Report öffnen',
+    reportOtherPages: 'Weitere Seiten',
+    reportCadenceHourly: 'Stündlich',
+    reportCadenceDaily: 'Täglich',
+    reportCadenceWeekly: 'Wöchentlich',
+    reportCadenceMonthly: 'Monatlich',
+    reportCadenceQuarterly: 'Quartalsweise',
+    reportCadenceYearly: 'Jährlich',
+    reportCadenceOther: 'Weiterer Report',
     selected: 'Ausgewählte Projekte',
     allPosts: 'Alle Beiträge',
     allProjects: 'Alle Projekte',
@@ -79,6 +102,28 @@ const words = {
     search: 'Search',
     contact: 'Contact',
     latest: 'Latest posts',
+    latestReport: 'Latest report',
+    reportSections: 'Report sections',
+    reportPeriods: 'Periods',
+    reportHistory: 'Report history',
+    reportHistoryHint: 'The latest completed reports remain immutable and traceable.',
+    overview: 'Overview',
+    reportOverview: 'Report overview',
+    reportCurrentState: 'Current operating state',
+    reportCurrentStateHint: 'Start with the latest completed interval and the decision that follows from it.',
+    reportHorizons: 'Additional decision horizons',
+    reportHorizonsHint: 'Day, week, month and year condense the same signals for different decisions.',
+    reportAssessment: 'Assessment',
+    reportNextStep: 'Next step',
+    reportOpen: 'Open report',
+    reportOtherPages: 'Other pages',
+    reportCadenceHourly: 'Hourly',
+    reportCadenceDaily: 'Daily',
+    reportCadenceWeekly: 'Weekly',
+    reportCadenceMonthly: 'Monthly',
+    reportCadenceQuarterly: 'Quarterly',
+    reportCadenceYearly: 'Yearly',
+    reportCadenceOther: 'Other report',
     selected: 'Selected projects',
     allPosts: 'All posts',
     allProjects: 'All projects',
@@ -202,7 +247,7 @@ function safeUrl(value, { relative = false, protocols = [] } = {}) {
   }
 }
 
-// The theme exposes `--primary` as a shadcn-style "H S% L%" triple and consumes
+// The theme exposes `--primary` as an "H S% L%" triple and consumes
 // it via `hsl(var(--primary))` throughout site.css (e.g. the submit button
 // background). settings.accent is authored as a hex color, so it must be
 // converted to an HSL triple before it is injected into `--primary` — feeding a
@@ -316,6 +361,148 @@ function presetSectionLink(preset, locale) {
   return map[preset] || null
 }
 
+function latestReportLink(ctx) {
+  const report = [...(ctx.pages || [])]
+    .filter((page) => page.layout === 'composition' && page.composition?.format === 'report')
+    .sort(
+      (left, right) =>
+        compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
+        String(right.title || '').localeCompare(String(left.title || '')),
+    )[0]
+  return report ? [ctx.t.latestReport, report.url] : null
+}
+
+const REPORT_CADENCES = ['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly']
+
+function reportCadenceLabel(t, cadence) {
+  const suffix = cadence ? `${cadence[0].toUpperCase()}${cadence.slice(1)}` : 'Other'
+  return t[`reportCadence${suffix}`] || t.reportCadenceOther
+}
+
+function reportSort(left, right) {
+  return (
+    compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
+    cmp(String(right.title || ''), String(left.title || ''))
+  )
+}
+
+const GERMAN_MONTHS = [
+  'Januar',
+  'Februar',
+  'März',
+  'April',
+  'Mai',
+  'Juni',
+  'Juli',
+  'August',
+  'September',
+  'Oktober',
+  'November',
+  'Dezember',
+]
+
+function germanLongDate(date) {
+  return `${date.getUTCDate()}. ${GERMAN_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+}
+
+function germanLongRange(start, end) {
+  if (start.getUTCFullYear() === end.getUTCFullYear() && start.getUTCMonth() === end.getUTCMonth())
+    return `${start.getUTCDate()}.–${end.getUTCDate()}. ${GERMAN_MONTHS[start.getUTCMonth()]} ${start.getUTCFullYear()}`
+  if (start.getUTCFullYear() === end.getUTCFullYear())
+    return `${start.getUTCDate()}. ${GERMAN_MONTHS[start.getUTCMonth()]}–${end.getUTCDate()}. ${GERMAN_MONTHS[end.getUTCMonth()]} ${start.getUTCFullYear()}`
+  return `${germanLongDate(start)}–${germanLongDate(end)}`
+}
+
+function legacyGermanReportTitle(item) {
+  if (
+    !String(item.locale || '')
+      .toLowerCase()
+      .startsWith('de')
+  )
+    return null
+  if (!/(?:Stunden|Tages|Wochen|Monats|Jahres)report\s+\d{4}-\d{2}/.test(item.title || '')) return null
+  const cadence = item.report_cadence
+  const match = String(item.slug || '').match(
+    cadence === 'hourly'
+      ? /^report-(\d{4})-(\d{2})-(\d{2})-(\d{2})$/
+      : new RegExp(`^report-${cadence}-(\\d{4})-(\\d{2})-(\\d{2})$`),
+  )
+  if (!match) return null
+  const [, year, month, day, hour] = match
+  const start = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  if (Number.isNaN(start.getTime())) return null
+  if (cadence === 'hourly') return `Stundenreport · ${germanLongDate(start)} · ${hour}:00 UTC`
+  if (cadence === 'daily') return `Tagesreport · ${germanLongDate(start)}`
+  if (cadence === 'weekly') {
+    const end = new Date(start)
+    end.setUTCDate(end.getUTCDate() + 6)
+    return `Wochenreport · ${germanLongRange(start, end)}`
+  }
+  if (cadence === 'monthly') return `Monatsreport · ${GERMAN_MONTHS[start.getUTCMonth()]} ${year}`
+  if (cadence === 'yearly') return `Jahresreport · ${year}`
+  return null
+}
+
+function reportDisplayTitle(item, site) {
+  const legacyTitle = legacyGermanReportTitle(item)
+  if (legacyTitle) return legacyTitle
+  const prefix = `${site.name} `
+  return item.title.startsWith(prefix) ? item.title.slice(prefix.length) : item.title
+}
+
+function reportCatalogCard(item, t, site) {
+  const cadence = reportCadenceLabel(t, item.report_cadence)
+  return `<article class="card report-catalog-card"><a href="${escapeHtml(item.url)}">
+<div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div>
+<h3>${escapeHtml(reportDisplayTitle(item, site))}</h3><p>${escapeHtml(item.narrative?.question || item.summary)}</p>
+</a></article>`
+}
+
+function reportPrimaryMetrics(item) {
+  const metrics = (item.semantic?.nodes || [])
+    .filter((node) => node?.type === 'metric' && node.role === 'primary')
+    .slice(0, 4)
+  if (!metrics.length) return ''
+  return `<dl class="report-feature-metrics" aria-label="Report summary">${metrics
+    .map(
+      (metric) =>
+        `<div><dt>${escapeHtml(metric.label)}</dt><dd>${escapeHtml(metric.value)}${metric.unit ? `<span>${escapeHtml(metric.unit)}</span>` : ''}</dd>${metric.status ? `<small>${escapeHtml(metric.status)}</small>` : ''}</div>`,
+    )
+    .join('')}</dl>`
+}
+
+function reportFeatureCard(item, ctx) {
+  const cadence = reportCadenceLabel(ctx.t, item.report_cadence)
+  const assessment = item.narrative?.conclusion || item.narrative?.thesis || item.summary
+  const action = item.narrative?.action
+  return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p>${reportPrimaryMetrics(item)}</div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
+}
+
+function reportCatalogBody(ctx, title, visible) {
+  const isReport = (page) => page.layout === 'composition' && page.composition?.format === 'report'
+  const reports = visible.filter(isReport).sort(reportSort)
+  const otherPages = visible.filter((page) => !isReport(page))
+  const newestByCadence = new Map()
+  for (const report of reports) {
+    const key = REPORT_CADENCES.includes(report.report_cadence) ? report.report_cadence : 'other'
+    if (!newestByCadence.has(key)) newestByCadence.set(key, report)
+  }
+  const current = [...REPORT_CADENCES, 'other'].flatMap((cadence) => {
+    const report = newestByCadence.get(cadence)
+    return report ? [report] : []
+  })
+  const currentIds = new Set(current.map((report) => report.item_id))
+  const history = reports.filter((report) => !currentIds.has(report.item_id)).slice(0, 6)
+  const settings = ctx.site.settings || {}
+  const lead = current.find((report) => report.report_cadence === 'hourly') || current[0]
+  const horizons = current.filter((report) => report !== lead)
+  return `<section class="container hero preset-hero report-catalog-hero"><div><div class="eyebrow">${escapeHtml(ctx.t.reportOverview)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(settings.hero_text || ctx.site.description || '')}</p></div></section>
+${lead ? `<section id="current-state" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportCurrentState)}</h2><p>${escapeHtml(ctx.t.reportCurrentStateHint)}</p></div></div>${reportFeatureCard(lead, ctx)}</section>` : ''}
+${horizons.length ? `<section id="decision-horizons" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHorizons)}</h2><p>${escapeHtml(ctx.t.reportHorizonsHint)}</p></div></div><div class="grid report-current-grid">${horizons.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}
+${history.length ? `<section id="report-history" class="container section report-catalog"><div class="section-head report-catalog-heading"><div><h2>${escapeHtml(ctx.t.reportHistory)}</h2><p>${escapeHtml(ctx.t.reportHistoryHint)}</p></div></div><div class="grid">${history.map((report) => reportCatalogCard(report, ctx.t, ctx.site)).join('')}</div></section>` : ''}
+${otherPages.length ? `<section class="container section"><div class="section-head"><h2>${escapeHtml(ctx.t.reportOtherPages)}</h2></div><div class="grid">${otherPages.slice(0, 12).map(card).join('')}</div></section>` : ''}`
+}
+
 function navLinks(ctx) {
   const { locale, t, pages, currentPath, site } = ctx
   // Built-in links carry fixed weights so page frontmatter (navOrder) can slot
@@ -325,17 +512,23 @@ function navLinks(ctx) {
   // same reason, and search is the header's combobox, not a navigation link.
   const preset = site.settings?.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
+  const report = latestReportLink(ctx)
   // Non-portfolio presets lead with their single hub (weight 20); portfolio
   // spreads blog/archive/projects across 20…40; product carries no built-in hub.
   const presetLinks = primary
     ? [[...primary, 20]]
-    : preset === 'portfolio'
+    : preset === 'product' && report
       ? [
-          [t.blog, `/${locale}/blog/`, 20],
-          [t.archive, `/${locale}/archive/`, 30],
-          [t.projects, `/${locale}/projects/`, 40],
+          [t.overview, `/${locale}/`, 20],
+          [...report, 30],
         ]
-      : []
+      : preset === 'portfolio'
+        ? [
+            [t.blog, `/${locale}/blog/`, 20],
+            [t.archive, `/${locale}/archive/`, 30],
+            [t.projects, `/${locale}/projects/`, 40],
+          ]
+        : []
   const links = [
     ...pages
       .filter((p) => p.nav_order != null && p.nav_order <= 60)
@@ -369,12 +562,15 @@ function siteFooter(ctx) {
   // only place it is linked from besides the blog's chip row.
   const preset = settings.presentation?.preset || 'portfolio'
   const primary = presetSectionLink(preset, locale)
+  const report = latestReportLink(ctx)
   const posts = ctx.posts || []
   const hasPosts = posts.length > 0
   const hasProjects = (ctx.projects || []).length > 0
   const hasTags = posts.some((p) => (p.tags || []).length > 0)
   const navigation = [
     ...(primary ? [primary] : []),
+    ...(!primary && preset === 'product' && report ? [[t.overview, `/${locale}/`], report] : []),
+    ...(!primary && preset !== 'product' && report ? [report] : []),
     ...(hasPosts ? [[t.blog, `/${locale}/blog/`]] : []),
     ...(hasProjects ? [[t.projects, `/${locale}/projects/`]] : []),
     ...(hasPosts ? [[t.archive, `/${locale}/archive/`]] : []),
@@ -552,6 +748,7 @@ export function layout(ctx, body, options = {}) {
   // Pages with a copy affordance only: the AI share row's copy-Markdown button
   // and the subscribe rows' copy-feed-URL button share one clipboard module.
   if (options.aiActions) scripts.push(`<script src="${asset('ai-actions.js')}" defer></script>`)
+  if (options.composition) scripts.push(`<script src="${asset('composition.js')}" defer></script>`)
   // Post pages with the feedback widget only: reveals and drives the vote buttons.
   if (options.feedback) scripts.push(`<script src="${asset('feedback.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)
@@ -662,7 +859,18 @@ export function presetHomeBody(ctx) {
     changelog: 'Changelog',
   }
   const title = labels[preset] || ctx.site.name
-  const visible = [...(ctx.pages || [])].sort((a, b) => (a.nav_order ?? 1000) - (b.nav_order ?? 1000))
+  const visible = [...(ctx.pages || [])].sort(
+    (a, b) =>
+      (a.nav_order ?? 1000) - (b.nav_order ?? 1000) ||
+      compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||
+      String(b.title || '').localeCompare(String(a.title || '')),
+  )
+  if (
+    preset === 'product' &&
+    visible.some((page) => page.layout === 'composition' && page.composition?.format === 'report')
+  ) {
+    return reportCatalogBody(ctx, title, visible)
+  }
   return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
 <section class="container section"><div class="grid">${visible.slice(0, 12).map(card).join('')}</div></section>`
 }
@@ -1090,9 +1298,22 @@ function extraBody(item, ctx) {
     .join('')}</dl>`
 }
 
+function reportSectionNavigation(item, ctx) {
+  const sections = [
+    ...String(item.html || '').matchAll(/<h2 id="([^"]+)"[^>]*>(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/h2>/g),
+  ]
+    .slice(0, 12)
+    .map((match) => ({ id: match[1], label: match[2].replace(/<[^>]+>/g, '') }))
+  if (sections.length < 2) return ''
+  return `<nav class="container report-section-nav" aria-label="${escapeHtml(ctx.t.reportSections)}"><span>${escapeHtml(ctx.t.reportSections)}</span><ol>${sections
+    .map((section) => `<li><a href="#${escapeHtml(section.id)}">${section.label}</a></li>`)
+    .join('')}</ol></nav>`
+}
+
 export function contentBody(item, ctx, comments = []) {
   const isPost = item.kind === 'post'
-  const isReport = item.layout === 'report'
+  const isReport = item.layout === 'composition' && item.composition?.format === 'report'
+  const isComposition = item.layout === 'composition'
   const locale = item.locale || ctx.locale
   const updated = item.updated_at && item.updated_at > item.published_at ? item.updated_at : ''
   const meta = [
@@ -1126,7 +1347,9 @@ export function contentBody(item, ctx, comments = []) {
   const footer = isPost
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
-  return `<article${isReport ? ' class="report-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isReport ? 'report' : item.kind)}</div><h1>${escapeHtml(item.title)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header><div class="container prose${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
+  const reportNavigation = isReport ? reportSectionNavigation(item, ctx) : ''
+  const displayTitle = isReport ? reportDisplayTitle(item, ctx.site) : item.title
+  return `<article${isComposition ? ' class="composition-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isComposition ? item.composition?.format || 'composition' : item.kind)}</div><h1>${escapeHtml(displayTitle)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isComposition ? ' composition-prose' : ''}${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

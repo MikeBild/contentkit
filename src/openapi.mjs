@@ -1,6 +1,17 @@
 export function openApi(config) {
   const secured = [{ bearerAuth: [] }, { apiKeyAuth: [] }]
   const siteParameter = { name: 'site', in: 'path', required: true, schema: { type: 'string' } }
+  const statsParameters = [
+    siteParameter,
+    {
+      name: 'bucket',
+      in: 'query',
+      schema: { type: 'string', enum: ['hour', 'day', 'month', 'year'], default: 'hour' },
+    },
+    { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    { name: 'tz', in: 'query', schema: { type: 'string', enum: ['UTC'], default: 'UTC' } },
+  ]
   const jsonBody = (required = []) => ({
     required: true,
     content: { 'application/json': { schema: { type: 'object', required } } },
@@ -47,7 +58,7 @@ export function openApi(config) {
         '',
         '| Scope | Grants |',
         '|---|---|',
-        '| `content:read` | List content items and immutable revisions |',
+        '| `content:read` | Read content/revisions and site-scoped product statistics |',
         '| `content:write` | Upload Markdown/assets and create revisions |',
         '| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |',
         '| `site:admin` | Create/update sites, manage API keys and webhook endpoints |',
@@ -133,6 +144,649 @@ export function openApi(config) {
             group_slugs: { type: 'array', items: { type: 'string' } },
             user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
             rebuild_required: { type: 'boolean' },
+          },
+        },
+        ProductStats: {
+          type: 'object',
+          required: ['bucket', 'tz', 'from', 'to', 'buckets', 'totals'],
+          properties: {
+            bucket: { type: 'string', enum: ['hour', 'day', 'month', 'year'] },
+            tz: { const: 'UTC' },
+            from: { type: 'string', format: 'date-time' },
+            to: { type: 'string', format: 'date-time' },
+            buckets: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['ts'],
+                properties: { ts: { type: 'string', format: 'date-time' } },
+                additionalProperties: { type: 'number' },
+              },
+            },
+            totals: { type: 'object', additionalProperties: { type: 'number' } },
+          },
+        },
+        SemanticNode: {
+          type: 'object',
+          required: ['id', 'type', 'role'],
+          properties: {
+            id: { type: 'string' },
+            type: {
+              type: 'string',
+              enum: [
+                'hero',
+                'metric',
+                'process',
+                'comparison',
+                'timeline',
+                'hierarchy',
+                'relationship',
+                'chart',
+                'progress',
+                'badge',
+                'card',
+                'group',
+                'faq',
+                'code-example',
+                'pricing',
+                'gallery',
+                'data-table',
+                'dashboard-section',
+                'application-shell',
+                'diagram',
+              ],
+            },
+            role: { type: 'string', enum: ['primary', 'supporting', 'evidence'] },
+            data_shape: {
+              type: 'string',
+              enum: [
+                'series',
+                'range',
+                'change',
+                'diverging',
+                'likert',
+                'xy',
+                'boxplot',
+                'matrix',
+                'waterfall',
+                'hierarchy',
+                'flow',
+                'uncertainty',
+                'calendar',
+                'geo-point',
+                'geo-region',
+                'samples',
+              ],
+              description: 'Typed table contract for chart nodes; present as `series` when no shape is authored.',
+            },
+            narrative: {
+              type: 'object',
+              description:
+                'Instance-level communication intent. Chart nodes expose question, communication_goal, intended_insight, action and limitation. Diagram nodes expose the matching publishing guide, story arc and authored overrides.',
+              additionalProperties: true,
+            },
+            diagram_kind: {
+              type: 'string',
+              enum: ['process', 'sequence', 'state', 'data-model', 'architecture', 'technical'],
+              description: 'Technical diagram story inferred from a Mermaid declaration.',
+            },
+            publishing_guide: {
+              type: 'string',
+              description: 'Stable `/v1/publishing-guides/{guide}` identifier for authoring and selection guidance.',
+            },
+          },
+          additionalProperties: true,
+        },
+        SemanticDocument: {
+          type: 'object',
+          required: ['schema_version', 'title', 'locale', 'nodes'],
+          properties: {
+            schema_version: { const: '1' },
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            locale: { type: 'string' },
+            presentation: {
+              type: 'string',
+              enum: ['prose', 'embedded', 'document'],
+              description:
+                'How the Semantic AST participates in the document: prose has no semantic blocks, embedded augments a normal article or page, and document resolves the complete composition pipeline.',
+            },
+            nodes: { type: 'array', items: { $ref: '#/components/schemas/SemanticNode' } },
+          },
+        },
+        PatternCandidate: {
+          type: 'object',
+          required: ['pattern', 'score', 'eligible', 'reasons', 'rejections'],
+          properties: {
+            pattern: { type: 'string' },
+            score: { type: 'integer', minimum: 0, maximum: 100 },
+            eligible: { type: 'boolean' },
+            reasons: { type: 'array', items: { type: 'string' } },
+            rejections: { type: 'array', items: { type: 'string' } },
+            responsive_pattern: { type: ['string', 'null'] },
+          },
+        },
+        PatternDescriptor: {
+          type: 'object',
+          required: [
+            'schema_version',
+            'id',
+            'version',
+            'status',
+            'category',
+            'scope',
+            'accepts',
+            'narrative',
+            'selection',
+            'layout',
+            'slots',
+            'capabilities',
+            'rendering_strategy',
+            'requires',
+            'content_budget',
+            'input_contract',
+            'examples',
+            'spec_examples',
+            'agent_hints',
+            'static_fallback',
+          ],
+          properties: {
+            schema_version: { const: 1 },
+            id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,63}$' },
+            version: { type: 'integer', minimum: 1 },
+            status: { type: 'string', enum: ['experimental', 'stable', 'deprecated'] },
+            category: {
+              type: 'string',
+              enum: [
+                'document',
+                'metrics',
+                'stats',
+                'process',
+                'comparison',
+                'timeline',
+                'structure',
+                'data',
+                'faq',
+                'code',
+                'pricing',
+                'gallery',
+                'table',
+                'dashboard',
+                'application',
+              ],
+            },
+            scope: { type: 'string', enum: ['document', 'node'] },
+            accepts: {
+              type: 'object',
+              required: ['node_types', 'data_shapes', 'min_items', 'preferred_max_items', 'max_items'],
+              properties: {
+                node_types: { type: 'array', items: { type: 'string' } },
+                data_shapes: {
+                  type: 'array',
+                  items: {
+                    type: 'string',
+                    enum: [
+                      'series',
+                      'range',
+                      'change',
+                      'diverging',
+                      'likert',
+                      'xy',
+                      'boxplot',
+                      'matrix',
+                      'waterfall',
+                      'hierarchy',
+                      'flow',
+                      'uncertainty',
+                      'calendar',
+                      'geo-point',
+                      'geo-region',
+                      'samples',
+                    ],
+                  },
+                  description: 'Empty means any compatible node shape; otherwise agents must match one exactly.',
+                },
+                min_items: { type: 'integer', minimum: 1 },
+                preferred_max_items: { type: 'integer', minimum: 1 },
+                max_items: { type: 'integer', minimum: 1 },
+              },
+            },
+            semantics: { type: 'object' },
+            narrative: {
+              type: 'object',
+              required: ['question', 'communication_goal', 'story_arc', 'reader_takeaway', 'decision_support'],
+              properties: {
+                question: { type: 'string', minLength: 12, maxLength: 500 },
+                communication_goal: { type: 'string', minLength: 12, maxLength: 500 },
+                story_arc: { type: 'array', minItems: 1, items: { type: 'string' } },
+                reader_takeaway: { type: 'string', minLength: 12, maxLength: 500 },
+                decision_support: { type: 'string', minLength: 12, maxLength: 500 },
+              },
+            },
+            selection: { type: 'object' },
+            responsive: { type: 'array', items: { type: 'object' } },
+            fallbacks: { type: 'array', items: { type: 'string' } },
+            layout: { type: 'object' },
+            accessibility: { type: 'object' },
+            slots: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['name', 'accepts', 'min', 'max', 'required'],
+                properties: {
+                  name: { type: 'string' },
+                  accepts: { type: 'array', items: { type: 'string' } },
+                  min: { type: 'integer', minimum: 0 },
+                  max: { type: 'integer', minimum: 1 },
+                  required: { type: 'boolean' },
+                },
+              },
+            },
+            capabilities: {
+              type: 'object',
+              required: ['outputs', 'interactions'],
+              properties: {
+                outputs: { type: 'array', items: { enum: ['html', 'svg', 'png', 'print'] } },
+                interactions: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            rendering_strategy: {
+              type: 'object',
+              required: ['primary_output', 'alternatives', 'html_fidelity', 'png_role', 'rationale'],
+              properties: {
+                primary_output: { type: 'string', enum: ['html', 'svg'] },
+                alternatives: { type: 'array', items: { type: 'string', enum: ['html', 'svg', 'png'] } },
+                html_fidelity: { const: 'layout-equivalent' },
+                png_role: { const: 'derived-static-export' },
+                rationale: { type: 'string' },
+              },
+            },
+            requires: {
+              type: 'object',
+              required: ['patterns', 'primitives'],
+              properties: {
+                patterns: { type: 'array', items: { type: 'string' } },
+                primitives: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            content_budget: {
+              type: 'object',
+              required: [
+                'max_items',
+                'max_text_characters',
+                'max_words_per_item',
+                'max_code_lines',
+                'max_table_rows',
+                'max_media',
+                'max_columns',
+                'max_title_characters',
+                'max_summary_characters',
+                'max_label_characters',
+                'max_body_characters',
+                'max_series',
+                'max_categories',
+              ],
+              additionalProperties: { type: 'integer', minimum: 0 },
+            },
+            input_contract: {
+              type: 'object',
+              required: ['schema_version', 'value_semantics', 'fields', 'units', 'temporal'],
+              properties: {
+                schema_version: { const: '1' },
+                value_semantics: { type: 'array', items: { type: 'string' } },
+                fields: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['field', 'semantic_role', 'accepted_values', 'required'],
+                    properties: {
+                      field: { type: 'string' },
+                      semantic_role: { type: 'string' },
+                      accepted_values: { type: 'array', items: { type: 'string' } },
+                      required: { type: 'boolean' },
+                      max_characters: { type: 'integer', minimum: 1 },
+                      max_items: { type: 'integer', minimum: 1 },
+                    },
+                  },
+                },
+                units: { type: 'object', additionalProperties: true },
+                temporal: { type: 'object', additionalProperties: true },
+              },
+            },
+            examples: { type: 'array', items: { type: 'string' } },
+            spec_examples: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['kind'],
+                properties: {
+                  kind: { type: 'string', enum: ['positive', 'counterexample'] },
+                  id: { type: 'string' },
+                  expected_pattern: { type: 'string' },
+                  markdown: { type: 'string' },
+                  reason: { type: 'string' },
+                  guidance: { type: 'string' },
+                },
+              },
+            },
+            agent_hints: {
+              type: 'object',
+              required: ['use_when', 'reject_when', 'authoring'],
+              properties: {
+                use_when: { type: 'array', items: { type: 'string' } },
+                reject_when: { type: 'array', items: { type: 'string' } },
+                authoring: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            static_fallback: { type: ['string', 'null'] },
+            documentation: { type: 'string' },
+          },
+        },
+        PublishingGuide: {
+          type: 'object',
+          required: [
+            'schema_version',
+            'id',
+            'kind',
+            'status',
+            'title',
+            'summary',
+            'semantics',
+            'narrative',
+            'selection',
+            'input_contract',
+            'authoring',
+            'compatible_patterns',
+            'examples',
+          ],
+          properties: {
+            schema_version: { const: '1' },
+            id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,63}$' },
+            kind: { type: 'string', enum: ['report', 'diagram', 'code'] },
+            status: { type: 'string', enum: ['stable', 'experimental'] },
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            semantics: {
+              type: 'object',
+              required: ['conveys', 'implies', 'rejects'],
+              properties: {
+                conveys: { type: 'array', items: { type: 'string' } },
+                implies: { type: 'array', items: { type: 'string' } },
+                rejects: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            narrative: {
+              type: 'object',
+              required: ['question', 'communication_goal', 'story_arc', 'reader_takeaway'],
+              properties: {
+                question: { type: 'string' },
+                communication_goal: { type: 'string' },
+                story_arc: { type: 'array', minItems: 2, items: { type: 'string' } },
+                reader_takeaway: { type: 'string' },
+              },
+            },
+            selection: {
+              type: 'object',
+              required: ['use_when', 'reject_when'],
+              properties: {
+                use_when: { type: 'array', items: { type: 'string' } },
+                reject_when: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            input_contract: {
+              type: 'object',
+              required: ['required', 'optional', 'constraints'],
+              properties: {
+                required: { type: 'array', items: { type: 'string' } },
+                optional: { type: 'array', items: { type: 'string' } },
+                constraints: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            authoring: {
+              type: 'object',
+              required: ['syntax', 'guidance'],
+              properties: {
+                syntax: { type: 'string' },
+                guidance: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            compatible_patterns: { type: 'array', items: { type: 'string' } },
+            examples: { type: 'array', items: { type: 'string' } },
+            documentation: { type: 'string' },
+            source_path: { type: 'string' },
+          },
+        },
+        CompositionDiagnostic: {
+          type: 'object',
+          required: ['code', 'severity'],
+          properties: {
+            code: {
+              type: 'string',
+              enum: [
+                'pattern.unknown',
+                'pattern.incompatible',
+                'pattern.fallback',
+                'text.reflow',
+                'text.truncated',
+                'items.omitted',
+                'content.budget-exceeded',
+                'capability.unavailable',
+                'pattern.degraded',
+                'asset.missing',
+                'narrative.evidence-missing',
+                'narrative.story-mismatch',
+                'semantic.unit-incompatible',
+                'content.density-exceeded',
+                'container.height-insufficient',
+                'rendering.degraded',
+                'preview.asset-unresolved',
+              ],
+            },
+            severity: { type: 'string', enum: ['info', 'warning', 'error'] },
+            message: { type: 'string' },
+            requested_pattern: { type: 'string' },
+            resolved_pattern: { type: 'string' },
+          },
+          additionalProperties: true,
+        },
+        LayoutTree: {
+          type: 'object',
+          required: ['schema_version', 'type', 'box', 'children'],
+          properties: {
+            schema_version: { const: '1' },
+            type: { type: 'string' },
+            box: { type: 'object' },
+            children: { type: 'array', items: { $ref: '#/components/schemas/LayoutPrimitive' } },
+            responsive: { type: 'object' },
+          },
+          additionalProperties: true,
+        },
+        LayoutPrimitive: {
+          type: 'object',
+          required: ['type'],
+          properties: {
+            id: { type: 'string' },
+            type: {
+              type: 'string',
+              enum: [
+                'layout-region',
+                'region',
+                'text',
+                'shape',
+                'image',
+                'chart',
+                'table',
+                'disclosure',
+                'connector',
+                'connector-group',
+              ],
+            },
+            semantic_type: { type: 'string' },
+            role: { type: 'string' },
+            box: { type: 'object' },
+            source_node_ids: { type: 'array', items: { type: 'string' } },
+            style: { type: 'object' },
+            from: { type: 'object' },
+            to: { type: 'object' },
+            children: { type: 'array', items: { $ref: '#/components/schemas/LayoutPrimitive' } },
+          },
+          additionalProperties: true,
+        },
+        RenderTree: {
+          type: 'object',
+          required: ['schema_version', 'type', 'box'],
+          properties: {
+            schema_version: { const: '1' },
+            type: { const: 'svg' },
+            box: { type: 'object' },
+            children: { type: 'array', items: { $ref: '#/components/schemas/RenderPrimitive' } },
+            accessibility: { type: 'object' },
+          },
+          additionalProperties: true,
+        },
+        RenderPrimitive: {
+          type: 'object',
+          required: ['type'],
+          properties: {
+            id: { type: 'string' },
+            type: {
+              type: 'string',
+              enum: [
+                'layer',
+                'adapter',
+                'region',
+                'text',
+                'shape',
+                'image',
+                'chart',
+                'table',
+                'disclosure',
+                'connector',
+                'connector-group',
+              ],
+            },
+            semantic_type: { type: 'string' },
+            role: { type: 'string' },
+            box: { type: 'object' },
+            source_node_ids: { type: 'array', items: { type: 'string' } },
+            style: { type: 'object' },
+            from: { type: 'object' },
+            to: { type: 'object' },
+            children: { type: 'array', items: { $ref: '#/components/schemas/RenderPrimitive' } },
+          },
+          additionalProperties: true,
+        },
+        NarrativePlan: {
+          type: 'object',
+          properties: {
+            schema_version: { const: '1' },
+            intent: { type: 'string', enum: ['explain', 'compare', 'sequence', 'status', 'explore'] },
+            target_audience: { type: ['string', 'null'], maxLength: 240 },
+            question: { type: ['string', 'null'], maxLength: 500 },
+            communication_goal: { type: ['string', 'null'], maxLength: 500 },
+            thesis: { type: ['string', 'null'], maxLength: 500 },
+            conclusion: { type: ['string', 'null'], maxLength: 500 },
+            action: { type: ['string', 'null'], maxLength: 500 },
+            limitations: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 500 } },
+            disclosure: { type: 'string', enum: ['overview', 'progressive', 'complete'] },
+            story_arc: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 120 } },
+          },
+          additionalProperties: true,
+        },
+        CompositionAction: {
+          type: 'object',
+          anyOf: [{ required: ['markdown'] }, { required: ['semantic'] }],
+          properties: {
+            markdown: { type: 'string', maxLength: 262144 },
+            semantic: { $ref: '#/components/schemas/SemanticDocument' },
+            narrative: { $ref: '#/components/schemas/NarrativePlan' },
+            pattern: { type: 'string' },
+            format: { type: 'string', enum: ['infographic', 'report'] },
+            canvas: { type: 'string', enum: ['portrait', 'landscape', 'square', 'flow'] },
+            intent: { type: 'string', enum: ['explain', 'compare', 'sequence', 'status', 'explore'] },
+            density: { type: 'string', enum: ['compact', 'balanced', 'spacious'] },
+            scheme: { type: 'string', enum: ['light', 'dark'] },
+            viewport: {
+              type: 'object',
+              required: ['width', 'height'],
+              properties: {
+                width: { type: 'integer', minimum: 320, maximum: 4096 },
+                height: { type: 'integer', minimum: 320, maximum: 4096 },
+              },
+            },
+            container: {
+              type: 'object',
+              required: ['width'],
+              properties: {
+                width: { type: 'integer', minimum: 240, maximum: 4096 },
+                height: { type: 'integer', minimum: 240, maximum: 4096 },
+              },
+              description: 'Actual embedding bounds. Width must not exceed viewport width.',
+            },
+            capabilities: { type: 'array', maxItems: 16, uniqueItems: true, items: { type: 'string' } },
+            outputs: {
+              type: 'array',
+              minItems: 1,
+              uniqueItems: true,
+              items: { enum: ['model', 'html', 'svg', 'png', 'print'] },
+            },
+            html_presentation: {
+              type: 'string',
+              enum: ['semantic', 'visual'],
+              default: 'semantic',
+              description:
+                'Semantic preserves document-native HTML. Visual uses the resolved layout contract while retaining native HTML accessibility.',
+            },
+          },
+        },
+        CompositionCompile: {
+          allOf: [{ $ref: '#/components/schemas/CompositionAction' }, { type: 'object', required: ['markdown'] }],
+        },
+        CompositionCompileResult: {
+          type: 'object',
+          required: [
+            'schema_version',
+            'semantic',
+            'narrative',
+            'composition',
+            'layout',
+            'render_tree',
+            'diagnostics',
+            'accessible_text',
+            'rendering',
+            'renders',
+            'hashes',
+          ],
+          properties: {
+            schema_version: { const: '1' },
+            semantic: { $ref: '#/components/schemas/SemanticDocument' },
+            narrative: { type: 'object' },
+            composition: { type: 'object' },
+            layout: { $ref: '#/components/schemas/LayoutTree' },
+            render_tree: { $ref: '#/components/schemas/RenderTree' },
+            diagnostics: { type: 'array', items: { $ref: '#/components/schemas/CompositionDiagnostic' } },
+            accessible_text: { type: 'string' },
+            rendering: {
+              type: 'object',
+              required: ['html_presentation', 'fidelity', 'canonical_static_output', 'png_role'],
+              properties: {
+                html_presentation: { type: 'string', enum: ['semantic', 'visual'] },
+                fidelity: { type: 'string', enum: ['semantic', 'layout-equivalent'] },
+                canonical_static_output: { const: 'svg' },
+                png_role: { const: 'derived-static-export' },
+              },
+            },
+            renders: {
+              type: 'object',
+              properties: {
+                html: { type: 'string' },
+                print_html: { type: 'string' },
+                svg: { type: 'string' },
+                png_base64: { type: 'string', contentEncoding: 'base64' },
+                png_media_type: { const: 'image/png' },
+              },
+            },
+            hashes: { type: 'object', additionalProperties: { type: 'string' } },
           },
         },
       },
@@ -386,11 +1040,126 @@ export function openApi(config) {
         post: {
           summary: 'Create content and its first draft revision',
           description:
-            'Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` and `report`. A report can compose sanitized `report-grid`, `report-card`, `metric`, `badge`, `progress` and `chart` directives; a `chart` contains exactly one Markdown table and renders to static light/dark SVG assets without client JavaScript. Supported chart types are `bar`, `line`, `area` and `donut`; malformed directives, non-numeric values or resource-limit violations fail with 422. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map of custom fields (max 32 keys matching `[a-z][a-z0-9_]{0,63}`; values are scalars, lists of scalars or flat maps of scalars; 16 KiB total) stored verbatim in revision metadata, and `related: [slug, ...]` references to same-locale posts (max 8, no duplicates or self-reference).',
+            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog` and `composition`; `report` remains a compatibility alias for report compositions. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.",
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
           responses: { 201: { description: 'Draft created' } },
+        },
+      },
+      '/v1/composition-patterns': {
+        get: {
+          summary: 'List the declarative visual-composition Pattern Registry',
+          description:
+            'Public machine-readable registry for humans and external AI agents. Filter by category, scope, semantic node type, canvas or stability status. The ETag is the canonical registry SHA-256.',
+          parameters: [
+            { name: 'category', in: 'query', schema: { type: 'string' } },
+            { name: 'scope', in: 'query', schema: { type: 'string', enum: ['document', 'node'] } },
+            { name: 'nodeType', in: 'query', schema: { type: 'string' } },
+            {
+              name: 'canvas',
+              in: 'query',
+              schema: { type: 'string', enum: ['portrait', 'landscape', 'square', 'flow'] },
+            },
+            { name: 'status', in: 'query', schema: { type: 'string', enum: ['experimental', 'stable', 'deprecated'] } },
+            {
+              name: 'capability',
+              in: 'query',
+              description: 'Required output or progressive interaction capability.',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: { 200: { description: 'Pattern Registry' }, 304: { description: 'Registry not modified' } },
+        },
+      },
+      '/v1/composition-patterns/{pattern}': {
+        get: {
+          summary: 'Read one complete declarative Pattern Package',
+          parameters: [{ name: 'pattern', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            200: {
+              description: 'Pattern descriptor',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/PatternDescriptor' } } },
+            },
+            404: { description: 'Pattern not found' },
+          },
+        },
+      },
+      '/v1/publishing-guides': {
+        get: {
+          summary: 'List semantic and narrative guidance for reports, diagrams, and code explanations',
+          description:
+            'Machine-readable selection guidance for authors and AI agents. Each guide states the question it answers, its story arc, required evidence, rejection conditions, compatible information patterns, and examples.',
+          parameters: [{ name: 'kind', in: 'query', schema: { type: 'string', enum: ['report', 'diagram', 'code'] } }],
+          responses: {
+            200: { description: 'Publishing guide registry' },
+            304: { description: 'Registry not modified' },
+          },
+        },
+      },
+      '/v1/publishing-guides/{guide}': {
+        get: {
+          summary: 'Read one semantic publishing guide',
+          parameters: [{ name: 'guide', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            200: {
+              description: 'Publishing guide descriptor',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/PublishingGuide' } } },
+            },
+            404: { description: 'Publishing guide not found' },
+          },
+        },
+      },
+      '/v1/sites/{site}/compositions/recommend': {
+        post: {
+          summary: 'Rank eligible patterns deterministically',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/CompositionAction' } } },
+          },
+          responses: {
+            200: { description: 'Eligible and rejected patterns with stable reason codes' },
+            422: { description: 'Invalid Markdown or Semantic AST' },
+          },
+        },
+      },
+      '/v1/sites/{site}/compositions/validate': {
+        post: {
+          summary: 'Validate an external agent pattern choice',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/CompositionAction' } } },
+          },
+          responses: {
+            200: { description: 'Validity, resolved pattern and diagnostics' },
+            422: { description: 'Invalid input' },
+          },
+        },
+      },
+      '/v1/sites/{site}/compositions/compile': {
+        post: {
+          summary: 'Compile composition Markdown without persistence',
+          description:
+            'Returns versioned Semantic, Narrative, Composition, Layout Tree and Render Tree models plus selected HTML, print HTML, SVG or Base64 PNG outputs. Rendering is deterministic and uses no network resources.',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/CompositionCompile' } } },
+          },
+          responses: {
+            200: {
+              description: 'Compiled models, diagnostics, outputs and hashes',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/CompositionCompileResult' } },
+              },
+            },
+            422: { description: 'Invalid composition, viewport or output' },
+          },
         },
       },
       '/v1/sites/{site}/published': {
@@ -443,7 +1212,7 @@ export function openApi(config) {
         get: {
           summary: 'Read one published document as JSON (read API)',
           description:
-            'The list entry shape plus `markdown` (the immutable revision source verbatim) and `html` (rendered on demand — HTML is never stored). Responds with a strong ETag over the revision source hash and the service version; honours `If-None-Match` with 304. Unknown, unpublished or mismatched kind/locale/slug is a 404.',
+            'The list entry shape plus immutable `markdown`, on-demand `html`, Semantic AST, Narrative Plan, resolved Composition, diagnostics, accessible text and representation links. The strong ETag includes source, service, theme and Pattern Registry versions.',
           security: secured,
           parameters: [
             siteParameter,
@@ -455,6 +1224,48 @@ export function openApi(config) {
             200: { description: 'Published document with markdown and rendered html' },
             304: { description: 'Not modified' },
             404: { description: 'Published content not found' },
+          },
+        },
+      },
+      '/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.svg': {
+        get: {
+          summary: 'Render a published composition as standalone SVG',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'kind', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'locale', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'scheme', in: 'query', schema: { type: 'string', enum: ['light', 'dark'], default: 'light' } },
+          ],
+          responses: {
+            200: {
+              description: 'Standalone accessible SVG',
+              content: { 'image/svg+xml': { schema: { type: 'string' } } },
+            },
+            304: { description: 'Not modified' },
+            404: { description: 'Composition not found' },
+          },
+        },
+      },
+      '/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.png': {
+        get: {
+          summary: 'Render a published composition as PNG',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'kind', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'locale', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'scheme', in: 'query', schema: { type: 'string', enum: ['light', 'dark'], default: 'light' } },
+          ],
+          responses: {
+            200: {
+              description: 'PNG image',
+              content: { 'image/png': { schema: { type: 'string', format: 'binary' } } },
+            },
+            304: { description: 'Not modified' },
+            404: { description: 'Composition not found' },
           },
         },
       },
@@ -505,7 +1316,7 @@ export function openApi(config) {
         put: {
           summary: 'Create another immutable revision',
           description:
-            'Accepts the same controlled-layout, report-directive, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
+            'Accepts the same controlled-layout, semantic-composition, report-cadence, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: markdownBody,
@@ -595,11 +1406,85 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/previews': {
         post: {
-          summary: 'Build a time-limited preview',
+          summary: 'Build a named, time-limited preview',
+          description:
+            'Builds an immutable preview and replaces any prior preview with the same slug. The response separates the one-time secret invitation URL from the memorable session-protected preview URL. Opening the invitation atomically consumes it, creates a path-scoped HttpOnly session and redirects to the preview URL.',
           security: secured,
           parameters: [siteParameter],
-          requestBody: jsonBody(),
-          responses: { 201: { description: 'Preview built' } },
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['slug'],
+                  properties: {
+                    slug: {
+                      type: 'string',
+                      pattern: '^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$',
+                      minLength: 3,
+                      maxLength: 80,
+                      description: 'Memorable preview name. Reusing it atomically replaces the prior preview access.',
+                    },
+                    revision_ids: { type: 'array', items: { type: 'string', format: 'uuid' }, default: [] },
+                    expires_in: { type: 'integer', minimum: 60, maximum: 604800, default: 3600 },
+                    reason: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: 'Named preview built',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['release_id', 'preview_url', 'invitation_url', 'expires_in'],
+                    properties: {
+                      release_id: { type: 'string', format: 'uuid' },
+                      preview_url: { type: 'string', format: 'uri' },
+                      invitation_url: {
+                        type: 'string',
+                        format: 'uri',
+                        description: 'Secret one-time URL. Distribute it only to the intended reviewer.',
+                      },
+                      expires_in: { type: 'integer' },
+                    },
+                  },
+                },
+              },
+            },
+            422: { description: 'Invalid or missing preview slug' },
+          },
+        },
+      },
+      '/preview-invitations/{token}': {
+        get: {
+          summary: 'Exchange a one-time preview invitation',
+          description:
+            'Consumes the invitation, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.',
+          security: [],
+          parameters: [
+            {
+              name: 'token',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Secret invitation value returned once by the preview build endpoint.',
+            },
+          ],
+          responses: {
+            303: {
+              description: 'Invitation exchanged; redirect to the clean preview URL',
+              headers: {
+                Location: { schema: { type: 'string' } },
+                'Set-Cookie': { schema: { type: 'string' } },
+              },
+            },
+            404: { description: 'Invitation unavailable' },
+          },
         },
       },
       '/v1/sites/{site}/releases': {
@@ -641,7 +1526,7 @@ export function openApi(config) {
         post: {
           summary: 'Garbage-collect old release objects and reap stuck builds',
           description:
-            'Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by a live preview token; reaps builds stuck in building. Requires an unrestricted release:write key.',
+            'Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by live named preview access; reaps builds stuck in building. Requires an unrestricted release:write key.',
           security: secured,
           responses: { 200: { description: 'Sweep counts' }, 403: { description: 'Requires an unrestricted key' } },
         },
@@ -780,6 +1665,32 @@ export function openApi(config) {
         },
       },
     },
+  }
+  const stats = {
+    releases: 'release builds, activation, output size and build duration',
+    content: 'content items, revisions, publications and assets',
+    readers: 'privacy-safe reader authentication outcomes and sessions',
+    webhooks: 'outbox events and webhook delivery outcomes',
+    audio: 'read-aloud jobs, characters and generated duration',
+    engagement: 'comments, contact submissions and anonymous feedback',
+  }
+  for (const [kind, description] of Object.entries(stats)) {
+    spec.paths[`/v1/sites/{site}/stats/${kind}`] = {
+      get: {
+        summary: `Read site ${kind} statistics`,
+        description: `Bounded UTC aggregates for ${description}. Requires the existing content:read scope and never returns content, identities, credentials, payloads, URLs, paths or row identifiers. Defaults to the previous 24 hours in hourly buckets.`,
+        security: secured,
+        parameters: statsParameters,
+        responses: {
+          200: {
+            description: 'Dense, site-scoped aggregate time series',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ProductStats' } } },
+          },
+          404: { description: 'Site not found' },
+          422: { description: 'Invalid or excessive time window' },
+        },
+      },
+    }
   }
   // Every secured operation shares the same auth failure modes: 401 when the key
   // is not accepted and 403 when it is valid but under-scoped. Attach both without

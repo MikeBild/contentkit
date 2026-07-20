@@ -12,7 +12,7 @@ const TABLES = new Set([
   'ck_assets',
   'ck_releases',
   'ck_release_entries',
-  'ck_preview_tokens',
+  'ck_preview_access',
   'ck_comments',
   'ck_contact_submissions',
   'ck_post_feedback',
@@ -27,7 +27,14 @@ const TABLES = new Set([
   'ck_release_access_entries',
   'ck_reader_sessions',
   'ck_release_access_catalog',
+  'ck_reader_auth_events',
 ])
+
+function assertKnownContentkitIdentifiers(text) {
+  for (const match of text.matchAll(/\bck_[a-z0-9_]*/g)) {
+    if (!TABLES.has(match[0])) throw new Error(`unknown Contentkit table in query: ${match[0]}`)
+  }
+}
 
 // Whitelisted SQL functions rpc() may call. Each entry pins the exact statement
 // and parameter order, so callers can never influence the SQL shape — an
@@ -111,6 +118,11 @@ function limitClause(limit, values) {
 // so the same repository code runs transactionally or not.
 function makeApi(exec) {
   return {
+    async query(text, values = []) {
+      assertKnownContentkitIdentifiers(text)
+      return (await exec(text, values)).rows
+    },
+
     async select(table, query = {}) {
       const values = []
       const sql = `SELECT * FROM ${tableName(table)}${whereClause(query, values)}${orderClause(query.order)}${limitClause(query.limit, values)}`

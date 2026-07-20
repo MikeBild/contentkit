@@ -55,16 +55,25 @@ element. The generated inline block rides each page while `site.css` itself
 stays shared and content-hashed — deliberately no template or layout overrides,
 which would be a plugin system through the back door.
 
-Reports follow the same static-release boundary. With explicit
-`layout: report`, the Markdown pipeline maps a fixed set of report directives
-onto sanitized semantic HTML and normalizes each chart's single GFM table into
-a bounded descriptor. During the release build, modular Apache ECharts SSR
-renders a light and dark SVG from that descriptor; Contentkit canonicalizes the
-renderer IDs and stores the SVG as a content-hashed release asset. The page
-receives only a `<picture>` and the authored table, never a chart runtime or an
-author-supplied visualization specification. The authenticated read API uses
-the same renderer but embeds the SVGs as data URLs because it has no release
-asset namespace.
+Visual compositions follow the same static-release boundary. With explicit
+`layout: composition`, Markdown directives become a versioned Semantic AST.
+Contentkit derives a Narrative, scores the repository-owned Pattern Registry,
+resolves constraints and responsive fallbacks into a Composition AST, and only
+then computes concrete layout and render trees. Release builds emit responsive
+semantic HTML plus content-hashed standalone light/dark SVG assets. Report pages
+do not repeat the complete composition inside the semantic HTML; they embed only
+the responsive chart SVGs that add visual evidence. The complete SVG and PNG
+remain explicit headless representations and PNG is not rerasterized with every release.
+Charts are bounded table-driven evidence nodes and retain their source table;
+they are not the composition architecture and no browser chart runtime is
+exposed to authors. Dashboard renderers never synthesize live state, periods or
+trends: only authored period labels and measured values may appear.
+
+Pattern Packages are strict Markdown plus YAML under `patterns/`. The loader
+accepts only known layout primitives and validates IDs, versions, semantic
+compatibility, fallback references and cycles. Pattern prose is available to
+humans and agents, while all executable layout and rendering code remains owned
+by Contentkit. Uploaded executable code is outside the trust boundary.
 
 ## Migration ownership
 
@@ -86,11 +95,13 @@ provision the database and login; they do not copy or execute migration files.
   expired key gets `401 unauthorized`; a valid key missing the required scope
   gets `403 insufficient_scope` — two distinct failure modes.
 - Markdown raw HTML is discarded; Mermaid uses strict mode.
-- Report directives have closed names and attributes, numeric table parsing and
-  build-time limits (24 charts, 200 rows and eight series per chart). SVG markup
-  comes only from Contentkit's server-side renderer; authored chart text is
-  escaped and the browser receives no chart JavaScript.
-- Preview tokens are random, stored only as hashes, expiring and revocable.
+- Composition directives have closed names and attributes. Authors cannot
+  supply geometry, CSS, executable code or renderer specifications. Markdown,
+  viewport and chart limits bound compile work; SVG markup comes only from the
+  Contentkit renderer and PNG uses a bundled font rather than host fonts.
+- Preview invitation and session tokens are random, stored only as separate
+  hashes, expiring and revocable. A one-time invitation exchanges into a
+  path-scoped HttpOnly cookie before the browser reaches the named preview URL.
 - Public writes pass Turnstile, honeypot, length and in-memory IP rate limits.
 - Contentkit signs exact webhook bytes using Standard Webhooks HMAC-SHA256; the
   HMAC key is the full `whsec_...` secret string verbatim (not base64-decoded).
@@ -107,15 +118,37 @@ graph before any release object is uploaded. Missing parents, cycles, unknown
 versions/groups, and duplicate generated URLs fail the build without moving the
 active release pointer.
 
-### Static report rendering
+### Deterministic visual composition
 
-Report cards use the same controlled DOM and shadcn-style CSS variables as the
-rest of the site. `chart_1` through `chart_5` extend the existing theme-token
-allowlist and are resolved separately for light and dark SVG output. Fixed
-dimensions, locale-explicit number formatting, disabled animation and
-canonical renderer IDs make identical inputs byte-reproducible. Each chart
-keeps its source table in a semantic disclosure, supplies an accessible name,
-collapses responsively and expands the table for print/PDF output.
+Semantics, composition and theme are separate inputs. Patterns select visual
+structure; the existing token contract selects appearance. The neutral theme is
+the reference rendering, and every pattern owns a distinct visual grammar. A
+deterministic score orders pattern candidates by semantic fit, narrative
+question and goal, evidence roles, intent, item count, canvas, density and
+container bounds with lexical tie-breaking. Responsive rules can select
+a declared structural fallback without changing source meaning. Fixed viewports,
+Contentkit's standard font stack with its bundled Inter primary face, stable
+source ordering and registry hashing make identical inputs byte-reproducible.
+Accessible text and source-order HTML remain available even when a visual
+representation cannot be consumed. The resolved Layout Tree contains regions,
+semantic node references, boxes, styles and renderer-neutral primitives. SVG
+and visual HTML consume that shared contract; semantic HTML remains the
+backward-compatible default.
+
+The headless planning API exposes registry discovery, recommendation, validation
+and compilation independently from release publishing. Published reads expose
+the Semantic AST, Narrative, resolved Composition, diagnostics and authorized
+SVG/PNG representation links. See [VISUAL_COMPOSITIONS.md](VISUAL_COMPOSITIONS.md).
+
+### Consumer boundary
+
+Contentkit exposes domain-neutral semantic nodes, narratives, patterns, layout
+primitives and renderers. A consuming site owns its data sources, vocabulary,
+navigation, routes, workflow cadence and editorial copy. Consumer names,
+metrics, connectors and route conventions never enter the renderer or pattern
+selection code. A real site may therefore assemble an operational cockpit, an
+editorial publication, a knowledge base or another information product from
+the same public contracts without creating a privileged product template.
 
 ### Release-scoped reader access
 
@@ -131,6 +164,19 @@ The gateway checks policy before downloading HTML or protected-only media.
 Passwords are salted scrypt hashes, session tokens are random and stored only as
 HMAC hashes, and protected responses are never shared-cacheable. `noindex` is
 SEO metadata and remains unrelated to authorization.
+
+Because release HTML is static, it cannot be personalized safely for arbitrary
+combinations of reader groups. A protected home or content page may embed
+navigation and cards only for documents with the exact same canonicalized
+group/user grant (plus public pages); the gateway enforces that grant before it
+serves the bytes. Cross-grant unions remain reader-specific and are exposed only
+through the private catalog endpoints. Product report sites additionally derive
+one newest-report navigation link and, when `reportCadence` is present, one
+current report per cadence plus a bounded recent history from that same-grant
+set. The current-state card may project up to four `role="primary"` metric nodes
+from the lead report's Semantic AST; it does not copy or reinterpret their values.
+Cadence is explicit metadata and is never inferred from tenant-specific
+titles or slugs.
 
 Pages render without JavaScript except for the header search, which needs it:
 `search.js` ships on every page and fetches the search index lazily on the first
@@ -157,7 +203,7 @@ get `noindex,follow`, no sitemap entry and no `hreflang`.
 
 `archive.js` filters the archive in place by tag and free text. It fetches nothing —
 the preview HTML rewriter only patches `href|src|action|data-index`, so a fifth path
-attribute would 404 under `/p/<token>/`. Every post is server-rendered before the
+attribute would 404 under `/previews/<slug>/`. Every post is server-rendered before the
 script runs and the facet chips are real links to the tag pages, so the archive is a
 complete crawlable index without scripting.
 
@@ -201,6 +247,18 @@ Markdown — it is dropped from the rendered HTML, so the page has one `<h1>` an
 outline. A body that deliberately opens with a *different* top-level heading keeps it, and a
 heading that is not the first block is never touched. `source` is unaffected, so
 `llms-full.txt` and the reading-time estimate still see the document as authored.
+
+### Product analytics boundary
+
+ContentKit owns its product facts in its own PostgreSQL database and exposes
+bounded site-scoped aggregates through `/v1/sites/{site}/stats/*`. Those routes
+reuse `content:read`; they are not a consumer-specific reporting API and do not
+query another product's database. The response boundary contains only numeric
+UTC time series. A downstream collector may join them with other product or
+marketing APIs and persist report snapshots elsewhere, but ContentKit has no
+dependency on that topology. The only new event table records privacy-safe
+reader-auth outcomes because failed logins do not otherwise create a session.
+See `docs/PRODUCT_ANALYTICS.md`.
 
 ### Derived, not authored
 

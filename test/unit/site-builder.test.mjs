@@ -280,13 +280,22 @@ test('consent.js is emitted as a content-hashed asset and no per-site init file 
   assert.ok(!result.files.has('assets/analytics.js'))
 })
 
-test('first-party assets are content-hashed while katex fonts keep stable URLs', async () => {
+test('first-party assets and Inter are content-hashed while katex fonts keep stable URLs', async () => {
   const result = await build()
   const keys = [...result.files.keys()]
   assert.ok(
     keys.some((k) => /^assets\/site-[0-9a-f]{10}\.css$/.test(k)),
     'hashed site.css missing',
   )
+  const interKey = keys.find((key) => /^assets\/inter-latin-variable-[0-9a-f]{10}\.woff2$/.test(key))
+  assert.ok(interKey, 'hashed Inter font missing')
+  assert.equal(result.files.get(interKey).contentType, 'font/woff2')
+  assert.equal(result.files.get(interKey).cacheControl, 'public,max-age=31536000,immutable')
+  const siteCssKey = keys.find((key) => /^assets\/site-[0-9a-f]{10}\.css$/.test(key))
+  const siteCss = result.files.get(siteCssKey).body.toString()
+  assert.match(siteCss, new RegExp(`@font-face\\{[^}]+src:url\\(\\/${interKey}`))
+  assert.match(siteCss, /font-family:\s*Inter,\s*ui-sans-serif,\s*system-ui/)
+  assert.match(siteCss, /\.report-feature-card\s*\{[^}]*display:\s*grid;/s)
   assert.ok(
     keys.some((k) => /^assets\/katex\/[^/]+\.woff2$/.test(k)),
     'katex fonts missing',
@@ -1107,6 +1116,106 @@ test('a prefix access rule removes its whole documentation area from public disc
   assert.ok(result.accessEntries.some((entry) => entry.match === 'prefix' && entry.path === '/en/docs/'))
 })
 
+test('a fully private product home renders a cadence catalog for only same-grant reports', async () => {
+  const report = (hour, publishedAt, date = '', cadence = 'hourly') => ({
+    id: `report-${hour}`,
+    item_id: `item-report-${hour}`,
+    kind: 'page',
+    locale: 'en',
+    translation_key: `report-${hour}`,
+    // node-postgres returns timestamptz columns as Date instances while
+    // authored frontmatter dates are normalized strings.
+    published_at: new Date(publishedAt),
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n  question: What changed during closed interval ${hour}?\n  conclusion: Closed interval ${hour} is ready for an operational decision.\n  action: Review the evidence for interval ${hour}.\n${cadence ? `reportCadence: ${cadence}\n` : ''}title: Report ${hour}:00 UTC\nlocale: en\nslug: report-${hour}\ntranslationKey: report-${hour}\nsummary: Closed hour ${hour}.\n${date ? `date: ${date}\n` : ''}noindex: true\naudio: false\n---\n\n:::hero\n## Facts\n\nReport ${hour}.\n:::\n\n::metric{label="Coverage" value="4/4" status="complete" role="primary"}`,
+  })
+  const result = await build({
+    site: { ...site, settings: { presentation: { preset: 'product' } } },
+    accessGroups: [{ slug: 'cockpit' }, { slug: 'other-team' }],
+    accessRules: [{ match: 'prefix', path: '/', group_slugs: ['cockpit'], user_ids: [] }],
+    revisions: [
+      report('08', '2026-07-18T09:00:00Z'),
+      report('09', '2026-07-18T10:23:00Z', '2026-07-18T10:00:00Z'),
+      report('yearly', '2026-07-18T10:27:00Z', '2026-01-01T00:00:00Z', 'yearly'),
+      report('legacy', '2025-12-31T23:00:00Z', '2025-12-31T23:00:00Z', null),
+      {
+        id: 'other-team-page',
+        item_id: 'item-other-team-page',
+        kind: 'page',
+        locale: 'en',
+        translation_key: 'other-team-page',
+        markdown:
+          '---\nkind: page\nlayout: landing\ntitle: Other team secret\nlocale: en\nslug: other-team\ntranslationKey: other-team-page\naccess: [other-team]\n---\n\nPrivate to another grant.',
+      },
+    ],
+  })
+  const home = result.files.get('en/index.html').body.toString()
+  assert.match(home, /href="\/en\/" aria-current="page">Overview<\/a>/)
+  assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
+  assert.doesNotMatch(home, /report-catalog-nav|href="#current-reports"/)
+  assert.match(home, /class="report-feature-card"/)
+  assert.match(home, /class="report-feature-metrics"/)
+  assert.match(home, /<dt>Coverage<\/dt><dd>4\/4<\/dd><small>complete<\/small>/)
+  assert.match(home, /Current operating state/)
+  assert.match(home, /Additional decision horizons/)
+  assert.match(home, /What changed during closed interval 09\?/)
+  assert.match(home, /Closed interval 09 is ready for an operational decision\./)
+  assert.match(home, /Review the evidence for interval 09\./)
+  assert.match(home, /<span class="report-cadence-badge">Hourly<\/span>/)
+  assert.match(home, /<span class="report-cadence-badge">Yearly<\/span>/)
+  assert.match(home, /<span class="report-cadence-badge">Other report<\/span>/)
+  assert.equal((home.match(/class="card report-catalog-card"/g) || []).length, 3)
+  assert.doesNotMatch(home, /Current reports/)
+  assert.match(home, /Report history/)
+  assert.ok(home.indexOf('Report 09:00 UTC') < home.indexOf('Report 08:00 UTC'))
+  assert.doesNotMatch(home, /Other team secret/)
+  assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Report 0[89]|Other team secret/)
+  const reportPage = result.files.get('en/report-09/index.html').body.toString()
+  assert.match(reportPage, /href="\/en\/">Overview<\/a>/)
+  assert.match(reportPage, /href="\/en\/report-09\/" aria-current="page">Latest report<\/a>/)
+  assert.doesNotMatch(reportPage, /Other team secret/)
+})
+
+test('legacy German machine dates become readable report titles without changing authored semantic content', async () => {
+  const report = ({ cadence, slug, title, date }) => ({
+    id: `revision-${slug}`,
+    item_id: `item-${slug}`,
+    kind: 'page',
+    locale: 'de',
+    translation_key: slug,
+    published_at: new Date(date),
+    markdown: `---\nkind: page\nlayout: composition\ncomposition:\n  format: report\n  intent: status\n  question: Welche Entscheidung folgt?\nreportCadence: ${cadence}\ntitle: ${title}\nlocale: de\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: Geschlossener Berichtszeitraum.\ndate: ${date}\nnoindex: true\naudio: false\n---\n\n:::hero\n## Betriebsstand\n\nKeine Ausnahme.\n:::`,
+  })
+  const result = await build({
+    site: {
+      ...site,
+      name: 'Mission Cockpit',
+      default_locale: 'de',
+      settings: { presentation: { preset: 'product' } },
+    },
+    locales: [{ locale: 'de' }],
+    revisions: [
+      report({
+        cadence: 'hourly',
+        slug: 'report-2026-07-19-12',
+        title: 'Mission Cockpit Stundenreport 2026-07-19 12:00 UTC',
+        date: '2026-07-19T13:00:00Z',
+      }),
+      report({
+        cadence: 'weekly',
+        slug: 'report-weekly-2026-07-06',
+        title: 'Mission Cockpit Wochenreport 2026-07-06',
+        date: '2026-07-13T00:00:00Z',
+      }),
+    ],
+  })
+  const home = result.files.get('de/index.html').body.toString()
+  assert.match(home, /Stundenreport · 19\. Juli 2026 · 12:00 UTC/)
+  assert.match(home, /Wochenreport · 6\.–12\. Juli 2026/)
+  assert.doesNotMatch(home, /Stundenreport 2026-07-19|Wochenreport 2026-07-06/)
+  const page = result.files.get('de/report-2026-07-19-12/index.html').body.toString()
+  assert.match(page, /<h1>Stundenreport · 19\. Juli 2026 · 12:00 UTC<\/h1>/)
+})
+
 test('a protected post also protects its raw Markdown twin', async () => {
   const result = await build({
     accessGroups: [{ slug: 'customers' }],
@@ -1143,24 +1252,34 @@ test('wiki, knowledge, landing and changelog layouts receive controlled routes',
     assert.ok(result.files.has(path), path)
 })
 
-test('report pages emit static themed SVG assets while preserving authored Markdown', async () => {
+test('report compositions emit static themed SVG assets while preserving authored Markdown', async () => {
   const markdown = `---
 kind: page
-layout: report
+layout: composition
 title: Quarterly report
 summary: Auditable business snapshot
 locale: en
 slug: quarterly-report
 translationKey: quarterly-report
+composition:
+  format: report
+  canvas: flow
+  intent: status
 ---
 # Quarterly report
+
+## Revenue
 
 :::chart{type="line" title="Revenue trend" description="Revenue for January and February" unit="EUR" span="4"}
 | Month | Revenue |
 |---|---:|
 | Jan | 42 |
 | Feb | 51 |
-:::`
+:::
+
+## Interpretation
+
+Revenue is above the January baseline.`
   const result = await build({
     site: {
       ...site,
@@ -1181,15 +1300,32 @@ translationKey: quarterly-report
   const svgFiles = [...result.files.keys()].filter((path) =>
     /^assets\/report-chart-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path),
   )
-  assert.equal(svgFiles.length, 2)
+  assert.equal(svgFiles.length, 4)
   for (const path of svgFiles) {
     assert.equal(result.files.get(path).contentType, 'image/svg+xml')
     assert.match(result.files.get(path).body.toString(), /^<svg role="img"/)
   }
-  assert.match(page, /class="report-page"/)
+  assert.equal(
+    [...result.files.keys()].filter((path) => /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path))
+      .length,
+    2,
+  )
+  assert.equal(
+    [...result.files.keys()].filter((path) => /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.png$/.test(path))
+      .length,
+    0,
+  )
+  assert.doesNotMatch(
+    page,
+    /composition-visual-overview|Alternative representations|Open light SVG|Open dark SVG|Open PNG/,
+  )
+  assert.match(page, /class="composition-page"/)
   assert.match(page, /<picture class="report-chart-picture">/)
   assert.match(page, /prefers-color-scheme: dark/)
   assert.match(page, /<details class="report-chart-data">/)
+  assert.match(page, /class="container report-section-nav"/)
+  assert.match(page, /href="#revenue">Revenue<\/a>/)
+  assert.match(page, /href="#interpretation">Interpretation<\/a>/)
   assert.doesNotMatch(page, /echarts|report-chart[^"']*\.js/i)
 
   const twin = result.files.get('en/quarterly-report/index.md').body.toString()

@@ -31,7 +31,7 @@ test('builds a complete multilingual static release', async () => {
       locale: 'de',
       translation_key: 'quarterly-report',
       markdown:
-        '---\nkind: page\nlayout: report\ntitle: Quartalsbericht\nlocale: de\nslug: quartalsbericht\ntranslationKey: quarterly-report\nsummary: Snapshot\n---\n:::chart{type="bar" title="Umsatz" description="Umsatz im Quartal" unit="EUR"}\n| Monat | Umsatz |\n|-|-:|\n| Apr | 42 |\n| Mai | 51 |\n:::',
+        '---\nkind: page\nlayout: composition\ntitle: Quartalsbericht\nlocale: de\nslug: quartalsbericht\ntranslationKey: quarterly-report\nsummary: Snapshot\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n---\n:::chart{type="bar" title="Umsatz" description="Umsatz im Quartal" unit="EUR"}\n| Monat | Umsatz |\n|-|-:|\n| Apr | 42 |\n| Mai | 51 |\n:::',
     },
   ]
   const result = await buildSite({

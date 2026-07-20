@@ -2,6 +2,8 @@ import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { AriaComponent, DatasetComponent, GridComponent, LegendComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
+import { renderSpecializedReportChartSvg } from './composition-svg.mjs'
+import { contentkitFontFamily, contentkitFontFamilyCompact } from './typography.mjs'
 import { escapeHtml, escapeXml } from './utils.mjs'
 
 echarts.use([
@@ -17,26 +19,26 @@ echarts.use([
 
 const DEFAULT_THEME = {
   light: {
-    background: 'hsl(0 0% 100%)',
-    foreground: 'hsl(222.2 84% 4.9%)',
-    muted_foreground: 'hsl(215.4 16.3% 46.9%)',
-    border: 'hsl(214.3 31.8% 91.4%)',
-    chart_1: 'hsl(221 83% 53%)',
-    chart_2: 'hsl(160 84% 39%)',
-    chart_3: 'hsl(38 92% 50%)',
-    chart_4: 'hsl(262 83% 58%)',
-    chart_5: 'hsl(0 72% 51%)',
+    background: '#ffffff',
+    foreground: '#18181b',
+    muted_foreground: '#52525b',
+    border: '#d4d4d8',
+    chart_1: '#2563eb',
+    chart_2: '#0f766e',
+    chart_3: '#b45309',
+    chart_4: '#7c3aed',
+    chart_5: '#be123c',
   },
   dark: {
-    background: 'hsl(222.2 84% 4.9%)',
-    foreground: 'hsl(210 40% 98%)',
-    muted_foreground: 'hsl(215 20.2% 65.1%)',
-    border: 'hsl(217.2 32.6% 17.5%)',
-    chart_1: 'hsl(217 91% 60%)',
-    chart_2: 'hsl(158 64% 52%)',
-    chart_3: 'hsl(43 96% 56%)',
-    chart_4: 'hsl(270 95% 75%)',
-    chart_5: 'hsl(0 91% 71%)',
+    background: '#18181b',
+    foreground: '#fafafa',
+    muted_foreground: '#d4d4d8',
+    border: '#52525b',
+    chart_1: '#60a5fa',
+    chart_2: '#5eead4',
+    chart_3: '#fbbf24',
+    chart_4: '#c4b5fd',
+    chart_5: '#fda4af',
   },
 }
 
@@ -72,8 +74,12 @@ export function reportChartTheme(settings = {}, scheme = 'light') {
 function canonicalSvg(svg, description) {
   const names = new Map()
   return String(svg)
-    .replace('<svg ', `<svg role="img" aria-label="${escapeXml(description)}" `)
-    .replace(/zr\d+-[a-z]+-\d+/g, (name) => {
+    .replace('<svg ', `<svg role="img" aria-labelledby="chart-title chart-description" `)
+    .replace(
+      /(<svg\b[^>]*>)/,
+      `$1<title id="chart-title">${escapeXml(description)}</title><desc id="chart-description">${escapeXml(description)}. The source data follows the chart in an accessible table.</desc>`,
+    )
+    .replace(/zr\d+-[a-z]+-?\d+/g, (name) => {
       if (!names.has(name)) names.set(name, `ck-chart-${names.size}`)
       return names.get(name)
     })
@@ -81,7 +87,7 @@ function canonicalSvg(svg, description) {
 
 function noDataSvg(chart, theme, locale, width, height) {
   const label = String(locale).toLowerCase().startsWith('de') ? 'Keine Daten' : 'No data'
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(chart.description)}"><rect width="${width}" height="${height}" fill="none"/><text x="${width / 2}" y="${height / 2}" text-anchor="middle" dominant-baseline="central" fill="${escapeXml(theme.muted_foreground)}" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="14">${label}</text></svg>`
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">${escapeXml(chart.description)}</title><desc id="chart-description">${label}</desc><rect width="${width}" height="${height}" fill="none"/><text x="${width / 2}" y="${height / 2}" text-anchor="middle" dominant-baseline="central" fill="${escapeXml(theme.muted_foreground)}" font-family="${contentkitFontFamilyCompact}" font-size="14">${label}</text></svg>`
 }
 
 function valueFormatter(locale, unit) {
@@ -89,53 +95,87 @@ function valueFormatter(locale, unit) {
   return (value) => `${formatter.format(Number(value))}${unit ? ` ${unit}` : ''}`
 }
 
-function cartesianOption(chart, theme, locale) {
+function cartesianOption(chart, theme, locale, compact = false) {
   const horizontal = chart.type === 'bar' && chart.orientation === 'horizontal'
   const format = valueFormatter(locale, chart.unit)
+  const seriesCount = chart.headers.length - 1
+  const showValues = chart.rows.length <= 12 && seriesCount <= 2
   const categoryAxis = {
     type: 'category',
-    axisLine: { lineStyle: { color: theme.border } },
+    axisLine: { show: false },
     axisTick: { show: false },
-    axisLabel: { color: theme.muted_foreground, hideOverlap: true },
+    axisLabel: {
+      color: theme.muted_foreground,
+      fontSize: compact ? 12 : 13,
+      margin: compact ? 10 : 14,
+      hideOverlap: true,
+    },
     splitLine: { show: false },
   }
   const valueAxis = {
     type: 'value',
+    scale: chart.type === 'line',
     axisLine: { show: false },
     axisTick: { show: false },
-    axisLabel: { color: theme.muted_foreground, formatter: format },
-    splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
+    axisLabel: {
+      color: theme.muted_foreground,
+      fontSize: compact ? 10 : 12,
+      margin: compact ? 8 : 12,
+      formatter: format,
+    },
+    splitLine: { lineStyle: { color: theme.border, width: 1 } },
   }
   const seriesType = chart.type === 'bar' ? 'bar' : 'line'
   return {
     animation: false,
     useUTC: true,
+    backgroundColor: 'transparent',
+    textStyle: { fontFamily: contentkitFontFamily, fontSize: compact ? 12 : 13, color: theme.foreground },
     color: Array.from({ length: 5 }, (_, i) => theme[`chart_${i + 1}`]),
     aria: { enabled: true, description: chart.description, decal: { show: false } },
     dataset: { source: [chart.headers, ...chart.rows] },
-    grid: { top: chart.headers.length > 2 ? 48 : 24, right: 40, bottom: 56, left: 88 },
+    grid: compact
+      ? {
+          top: seriesCount > 1 ? 66 : 24,
+          right: showValues ? 44 : 24,
+          bottom: 56,
+          left: horizontal ? 104 : 58,
+        }
+      : { top: seriesCount > 1 ? 58 : 28, right: showValues ? 76 : 42, bottom: 58, left: 82 },
     legend: {
       show: chart.headers.length > 2,
       top: 0,
-      textStyle: { color: theme.muted_foreground },
-      itemWidth: 14,
-      itemHeight: 8,
+      textStyle: { color: theme.foreground, fontSize: compact ? 10 : 12 },
+      itemWidth: compact ? 12 : 18,
+      itemHeight: 3,
+      itemGap: 22,
     },
     xAxis: horizontal ? valueAxis : categoryAxis,
     yAxis: horizontal ? categoryAxis : valueAxis,
-    series: chart.headers.slice(1).map((name) => ({
+    series: chart.headers.slice(1).map((name, index) => ({
       name,
       type: seriesType,
       encode: horizontal ? { x: name, y: chart.headers[0] } : { x: chart.headers[0], y: name },
       stack: chart.stacked ? 'total' : undefined,
       silent: true,
       emphasis: { disabled: true },
-      barMaxWidth: 48,
-      itemStyle: chart.type === 'bar' ? { borderRadius: horizontal ? [0, 5, 5, 0] : [5, 5, 0, 0] } : undefined,
-      lineStyle: seriesType === 'line' ? { width: 3 } : undefined,
+      barMaxWidth: 34,
+      itemStyle: chart.type === 'bar' ? { borderRadius: horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0] } : undefined,
+      lineStyle: seriesType === 'line' ? { width: 3, type: ['solid', 'dashed', 'dotted'][index % 3] } : undefined,
       symbol: chart.rows.length <= 30 ? 'circle' : 'none',
-      symbolSize: 7,
-      areaStyle: chart.type === 'area' ? { opacity: 0.18 } : undefined,
+      symbolSize: 6,
+      areaStyle: chart.type === 'area' ? { opacity: 0.09 } : undefined,
+      label: showValues
+        ? {
+            show: true,
+            position: horizontal ? 'right' : 'top',
+            distance: 7,
+            color: theme.foreground,
+            fontSize: compact ? 11 : 12,
+            fontWeight: 600,
+            formatter: ({ value }) => format(Array.isArray(value) ? value[index + 1] : value),
+          }
+        : undefined,
       connectNulls: false,
     })),
   }
@@ -143,39 +183,56 @@ function cartesianOption(chart, theme, locale) {
 
 function donutOption(chart, theme, locale) {
   const format = valueFormatter(locale, chart.unit)
+  const total = chart.rows.reduce((sum, row) => sum + Number(row[1] || 0), 0)
   return {
     animation: false,
+    backgroundColor: 'transparent',
+    textStyle: { fontFamily: contentkitFontFamily, color: theme.foreground },
     color: Array.from({ length: 5 }, (_, i) => theme[`chart_${i + 1}`]),
     aria: { enabled: true, description: chart.description, decal: { show: false } },
-    legend: {
-      orient: 'vertical',
-      right: 16,
-      top: 'middle',
-      textStyle: { color: theme.muted_foreground },
-      itemWidth: 14,
-      itemHeight: 8,
-    },
+    legend: { show: false },
     series: [
       {
         name: chart.headers[1],
         type: 'pie',
-        radius: ['46%', '72%'],
-        center: ['38%', '50%'],
+        radius: ['47%', '68%'],
+        center: ['50%', '50%'],
         silent: true,
         emphasis: { disabled: true },
         avoidLabelOverlap: true,
-        itemStyle: { borderColor: theme.background, borderWidth: 3, borderRadius: 5 },
-        label: { color: theme.foreground, formatter: ({ name, value }) => `${name}\n${format(value)}` },
-        labelLine: { lineStyle: { color: theme.border } },
+        itemStyle: { borderColor: theme.background, borderWidth: 4, borderRadius: 3 },
+        label: {
+          color: theme.foreground,
+          fontSize: 12,
+          lineHeight: 18,
+          formatter: ({ name, value }) =>
+            `${name}\n${format(value)} · ${total ? Math.round((Number(value) / total) * 100) : 0}%`,
+        },
+        labelLine: { length: 14, length2: 12, lineStyle: { color: theme.muted_foreground, width: 1 } },
         data: chart.rows.map(([name, value]) => ({ name, value })),
       },
     ],
   }
 }
 
-export function renderReportChartSvg(chart, { settings = {}, scheme = 'light', locale = 'en' } = {}) {
-  const width = chart.type === 'donut' ? 640 : 800
-  const height = 360
+export function renderReportChartSvg(
+  chart,
+  { settings = {}, scheme = 'light', locale = 'en', width: requestedWidth, height: requestedHeight } = {},
+) {
+  if (chart.data_shape && chart.data_shape !== 'series') {
+    const specialized = renderSpecializedReportChartSvg(chart, {
+      settings,
+      scheme,
+      width: requestedWidth,
+      height: requestedHeight,
+    })
+    if (specialized) return specialized
+  }
+  const defaultWidth = chart.type === 'donut' ? 760 : 960
+  const defaultHeight = chart.type === 'donut' ? 460 : 480
+  const width = Math.max(320, Math.min(1920, Number(requestedWidth) || defaultWidth))
+  const height = Math.max(280, Math.min(1600, Number(requestedHeight) || defaultHeight))
+  const compact = width <= 480
   const theme = reportChartTheme(settings, scheme)
   const values = chart.rows.flatMap((row) => row.slice(1)).filter((value) => value != null)
   if (!values.length || (chart.type === 'donut' && values.every((value) => value === 0))) {
@@ -184,7 +241,7 @@ export function renderReportChartSvg(chart, { settings = {}, scheme = 'light', l
   const instance = echarts.init(null, null, { renderer: 'svg', ssr: true, width, height })
   try {
     instance.setOption(
-      chart.type === 'donut' ? donutOption(chart, theme, locale) : cartesianOption(chart, theme, locale),
+      chart.type === 'donut' ? donutOption(chart, theme, locale) : cartesianOption(chart, theme, locale, compact),
     )
     return { svg: canonicalSvg(instance.renderToSVGString(), chart.description), width, height }
   } finally {
@@ -210,7 +267,32 @@ export function materializeReportCharts(
       const lightUrl = emit ? emit(light.svg, { chart, scheme: 'light' }) : dataUri(light.svg)
       const darkUrl =
         light.svg === dark.svg ? lightUrl : emit ? emit(dark.svg, { chart, scheme: 'dark' }) : dataUri(dark.svg)
-      return `<picture class="report-chart-picture">${darkUrl !== lightUrl ? `<source media="(prefers-color-scheme: dark)" srcset="${escapeHtml(darkUrl)}">` : ''}<img src="${escapeHtml(lightUrl)}" alt="${escapeHtml(chart.description)}" width="${light.width}" height="${light.height}" loading="lazy" decoding="async"></picture>`
+      const specialized = chart.data_shape && chart.data_shape !== 'series'
+      const mobileLight = renderReportChartSvg(chart, {
+        settings,
+        scheme: 'light',
+        locale,
+        width: 390,
+        height: specialized ? 620 : 360,
+      })
+      const mobileDark = renderReportChartSvg(chart, {
+        settings,
+        scheme: 'dark',
+        locale,
+        width: 390,
+        height: specialized ? 620 : 360,
+      })
+      const mobileLightUrl = emit
+        ? emit(mobileLight.svg, { chart, scheme: 'light', viewport: 'mobile' })
+        : dataUri(mobileLight.svg)
+      const mobileDarkUrl =
+        mobileLight.svg === mobileDark.svg
+          ? mobileLightUrl
+          : emit
+            ? emit(mobileDark.svg, { chart, scheme: 'dark', viewport: 'mobile' })
+            : dataUri(mobileDark.svg)
+      const mobileSources = `${mobileDarkUrl !== mobileLightUrl ? `<source media="(prefers-color-scheme: dark) and (max-width: 760px)" srcset="${escapeHtml(mobileDarkUrl)}">` : ''}<source media="(max-width: 760px)" srcset="${escapeHtml(mobileLightUrl)}">`
+      return `<picture class="report-chart-picture">${mobileSources}${darkUrl !== lightUrl ? `<source media="(prefers-color-scheme: dark)" srcset="${escapeHtml(darkUrl)}">` : ''}<img src="${escapeHtml(lightUrl)}" alt="${escapeHtml(chart.description)}" width="${light.width}" height="${light.height}" loading="lazy" decoding="async"></picture>`
     },
   )
   return { ...rendered, html }

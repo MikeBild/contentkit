@@ -6,11 +6,28 @@ import { canonicalRequestPath, cleanPath, escapeHtml, hmac256, safeEqual, sha256
 import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
 import { clientIp, contentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
+import { renderMarkdown } from './markdown.mjs'
+import { compileCompositionMarkdown, reResolveComposition } from './composition-output.mjs'
+import { getPattern, patternRegistry, patternRegistryHash, recommendPatterns } from './composition-registry.mjs'
+import { getPublishingGuide, publishingGuideRegistry, publishingGuideRegistryHash } from './publishing-guides.mjs'
+import { contentkitFontFamily } from './typography.mjs'
+import {
+  getAudioStats,
+  getContentStats,
+  getEngagementStats,
+  getReaderStats,
+  getReleaseStats,
+  getWebhookStats,
+  resolveStatsWindow,
+} from './stats.mjs'
 import {
   clearSessionCookie,
   INSECURE_READER_COOKIE,
+  INSECURE_PREVIEW_COOKIE,
   mostSpecificAccess,
   parseCookies,
+  PREVIEW_COOKIE,
+  previewSessionCookie,
   readerAllowed,
   READER_COOKIE,
   sessionCookie,
@@ -31,7 +48,9 @@ function documentation(config, name) {
 }
 
 export function routeName(path) {
-  return path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id').replace(/\/p\/[^/]+/, '/p/:token')
+  return path
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+    .replace(/\/preview-invitations\/[^/]+/, '/preview-invitations/:token')
 }
 
 // Content types for gateway-served release objects. Order matters: `feed.xml`
@@ -49,12 +68,85 @@ const RELEASE_CONTENT_TYPES = [
   ['.css', 'text/css; charset=utf-8'],
   ['.js', 'application/javascript; charset=utf-8'],
   ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
   ['.txt', 'text/plain; charset=utf-8'],
   ['.md', 'text/markdown; charset=utf-8'],
 ]
 
 export function releaseContentType(releasePath) {
   return RELEASE_CONTENT_TYPES.find(([suffix]) => releasePath.endsWith(suffix))?.[1]
+}
+
+const PREVIEW_PASSTHROUGH = /^\/(?:media\/|public\/|_contentkit\/|v1\/)/
+
+function previewUrl(value, previewBase) {
+  const input = String(value || '')
+  if (!input.startsWith('/') || input.startsWith('//') || input.startsWith(`${previewBase}/`)) return input
+  if (PREVIEW_PASSTHROUGH.test(input)) return input
+  return `${previewBase}${input}`
+}
+
+function previewSrcset(value, previewBase) {
+  if (/^\s*data:/i.test(value)) return value
+  return String(value)
+    .split(',')
+    .map((candidate) => {
+      const match = candidate.trim().match(/^(\S+)(\s+.+)?$/)
+      return match ? `${previewUrl(match[1], previewBase)}${match[2] || ''}` : candidate
+    })
+    .join(', ')
+}
+
+export function rewritePreviewCss(css, previewBase) {
+  return String(css).replace(/url\(\s*(["']?)(\/[^)'"\s]+)\1\s*\)/gi, (_match, quote, url) => {
+    const rewritten = previewUrl(url, previewBase)
+    return `url(${quote}${rewritten}${quote})`
+  })
+}
+
+export function rewritePreviewHtml(html, previewBase) {
+  let value = String(html).replace(
+    /\b(href|xlink:href|src|action|poster|data|data-index)=(['"])(.*?)\2/gi,
+    (_match, attribute, quote, url) => `${attribute}=${quote}${previewUrl(url, previewBase)}${quote}`,
+  )
+  value = value.replace(/\bsrcset=(['"])(.*?)\1/gi, (_match, quote, srcset) => {
+    return `srcset=${quote}${previewSrcset(srcset, previewBase)}${quote}`
+  })
+  return value.replace(/\bstyle=(['"])(.*?)\1/gi, (_match, quote, css) => {
+    return `style=${quote}${rewritePreviewCss(css, previewBase)}${quote}`
+  })
+}
+
+export function validateNarrativePlan(value) {
+  if (value == null) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new Error('narrative must be an object'), { statusCode: 422 })
+  }
+  const result = { ...value }
+  for (const field of ['target_audience', 'question', 'communication_goal', 'goal', 'thesis', 'conclusion', 'action']) {
+    if (result[field] != null && (typeof result[field] !== 'string' || result[field].length > 500)) {
+      throw Object.assign(new Error(`narrative.${field} must be a string of at most 500 characters`), {
+        statusCode: 422,
+      })
+    }
+  }
+  if (result.intent != null && !['explain', 'compare', 'sequence', 'status', 'explore'].includes(result.intent)) {
+    throw Object.assign(new Error('narrative.intent is invalid'), { statusCode: 422 })
+  }
+  if (result.disclosure != null && !['overview', 'progressive', 'complete'].includes(result.disclosure)) {
+    throw Object.assign(new Error('narrative.disclosure is invalid'), { statusCode: 422 })
+  }
+  for (const field of ['limitations', 'story_arc']) {
+    if (
+      result[field] != null &&
+      (!Array.isArray(result[field]) ||
+        result[field].length > 16 ||
+        result[field].some((entry) => typeof entry !== 'string' || entry.length > 500))
+    ) {
+      throw Object.assign(new Error(`narrative.${field} must be a bounded string list`), { statusCode: 422 })
+    }
+  }
+  return result
 }
 
 // One deployment serves the admin API *and* every published tenant site, on
@@ -87,16 +179,26 @@ export const API_ROUTES = [
   { pattern: /^\/openapi\.json$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/llms\.txt$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/llms-full\.txt$/, methods: ['GET'], apiHostOnly: true },
+  { pattern: /^\/v1\/composition-patterns$/, methods: ['GET'] },
+  { pattern: /^\/v1\/composition-patterns\/[^/]+$/, methods: ['GET'] },
+  { pattern: /^\/v1\/publishing-guides$/, methods: ['GET'] },
+  { pattern: /^\/v1\/publishing-guides\/[^/]+$/, methods: ['GET'] },
   { pattern: /^\/public\/v1\/contact$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/comments$/, methods: ['POST'] },
   { pattern: /^\/public\/v1\/posts\/[^/]+\/feedback$/, methods: ['POST'] },
   { pattern: /^\/_contentkit\/login$/, methods: ['GET', 'POST'] },
   { pattern: /^\/_contentkit\/logout$/, methods: ['POST'] },
   { pattern: /^\/_contentkit\/(session|navigation\.json|search-index\.json)$/, methods: ['GET'] },
+  { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/published$/, methods: ['GET'] },
+  {
+    pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+\/composition\.(svg|png)$/,
+    methods: ['GET'],
+  },
   { pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/search$/, methods: ['GET'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
@@ -110,6 +212,10 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/access\/groups\/[^/]+\/members$/, methods: ['PUT'] },
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
+  {
+    pattern: /^\/v1\/sites\/[^/]+\/stats\/(releases|content|readers|webhooks|audio|engagement)$/,
+    methods: ['GET'],
+  },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
   { pattern: /^\/v1\/publish-due$/, methods: ['POST'] },
   { pattern: /^\/v1\/maintenance\/storage-gc$/, methods: ['POST'] },
@@ -131,6 +237,13 @@ export const API_ROUTES = [
 export function createRequestHandler(ctx) {
   const { config, logger, db, storage, repo, releases, auth, maintenance, limiter, metrics, state, audio } = ctx
   const loginLimiter = ctx.loginLimiter || limiter
+
+  async function recordReaderAuth(siteId, outcome) {
+    if (!db.insert) return
+    await db
+      .insert('ck_reader_auth_events', { site_id: siteId, outcome }, { returning: false })
+      .catch((error) => logger.warn('reader auth metric write failed', { siteId, error: String(error) }))
+  }
 
   async function bodyFor(req) {
     return readBody(req, config.maxBodyBytes)
@@ -177,7 +290,7 @@ export function createRequestHandler(ctx) {
     return { entry, reader, allowed: readerAllowed(entry, reader) }
   }
   const loginPage = (site, csrf, returnTo, error = '') =>
-    `<!doctype html><html lang="${escapeHtml(site.default_locale || 'en')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Sign in · ${escapeHtml(site.name)}</title><style>body{font:16px system-ui;margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.login{width:min(90%,24rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}label,input,button{display:block;width:100%;box-sizing:border-box}label{margin-top:1rem}input,button{font:inherit;padding:.75rem;margin-top:.35rem;border:1px solid #ccd2dc;border-radius:.5rem}button{margin-top:1.25rem;background:#172033;color:white;cursor:pointer}.error{color:#a21b1b}</style></head><body><main class="login"><h1>${escapeHtml(site.name)}</h1><p>Sign in to continue.</p>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}<form method="post" action="/_contentkit/login"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Sign in</button></form></main></body></html>`
+    `<!doctype html><html lang="${escapeHtml(site.default_locale || 'en')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Sign in · ${escapeHtml(site.name)}</title><style>body{font:16px ${contentkitFontFamily};margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.login{width:min(90%,24rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}label,input,button{display:block;width:100%;box-sizing:border-box}label{margin-top:1rem}input,button{font:inherit;padding:.75rem;margin-top:.35rem;border:1px solid #ccd2dc;border-radius:.5rem}button{margin-top:1.25rem;background:#172033;color:white;cursor:pointer}.error{color:#a21b1b}</style></head><body><main class="login"><h1>${escapeHtml(site.name)}</h1><p>Sign in to continue.</p>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}<form method="post" action="/_contentkit/login"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Sign in</button></form></main></body></html>`
   const loginHeaders = (csrf, site) => ({
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'private,no-store',
@@ -219,9 +332,11 @@ export function createRequestHandler(ctx) {
       const ipAllowed = loginLimiter.take(`reader-login-ip:${ip}`)
       const usernameAllowed = loginLimiter.take(`reader-login-user:${site.id}:${attemptedUsername}`)
       if (!ipAllowed || !usernameAllowed) {
+        await recordReaderAuth(site.id, 'rate_limited')
         return sendJson(res, 429, { error: 'rate limit exceeded' }, { 'retry-after': '900' })
       }
       const session = await repo.createReaderSession(site.id, input.username, input.password)
+      await recordReaderAuth(site.id, session ? 'success' : 'failed')
       if (!session) {
         const csrf = signedCsrf()
         return send(
@@ -507,11 +622,9 @@ export function createRequestHandler(ctx) {
     if (preview && body.length && (contentType.includes('html') || contentType.includes('css'))) {
       let value = body.toString('utf8')
       if (contentType.includes('html')) {
-        // `action` covers the header search form; the lookahead keeps the public
-        // contact/comment endpoints pointing at the real API.
-        value = value.replace(/(href|src|action|data-index)="\/(?!media\/|public\/)/g, `$1="${previewBase}/`)
+        value = rewritePreviewHtml(value, previewBase)
       } else {
-        value = value.replaceAll('url(/assets/', `url(${previewBase}/assets/`)
+        value = rewritePreviewCss(value, previewBase)
       }
       body = Buffer.from(value)
     }
@@ -526,13 +639,21 @@ export function createRequestHandler(ctx) {
 
   async function gateway(req, res, url) {
     if (!['GET', 'HEAD'].includes(req.method)) return false
-    const preview = url.pathname.match(/^\/p\/([^/]+)(\/.*)?$/)
+    const preview = url.pathname.match(/^\/previews\/([^/]+)(\/.*)?$/)
     if (preview) {
-      const tokenHash = sha256(`${config.previewSecret}:${preview[1]}`)
-      const token = await repo.getPreviewByHash(tokenHash)
-      if (!token || new Date(token.expires_at) <= new Date()) return sendJson(res, 404, { error: 'preview not found' })
-      const release = await repo.getRelease(token.release_id)
-      await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/p/${preview[1]}`)
+      const cookies = parseCookies(req.headers.cookie || '')
+      const sessionToken = cookies[PREVIEW_COOKIE] || cookies[INSECURE_PREVIEW_COOKIE]
+      const access = await repo.authenticatePreview(preview[1], sessionToken)
+      if (!access)
+        return sendJson(
+          res,
+          401,
+          { error: 'preview invitation required' },
+          { 'cache-control': 'private,no-store', 'www-authenticate': 'ContentKitPreview' },
+        )
+      const release = await repo.getRelease(access.release_id)
+      if (!release) return sendJson(res, 404, { error: 'preview not found' })
+      await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/previews/${preview[1]}`)
       return true
     }
     const site = await repo.getSiteByHost(req.headers.host || '')
@@ -661,6 +782,20 @@ export function createRequestHandler(ctx) {
     // through to the gateway, which serves the release's own llms.txt/robots.txt
     // or a 404 — never contentkit's documentation or its request telemetry.
     const apiHost = isApiHost(req, config)
+    const invitation = apiHost && path.match(/^\/preview-invitations\/([^/]+)$/)
+    if (invitation && req.method === 'GET') {
+      const access = await repo.exchangePreviewInvitation(invitation[1])
+      if (!access) return sendJson(res, 404, { error: 'preview invitation not found' })
+      const maxAge = Math.max(1, Math.floor((new Date(access.expires_at).getTime() - Date.now()) / 1000))
+      const secure = String(config.publicUrl || '').startsWith('https://')
+      return send(res, 303, '', {
+        location: `/previews/${access.slug}/`,
+        'cache-control': 'private,no-store',
+        'set-cookie': previewSessionCookie(access.token, access.slug, { secure, maxAge }),
+        'referrer-policy': 'no-referrer',
+        'x-robots-tag': 'noindex,nofollow,noarchive',
+      })
+    }
     if (apiHost && req.method === 'GET' && path === '/metrics')
       return send(res, 200, metrics.render(releases.inflight()), { 'content-type': 'text/plain; version=0.0.4' })
     if (apiHost && req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
@@ -669,6 +804,40 @@ export function createRequestHandler(ctx) {
     if (apiHost && req.method === 'GET' && path === '/llms-full.txt')
       return send(res, 200, documentation(config, 'llms-full.txt'), { 'content-type': 'text/plain; charset=utf-8' })
     if (apiHost && req.method === 'GET' && path === '/') return sendJson(res, 200, SERVICE)
+    const patternMatch = path.match(/^\/v1\/composition-patterns(?:\/([^/]+))?$/)
+    if (patternMatch && req.method === 'GET') {
+      const etag = `"${patternRegistryHash}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      if (patternMatch[1]) {
+        const pattern = getPattern(patternMatch[1])
+        return pattern ? sendJson(res, 200, pattern, { etag }) : sendJson(res, 404, { error: 'pattern not found' })
+      }
+      const filters = Object.fromEntries(url.searchParams)
+      const patterns = patternRegistry.filter(
+        (pattern) =>
+          (!filters.category || pattern.category === filters.category) &&
+          (!filters.scope || pattern.scope === filters.scope) &&
+          (!filters.status || pattern.status === filters.status) &&
+          (!filters.nodeType || pattern.accepts.node_types.includes(filters.nodeType)) &&
+          (!filters.canvas || pattern.selection.canvases.includes(filters.canvas)) &&
+          (!filters.capability ||
+            pattern.capabilities.outputs.includes(filters.capability) ||
+            pattern.capabilities.interactions.includes(filters.capability)),
+      )
+      return sendJson(res, 200, { schema_version: '1', registry_sha256: patternRegistryHash, patterns }, { etag })
+    }
+    const guideMatch = path.match(/^\/v1\/publishing-guides(?:\/([^/]+))?$/)
+    if (guideMatch && req.method === 'GET') {
+      const etag = `"${publishingGuideRegistryHash}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      if (guideMatch[1]) {
+        const guide = getPublishingGuide(guideMatch[1])
+        return guide ? sendJson(res, 200, guide, { etag }) : sendJson(res, 404, { error: 'publishing guide not found' })
+      }
+      const kind = url.searchParams.get('kind')
+      const guides = publishingGuideRegistry.filter((guide) => !kind || guide.kind === kind)
+      return sendJson(res, 200, { schema_version: '1', registry_sha256: publishingGuideRegistryHash, guides }, { etag })
+    }
     if (path.startsWith('/_contentkit/')) return readerRoutes(req, res, url, path, ip)
     if (
       req.method === 'POST' &&
@@ -694,6 +863,24 @@ export function createRequestHandler(ctx) {
       }
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
+    }
+    const statsMatch = path.match(/^\/v1\/sites\/([^/]+)\/stats\/(releases|content|readers|webhooks|audio|engagement)$/)
+    if (statsMatch && req.method === 'GET') {
+      const site = await repo.getSite(statsMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      const window = resolveStatsWindow(Object.fromEntries(url.searchParams))
+      const readers = {
+        releases: getReleaseStats,
+        content: getContentStats,
+        readers: getReaderStats,
+        webhooks: getWebhookStats,
+        audio: getAudioStats,
+        engagement: getEngagementStats,
+      }
+      return sendJson(res, 200, await readers[statsMatch[2]](db, site.id, window), {
+        'cache-control': 'private,max-age=60',
+      })
     }
     const accessCollection = path.match(/^\/v1\/sites\/([^/]+)\/access\/(users|groups|rules)$/)
     if (accessCollection && ['GET', 'POST'].includes(req.method)) {
@@ -780,6 +967,93 @@ export function createRequestHandler(ctx) {
         return sendJson(res, 201, await repo.ingest(site.id, markdown, assets))
       }
     }
+    const compositionActionMatch = path.match(/^\/v1\/sites\/([^/]+)\/compositions\/(recommend|validate|compile)$/)
+    if (compositionActionMatch && req.method === 'POST') {
+      const site = await repo.getSite(compositionActionMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:write', site.id))) return
+      const input = parseJson(await bodyFor(req))
+      const action = compositionActionMatch[2]
+      if (action === 'compile') {
+        if (typeof input.markdown !== 'string') {
+          throw Object.assign(new Error('compile requires markdown'), { statusCode: 422 })
+        }
+        return sendJson(
+          res,
+          200,
+          await compileCompositionMarkdown(input.markdown, {
+            settings: site.settings || {},
+            scheme: input.scheme || 'light',
+            viewport: input.viewport,
+            container: input.container,
+            capabilities: input.capabilities,
+            outputs: input.outputs,
+            html_presentation: input.html_presentation,
+          }),
+        )
+      }
+      const narrative = validateNarrativePlan(input.narrative)
+      const rendered = input.markdown
+        ? await renderMarkdown(input.markdown)
+        : {
+            semantic: input.semantic,
+            meta: {
+              composition: {
+                format: input.format || 'infographic',
+                canvas: input.canvas || 'portrait',
+                intent: input.intent || 'explain',
+                density: input.density || 'balanced',
+                preferred_pattern: input.pattern || null,
+              },
+            },
+            composition: { schema_version: '1' },
+            diagnostics: [],
+          }
+      if (!rendered.semantic?.nodes?.length) {
+        throw Object.assign(new Error('composition action requires markdown or a Semantic AST with nodes'), {
+          statusCode: 422,
+        })
+      }
+      const preferences = {
+        ...(rendered.meta?.composition || {}),
+        preferred_pattern: input.pattern || rendered.meta?.composition?.preferred_pattern || null,
+        capabilities: input.capabilities || [],
+        narrative: narrative || rendered.narrative || null,
+      }
+      if (action === 'recommend') {
+        const recommendations = recommendPatterns(rendered.semantic, preferences, {
+          ...(input.viewport || {}),
+          ...(input.container ? { container: input.container } : {}),
+        })
+        return sendJson(res, 200, {
+          schema_version: '1',
+          semantic: rendered.semantic,
+          recommendations: recommendations.filter((entry) => entry.eligible).slice(0, 5),
+          rejected: recommendations.filter((entry) => !entry.eligible),
+        })
+      }
+      const resolved = reResolveComposition(
+        { ...rendered, composition: rendered.composition || { schema_version: '1' } },
+        {
+          preferred_pattern: input.pattern,
+          viewport: input.viewport,
+          container: input.container,
+          capabilities: input.capabilities,
+          narrative,
+        },
+      )
+      const requested = resolved.composition.requested_pattern
+      const candidate = resolved.composition.recommendations.find(
+        (entry) => entry.pattern === (requested || resolved.composition.resolved_pattern),
+      )
+      return sendJson(res, 200, {
+        schema_version: '1',
+        valid: Boolean(candidate?.eligible && (!requested || requested === resolved.composition.resolved_pattern)),
+        requested_pattern: requested,
+        resolved_pattern: resolved.composition.resolved_pattern,
+        diagnostics: resolved.diagnostics,
+      })
+    }
     // Optional headless read API: published content as JSON, on the management
     // API behind content:read scoped keys — site delivery itself stays static.
     const publishedListMatch = path.match(/^\/v1\/sites\/([^/]+)\/published$/)
@@ -794,17 +1068,56 @@ export function createRequestHandler(ctx) {
       if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
       return sendJson(res, 200, await repo.listPublished(site.id, Object.fromEntries(url.searchParams)), { etag })
     }
+    const publishedRepresentationMatch = path.match(
+      /^\/v1\/sites\/([^/]+)\/published\/([^/]+)\/([^/]+)\/([^/]+)\/composition\.(svg|png)$/,
+    )
+    if (publishedRepresentationMatch && req.method === 'GET') {
+      const site = await repo.getSite(publishedRepresentationMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      const scheme = url.searchParams.get('scheme') || 'light'
+      if (!['light', 'dark'].includes(scheme)) {
+        throw Object.assign(new Error('scheme must be light or dark'), { statusCode: 422 })
+      }
+      const format = publishedRepresentationMatch[5]
+      const record = await repo.getPublished(
+        site.id,
+        publishedRepresentationMatch[2],
+        publishedRepresentationMatch[3],
+        publishedRepresentationMatch[4],
+        { formats: [format] },
+      )
+      if (!record?._composition_assets) return sendJson(res, 404, { error: 'composition representation not found' })
+      const body = record._composition_assets[scheme][format]
+      const hash = record._composition_assets[scheme][`${format}_sha256`]
+      const etag = `"${hash}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      return send(res, 200, body, {
+        etag,
+        'content-type': format === 'svg' ? 'image/svg+xml' : 'image/png',
+        'cache-control': 'private,max-age=3600',
+      })
+    }
     const publishedDocMatch = path.match(/^\/v1\/sites\/([^/]+)\/published\/([^/]+)\/([^/]+)\/([^/]+)$/)
     if (publishedDocMatch && req.method === 'GET') {
       const site = await repo.getSite(publishedDocMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'content:read', site.id))) return
-      const record = await repo.getPublished(site.id, publishedDocMatch[2], publishedDocMatch[3], publishedDocMatch[4])
+      const record = await repo.getPublished(
+        site.id,
+        publishedDocMatch[2],
+        publishedDocMatch[3],
+        publishedDocMatch[4],
+        {
+          formats: [],
+        },
+      )
       if (!record) return sendJson(res, 404, { error: 'published content not found' })
       // Strong ETag: the source hash names the revision bytes, the service
       // version covers renderer changes that alter the on-demand HTML.
-      const { source_sha256: sourceHash, ...body } = record
-      const etag = `"${sourceHash}:${config.version}"`
+      const { source_sha256: sourceHash, _composition_assets, ...body } = record
+      const themeHash = sha256(JSON.stringify(site.settings?.theme || {})).slice(0, 16)
+      const etag = `"${sourceHash}:${config.version}:${themeHash}:${patternRegistryHash.slice(0, 16)}"`
       if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
       return sendJson(res, 200, body, { etag })
     }
@@ -905,6 +1218,7 @@ export function createRequestHandler(ctx) {
         siteId: site.id,
         revisionIds: input.revision_ids || [],
         expiresIn: input.expires_in || 3600,
+        previewSlug: input.slug,
         reason: input.reason || '',
       })
       metrics.build(Date.now() - started)

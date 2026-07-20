@@ -4,15 +4,41 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from '../../src/server.mjs'
 import { createRepository } from '../../src/repository.mjs'
-import { releaseContentType } from '../../src/routes.mjs'
+import { releaseContentType, rewritePreviewCss, rewritePreviewHtml, validateNarrativePlan } from '../../src/routes.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
+import { contentkitFontFamily } from '../../src/typography.mjs'
 
 test('clientIp trusts only the rightmost X-Forwarded-For hop behind a proxy', () => {
   const req = { headers: { 'x-forwarded-for': 'spoofed, 9.9.9.9, 1.2.3.4' }, socket: { remoteAddress: '10.0.0.1' } }
   assert.equal(clientIp(req, true), '1.2.3.4')
   // Without trustProxy the header is ignored entirely.
   assert.equal(clientIp(req, false), '10.0.0.1')
+})
+
+test('preview rewriting covers responsive and styled release assets without capturing API routes', () => {
+  const html = `<picture><source srcset="/assets/chart-small.svg 390w, /assets/chart.svg 1200w"><img src="/assets/chart.svg" style="background:url('/assets/grid.svg')"></picture><form action="/public/v1/contact"><a href="/de/report/">Report</a><a href="/_contentkit/login">Sign in</a></form>`
+  const rewritten = rewritePreviewHtml(html, '/previews/release-review')
+  assert.match(rewritten, /\/previews\/release-review\/assets\/chart-small\.svg 390w/)
+  assert.match(rewritten, /src="\/previews\/release-review\/assets\/chart\.svg"/)
+  assert.match(rewritten, /url\('\/previews\/release-review\/assets\/grid\.svg'\)/)
+  assert.match(rewritten, /href="\/previews\/release-review\/de\/report\/"/)
+  assert.match(rewritten, /action="\/public\/v1\/contact"/)
+  assert.match(rewritten, /href="\/_contentkit\/login"/)
+  assert.equal(
+    rewritePreviewCss('.hero{background:url(/assets/hero.svg)}', '/previews/release-review'),
+    '.hero{background:url(/previews/release-review/assets/hero.svg)}',
+  )
+})
+
+test('direct agent narratives are bounded before deterministic recommendation', () => {
+  assert.equal(
+    validateNarrativePlan({ question: 'Which option best answers the reader question?', disclosure: 'progressive' })
+      .disclosure,
+    'progressive',
+  )
+  assert.throws(() => validateNarrativePlan({ question: 'x'.repeat(501) }), /at most 500/)
+  assert.throws(() => validateNarrativePlan({ disclosure: 'animated' }), /disclosure is invalid/)
 })
 
 test('public submission fails closed without a Turnstile secret or dev bypass', async () => {
@@ -253,7 +279,18 @@ test('public contact submission is unaffected by disabled comments', async () =>
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 async function withApp(
-  { db = {}, repo = {}, releases = {}, auth = {}, storage = {}, config = {}, maintenance, audio, loginLimiter } = {},
+  {
+    db = {},
+    repo = {},
+    releases = {},
+    auth = {},
+    storage = {},
+    config = {},
+    maintenance,
+    audio,
+    loginLimiter,
+    logger,
+  } = {},
   run,
 ) {
   const app = createApp(
@@ -266,7 +303,7 @@ async function withApp(
       ...config,
     },
     {
-      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      logger: logger || { info() {}, warn() {}, error() {}, debug() {} },
       database: { db, async close() {} },
       storage,
       repo,
@@ -297,6 +334,62 @@ async function withApp(
   }
 }
 
+test('one-time preview invitation sets a path-scoped HttpOnly cookie and redirects to the clean URL', async () => {
+  await withApp(
+    {
+      config: { publicUrl: 'http://127.0.0.1' },
+      repo: {
+        async exchangePreviewInvitation(token) {
+          assert.equal(token, 'secret-token')
+          return {
+            token: 'session-token',
+            slug: 'article-review',
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+          }
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/preview-invitations/secret-token', {
+        redirect: 'manual',
+      })
+      assert.equal(response.status, 303)
+      assert.equal(response.headers.get('location'), '/previews/article-review/')
+      assert.match(response.headers.get('set-cookie'), /^contentkit_preview=/)
+      assert.match(response.headers.get('set-cookie'), /Path=\/previews\/article-review\//)
+      assert.match(response.headers.get('set-cookie'), /HttpOnly/)
+      assert.equal(response.headers.get('referrer-policy'), 'no-referrer')
+    },
+  )
+})
+
+test('site gateway terminates after sending a no-release response', async () => {
+  const errors = []
+  await withApp(
+    {
+      logger: {
+        info() {},
+        warn() {},
+        error(message, fields) {
+          errors.push({ message, fields })
+        },
+        debug() {},
+      },
+      repo: {
+        async getSiteByHost() {
+          return { id: 'private-site', active_release_id: null }
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/', { headers: { host: 'cockpit.example' } })
+      assert.equal(response.status, 503)
+      assert.deepEqual(await response.json(), { error: 'site has no active release' })
+    },
+  )
+  assert.deepEqual(errors, [])
+})
+
 const scopedAuth = (scopes) => ({
   async authenticate(headers) {
     return headers.get?.('x-api-key') === 'valid' || headers['x-api-key'] === 'valid'
@@ -313,6 +406,16 @@ test('OPTIONS on a known API path returns 204 with an Allow header', async () =>
     const response = await request('/v1/sites/some-site/releases', { method: 'OPTIONS' })
     assert.equal(response.status, 204)
     assert.equal(response.headers.get('allow'), 'GET, POST, OPTIONS')
+  })
+})
+
+test('HTTP responses continue W3C trace context with a fresh server span', async () => {
+  await withApp({}, async (request) => {
+    const response = await request('/health', {
+      headers: { traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' },
+    })
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('traceparent'), /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/)
   })
 })
 
@@ -421,6 +524,46 @@ test('GET /v1/sites/{site} is 403 without a read scope and 404 for an unknown si
     // The site lookup precedes the scope check, so an unknown slug is a 404.
     const missing = await request('/v1/sites/nope', { headers: { 'x-api-key': 'valid' } })
     assert.equal(missing.status, 404)
+  })
+})
+
+test('site stats use content:read, return private aggregates and validate bounded windows', async () => {
+  const repo = {
+    async getSite(id) {
+      return id === 'site-1' ? { id: 'site-1' } : null
+    },
+  }
+  const db = {
+    async query() {
+      return []
+    },
+  }
+  await withApp({ repo, db, auth: scopedAuth(['content:read']) }, async (request) => {
+    const ok = await request(
+      '/v1/sites/site-1/stats/content?bucket=hour&from=2026-07-18T10:00:00Z&to=2026-07-18T12:00:00Z',
+      { headers: { 'x-api-key': 'valid' } },
+    )
+    assert.equal(ok.status, 200)
+    assert.equal(ok.headers.get('cache-control'), 'private,max-age=60')
+    const body = await ok.json()
+    assert.equal(body.buckets.length, 2)
+    assert.deepEqual(body.totals, {
+      items_created: 0,
+      revisions_created: 0,
+      revisions_published: 0,
+      assets_created: 0,
+      asset_bytes: 0,
+    })
+
+    const invalid = await request('/v1/sites/site-1/stats/content?tz=Europe%2FBerlin', {
+      headers: { 'x-api-key': 'valid' },
+    })
+    assert.equal(invalid.status, 422)
+    assert.match((await invalid.json()).error, /only 'UTC'/)
+  })
+  await withApp({ repo, db, auth: scopedAuth(['site:admin']) }, async (request) => {
+    const forbidden = await request('/v1/sites/site-1/stats/readers', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(forbidden.status, 403)
   })
 })
 
@@ -593,6 +736,7 @@ test('gateway redirects anonymous readers and serves protected pages only to an 
 
 test('site reader login sets a session cookie and validates the return path', async () => {
   const rateLimitKeys = []
+  const authEvents = []
   const repo = {
     async getSiteByHost() {
       return { id: 'site-1', name: 'Docs', default_locale: 'en', base_url: 'http://example.test' }
@@ -608,12 +752,18 @@ test('site reader login sets a session cookie and validates the return path', as
     },
     stop() {},
   }
-  await withApp({ repo, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
+  const db = {
+    async insert(table, body, options) {
+      authEvents.push({ table, body, options })
+    },
+  }
+  await withApp({ repo, db, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
     const form = await request('/_contentkit/login?return_to=/en/docs/')
     assert.equal(form.status, 200)
     assert.equal(form.headers.get('x-frame-options'), 'DENY')
     assert.match(form.headers.get('content-security-policy'), /form-action 'self'/)
     const html = await form.text()
+    assert.match(html, new RegExp(`font:16px ${contentkitFontFamily.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
     const csrf = html.match(/name="csrf" value="([^"]+)"/)[1]
     const csrfCookie = form.headers.get('set-cookie').split(';')[0]
     const signedIn = await request('/_contentkit/login', {
@@ -628,7 +778,51 @@ test('site reader login sets a session cookie and validates the return path', as
     assert.equal(rateLimitKeys.length, 2)
     assert.match(rateLimitKeys[0], /^reader-login-ip:/)
     assert.equal(rateLimitKeys[1], 'reader-login-user:site-1:anna')
+    assert.deepEqual(authEvents, [
+      {
+        table: 'ck_reader_auth_events',
+        body: { site_id: 'site-1', outcome: 'success' },
+        options: { returning: false },
+      },
+    ])
   })
+})
+
+test('reader auth telemetry records only bounded outcomes and never credentials or IPs', async () => {
+  const events = []
+  const repo = {
+    async getSiteByHost() {
+      return { id: 'site-1', name: 'Docs', default_locale: 'en', base_url: 'http://example.test' }
+    },
+    async createReaderSession() {
+      return null
+    },
+  }
+  const db = {
+    async insert(_table, body) {
+      events.push(body)
+    },
+  }
+  const loginLimiter = {
+    take() {
+      return true
+    },
+    stop() {},
+  }
+  await withApp({ repo, db, loginLimiter, config: { sessionSecret: 'session-secret' } }, async (request) => {
+    const form = await request('/_contentkit/login')
+    const html = await form.text()
+    const csrf = html.match(/name="csrf" value="([^"]+)"/)[1]
+    const cookie = form.headers.get('set-cookie').split(';')[0]
+    const failed = await request('/_contentkit/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+      body: new URLSearchParams({ csrf, username: 'private-user', password: 'private-password' }),
+    })
+    assert.equal(failed.status, 401)
+  })
+  assert.deepEqual(events, [{ site_id: 'site-1', outcome: 'failed' }])
+  assert.doesNotMatch(JSON.stringify(events), /private-user|private-password|127\.0\.0\.1/)
 })
 
 test('reader routes advertise and enforce their documented methods', async () => {
@@ -1342,6 +1536,110 @@ test('feed.xml is served as RSS while other xml stays application/xml', () => {
   assert.equal(releaseContentType('assets/logo.woff2'), undefined)
 })
 
+describe('visual composition APIs', () => {
+  const markdown = `---
+kind: page
+layout: composition
+title: Tool call
+locale: en
+slug: tool-call
+composition:
+  format: infographic
+  canvas: landscape
+  intent: sequence
+  preferredPattern: connected-process
+---
+:::process{title="Tool call" role="primary"}
+- Client
+- Server
+- Tool
+:::`
+
+  test('the public Pattern Registry is filterable and cacheable', async () => {
+    await withApp({}, async (request) => {
+      const response = await request('/v1/composition-patterns?category=process&nodeType=process')
+      assert.equal(response.status, 200)
+      const etag = response.headers.get('etag')
+      const body = await response.json()
+      assert.ok(body.patterns.length >= 4)
+      assert.ok(body.patterns.every((pattern) => pattern.category === 'process'))
+      assert.ok(body.patterns.every((pattern) => pattern.accepts.node_types.includes('process')))
+
+      const staticPatterns = await request('/v1/composition-patterns?capability=svg')
+      assert.equal(staticPatterns.status, 200)
+      assert.ok((await staticPatterns.json()).patterns.every((pattern) => pattern.capabilities.outputs.includes('svg')))
+
+      const cached = await request('/v1/composition-patterns', { headers: { 'if-none-match': etag } })
+      assert.equal(cached.status, 304)
+      assert.equal(await cached.text(), '')
+      assert.equal((await request('/v1/composition-patterns/not-a-pattern')).status, 404)
+    })
+  })
+
+  test('publishing guides expose semantic story selection to humans and agents', async () => {
+    await withApp({}, async (request) => {
+      const response = await request('/v1/publishing-guides?kind=diagram')
+      assert.equal(response.status, 200)
+      const etag = response.headers.get('etag')
+      const body = await response.json()
+      assert.ok(body.guides.length >= 5)
+      assert.ok(body.guides.every((guide) => guide.kind === 'diagram'))
+      assert.ok(body.guides.every((guide) => guide.narrative.question && guide.selection.use_when.length))
+      const guide = await request('/v1/publishing-guides/decision-report')
+      assert.equal(guide.status, 200)
+      assert.equal((await guide.json()).kind, 'report')
+      const cached = await request('/v1/publishing-guides', { headers: { 'if-none-match': etag } })
+      assert.equal(cached.status, 304)
+      assert.equal((await request('/v1/publishing-guides/not-a-guide')).status, 404)
+    })
+  })
+
+  test('site-scoped agents can recommend, validate and compile', async () => {
+    const repo = {
+      async getSite(slug) {
+        return slug === 'my-site' ? { id: 'site-1', slug, settings: {} } : null
+      },
+    }
+    await withApp({ repo, auth: scopedAuth(['content:write']) }, async (request) => {
+      const headers = { 'x-api-key': 'valid', 'content-type': 'application/json' }
+      const recommended = await request('/v1/sites/my-site/compositions/recommend', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown, viewport: { width: 1200, height: 800 } }),
+      })
+      assert.equal(recommended.status, 200)
+      assert.ok((await recommended.json()).recommendations.some((entry) => entry.pattern === 'connected-process'))
+
+      const validated = await request('/v1/sites/my-site/compositions/validate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ markdown, pattern: 'connected-process' }),
+      })
+      assert.equal(validated.status, 200)
+      assert.equal((await validated.json()).valid, true)
+
+      const compiled = await request('/v1/sites/my-site/compositions/compile', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          markdown,
+          outputs: ['svg', 'print'],
+          scheme: 'light',
+          viewport: { width: 1200, height: 800 },
+          container: { width: 720, height: 680 },
+          capabilities: ['svg'],
+        }),
+      })
+      assert.equal(compiled.status, 200)
+      const compileBody = await compiled.json()
+      assert.match(compileBody.renders.svg, /^<svg/)
+      assert.match(compileBody.renders.print_html, /composition-print/)
+      assert.equal(compileBody.layout.responsive.container.width, 720)
+      assert.equal(compileBody.render_tree.type, 'svg')
+    })
+  })
+})
+
 describe('published read API', () => {
   const PUBLISHED_DOC = {
     item_id: 'item-1',
@@ -1359,6 +1657,15 @@ describe('published read API', () => {
     markdown: '# Hello',
     html: '<h1>Hello</h1>',
     source_sha256: 'abc123',
+    _composition_assets: {
+      light: { svg: '<svg/>', png: Buffer.from('png'), svg_sha256: 'svg-hash', png_sha256: 'png-hash' },
+      dark: {
+        svg: '<svg data-dark="true"/>',
+        png: Buffer.from('dark-png'),
+        svg_sha256: 'dark-svg',
+        png_sha256: 'dark-png',
+      },
+    },
   }
 
   function publishedApiRepo(calls = []) {
@@ -1370,8 +1677,8 @@ describe('published read API', () => {
         calls.push(['list', siteId, query])
         return { items: [{ item_id: 'item-1', slug: 'hello' }], next_cursor: null }
       },
-      async getPublished(siteId, kind, locale, slug) {
-        calls.push(['doc', siteId, kind, locale, slug])
+      async getPublished(siteId, kind, locale, slug, options) {
+        calls.push(['doc', siteId, kind, locale, slug, options])
         return slug === 'hello' && kind === 'post' && locale === 'de' ? { ...PUBLISHED_DOC } : null
       },
     }
@@ -1425,29 +1732,61 @@ describe('published read API', () => {
   })
 
   test('the single document carries markdown and html, a strong ETag and a dedicated 404', async () => {
-    await withApp({ repo: publishedApiRepo(), auth: scopedAuth(['content:read']) }, async (request) => {
+    const calls = []
+    await withApp({ repo: publishedApiRepo(calls), auth: scopedAuth(['content:read']) }, async (request) => {
       const response = await request('/v1/sites/my-site/published/post/de/hello', {
         headers: { 'x-api-key': 'valid' },
       })
       assert.equal(response.status, 200)
       // config.version is 'test' in withApp.
-      assert.equal(response.headers.get('etag'), '"abc123:test"')
+      const etag = response.headers.get('etag')
+      assert.match(etag, /^"abc123:test:[0-9a-f]{16}:[0-9a-f]{16}"$/)
       const body = await response.json()
       assert.equal(body.markdown, '# Hello')
       assert.equal(body.html, '<h1>Hello</h1>')
       assert.equal(body.source_sha256, undefined, 'the ETag ingredient must not leak into the body')
+      assert.deepEqual(calls[0], ['doc', 'site-1', 'post', 'de', 'hello', { formats: [] }])
 
       const cached = await request('/v1/sites/my-site/published/post/de/hello', {
-        headers: { 'x-api-key': 'valid', 'if-none-match': '"abc123:test"' },
+        headers: { 'x-api-key': 'valid', 'if-none-match': etag },
       })
       assert.equal(cached.status, 304)
-      assert.equal(cached.headers.get('etag'), '"abc123:test"')
+      assert.equal(cached.headers.get('etag'), etag)
 
       const missing = await request('/v1/sites/my-site/published/post/de/nope', {
         headers: { 'x-api-key': 'valid' },
       })
       assert.equal(missing.status, 404)
       assert.deepEqual(await missing.json(), { error: 'published content not found' })
+    })
+  })
+
+  test('published composition representations are binary, scheme-aware and cacheable', async () => {
+    const calls = []
+    await withApp({ repo: publishedApiRepo(calls), auth: scopedAuth(['content:read']) }, async (request) => {
+      const response = await request('/v1/sites/my-site/published/post/de/hello/composition.svg?scheme=dark', {
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('content-type'), 'image/svg+xml')
+      assert.equal(await response.text(), '<svg data-dark="true"/>')
+      assert.equal(response.headers.get('etag'), '"dark-svg"')
+      assert.deepEqual(calls[0], ['doc', 'site-1', 'post', 'de', 'hello', { formats: ['svg'] }])
+
+      const cached = await request('/v1/sites/my-site/published/post/de/hello/composition.svg?scheme=dark', {
+        headers: { 'x-api-key': 'valid', 'if-none-match': '"dark-svg"' },
+      })
+      assert.equal(cached.status, 304)
+      const callsBeforeInvalidScheme = calls.length
+      assert.equal(
+        (
+          await request('/v1/sites/my-site/published/post/de/hello/composition.png?scheme=sepia', {
+            headers: { 'x-api-key': 'valid' },
+          })
+        ).status,
+        422,
+      )
+      assert.equal(calls.length, callsBeforeInvalidScheme, 'an invalid scheme must fail before rendering')
     })
   })
 

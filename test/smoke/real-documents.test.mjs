@@ -7,7 +7,7 @@ import { buildSite } from '../../src/site-builder.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
-test('real documentation, wiki, knowledge, landing, changelog, and report examples build together', async () => {
+test('real documentation, wiki, knowledge, landing, changelog, and composition examples build together', async () => {
   const sources = [
     ['docs/getting-started.en.md', 'getting-started-v2'],
     ['docs/installation.en.md', 'installation-v2'],
@@ -65,12 +65,19 @@ test('real documentation, wiki, knowledge, landing, changelog, and report exampl
   ])
     assert.ok(result.files.has(path), path)
   const report = result.files.get('en/q2-business-review/index.html').body.toString()
-  assert.match(report, /class="report-page"/)
+  assert.match(report, /class="composition-page"/)
   assert.match(report, /<picture class="report-chart-picture">/)
+  assert.match(report, /media="\(max-width: 760px\)"/)
   assert.equal(
     [...result.files.keys()].filter((path) => /^assets\/report-chart-(?:light|dark)-[0-9a-f]{10}\.svg$/.test(path))
       .length,
-    8,
+    16,
+  )
+  assert.equal(
+    [...result.files.keys()].filter((path) =>
+      /^assets\/composition-(?:light|dark)-[0-9a-f]{10}\.(?:svg|png)$/.test(path),
+    ).length,
+    2,
   )
   assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /customer-runbook/)
   assert.doesNotMatch(result.files.get('en/search-index.json').body.toString(), /Customer runbook/)

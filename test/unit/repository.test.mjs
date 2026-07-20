@@ -72,6 +72,44 @@ test('does not resolve root hosts or unverified wildcard domains', async () => {
   assert.equal(await repo.getSiteByHost('www.unverified.dev'), null)
 })
 
+test('preview invitations exchange once into a separately hashed session', async () => {
+  const invite = {
+    id: 'preview-access-1',
+    release_id: 'release-1',
+    slug: 'article-review',
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+  }
+  let consumed = false
+  const db = {
+    async tx(fn) {
+      return fn(this)
+    },
+    async select(table, query) {
+      assert.equal(table, 'ck_preview_access')
+      if (query.invite_token_hash) return consumed ? [] : [invite]
+      if (query.slug === 'eq.article-review' && query.session_token_hash === `eq.${invite.session_token_hash}`) {
+        return [invite]
+      }
+      return []
+    },
+    async update(table, filters, body) {
+      assert.equal(table, 'ck_preview_access')
+      assert.equal(filters.consumed_at, 'is.null')
+      if (consumed) return []
+      consumed = true
+      Object.assign(invite, body)
+      return [invite]
+    },
+  }
+  const repo = createRepository({ previewSecret: 'preview-secret' }, db, {})
+  const exchanged = await repo.exchangePreviewInvitation('one-time-secret')
+  assert.equal(exchanged.slug, 'article-review')
+  assert.match(invite.session_token_hash, /^[0-9a-f]{64}$/)
+  assert.ok(!invite.session_token_hash.includes(exchanged.token))
+  assert.equal(await repo.exchangePreviewInvitation('one-time-secret'), null)
+  assert.equal((await repo.authenticatePreview('article-review', exchanged.token)).release_id, 'release-1')
+})
+
 function snapshotRepo() {
   const site = {
     id: 'site-1',
@@ -592,7 +630,7 @@ function publishedRepo() {
       'five',
       'Five',
       [],
-      '---\nkind: page\nlayout: report\ntitle: Five\nlocale: de\nslug: five\n---\n:::chart{type="bar" title="Werte" description="Werte nach Monat"}\n| Monat | Wert |\n|-|-:|\n| Jan | 5 |\n:::',
+      '---\nkind: page\nlayout: composition\ntitle: Five\nlocale: de\nslug: five\ncomposition:\n  format: report\n  canvas: flow\n  intent: status\n---\n:::chart{type="bar" title="Werte" description="Werte nach Monat"}\n| Monat | Wert |\n|-|-:|\n| Jan | 5 |\n:::',
     ),
   ]
   const db = {
@@ -716,6 +754,16 @@ test('getPublished materializes report charts as self-contained data images', as
   assert.match(doc.html, /<picture class="report-chart-picture">/)
   assert.match(doc.html, /data:image\/svg\+xml;base64,/)
   assert.doesNotMatch(doc.html, /data-report-chart/)
+  assert.match(doc._composition_assets.light.svg, /^<svg/)
+  assert.equal(doc._composition_assets.light.png, undefined, 'ordinary document reads must not rasterize PNGs')
+  assert.match(doc.representations.png, /composition\.png$/)
+})
+
+test('getPublished rasterizes PNG only when that representation is requested', async () => {
+  const repo = publishedRepo()
+  const doc = await repo.getPublished('site-1', 'page', 'de', 'five', { formats: ['png'] })
+  assert.ok(Buffer.isBuffer(doc._composition_assets.light.png))
+  assert.ok(doc._composition_assets.light.png.length > 0)
 })
 
 test('getPublished is null for drafts and for a kind/locale/slug mismatch', async () => {

@@ -1,12 +1,19 @@
 # Contentkit Documentation
 
 A robots.txt-style index of the Contentkit documentation for LLMs. Contentkit is
-an API-first mini-CMS that turns Markdown revisions into immutable multilingual
-static website releases for portfolios, blogs, product documentation, wikis,
-knowledge bases, product pages, changelogs and visual reports. Report and
-dashboard pages use the same Markdown/release model and render charts to static
-SVG assets. Each entry below has a title, path and one-line summary. For the complete
+an API-first headless Markdown mini-CMS with semantic visual composition and
+declarative information patterns. It turns immutable revisions into multilingual
+websites, documentation, reports and infographics.
+Visual content follows Semantic AST → Narrative → Composition → deterministic
+HTML/SVG/PNG, using a declarative repository-owned Pattern Registry. Each entry
+below has a title, path and one-line summary. For the complete
 documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-full.txt).
+
+Normal pages and posts may embed selected semantic directives as accessible
+responsive HTML. Their Semantic AST reports `presentation: embedded`; the
+document remains editorial prose and does not gain standalone SVG/PNG exports.
+Use `layout: composition` when the complete document must resolve through a
+Pattern Package and export as an independent visual.
 
 > Local API: http://127.0.0.1:4050 — OpenAPI 3.1 spec at `/openapi.json`.
 > Production API: your own deployment, e.g.
@@ -21,8 +28,21 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
 - [Example post](examples/post.de.md): German Markdown blog post with supported frontmatter.
 - [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
   versioned routes, hierarchy fields and real English Markdown documents.
-- [Reports and dashboards](docs/REPORTS.md): `layout: report`, controlled visual
-  primitives, table-driven static charts, theme tokens and resource limits.
+- [Visual compositions](docs/VISUAL_COMPOSITIONS.md): beginner-friendly
+  architecture, semantic Markdown, 81 declarative patterns, AI-agent workflow,
+  headless planning/compile APIs, themes, gallery and migration.
+- [Information blocks plan](docs/INFORMATION_BLOCKS.md): researched mapping for
+  dashboards, application shells, pricing, galleries, stats, FAQ, code examples
+  and data tables, including phased implementation and verification.
+- [Examples](examples/README.md): ownership and regeneration rules for authored
+  inputs, the visual gallery and the registry snapshot.
+- [Reports and dashboards](docs/REPORTS.md): `layout: composition` with
+  `composition.format: report`, controlled dashboard primitives, table-driven
+  charts, cadence catalogs, primary-metric projection on product home pages,
+  tokens and limits.
+- [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
+  release, content, reader, webhook, audio and engagement aggregates for
+  external collectors using the existing `content:read` scope.
 - [Example report](examples/reports/quarterly.en.md): Complete quarterly report
   with metrics, cards, progress and all four chart types.
 - [Reader access control](docs/ACCESS_CONTROL.md): Personal reader accounts,
@@ -37,6 +57,18 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   `GET /ready`, `GET /metrics`, `GET /openapi.json`, `GET /llms.txt`,
   `GET /llms-full.txt`, plus `/v1/*` management routes and public submission
   routes.
+- Pattern discovery: `GET /v1/composition-patterns` and
+  `GET /v1/composition-patterns/{pattern}`. Site-scoped agents use
+  `/v1/sites/{site}/compositions/recommend`, `/validate` and `/compile`, then
+  fetch published `.svg` or `.png` representations with `content:read`.
+- Story selection: `GET /v1/publishing-guides` and
+  `GET /v1/publishing-guides/{guide}` describe the question, story arc,
+  required evidence, rejection conditions, compatible patterns, and examples
+  for reports, diagrams, and code explanations.
+- Instance semantics: chart directives may add `question`, `insight`, `action`
+  and `limitation`; Mermaid fences may add the same quoted metadata plus
+  `title`. The Semantic AST carries these narrative fields and links technical
+  diagrams to their publishing guide.
 - Reader endpoints on a published site host: `GET|POST /_contentkit/login`,
   `POST /_contentkit/logout`, `GET /_contentkit/session`,
   `GET /_contentkit/navigation.json` and
@@ -71,16 +103,33 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   site key.
 - Controlled presentation: `portfolio`, `product-docs`, `wiki`,
   `knowledge-base`, `product` and `changelog` site presets; `standard`, `docs`,
-  `wiki`, `knowledge`, `landing`, `changelog` and `report` page layouts; hierarchical
+  `wiki`, `knowledge`, `landing`, `changelog`, `composition` and legacy `report`
+  page layouts; hierarchical
   navigation and current/archived documentation versions.
-- Visual reports: shadcn-style grids, cards, metrics, badges and progress;
+- Visual compositions: 81 declarative Markdown+YAML Pattern Packages,
+  deterministic recommendation/validation, formal Layout and Render Trees,
+  container-aware structural fallbacks, neutral light/dark themes, standalone
+  SVG/PNG, typed units and time, content budgets, spec examples and
+  AI-readable diagnostics. Every pattern includes a narrative contract. The
+  review gallery exposes layout-equivalent visual HTML, canonical SVG and its
+  deterministic PNG export; visual HTML remains native rather than imitating
+  SVG markup.
+- Visual reports: neutral groups, cards, metrics, badges and progress;
   `bar`, `line`, `area` and `donut` charts take one Markdown table and become
   accessible light/dark SVG assets at build time. Source tables remain visible;
   no client chart JavaScript or executable chart configuration is published.
+  Optional typed data shapes cover ranges, changes, divergence, Likert,
+  correlation, distributions, matrices, waterfalls, hierarchies, flows,
+  uncertainty, calendars, coordinate points, equal-area region tiles and
+  samples; agents match them through `accepts.data_shapes` in the registry.
+  Two or more level-two headings become a responsive local report navigation.
 - Reader access: personal usernames and scrypt passwords, named groups,
   exact/prefix path policies and release-scoped authorization. Protected pages
   and media require an HttpOnly reader session and are omitted from public
-  navigation, search, sitemap, feeds and LLM files.
+  navigation, search, sitemap, feeds and LLM files. Protected static pages can
+  render only exact same-grant navigation/home cards; product report sites link
+  a cadence-aware current-report catalog plus history from exact same-grant
+  reports.
 - Content authoring: immutable revisions for `page`, `post` and `project`
   Markdown documents, scheduled revisions, tags, translations and asset uploads.
 - Static generation: home, blog, project, archive, tag index, tag, search,
@@ -91,7 +140,7 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   twin per post and report (`.../index.md`), an AI share row on posts ("copy as Markdown", "open in
   Claude/ChatGPT" — the reader's own assistant, no site→AI data flow) and
   authored `tldr`/`faq` frontmatter rendered on the page and in JSON-LD.
-- Publishing: expiring previews, atomic releases, scheduled publishing through
+- Publishing: named previews with one-time invitations, atomic releases, scheduled publishing through
   `/v1/publish-due`, and pointer rollback to an existing release.
 - Public interaction: contact form, post comments, Turnstile, honeypot, rate
   limit, moderation queue and signed webhook notifications.
@@ -111,6 +160,10 @@ documentation inlined into a single file, see [docs/llms-full.txt](docs/llms-ful
   published content with locale-aware PostgreSQL stemming (de/en) and returns
   `<mark>`-highlighted headlines, behind `content:read` scoped keys — published
   sites keep their static client-side search. See llms-full section 4.
+- Product analytics API: `GET /v1/sites/{site}/stats/{releases|content|readers|webhooks|audio|engagement}`
+  returns privacy-safe dense UTC aggregates for bounded `from`/`to` windows,
+  behind existing site-scoped `content:read` keys. ContentKit does not own the
+  downstream cockpit or reporting store. See llms-full section 21.
 - Theming: per-site design tokens via `settings.theme.tokens` (allowlisted
   stylesheet custom properties, scalar or `{ light, dark }` values,
   `chart_1` through `chart_5` color report SVGs, `settings.accent` stays the

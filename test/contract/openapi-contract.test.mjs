@@ -30,6 +30,18 @@ test('public access schemas never expose password hashes or session tokens', () 
   assert.deepEqual(spec.components.schemas.AccessRule.properties.match.enum, ['exact', 'prefix'])
 })
 
+test('preview contract separates one-time invitation access from the memorable URL', () => {
+  const operation = spec.paths['/v1/sites/{site}/previews'].post
+  const request = operation.requestBody.content['application/json'].schema
+  const response = operation.responses[201].content['application/json'].schema
+  assert.ok(request.required.includes('slug'))
+  assert.equal(request.properties.slug.maxLength, 80)
+  assert.ok(response.required.includes('invitation_url'))
+  assert.ok(response.required.includes('preview_url'))
+  assert.equal(response.properties.url, undefined)
+  assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[303])
+})
+
 test('every documented access operation has a routable method', () => {
   const normalize = (path) => path.replaceAll(/\{[^}]+\}/g, '[^/]+').replaceAll('.', '\\.')
   for (const [path, item] of Object.entries(spec.paths).filter(
@@ -46,10 +58,39 @@ test('every documented access operation has a routable method', () => {
   }
 })
 
-test('the OpenAPI authoring contract documents reports, charts and their theme tokens', () => {
+test('the OpenAPI authoring contract documents semantic compositions, charts and theme tokens', () => {
   const serialized = JSON.stringify(spec)
-  for (const term of ['`report`', '`report-grid`', '`chart`', '`bar`', '`line`', '`area`', '`donut`', '`chart_1`']) {
+  for (const term of [
+    '`composition`',
+    '`infographic`',
+    '`report`',
+    '`reportCadence`',
+    '`hourly`',
+    '`daily`',
+    '`yearly`',
+    '`group`',
+    '`process`',
+    '`chart`',
+    '`bar`',
+    '`line`',
+    '`area`',
+    '`donut`',
+    '`chart_1`',
+  ]) {
     assert.match(serialized, new RegExp(term), term)
   }
-  assert.match(serialized, /static light\/dark SVG assets without client JavaScript/)
+  assert.match(serialized, /standalone light\/dark SVG and PNG/)
+  const pattern = spec.components.schemas.PatternDescriptor
+  assert.ok(pattern.required.includes('rendering_strategy'))
+  assert.ok(pattern.required.includes('narrative'))
+  assert.ok(pattern.required.includes('input_contract'))
+  assert.ok(pattern.required.includes('spec_examples'))
+  assert.deepEqual(pattern.properties.rendering_strategy.properties.primary_output.enum, ['html', 'svg'])
+  assert.equal(pattern.properties.rendering_strategy.properties.html_fidelity.const, 'layout-equivalent')
+  assert.equal(pattern.properties.rendering_strategy.properties.png_role.const, 'derived-static-export')
+  assert.ok(pattern.properties.content_budget.required.includes('max_title_characters'))
+  assert.ok(pattern.properties.content_budget.required.includes('max_series'))
+  assert.ok(spec.components.schemas.PublishingGuide)
+  assert.ok(spec.paths['/v1/publishing-guides'])
+  assert.ok(spec.paths['/v1/publishing-guides/{guide}'])
 })
