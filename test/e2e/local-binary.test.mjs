@@ -184,6 +184,9 @@ test(
         CONTENTKIT_TURNSTILE_DEV_BYPASS: 'true',
         CONTENTKIT_RELEASE_RETENTION_MS: '0',
         CONTENTKIT_RELEASE_HISTORY_KEEP: '1',
+        CONTENTKIT_USAGE_TELEMETRY_ENABLED: 'true',
+        CONTENTKIT_USAGE_HMAC_SECRET: 'local-e2e-usage-only-secret',
+        CONTENTKIT_USAGE_RETENTION_DAYS: '90',
         LOG_LEVEL: 'warn',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -281,6 +284,18 @@ test(
         }),
         201,
       )
+      for (const action of ['recommend', 'validate', 'compile']) {
+        const composition = await responseJson(
+          await fetch(`${origin}/v1/sites/${site.id}/compositions/${action}`, {
+            method: 'POST',
+            headers: { ...auth, 'content-type': 'application/json' },
+            body: JSON.stringify({ markdown: reportSource, outputs: ['model', 'html'] }),
+          }),
+          200,
+          logs.join(''),
+        )
+        assert.equal(composition.schema_version, '1')
+      }
       const deckSource = await readFile(join(root, 'examples', 'decks', 'decision.en.md'), 'utf8')
       const deckEntry = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/content`, {
@@ -632,6 +647,42 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.ok(deckStats.totals.svg_components >= 2)
       assert.ok(deckStats.totals.png_components >= 2)
 
+      const httpUsage = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/http?${statsWindow}&traffic_class=all`, { headers: auth }),
+        200,
+        logs.join(''),
+      )
+      assert.equal(httpUsage.schema_version, 'contentkit.usage-stats.v1')
+      assert.equal(httpUsage.quality.sampled, false)
+      assert.equal(httpUsage.quality.content_captured, false)
+      assert.ok(httpUsage.totals[0].metrics.calls.value >= 20)
+      assert.ok(httpUsage.totals[0].metrics.unique_actors.value >= 1)
+      assert.ok(httpUsage.totals[0].metrics.success_ratio.denominator >= 20)
+      const groupedHttpUsage = await responseJson(
+        await fetch(`${origin}/v1/sites/${site.id}/stats/http?${statsWindow}&traffic_class=all&group_by=route,method`, {
+          headers: auth,
+        }),
+        200,
+        logs.join(''),
+      )
+      assert.deepEqual(groupedHttpUsage.group_by, ['route', 'method'])
+      assert.ok(groupedHttpUsage.totals.some((entry) => entry.dimensions.route === '/v1/sites/:site/content'))
+
+      const compositionUsage = await responseJson(
+        await fetch(
+          `${origin}/v1/sites/${site.id}/stats/compositions?${statsWindow}&traffic_class=all&group_by=operation`,
+          { headers: auth },
+        ),
+        200,
+        logs.join(''),
+      )
+      assert.equal(compositionUsage.schema_version, 'contentkit.usage-stats.v1')
+      assert.deepEqual(
+        new Set(compositionUsage.totals.map((entry) => entry.dimensions.operation)),
+        new Set(['recommend', 'validate', 'compile']),
+      )
+      assert.ok(compositionUsage.totals.every((entry) => entry.metrics.semantic_nodes.value > 0))
+
       const releaseList = await responseJson(
         await fetch(`${origin}/v1/sites/${site.id}/releases`, { headers: auth }),
         200,
@@ -758,6 +809,17 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           active_releases: 1,
           events: 17,
         })
+        const usageState = await pool.query(`
+          SELECT count(*)::int AS events,
+                 bool_and(route IS NULL OR route NOT LIKE '%?%') AS canonical_routes,
+                 bool_and(actor_hmac IS NULL OR actor_hmac ~ '^[0-9a-f]{64}$') AS local_actor_hmacs,
+                 count(*) FILTER (WHERE traffic_class = 'internal')::int AS internal_events
+            FROM public.ck_usage_events
+        `)
+        assert.ok(usageState.rows[0].events >= 25)
+        assert.equal(usageState.rows[0].canonical_routes, true)
+        assert.equal(usageState.rows[0].local_actor_hmacs, true)
+        assert.ok(usageState.rows[0].internal_events >= 2)
         assert.equal(delivered, 18, 'all fan-out deliveries succeed')
       } finally {
         await pool.end()

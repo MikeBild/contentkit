@@ -734,6 +734,15 @@ nodes marked `role="primary"` in the lead report are projected into the
 current-state card from the same Semantic AST; values are not copied or
 reinterpreted.
 
+Metric evidence is typed. `valueState` accepts `observed`, `zero`, `missing`,
+`unknown`, `estimated` or `not-applicable`; only observed/estimated require an
+authored `value`, while absent states render distinctly. `valueKind` accepts
+`count`, `gauge`, `duration`, `ratio`, `rate`, `percentage`, `data-size`,
+`tokens` or `currency`. Optional `sampleSize`, a paired
+`numerator`/`denominator`, paired ISO `periodStart`/`periodEnd`, and bounded
+`provenance` become snake_case Semantic AST fields. Legacy metrics default to
+`value_state: observed` and `value_kind: gauge`.
+
 Optional generic report series group reports independently of cadence. Configure
 `settings.presentation.report_series` as up to 32 unique
 `{ id, label, nav_order, lead_cadence }` objects and author the selected ID as
@@ -1399,6 +1408,9 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible; default 7 days |
 | `CONTENTKIT_BUILDING_REAP_MS` | age after which a release stuck in building is reaped; default 1 hour |
 | `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` | reader-auth aggregate source retention; default 400 days |
+| `CONTENTKIT_USAGE_TELEMETRY_ENABLED` | opt in to privacy-bounded HTTP/composition usage events; default false |
+| `CONTENTKIT_USAGE_HMAC_SECRET` | independent product-local actor/session HMAC key; required when usage telemetry is enabled |
+| `CONTENTKIT_USAGE_RETENTION_DAYS` | raw usage-event retention; default 90 days, allowed 31–365 |
 | `CONTENTKIT_AUDIO_ENABLED` | start the read-aloud TTS worker; default false |
 | `CONTENTKIT_AUDIO_POLL_MS` | audio job poll interval; default 15000 |
 | `CONTENTKIT_AUDIO_MAX_ATTEMPTS` | attempts before an audio job is marked failed; default 5 |
@@ -1714,7 +1726,7 @@ not know about a downstream cockpit, workflow engine, report schedule or
 central storage bucket. Consumers reuse an existing site-scoped `content:read`
 key rather than provisioning a reporting-specific credential.
 
-The six read-only endpoints are:
+The nine read-only endpoints are:
 
 - `/v1/sites/{site}/stats/releases`: builds, outcomes, activation, output size
   and build duration;
@@ -1726,12 +1738,27 @@ The six read-only endpoints are:
 - `/v1/sites/{site}/stats/audio`: jobs, outcomes, characters and duration;
 - `/v1/sites/{site}/stats/engagement`: comments, contact submissions and
   anonymous feedback.
+- `/v1/sites/{site}/stats/http`: canonical route/method/outcome, latency,
+  transfer sizes and exact ContentKit-local HMAC actors/sessions;
+- `/v1/sites/{site}/stats/compositions`: recommend/validate/compile outcomes,
+  requested and resolved repository-owned patterns, fallbacks, semantic-node and
+  diagnostic counts, output size and latency.
 
 Every route accepts `bucket=hour|day|month|year`, RFC 3339 `from`/`to`, and
 `tz=UTC`. It defaults to the previous 24 hours in hourly buckets, uses
 inclusive-from/exclusive-to semantics, returns dense zero-filled buckets and
 rejects invalid or excessive windows with 422. Hourly windows are capped at 31
 days, daily at 366 days, monthly at five years and yearly at ten years.
+
+The two usage endpoints additionally accept
+`traffic_class=organic|synthetic|internal|all` (default `organic`) and at most
+two comma-separated `group_by` dimensions. Their
+`schema_version=contentkit.usage-stats.v1` response returns semantic metric
+objects with `value`, `value_state` and `value_kind`. Ratios carry numerator and
+denominator; a denominator-less ratio is `missing`, never zero. Bucket uniques
+are exact per bucket and totals recompute exact distinct actors/sessions over the
+full requested window instead of summing buckets. `quality.sampled` is always
+false and reports local HMAC scope, drops and retention.
 
 Responses contain aggregates only: never Markdown, reader identities, keys,
 webhook endpoints/payloads, storage paths, row IDs or error details. Reader
@@ -1741,3 +1768,13 @@ acquisition, SEO and revenue data must be collected from the APIs that own
 those facts and joined downstream. Full examples and collection guidance are
 in `docs/PRODUCT_ANALYTICS.md`; the precise response contract is in
 `docs/openapi.json`.
+
+Usage collection is disabled by default. Once enabled, the append-only event
+table retains 90 days by default and contains canonical route templates and
+bounded operational fields only. Authenticated API/reader identifiers and
+explicit session IDs are HMACed with a ContentKit-only secret before insertion;
+anonymous HTTP has neither actor nor session fingerprint. It never stores
+Markdown, prompts, request/response bodies, dynamic resource IDs, raw paths or
+query strings, IP, User-Agent, cookies, OAuth details or API keys. Health,
+readiness, metrics and stats collection is `internal`; authenticated canaries
+may declare `synthetic`.

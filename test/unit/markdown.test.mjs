@@ -377,7 +377,7 @@ Status: :badge[Stabil]{tone="positive"}
 ::::`),
   )
   assert.match(result.html, /class="composition-group composition-columns-4"/)
-  assert.match(result.html, /class="report-metric report-tone-positive report-span-1"/)
+  assert.match(result.html, /class="report-metric report-tone-positive report-value-state-observed report-span-1"/)
   assert.match(result.html, /class="report-metric-unit">Tsd\. €<\/span>/)
   assert.match(result.html, /class="report-metric-context">Q1 · stabil<\/span>/)
   assert.match(result.html, /role="progressbar"[^>]*aria-valuenow="92"/)
@@ -408,6 +408,44 @@ Status: :badge[Stabil]{tone="positive"}
       limitation: null,
     },
   })
+})
+
+test('semantic metrics distinguish observed zero, missing evidence and exact ratio provenance', async () => {
+  const result = await renderMarkdown(
+    reportDoc(`::::group{columns="3"}
+::metric{label="Requests" value="0" valueState="zero" valueKind="count" sampleSize="0" periodStart="2026-07-01T00:00:00Z" periodEnd="2026-07-08T00:00:00Z" provenance="contentkit:http"}
+
+::metric{label="Latency" valueState="missing" valueKind="duration"}
+
+::metric{label="Success" value="98%" valueKind="percentage" numerator="98" denominator="100"}
+::::`),
+  )
+  const metrics = result.semantic.nodes.filter((node) => node.type === 'metric')
+  assert.deepEqual(
+    metrics.map((metric) => ({
+      label: metric.label,
+      value: metric.value,
+      value_state: metric.value_state,
+      value_kind: metric.value_kind,
+    })),
+    [
+      { label: 'Requests', value: '0', value_state: 'zero', value_kind: 'count' },
+      { label: 'Latency', value: '—', value_state: 'missing', value_kind: 'duration' },
+      { label: 'Success', value: '98%', value_state: 'observed', value_kind: 'percentage' },
+    ],
+  )
+  assert.equal(metrics[0].sample_size, 0)
+  assert.equal(metrics[0].period_start, '2026-07-01T00:00:00.000Z')
+  assert.equal(metrics[0].period_end, '2026-07-08T00:00:00.000Z')
+  assert.equal(metrics[0].provenance, 'contentkit:http')
+  assert.equal(metrics[2].numerator, 98)
+  assert.equal(metrics[2].denominator, 100)
+  assert.match(result.html, /report-value-state-missing/)
+  assert.match(result.html, /data-value-state="missing"/)
+  await assert.rejects(
+    () => renderMarkdown(reportDoc('::metric{label="Broken" value="50%" numerator="1"}')),
+    /numerator and denominator must be provided together/,
+  )
 })
 
 test('specialized chart shapes normalize typed evidence, narrative intent and reject misleading geometry', async () => {

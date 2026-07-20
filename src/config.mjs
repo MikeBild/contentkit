@@ -96,6 +96,9 @@ export function loadConfig() {
     }),
     buildingReapMs: integer('CONTENTKIT_BUILDING_REAP_MS', 3600 * 1000, { min: 60 * 1000, max: 86400 * 1000 }),
     productStatsRetentionDays: integer('CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS', 400, { min: 31, max: 3650 }),
+    usageTelemetryEnabled: bool('CONTENTKIT_USAGE_TELEMETRY_ENABLED', false),
+    usageHmacSecret: process.env.CONTENTKIT_USAGE_HMAC_SECRET || '',
+    usageRetentionDays: integer('CONTENTKIT_USAGE_RETENTION_DAYS', 90, { min: 31, max: 365 }),
     // Read-aloud audio (TTS). The worker only starts when explicitly enabled;
     // per-site opt-in lives in ck_sites.settings.audio (enabled/provider/voice/
     // monthly_char_budget). ffmpeg is a host runtime dependency for MP3 output.
@@ -117,6 +120,9 @@ export function loadConfig() {
   }
   if (Boolean(config.webhookUrl) !== Boolean(config.webhookSecret)) {
     throw new Error('CONTENTKIT_WEBHOOK_URL and CONTENTKIT_WEBHOOK_SECRET must be configured together')
+  }
+  if (config.usageTelemetryEnabled && !config.usageHmacSecret) {
+    throw new Error('CONTENTKIT_USAGE_HMAC_SECRET is required when usage telemetry is enabled')
   }
   if (process.env.NODE_ENV === 'production') {
     const required = {

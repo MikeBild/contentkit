@@ -122,8 +122,12 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   PostgreSQL stemming (de/en), relevance ranking and `<mark>` headlines via
   `GET /v1/sites/{site}/search` — published sites keep their client-side search.
 - Bounded site-scoped product analytics for releases, content, decks, reader auth,
-  webhooks, audio and engagement through `/v1/sites/{site}/stats/*`, reusing
-  `content:read` keys and returning aggregate counts only. See
+  webhooks, audio, engagement, canonical HTTP routes and semantic composition
+  operations through `/v1/sites/{site}/stats/*`. Opt-in usage events retain no
+  content, raw path/query, network identifier or credential; actors and sessions
+  are product-local HMACs. Exact full-window uniques, explicit ratio evidence and
+  `observed|zero|missing|unknown|estimated|not-applicable` value states keep
+  cockpit reports mathematically honest. The APIs reuse `content:read`. See
   [docs/PRODUCT_ANALYTICS.md](docs/PRODUCT_ANALYTICS.md).
 - Per-site theming as structured design tokens: `settings.theme.tokens` fills
   the shared stylesheet's custom properties (allowlisted, light/dark aware,

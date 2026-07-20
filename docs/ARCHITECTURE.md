@@ -279,10 +279,16 @@ query another product's database. The response boundary contains only numeric
 UTC time series. A downstream collector may join them with other product or
 marketing APIs and persist report snapshots elsewhere, but ContentKit has no
 dependency on that topology. Dedicated event tables record privacy-safe
-reader-auth outcomes (because failed logins do not otherwise create a session)
-and numeric deck-build facts (because headless plans/compiles do not create
-content rows). Neither stores source or identity, and both follow the configured
-statistics retention.
+reader-auth outcomes (because failed logins do not otherwise create a session),
+numeric deck-build facts (because headless plans/compiles do not create content
+rows), and—only when explicitly enabled—HTTP/composition usage. Usage rows carry
+canonical route templates, bounded operation/outcome/timing/size fields and
+ContentKit-local HMAC actor or session values. Anonymous HTTP is never
+fingerprinted. Raw paths, query strings, content, request bodies, IP, User-Agent,
+OAuth data and credentials never enter the table. Stats/reporting traffic is
+classified `internal`, canaries `synthetic`, and organic traffic remains
+separately queryable. Usage rows have their own 90-day retention; reader/deck
+facts follow the configured product statistics retention.
 See `docs/PRODUCT_ANALYTICS.md`.
 
 ### Derived, not authored

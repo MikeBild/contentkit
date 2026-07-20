@@ -72,6 +72,16 @@ service name/version, environment and W3C trace/span IDs. Reader-auth product
 facts and deck-build product facts contain no identity/source and are pruned by the existing maintenance run
 after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (default 400).
 
+Product usage telemetry is a separate, explicit opt-in. Set
+`CONTENTKIT_USAGE_TELEMETRY_ENABLED=true`, generate an independent
+`CONTENTKIT_USAGE_HMAC_SECRET`, and leave `CONTENTKIT_USAGE_RETENTION_DAYS=90`
+unless policy requires a shorter supported window. The secret must not be reused
+for API keys, sessions, previews, webhooks or another product: it defines the
+ContentKit-local actor/session namespace. Rotation intentionally breaks retention
+cohorts. Stored events contain canonical route templates and bounded operational
+dimensions only—never content, raw paths/query strings, IP, User-Agent, OAuth
+details or credentials. The hourly retention task starts with the service.
+
 Deck rendering executes trusted Slidev/Vite source. Run the binary as an
 unprivileged account, grant `deck:render` only to trusted site automation and
 size CPU/memory for the configured queue. The default permits one active build,

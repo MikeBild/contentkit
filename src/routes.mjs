@@ -14,15 +14,19 @@ import { contentkitFontFamily } from './typography.mjs'
 import { compileDeck, DECK_THEMES, planDeck } from './decks.mjs'
 import { DECK_TEMPLATES, deckTemplateRegistry, deckTemplateRegistryHash } from './deck-templates.mjs'
 import { publicDeckJob } from './deck-jobs.mjs'
+import { markUsageContext } from './usage.mjs'
 import {
   getAudioStats,
+  getCompositionStats,
   getContentStats,
   getDeckStats,
   getEngagementStats,
   getReaderStats,
   getReleaseStats,
+  getHttpStats,
   getWebhookStats,
   resolveStatsWindow,
+  resolveUsageStatsWindow,
 } from './stats.mjs'
 import {
   clearSessionCookie,
@@ -52,9 +56,26 @@ function documentation(config, name) {
 }
 
 export function routeName(path) {
-  return path
-    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+  const clean = String(path || '/').split('?')[0]
+  if (/^\/media\//.test(clean)) return '/media/:asset'
+  if (/^\/previews\//.test(clean)) return '/previews/:preview/:published-path'
+  if (
+    !/^\/(?:v1|public\/v1|_contentkit|preview-invitations|health$|ready$|metrics$|openapi\.json$|llms(?:-full)?\.txt$)/.test(
+      clean,
+    )
+  ) {
+    return '/:published-path'
+  }
+  return clean
     .replace(/\/preview-invitations\/[^/]+/, '/preview-invitations/:token')
+    .replace(/(\/v1\/sites)\/[^/]+/, '$1/:site')
+    .replace(/(\/v1\/content)\/[^/]+/, '$1/:content')
+    .replace(/(\/deck-jobs|\/releases|\/webhooks)\/[^/]+/, '$1/:id')
+    .replace(/(\/published)\/[^/]+\/[^/]+\/[^/]+/, '$1/:kind/:locale/:slug')
+    .replace(/(\/public\/v1\/posts)\/[^/]+/, '$1/:post')
+    .replace(/(\/v1\/(?:comments|contact-submissions))\/[^/]+/, '$1/:id')
+    .replace(/(\/v1\/webhook-deliveries)\/[^/]+/, '$1/:id')
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
 }
 
 // Content types for gateway-served release objects. Order matters: `feed.xml`
@@ -222,7 +243,8 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/previews$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
   {
-    pattern: /^\/v1\/sites\/[^/]+\/stats\/(releases|content|decks|readers|webhooks|audio|engagement)$/,
+    pattern:
+      /^\/v1\/sites\/[^/]+\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions)$/,
     methods: ['GET'],
   },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
@@ -259,6 +281,7 @@ export function createRequestHandler(ctx) {
     audio,
     deckRenderer,
     deckJobs,
+    usage,
   } = ctx
   const loginLimiter = ctx.loginLimiter || limiter
 
@@ -377,7 +400,12 @@ export function createRequestHandler(ctx) {
   const readerFor = async (req, site) => {
     const cookies = parseCookies(req.headers.cookie || '')
     const token = cookies[READER_COOKIE] || cookies[INSECURE_READER_COOKIE]
-    return repo.authenticateReader ? repo.authenticateReader(site.id, token) : null
+    const reader = repo.authenticateReader ? await repo.authenticateReader(site.id, token) : null
+    markUsageContext(req, {
+      siteId: site.id,
+      ...(reader ? { actorId: `reader:${reader.id}`, sessionId: token, requestSource: 'reader' } : {}),
+    })
+    return reader
   }
   const accessFor = async (req, site, release, pathname) => {
     const entries = repo.releaseAccessEntries ? await repo.releaseAccessEntries(release.id) : []
@@ -417,6 +445,7 @@ export function createRequestHandler(ctx) {
     if (!methods.includes(req.method)) return sendJson(res, 405, { error: 'method not allowed' }, { allow })
     const site = await repo.getSiteByHost(req.headers.host || '')
     if (!site) return sendJson(res, 404, { error: 'not found' })
+    markUsageContext(req, { siteId: site.id, requestSource: 'reader' })
     const cookies = parseCookies(req.headers.cookie || '')
     const token = cookies[READER_COOKIE] || cookies[INSECURE_READER_COOKIE]
     if (path === '/_contentkit/login') {
@@ -520,6 +549,7 @@ export function createRequestHandler(ctx) {
   }
 
   async function requireScope(req, res, scope, siteId = null) {
+    if (siteId) markUsageContext(req, { siteId })
     const principal = await auth.authenticate(req.headers)
     if (!principal) {
       logger.warn('unauthorized', { scope, siteId, key: keyFingerprint(req.headers.authorization) })
@@ -531,6 +561,7 @@ export function createRequestHandler(ctx) {
       sendJson(res, 403, { error: 'insufficient_scope', scope, ...(siteId ? { site: siteId } : {}) })
       return null
     }
+    markUsageContext(req, { siteId, actorId: `api:${principal.id}` })
     return principal
   }
 
@@ -538,6 +569,7 @@ export function createRequestHandler(ctx) {
   // read scopes. Reading a site before patching it would otherwise be impossible
   // with the very key that is allowed to patch.
   async function requireAnyScope(req, res, scopes, siteId = null) {
+    if (siteId) markUsageContext(req, { siteId })
     const principal = await auth.authenticate(req.headers)
     if (!principal) {
       logger.warn('unauthorized', { scope: scopes.join('|'), siteId, key: keyFingerprint(req.headers.authorization) })
@@ -553,6 +585,7 @@ export function createRequestHandler(ctx) {
       sendJson(res, 403, { error: 'insufficient_scope', scope: scopes, ...(siteId ? { site: siteId } : {}) })
       return null
     }
+    markUsageContext(req, { siteId, actorId: `api:${principal.id}` })
     return principal
   }
 
@@ -564,6 +597,7 @@ export function createRequestHandler(ctx) {
     const commentMatch = url.pathname.match(/^\/public\/v1\/posts\/([^/]+)\/comments$/)
     if (commentMatch) {
       const site = await repo.getSite(input.site_id || '')
+      if (site) markUsageContext(req, { siteId: site.id, requestSource: 'gateway' })
       if (!site || site.settings?.comments?.enabled === false) return sendJson(res, 404, { error: 'not found' })
       const captcha = input['cf-turnstile-response'] || input.turnstile_token
       if (!(await verifyTurnstile(config, captcha, ip)))
@@ -624,6 +658,7 @@ export function createRequestHandler(ctx) {
       // noise a CAPTCHA would not prevent. Opt-in, unlike comments' opt-out —
       // a vote writes to the database on every reader click.
       const site = await repo.getSite(input.site_id || '')
+      if (site) markUsageContext(req, { siteId: site.id, requestSource: 'gateway' })
       if (!site || site.settings?.feedback?.enabled !== true) return sendJson(res, 404, { error: 'not found' })
       if (!['up', 'down'].includes(input.vote)) return sendJson(res, 422, { error: 'vote must be up or down' })
       const items = await db.select('ck_content_items', {
@@ -656,6 +691,7 @@ export function createRequestHandler(ctx) {
     if (!(await verifyTurnstile(config, captcha, ip)))
       return sendJson(res, 422, { error: 'captcha verification failed' })
     const site = await repo.getSite(input.site_id || '')
+    if (site) markUsageContext(req, { siteId: site.id, requestSource: 'gateway' })
     if (!site) return sendJson(res, 404, { error: 'site not found' })
 
     if (url.pathname === '/public/v1/contact') {
@@ -756,10 +792,12 @@ export function createRequestHandler(ctx) {
         )
       const release = await repo.getRelease(access.release_id)
       if (!release) return sendJson(res, 404, { error: 'preview not found' })
+      markUsageContext(req, { siteId: release.site_id, sessionId: sessionToken, requestSource: 'gateway' })
       await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/previews/${preview[1]}`)
       return true
     }
     const site = await repo.getSiteByHost(req.headers.host || '')
+    if (site) markUsageContext(req, { siteId: site.id, requestSource: 'gateway' })
     if (url.pathname.startsWith('/media/')) {
       if (site?.active_release_id && repo.releaseAccessEntries) {
         const release = await repo.getRelease(site.active_release_id)
@@ -980,13 +1018,16 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
     }
     const statsMatch = path.match(
-      /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement)$/,
+      /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions)$/,
     )
     if (statsMatch && req.method === 'GET') {
       const site = await repo.getSite(statsMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'content:read', site.id))) return
-      const window = resolveStatsWindow(Object.fromEntries(url.searchParams))
+      const input = Object.fromEntries(url.searchParams)
+      const window = ['http', 'compositions'].includes(statsMatch[2])
+        ? resolveUsageStatsWindow(input, statsMatch[2])
+        : resolveStatsWindow(input)
       const readers = {
         releases: getReleaseStats,
         content: getContentStats,
@@ -995,8 +1036,10 @@ export function createRequestHandler(ctx) {
         webhooks: getWebhookStats,
         audio: getAudioStats,
         engagement: getEngagementStats,
+        http: getHttpStats,
+        compositions: getCompositionStats,
       }
-      return sendJson(res, 200, await readers[statsMatch[2]](db, site.id, window), {
+      return sendJson(res, 200, await readers[statsMatch[2]](db, site.id, window, usage?.quality?.()), {
         'cache-control': 'private,max-age=60',
       })
     }
@@ -1206,16 +1249,16 @@ export function createRequestHandler(ctx) {
       const site = await repo.getSite(compositionActionMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'content:write', site.id))) return
-      const input = parseJson(await bodyFor(req))
       const action = compositionActionMatch[2]
-      if (action === 'compile') {
-        if (typeof input.markdown !== 'string') {
-          throw Object.assign(new Error('compile requires markdown'), { statusCode: 422 })
-        }
-        return sendJson(
-          res,
-          200,
-          await compileCompositionMarkdown(input.markdown, {
+      const started = Date.now()
+      let telemetry = { operation: action }
+      try {
+        const input = parseJson(await bodyFor(req))
+        if (action === 'compile') {
+          if (typeof input.markdown !== 'string') {
+            throw Object.assign(new Error('compile requires markdown'), { statusCode: 422 })
+          }
+          const compiled = await compileCompositionMarkdown(input.markdown, {
             settings: site.settings || {},
             scheme: input.scheme || 'light',
             viewport: input.viewport,
@@ -1223,70 +1266,107 @@ export function createRequestHandler(ctx) {
             capabilities: input.capabilities,
             outputs: input.outputs,
             html_presentation: input.html_presentation,
-          }),
-        )
-      }
-      const narrative = validateNarrativePlan(input.narrative)
-      const rendered = input.markdown
-        ? await renderMarkdown(input.markdown)
-        : {
-            semantic: input.semantic,
-            meta: {
-              composition: {
-                format: input.format || 'infographic',
-                canvas: input.canvas || 'portrait',
-                intent: input.intent || 'explain',
-                density: input.density || 'balanced',
-                preferred_pattern: input.pattern || null,
-              },
-            },
-            composition: { schema_version: '1' },
-            diagnostics: [],
+          })
+          telemetry = {
+            ...telemetry,
+            requestedPattern: compiled.composition?.requested_pattern,
+            resolvedPattern: compiled.composition?.resolved_pattern,
+            semanticNodeCount: compiled.semantic?.nodes?.length,
+            diagnosticCount: compiled.diagnostics?.length,
+            responseBytes: Buffer.byteLength(JSON.stringify(compiled)),
           }
-      if (!rendered.semantic?.nodes?.length) {
-        throw Object.assign(new Error('composition action requires markdown or a Semantic AST with nodes'), {
-          statusCode: 422,
-        })
-      }
-      const preferences = {
-        ...(rendered.meta?.composition || {}),
-        preferred_pattern: input.pattern || rendered.meta?.composition?.preferred_pattern || null,
-        capabilities: input.capabilities || [],
-        narrative: narrative || rendered.narrative || null,
-      }
-      if (action === 'recommend') {
-        const recommendations = recommendPatterns(rendered.semantic, preferences, {
-          ...(input.viewport || {}),
-          ...(input.container ? { container: input.container } : {}),
-        })
-        return sendJson(res, 200, {
+          await usage?.recordComposition?.(req, { ...telemetry, durationMs: Date.now() - started })
+          return sendJson(res, 200, compiled)
+        }
+        const narrative = validateNarrativePlan(input.narrative)
+        const rendered = input.markdown
+          ? await renderMarkdown(input.markdown)
+          : {
+              semantic: input.semantic,
+              meta: {
+                composition: {
+                  format: input.format || 'infographic',
+                  canvas: input.canvas || 'portrait',
+                  intent: input.intent || 'explain',
+                  density: input.density || 'balanced',
+                  preferred_pattern: input.pattern || null,
+                },
+              },
+              composition: { schema_version: '1' },
+              diagnostics: [],
+            }
+        if (!rendered.semantic?.nodes?.length) {
+          throw Object.assign(new Error('composition action requires markdown or a Semantic AST with nodes'), {
+            statusCode: 422,
+          })
+        }
+        telemetry.semanticNodeCount = rendered.semantic.nodes.length
+        const preferences = {
+          ...(rendered.meta?.composition || {}),
+          preferred_pattern: input.pattern || rendered.meta?.composition?.preferred_pattern || null,
+          capabilities: input.capabilities || [],
+          narrative: narrative || rendered.narrative || null,
+        }
+        if (action === 'recommend') {
+          const recommendations = recommendPatterns(rendered.semantic, preferences, {
+            ...(input.viewport || {}),
+            ...(input.container ? { container: input.container } : {}),
+          })
+          const body = {
+            schema_version: '1',
+            semantic: rendered.semantic,
+            recommendations: recommendations.filter((entry) => entry.eligible).slice(0, 5),
+            rejected: recommendations.filter((entry) => !entry.eligible),
+          }
+          telemetry = {
+            ...telemetry,
+            requestedPattern: preferences.preferred_pattern,
+            resolvedPattern: body.recommendations[0]?.pattern,
+            diagnosticCount: body.rejected.length,
+            responseBytes: Buffer.byteLength(JSON.stringify(body)),
+          }
+          await usage?.recordComposition?.(req, { ...telemetry, durationMs: Date.now() - started })
+          return sendJson(res, 200, body)
+        }
+        const resolved = reResolveComposition(
+          { ...rendered, composition: rendered.composition || { schema_version: '1' } },
+          {
+            preferred_pattern: input.pattern,
+            viewport: input.viewport,
+            container: input.container,
+            capabilities: input.capabilities,
+            narrative,
+          },
+        )
+        const requested = resolved.composition.requested_pattern
+        const candidate = resolved.composition.recommendations.find(
+          (entry) => entry.pattern === (requested || resolved.composition.resolved_pattern),
+        )
+        const body = {
           schema_version: '1',
-          semantic: rendered.semantic,
-          recommendations: recommendations.filter((entry) => entry.eligible).slice(0, 5),
-          rejected: recommendations.filter((entry) => !entry.eligible),
+          valid: Boolean(candidate?.eligible && (!requested || requested === resolved.composition.resolved_pattern)),
+          requested_pattern: requested,
+          resolved_pattern: resolved.composition.resolved_pattern,
+          diagnostics: resolved.diagnostics,
+        }
+        telemetry = {
+          ...telemetry,
+          outcome: body.valid ? 'success' : 'rejected',
+          requestedPattern: requested,
+          resolvedPattern: body.resolved_pattern,
+          diagnosticCount: body.diagnostics.length,
+          responseBytes: Buffer.byteLength(JSON.stringify(body)),
+        }
+        await usage?.recordComposition?.(req, { ...telemetry, durationMs: Date.now() - started })
+        return sendJson(res, 200, body)
+      } catch (error) {
+        await usage?.recordComposition?.(req, {
+          ...telemetry,
+          outcome: error.code === 'TIMEOUT' ? 'timeout' : error.statusCode === 422 ? 'rejected' : 'server_error',
+          durationMs: Date.now() - started,
         })
+        throw error
       }
-      const resolved = reResolveComposition(
-        { ...rendered, composition: rendered.composition || { schema_version: '1' } },
-        {
-          preferred_pattern: input.pattern,
-          viewport: input.viewport,
-          container: input.container,
-          capabilities: input.capabilities,
-          narrative,
-        },
-      )
-      const requested = resolved.composition.requested_pattern
-      const candidate = resolved.composition.recommendations.find(
-        (entry) => entry.pattern === (requested || resolved.composition.resolved_pattern),
-      )
-      return sendJson(res, 200, {
-        schema_version: '1',
-        valid: Boolean(candidate?.eligible && (!requested || requested === resolved.composition.resolved_pattern)),
-        requested_pattern: requested,
-        resolved_pattern: resolved.composition.resolved_pattern,
-        diagnostics: resolved.diagnostics,
-      })
     }
     // Optional headless read API: published content as JSON, on the management
     // API behind content:read scoped keys — site delivery itself stays static.

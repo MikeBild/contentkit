@@ -44,6 +44,31 @@ test('the audio rebuild debounce defaults to 60s and rejects values outside 1sâ€
   }
 })
 
+test('usage telemetry is opt-in, keeps 90 days and requires its own HMAC secret', () => {
+  const names = [
+    'CONTENTKIT_USAGE_TELEMETRY_ENABLED',
+    'CONTENTKIT_USAGE_HMAC_SECRET',
+    'CONTENTKIT_USAGE_RETENTION_DAYS',
+  ]
+  const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
+  try {
+    delete process.env.CONTENTKIT_USAGE_TELEMETRY_ENABLED
+    delete process.env.CONTENTKIT_USAGE_HMAC_SECRET
+    delete process.env.CONTENTKIT_USAGE_RETENTION_DAYS
+    assert.equal(loadConfig().usageTelemetryEnabled, false)
+    assert.equal(loadConfig().usageRetentionDays, 90)
+    process.env.CONTENTKIT_USAGE_TELEMETRY_ENABLED = 'true'
+    assert.throws(() => loadConfig(), /USAGE_HMAC_SECRET is required/)
+    process.env.CONTENTKIT_USAGE_HMAC_SECRET = 'product-local-secret'
+    assert.equal(loadConfig().usageTelemetryEnabled, true)
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
 test('production fails closed when secrets are absent', () => {
   const previous = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'

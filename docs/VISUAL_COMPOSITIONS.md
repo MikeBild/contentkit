@@ -123,7 +123,7 @@ This contract applies equally to infographics, dashboards and recurring reports.
 | Directive | Meaning | Important constraints |
 |---|---|---|
 | `hero` | central thesis or definition | normally `role="primary"` |
-| `metric` | one named value | `label` and `value` required |
+| `metric` | one named typed value/evidence state | `label` required; observed/estimated states require `value`; zero, missing, unknown and not-applicable stay distinct |
 | `process` | ordered directed steps | 2–12 list items |
 | `comparison` + `side` | two or more alternatives | 2–6 labeled sides |
 | `timeline` | ordered events or milestones | 2–24 list items |

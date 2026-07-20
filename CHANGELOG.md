@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.21.0 - 2026-07-20
+
+### Added
+
+- Add explicit opt-in, append-only HTTP and semantic-composition usage events
+  with canonical dimensions, independent product-local HMAC actors/sessions and
+  a 90-day default retention task.
+- Add `stats/http` and `stats/compositions` APIs with organic/synthetic/internal
+  traffic separation, bounded two-dimension grouping, exact full-window unique
+  counts, percentile latency and explicit ratio evidence.
+- Add typed semantic metric evidence through `value_state`, `value_kind`, sample
+  size, numerator/denominator, period boundaries and provenance, including
+  distinct HTML/SVG/report projection for missing and estimated evidence.
+
+### Changed
+
+- Extend README, deployment/architecture/analytics/report authoring guides,
+  `llms.txt`, `llms-full.txt` and OpenAPI with the complete usage and semantic
+  metric contracts.
+- Canonicalize request route labels before telemetry or structured logging so
+  dynamic content/site/resource identifiers never become usage dimensions.
+
+### Security
+
+- Never persist content, prompts, bodies, tool inputs, raw URL/query values,
+  network fingerprints, OAuth details or credentials; anonymous HTTP remains
+  deliberately unidentifiable and internal collectors are isolated from organic
+  product usage.
+
 ## 1.20.0 - 2026-07-20
 
 ### Added

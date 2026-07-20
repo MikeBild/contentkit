@@ -12,6 +12,20 @@ export function openApi(config) {
     { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } },
     { name: 'tz', in: 'query', schema: { type: 'string', enum: ['UTC'], default: 'UTC' } },
   ]
+  const usageStatsParameters = (dimensions) => [
+    ...statsParameters,
+    {
+      name: 'traffic_class',
+      in: 'query',
+      schema: { type: 'string', enum: ['organic', 'synthetic', 'internal', 'all'], default: 'organic' },
+    },
+    {
+      name: 'group_by',
+      in: 'query',
+      description: `Comma-separated list of at most two dimensions: ${dimensions.join(', ')}.`,
+      schema: { type: 'string' },
+    },
+  ]
   const jsonBody = (required = []) => ({
     required: true,
     content: { 'application/json': { schema: { type: 'object', required } } },
@@ -303,6 +317,92 @@ export function openApi(config) {
             totals: { type: 'object', additionalProperties: { type: 'number' } },
           },
         },
+        UsageMetric: {
+          type: 'object',
+          required: ['value', 'value_state', 'value_kind'],
+          properties: {
+            value: { type: ['number', 'null'] },
+            value_state: {
+              type: 'string',
+              enum: ['observed', 'zero', 'missing', 'unknown', 'estimated', 'not-applicable'],
+            },
+            value_kind: {
+              type: 'string',
+              enum: ['count', 'gauge', 'duration', 'ratio', 'rate', 'percentage', 'data-size', 'tokens', 'currency'],
+            },
+            numerator: { type: 'number' },
+            denominator: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+        UsageStats: {
+          type: 'object',
+          required: [
+            'schema_version',
+            'surface',
+            'bucket',
+            'tz',
+            'from',
+            'to',
+            'traffic_class',
+            'group_by',
+            'buckets',
+            'totals',
+            'quality',
+          ],
+          properties: {
+            schema_version: { const: 'contentkit.usage-stats.v1' },
+            surface: { enum: ['http', 'compositions'] },
+            bucket: { type: 'string', enum: ['hour', 'day', 'month', 'year'] },
+            tz: { const: 'UTC' },
+            from: { type: 'string', format: 'date-time' },
+            to: { type: 'string', format: 'date-time' },
+            traffic_class: { enum: ['organic', 'synthetic', 'internal', 'all'] },
+            group_by: { type: 'array', maxItems: 2, items: { type: 'string' } },
+            buckets: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['ts', 'dimensions', 'metrics'],
+                properties: {
+                  ts: { type: 'string', format: 'date-time' },
+                  dimensions: { type: 'object', additionalProperties: { type: ['string', 'null'] } },
+                  metrics: {
+                    type: 'object',
+                    additionalProperties: { $ref: '#/components/schemas/UsageMetric' },
+                  },
+                },
+              },
+            },
+            totals: {
+              type: 'array',
+              description: 'Full-window aggregates; distinct actors and sessions are recomputed, never summed.',
+              items: {
+                type: 'object',
+                required: ['dimensions', 'metrics'],
+                properties: {
+                  dimensions: { type: 'object', additionalProperties: { type: ['string', 'null'] } },
+                  metrics: {
+                    type: 'object',
+                    additionalProperties: { $ref: '#/components/schemas/UsageMetric' },
+                  },
+                },
+              },
+            },
+            quality: {
+              type: 'object',
+              required: ['sampled', 'unique_count_method', 'actor_scope', 'content_captured'],
+              properties: {
+                sampled: { const: false },
+                unique_count_method: { const: 'exact_window' },
+                actor_scope: { const: 'contentkit_site_local_hmac' },
+                content_captured: { const: false },
+                dropped_events: { type: 'integer', minimum: 0 },
+                retention_days: { type: 'integer', minimum: 31 },
+              },
+            },
+          },
+        },
         SemanticNode: {
           type: 'object',
           required: ['id', 'type', 'role'],
@@ -334,6 +434,21 @@ export function openApi(config) {
               ],
             },
             role: { type: 'string', enum: ['primary', 'supporting', 'evidence'] },
+            value_state: {
+              type: 'string',
+              enum: ['observed', 'zero', 'missing', 'unknown', 'estimated', 'not-applicable'],
+              description: 'Metric evidence state; distinguishes an observed zero from absent or unknown evidence.',
+            },
+            value_kind: {
+              type: 'string',
+              enum: ['count', 'gauge', 'duration', 'ratio', 'rate', 'percentage', 'data-size', 'tokens', 'currency'],
+            },
+            sample_size: { type: ['integer', 'null'], minimum: 0 },
+            numerator: { type: ['number', 'null'] },
+            denominator: { type: ['number', 'null'], exclusiveMinimum: 0 },
+            period_start: { type: ['string', 'null'], format: 'date-time' },
+            period_end: { type: ['string', 'null'], format: 'date-time' },
+            provenance: { type: ['string', 'null'], maxLength: 160 },
             data_shape: {
               type: 'string',
               enum: [
@@ -1973,18 +2088,43 @@ export function openApi(config) {
     webhooks: 'outbox events and webhook delivery outcomes',
     audio: 'read-aloud jobs, characters and generated duration',
     engagement: 'comments, contact submissions and anonymous feedback',
+    http: 'canonical HTTP routes, methods, outcomes, transfer sizes, latency and exact local HMAC actors/sessions',
+    compositions:
+      'semantic recommend/validate/compile operations, requested versus resolved patterns, fallbacks, diagnostics and latency',
   }
   for (const [kind, description] of Object.entries(stats)) {
     spec.paths[`/v1/sites/{site}/stats/${kind}`] = {
       get: {
         summary: `Read site ${kind} statistics`,
-        description: `Bounded UTC aggregates for ${description}. Requires the existing content:read scope and never returns content, identities, credentials, payloads, URLs, paths or row identifiers. Defaults to the previous 24 hours in hourly buckets.`,
+        description: `Bounded UTC aggregates for ${description}. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.${['http', 'compositions'].includes(kind) ? ' Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.' : ''}`,
         security: secured,
-        parameters: statsParameters,
+        parameters: ['http', 'compositions'].includes(kind)
+          ? usageStatsParameters(
+              kind === 'http'
+                ? ['route', 'method', 'outcome', 'status_class', 'traffic_class', 'request_source']
+                : [
+                    'operation',
+                    'outcome',
+                    'requested_pattern',
+                    'resolved_pattern',
+                    'fallback',
+                    'traffic_class',
+                    'request_source',
+                  ],
+            )
+          : statsParameters,
         responses: {
           200: {
             description: 'Dense, site-scoped aggregate time series',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/ProductStats' } } },
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: ['http', 'compositions'].includes(kind)
+                    ? '#/components/schemas/UsageStats'
+                    : '#/components/schemas/ProductStats',
+                },
+              },
+            },
           },
           404: { description: 'Site not found' },
           422: { description: 'Invalid or excessive time window' },

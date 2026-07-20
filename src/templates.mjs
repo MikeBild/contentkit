@@ -492,7 +492,7 @@ function reportPrimaryMetrics(item) {
   return `<dl class="report-feature-metrics" aria-label="Report summary">${metrics
     .map(
       (metric) =>
-        `<div><dt>${escapeHtml(metric.label)}</dt><dd>${escapeHtml(metric.value)}${metric.unit ? `<span>${escapeHtml(metric.unit)}</span>` : ''}</dd>${metric.status ? `<small>${escapeHtml(metric.status)}</small>` : ''}</div>`,
+        `<div class="report-value-state-${escapeHtml(metric.value_state || 'observed')}" data-value-state="${escapeHtml(metric.value_state || 'observed')}"><dt>${escapeHtml(metric.label)}</dt><dd>${escapeHtml(metric.value)}${metric.unit ? `<span>${escapeHtml(metric.unit)}</span>` : ''}</dd>${metric.status ? `<small>${escapeHtml(metric.status)}</small>` : ''}</div>`,
     )
     .join('')}</dl>`
 }

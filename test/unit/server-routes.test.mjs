@@ -4,7 +4,13 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from '../../src/server.mjs'
 import { createRepository } from '../../src/repository.mjs'
-import { releaseContentType, rewritePreviewCss, rewritePreviewHtml, validateNarrativePlan } from '../../src/routes.mjs'
+import {
+  releaseContentType,
+  rewritePreviewCss,
+  rewritePreviewHtml,
+  routeName,
+  validateNarrativePlan,
+} from '../../src/routes.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
 import { contentkitFontFamily } from '../../src/typography.mjs'
@@ -28,6 +34,25 @@ test('preview rewriting covers responsive and styled release assets without capt
   assert.equal(
     rewritePreviewCss('.hero{background:url(/assets/hero.svg)}', '/previews/release-review'),
     '.hero{background:url(/previews/release-review/assets/hero.svg)}',
+  )
+})
+
+test('request labels canonicalize every dynamic site, content, preview and published path', () => {
+  assert.equal(
+    routeName('/v1/sites/tenant-name/published/post/de/private-quarterly-results'),
+    '/v1/sites/:site/published/:kind/:locale/:slug',
+  )
+  assert.equal(
+    routeName('/v1/content/020fd832-6b86-4d50-82dd-a600be466a2e/revisions'),
+    '/v1/content/:content/revisions',
+  )
+  assert.equal(routeName('/preview-invitations/one-time-secret'), '/preview-invitations/:token')
+  assert.equal(routeName('/previews/review-secret/de/report/'), '/previews/:preview/:published-path')
+  assert.equal(routeName('/de/private/customer/path/'), '/:published-path')
+  assert.equal(routeName('/media/private-asset-id'), '/media/:asset')
+  assert.equal(
+    routeName('/v1/sites/tenant/access/users/020fd832-6b86-4d50-82dd-a600be466a2e/revoke-sessions'),
+    '/v1/sites/:site/access/users/:id/revoke-sessions',
   )
 })
 
@@ -559,6 +584,23 @@ test('site stats use content:read, return private aggregates and validate bounde
       assets_created: 0,
       asset_bytes: 0,
     })
+
+    const usage = await request(
+      '/v1/sites/site-1/stats/http?bucket=hour&from=2026-07-18T10:00:00Z&to=2026-07-18T12:00:00Z&traffic_class=organic&group_by=route,method',
+      { headers: { 'x-api-key': 'valid' } },
+    )
+    assert.equal(usage.status, 200)
+    const usageBody = await usage.json()
+    assert.equal(usageBody.schema_version, 'contentkit.usage-stats.v1')
+    assert.deepEqual(usageBody.group_by, ['route', 'method'])
+    assert.equal(usageBody.quality.sampled, false)
+    assert.equal(usageBody.quality.content_captured, false)
+
+    const invalidGrouping = await request('/v1/sites/site-1/stats/compositions?group_by=operation,outcome,fallback', {
+      headers: { 'x-api-key': 'valid' },
+    })
+    assert.equal(invalidGrouping.status, 422)
+    assert.match((await invalidGrouping.json()).error, /at most two/)
 
     const invalid = await request('/v1/sites/site-1/stats/content?tz=Europe%2FBerlin', {
       headers: { 'x-api-key': 'valid' },

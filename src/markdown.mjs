@@ -208,6 +208,28 @@ function integerAttribute(value, field, { min, max, fallback = null } = {}) {
   return Number(value)
 }
 
+function numberAttribute(value, field, { min = -Number.MAX_VALUE, max = Number.MAX_VALUE } = {}) {
+  if (value == null || value === '') return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw directiveError(`${field} must be a number from ${min} to ${max}`)
+  }
+  return parsed
+}
+
+function isoAttribute(value, field) {
+  if (value == null || value === '') return null
+  const parsed = new Date(String(value))
+  if (!Number.isFinite(parsed.getTime())) throw directiveError(`${field} must be an ISO-8601 timestamp`)
+  return parsed.toISOString()
+}
+
+function enumAttribute(value, field, allowed, fallback) {
+  const normalized = String(value || fallback)
+  if (!allowed.includes(normalized)) throw directiveError(`${field} must be one of ${allowed.join(', ')}`)
+  return normalized
+}
+
 function booleanAttribute(value, field, fallback = false) {
   if (value == null || value === '') return fallback
   if (!['true', 'false'].includes(String(value))) throw directiveError(`${field} must be true or false`)
@@ -934,12 +956,65 @@ function compositionDirectives(meta, charts, semanticNodes) {
               'target',
               'unit',
               'status',
+              'valueState',
+              'valueKind',
+              'sampleSize',
+              'numerator',
+              'denominator',
+              'periodStart',
+              'periodEnd',
+              'provenance',
             ],
-            ['label', 'value'],
+            ['label'],
           )
+          const valueState = enumAttribute(
+            attributes.valueState,
+            'metric valueState',
+            ['observed', 'zero', 'missing', 'unknown', 'estimated', 'not-applicable'],
+            'observed',
+          )
+          const valueKind = enumAttribute(
+            attributes.valueKind,
+            'metric valueKind',
+            ['count', 'gauge', 'duration', 'ratio', 'rate', 'percentage', 'data-size', 'tokens', 'currency'],
+            'gauge',
+          )
+          const authoredValue = boundedText(attributes.value, 'metric value', 120)
+          if (['observed', 'estimated'].includes(valueState) && !authoredValue) {
+            throw directiveError(`metric directive requires value for valueState ${valueState}`)
+          }
+          const displayValue =
+            authoredValue || { zero: '0', missing: '—', unknown: '?', 'not-applicable': 'N/A' }[valueState] || ''
+          const sampleSize = integerAttribute(attributes.sampleSize, 'metric sampleSize', {
+            min: 0,
+            max: Number.MAX_SAFE_INTEGER,
+          })
+          const numerator = numberAttribute(attributes.numerator, 'metric numerator')
+          const denominator = numberAttribute(attributes.denominator, 'metric denominator', { min: 0 })
+          if ((numerator == null) !== (denominator == null)) {
+            throw directiveError('metric numerator and denominator must be provided together')
+          }
+          if (denominator === 0) throw directiveError('metric denominator must be greater than zero')
+          const periodStart = isoAttribute(attributes.periodStart, 'metric periodStart')
+          const periodEnd = isoAttribute(attributes.periodEnd, 'metric periodEnd')
+          if ((periodStart == null) !== (periodEnd == null)) {
+            throw directiveError('metric periodStart and periodEnd must be provided together')
+          }
+          if (periodStart && periodEnd && periodStart >= periodEnd) {
+            throw directiveError('metric periodEnd must be after periodStart')
+          }
           const tone = toneAttribute(attributes.tone, 'metric tone')
           data.hName = 'article'
-          data.hProperties = { className: ['report-metric', `report-tone-${tone}`, spanClass(attributes)] }
+          data.hProperties = {
+            className: [
+              'report-metric',
+              `report-tone-${tone}`,
+              `report-value-state-${valueState}`,
+              spanClass(attributes),
+            ],
+            dataValueState: valueState,
+            dataValueKind: valueKind,
+          }
           node.type = 'containerDirective'
           node.children = [
             textNode('span', ['report-metric-label'], boundedText(attributes.label, 'metric label', 120)),
@@ -947,18 +1022,20 @@ function compositionDirectives(meta, charts, semanticNodes) {
               'strong',
               ['report-metric-value'],
               [
-                { type: 'text', value: boundedText(attributes.value, 'metric value', 120) },
+                { type: 'text', value: displayValue },
                 ...(attributes.unit
                   ? [textNode('span', ['report-metric-unit'], boundedText(attributes.unit, 'metric unit', 32))]
                   : []),
               ],
             ),
-            ...(attributes.period || attributes.status
+            ...(attributes.period || attributes.status || valueState !== 'observed'
               ? [
                   textNode(
                     'span',
                     ['report-metric-context'],
-                    [attributes.period, attributes.status].filter(Boolean).join(' · '),
+                    [attributes.period, attributes.status, valueState !== 'observed' ? valueState : null]
+                      .filter(Boolean)
+                      .join(' · '),
                   ),
                 ]
               : []),
@@ -970,7 +1047,15 @@ function compositionDirectives(meta, charts, semanticNodes) {
             type: 'metric',
             role: semanticRole(attributes),
             label: boundedText(attributes.label, 'metric label', 120),
-            value: boundedText(attributes.value, 'metric value', 120),
+            value: displayValue,
+            value_state: valueState,
+            value_kind: valueKind,
+            sample_size: sampleSize,
+            numerator,
+            denominator,
+            period_start: periodStart,
+            period_end: periodEnd,
+            provenance: boundedText(attributes.provenance, 'metric provenance', 160) || null,
             trend: boundedText(attributes.trend, 'metric trend', 80),
             tone,
             period: boundedText(attributes.period, 'metric period', 80),
@@ -1229,7 +1314,7 @@ const schema = {
     div: ['className', 'style', 'dataReportChart'],
     aside: ['className', 'role'],
     section: ['className'],
-    article: ['className'],
+    article: ['className', 'dataValueState', 'dataValueKind'],
     figure: ['className'],
     figcaption: ['className'],
     details: ['className', 'open'],

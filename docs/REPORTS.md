@@ -125,13 +125,22 @@ Finance :badge[Approved]{tone="positive"}
 |---|---|---|
 | `group` | `columns="1..4"`, optional semantic role | responsive document grouping |
 | `card` | required `title`, optional `span="1..4"` and role | titled semantic grouping |
-| `metric` | required `label`, `value`; optional `trend`, `tone`, `span`, role | KPI evidence |
+| `metric` | required `label`; `value` is required for observed/estimated evidence; optional `valueState`, `valueKind`, `sampleSize`, numerator/denominator, period boundaries, provenance, `trend`, `tone`, `span`, role | typed KPI evidence that distinguishes zero from missing/unknown data |
 | `badge` | optional `tone`; visible text required | short inline state |
 | `progress` | required `label`, numeric `value`; optional positive `max`, `span`, role | accessible progress |
 | `chart` | options below | static light/dark SVG plus accessible source data |
 
 `tone` is `neutral`, `positive`, `warning` or `negative`. `role` is `primary`,
 `supporting` or `evidence`.
+
+Metric state is semantic, not decoration. `valueState` is one of `observed`,
+`zero`, `missing`, `unknown`, `estimated` or `not-applicable`; omitted legacy
+metrics default to `observed`. `valueKind` is `count`, `gauge`, `duration`,
+`ratio`, `rate`, `percentage`, `data-size`, `tokens` or `currency`. The Semantic
+AST exposes these as snake_case fields (`value_state`, `value_kind`,
+`sample_size`, `period_start`, `period_end`) and retains an optional exact
+`numerator`/`denominator` pair plus bounded `provenance`. Missing evidence renders
+distinctly and must never be authored as numeric zero.
 
 ## Charts from Markdown tables
 

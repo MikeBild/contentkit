@@ -18,6 +18,7 @@ import { createLimiter } from './security.mjs'
 import { createRequestHandler, routeName } from './routes.mjs'
 import { runMigrations } from './db/migrate.mjs'
 import { createTraceContext } from './trace-context.mjs'
+import { createUsageTelemetry } from './usage.mjs'
 
 export function createApp(config = loadConfig(), dependencies = {}) {
   const logger = dependencies.logger || createLogger(config)
@@ -27,6 +28,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const storage = dependencies.storage || createStorage(config).storage
   const repo = dependencies.repo || createRepository(config, db, storage)
   const metrics = createMetrics()
+  const usage = dependencies.usage || createUsageTelemetry(config, db, logger)
   const deckRenderer =
     dependencies.deckRenderer ||
     createDeckRenderer(config, logger, {
@@ -72,6 +74,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     audio,
     deckRenderer,
     deckJobs,
+    usage,
   })
 
   const server = createServer((req, res) => {
@@ -82,7 +85,9 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     res.setHeader('traceparent', trace.traceparent)
     res.on('finish', () => {
       const route = routeName((req.url || '').split('?')[0])
+      const durationMs = Date.now() - started
       metrics.request(req.method, route, res.statusCode)
+      usage.recordHttp(req, res, { route, durationMs }).catch(() => {})
       logger.info('request', {
         request_id: requestId,
         trace_id: trace.traceId,
@@ -91,7 +96,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
         method: req.method,
         path: route,
         status: res.statusCode,
-        ms: Date.now() - started,
+        ms: durationMs,
       })
     })
     handle(req, res).catch((error) => {
@@ -125,6 +130,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     releases,
     deckRenderer,
     deckJobs,
+    usage,
     database,
     handle,
     async ensureStorage() {
@@ -165,6 +171,7 @@ export async function start(config = loadConfig()) {
     throw error
   }
   app.outbox.start()
+  app.usage.start()
   // Deployment-level switch: the poller only runs where ffmpeg and TTS
   // credentials exist. Which sites get audio is decided per site at enqueue
   // time via settings.audio.enabled.
@@ -182,6 +189,7 @@ export async function start(config = loadConfig()) {
     app.outbox.stop()
     app.audio.stop()
     app.deckJobs.stop()
+    app.usage.stop()
     app.limiter.stop()
     app.loginLimiter.stop()
     app.server.close(async () => {
