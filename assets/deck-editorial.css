@@ -1,25 +1,32 @@
 :root {
-  --ck-deck-bg: #fbfaf7;
-  --ck-deck-fg: #1a1714;
-  --ck-deck-muted: #6b6660;
-  --ck-deck-border: #e6e1d8;
-  --ck-deck-accent: #4f46e5;
+  --ck-deck-bg: #ffffff;
+  --ck-deck-fg: #020817;
+  --ck-deck-surface: #ffffff;
+  --ck-deck-subtle: #f1f5f9;
+  --ck-deck-muted: #64748b;
+  --ck-deck-border: #e2e8f0;
+  --ck-deck-accent: #2563eb;
+  --ck-deck-accent-fg: #ffffff;
+  --ck-deck-radius: 12px;
   --slidev-theme-primary: var(--ck-deck-accent);
 }
 html.dark {
-  --ck-deck-bg: #14110d;
-  --ck-deck-fg: #efe9df;
-  --ck-deck-muted: #a39c8f;
-  --ck-deck-border: #2c2620;
-  --ck-deck-accent: #818cf8;
+  --ck-deck-bg: #020817;
+  --ck-deck-fg: #f8fafc;
+  --ck-deck-surface: #0f172a;
+  --ck-deck-subtle: #1e293b;
+  --ck-deck-muted: #94a3b8;
+  --ck-deck-border: #334155;
+  --ck-deck-accent: #60a5fa;
 }
 .slidev-layout {
   background: var(--ck-deck-bg) !important;
   color: var(--ck-deck-fg) !important;
+  font-family: var(--ck-deck-font, Inter, ui-sans-serif, system-ui, sans-serif);
 }
 .slidev-layout :is(h1, h2, h3, h4) {
   color: var(--ck-deck-fg);
-  font-family: 'Inter Variable', Inter, sans-serif;
+  font-family: inherit;
   font-weight: 750;
 }
 .slidev-layout a {

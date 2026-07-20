@@ -49,6 +49,9 @@ The following fields are validated on upload:
   `composition`; deck documents use the dedicated `deck` layout. `report` is a
   compatibility alias for a report composition.
 - `composition`: visual contract with `format`, `canvas`, `intent`, `density` and optional `preferredPattern`.
+- `deck.template`: narrative contract for a deck: `freeform`, `editorial-story`,
+  `decision-brief`, `technical-explainer` or `status-report`. Non-freeform
+  templates validate ordered per-slide `deckRole` slots before rendering.
 - `reportCadence`: optional when `composition.format` is `report`: `hourly`, `daily`, `weekly`,
   `monthly`, `quarterly`, or `yearly`.
 - `docKey`: stable page identity within a documentation version or hierarchy.
@@ -119,3 +122,17 @@ production-shaped documents together. The compiled-binary E2E suite
 uploads and publishes the three documentation files and the quarterly report,
 signs in as a real reader, and verifies public/protected delivery plus the
 static report SVG contract.
+
+## Slide-deck templates
+
+Deck templates are first-class content templates, not visual themes. Each
+template publishes machine-readable narrative slots, required roles, defaults
+and visual acceptance rules through `GET /v1/deck-templates`. A theme determines
+how a deck looks, semantic composition patterns determine how one slide's
+evidence is represented, and the template determines how the complete argument
+progresses.
+
+This separation keeps templates tenant-neutral. A site supplies its own typed
+design tokens for branding; ContentKit does not embed a customer's identity in
+product defaults. See [SLIDE_DECKS.md](SLIDE_DECKS.md) for the authoring and
+verification contract.

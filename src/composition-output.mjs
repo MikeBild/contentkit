@@ -192,7 +192,8 @@ export function reResolveComposition(
 ) {
   const preferences = {
     ...rendered.meta.composition,
-    preferred_pattern: preferred_pattern || rendered.meta.composition.preferred_pattern,
+    preferred_pattern:
+      preferred_pattern || rendered.composition?.requested_pattern || rendered.meta.composition.preferred_pattern,
     capabilities: capabilities || [],
     narrative: narrative || rendered.narrative || null,
   }

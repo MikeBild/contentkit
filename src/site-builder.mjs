@@ -5,6 +5,7 @@ import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
 import { materializeComposition } from './composition-output.mjs'
 import { compileDeck } from './decks.mjs'
+import { designSystemMarkdown, designTokensDocument } from './design-system.mjs'
 import { contentkitFontAssetName, contentkitFontFaceCss, contentkitFontFile } from './typography.mjs'
 import {
   archiveBody,
@@ -326,6 +327,12 @@ function llmsTxt(site, locale, { t, posts, projects, pages, decks }, locales) {
   section(t.pages, linksFor(pages))
   section(locale.startsWith('de') ? 'Präsentationen' : 'Slide decks', linksFor(decks))
   section(LLMS_OPTIONAL_SECTION, [
+    llmsLink(
+      'Design system',
+      absolute(site, '/design-system.md'),
+      'Human- and LLM-readable brand, narrative and acceptance contract',
+    ),
+    llmsLink('Design tokens', absolute(site, '/design-tokens.json'), 'Typed Design Tokens Community Group JSON'),
     llmsLink(t.archive, absolute(site, `/${locale}/archive/`)),
     llmsLink(t.allTags, absolute(site, `/${locale}/tags/`)),
     llmsLink(t.llmsFullContent, absolute(site, `/${locale}/llms-full.txt`)),
@@ -490,6 +497,11 @@ export async function buildSite({
   deckRenderer,
 }) {
   const { files, assets } = await staticAssets(root)
+  files.set('design-system.md', text(designSystemMarkdown(site), 'text/markdown; charset=utf-8'))
+  files.set(
+    'design-tokens.json',
+    text(`${JSON.stringify(designTokensDocument(site), null, 2)}\n`, 'application/json; charset=utf-8'),
+  )
   const audioByItem = new Map(audio.map((entry) => [entry.item_id, entry]))
   const rendered = []
   for (const revision of revisions) {

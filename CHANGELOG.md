@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.19.0 - 2026-07-20
+
+### Added
+
+- Add a first-class, machine-readable deck-template registry with reusable
+  narrative contracts for editorial stories, decision briefs, technical
+  explainers and status reports.
+- Publish tenant-resolved design tokens and design-system guidance with every
+  site release for browsers, design tools, automation and language models.
+- Add an English production showcase and a real-browser pixel and geometry
+  release gate across desktop, laptop, mobile and dark-mode viewports.
+
+### Changed
+
+- Resolve deck typography, colors, branding and visual composition through
+  tenant site configuration while keeping all product defaults tenant-neutral.
+- Strengthen semantic-deck narrative validation, accessible contrast, offline
+  font delivery and responsive visual safe areas.
+
+### Fixed
+
+- Keep requested composition patterns through viewport re-resolution.
+- Prevent deck visuals, connectors and labels from leaving their canvas,
+  overlapping content or inheriting unintended opacity.
+- Prevent per-slide narrative metadata from leaking into rendered slide copy.
+
 ## 1.18.1 - 2026-07-20
 
 ### Added

@@ -306,6 +306,27 @@ test('first-party assets and Inter are content-hashed while katex fonts keep sta
   }
 })
 
+test('a release exposes one human and one typed machine-readable design contract', async () => {
+  const result = await build({
+    site: {
+      ...site,
+      settings: { accent: '221 83% 53%' },
+    },
+  })
+  const markdown = result.files.get('design-system.md').body.toString()
+  const tokens = JSON.parse(result.files.get('design-tokens.json').body.toString())
+  const llms = result.files.get('en/llms.txt').body.toString()
+  assert.match(markdown, /Narrative contract/)
+  assert.match(markdown, /no visible element crosses the slide canvas/)
+  assert.equal(tokens.$schema, 'https://www.designtokens.org/schemas/2025.10/format.json')
+  assert.equal(tokens.color.accent.light.$value.hex, '#2463eb')
+  assert.equal(tokens.color.primary.dark.$value.hex, '#f8fafc')
+  assert.equal(tokens.color.surface.dark.$value.hex, '#0f172a')
+  assert.equal(tokens.slide.$extensions['dev.contentkit'].aspectRatio, '16:9')
+  assert.match(llms, /\/design-system\.md/)
+  assert.match(llms, /\/design-tokens\.json/)
+})
+
 test('the blog caps its feed and hands off to the archive, which lists everything', async () => {
   const revisions = Array.from({ length: 15 }, (_, i) =>
     post({ slug: `p${i}`, title: `P${i}`, date: `2026-01-${String(i + 1).padStart(2, '0')}` }),

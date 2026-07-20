@@ -1,14 +1,33 @@
-@import '@fontsource-variable/inter';
-
 .slidev-layout {
-  font-family: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--ck-deck-font, Inter, ui-sans-serif, system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+.slidev-layout.default {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  padding: 2rem 2.75rem 2.15rem;
+}
+.slidev-layout.default > h1 {
+  align-self: start;
+  max-width: 92%;
+  margin: 0;
+}
+.slidev-layout.default > p:has(> .contentkit-deck-visual) {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  opacity: 1 !important;
 }
 .contentkit-deck-visual {
   display: flex;
   width: 100%;
-  height: min(70vh, 560px);
+  height: 100%;
+  min-height: 0;
   justify-content: center;
 }
 .contentkit-deck-visual img {
@@ -30,8 +49,51 @@ html.dark .deck-visual-dark {
   color: var(--ck-deck-fg) !important;
 }
 .slidev-layout h1 {
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  font-size: 2.375rem;
+  font-weight: 750;
+  line-height: 1.06;
+  letter-spacing: -0.05em;
+}
+.slidev-layout.cover {
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 3rem 3.25rem;
+  text-align: left;
+}
+.slidev-layout.cover::before {
+  position: absolute;
+  top: 2.25rem;
+  left: 3.25rem;
+  color: var(--ck-deck-accent);
+  font-size: 0.68rem;
+  font-weight: 780;
+  letter-spacing: 0.16em;
+  content: var(--ck-deck-brand, 'CONTENTKIT');
+}
+.slidev-layout.cover h1 {
+  max-width: 88%;
+  margin: 0 0 0.8rem;
+  font-size: 4.6rem;
+  line-height: 0.98;
+  letter-spacing: -0.058em;
+}
+.slidev-layout.cover p {
+  max-width: 76%;
+  margin: 0;
+  color: var(--ck-deck-muted);
+  font-size: 1.25rem;
+  line-height: 1.45;
+  opacity: 1 !important;
+}
+.slidev-layout.default::after {
+  position: absolute;
+  right: 2.75rem;
+  bottom: 1.12rem;
+  color: var(--ck-deck-muted);
+  font-size: 0.55rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  content: var(--ck-deck-brand, 'CONTENTKIT');
 }
 .border-token,
 .slidev-layout :is(.border-teal-500, .border-teal-600) {
@@ -60,8 +122,9 @@ html.dark .deck-visual-dark {
   max-height: 330px !important;
 }
 .contentkit-deck-sources {
-  margin-top: 0.5rem;
+  max-width: 72%;
+  margin: 0;
   color: var(--ck-deck-muted);
-  font-size: 0.65rem;
-  line-height: 1.25;
+  font-size: 0.55rem;
+  line-height: 1.2;
 }

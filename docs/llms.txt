@@ -66,7 +66,7 @@ Pattern Package and export as an independent visual.
   `GET /v1/composition-patterns/{pattern}`. Site-scoped agents use
   `/v1/sites/{site}/compositions/recommend`, `/validate` and `/compile`, then
   fetch published `.svg` or `.png` representations with `content:read`.
-- Deck authoring: `GET /v1/deck-themes`; site-scoped `/decks/plan`,
+- Deck authoring: `GET /v1/deck-themes` and `GET /v1/deck-templates`; site-scoped `/decks/plan`,
   `/decks/validate` and `/decks/compile`; async status/results under
   `/deck-jobs/{job}`. Compilation and explicit publication require
   `deck:render` in addition to the normal authoring/release scopes.

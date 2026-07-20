@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "1.18.1",
+  "version": "1.19.0",
   "description": "Headless Markdown mini-CMS with semantic visual composition and information patterns",
   "private": true,
   "type": "module",
@@ -26,8 +26,9 @@
     "docs:gen-openapi": "node scripts/gen-openapi-doc.mjs",
     "docs:gen-patterns": "node scripts/generate-pattern-gallery.mjs",
     "review:patterns": "node scripts/generate-pattern-gallery.mjs",
-    "validate:visuals": "npm run docs:gen-patterns && node scripts/validate-pattern-gallery.mjs && node scripts/validate-pattern-gallery-browser.mjs && node scripts/validate-composition-html-browser.mjs && node scripts/validate-pattern-gallery-page.mjs",
+    "validate:visuals": "npm run docs:gen-patterns && node scripts/validate-pattern-gallery.mjs && node scripts/validate-pattern-gallery-browser.mjs && node scripts/validate-composition-html-browser.mjs && node scripts/validate-pattern-gallery-page.mjs && npm run validate:deck-showcase",
     "validate:visuals:browser": "node scripts/validate-pattern-gallery-browser.mjs",
+    "validate:deck-showcase": "node scripts/validate-deck-showcase-browser.mjs",
     "migrate:reports": "node scripts/migrate-report-compositions.mjs",
     "check:embedded-drift": "node --test test/unit/migrations-bundle.test.mjs",
     "check:docs-drift": "node --test test/unit/docs-drift.test.mjs",

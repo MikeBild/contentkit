@@ -70,14 +70,15 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   document remains editorial prose; full-canvas SVG and PNG stay an explicit
   `layout: composition` concern.
 - Deterministic slide-deck publishing with `kind: deck` and `layout: deck`:
-  source evidence becomes a versioned information architecture, narrative and
-  DeckPlan; semantic slide regions reuse the controlled pattern registry to
+  reusable narrative templates validate ordered per-slide roles before source
+  evidence becomes a versioned information architecture, narrative and DeckPlan;
+  semantic slide regions reuse the controlled pattern registry to
   produce canonical SVG plus layout-equivalent PNG before ContentKit builds one
   self-contained offline Slidev HTML deck with presenter mode.
   The controlled deck layout is `deck`; rendering requires the additional
   `deck:render` scope because a real Slidev/Vite build executes trusted source.
   See [semantic slide decks](docs/SLIDE_DECKS.md) and the
-  [production-shaped German example](examples/decks/contentkit-semantic-publishing.de.md).
+  [production-shaped English example](examples/decks/contentkit-semantic-publishing.en.md).
 - Composition reports and dashboards with neutral metric cards, status,
   progress and table-driven charts with direct values and accessible source
   tables. Static report pages use semantic HTML for their information hierarchy

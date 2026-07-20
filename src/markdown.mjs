@@ -16,6 +16,7 @@ import { visit } from 'unist-util-visit'
 import { assertSlug, excerpt, parseIsoDate, slugify } from './utils.mjs'
 import { resolvePattern } from './composition-registry.mjs'
 import { getPublishingGuide } from './publishing-guides.mjs'
+import { DECK_TEMPLATES } from './deck-templates.mjs'
 
 const kinds = new Set(['page', 'post', 'project', 'deck'])
 export const layouts = new Set([
@@ -1518,10 +1519,16 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
               throw Object.assign(new Error('frontmatter deck must be an object'), { statusCode: 422 })
             }
             const unknown = Object.keys(value).find(
-              (field) => !['theme', 'maxSlides', 'visualScheme', 'firstSlide'].includes(field),
+              (field) => !['template', 'theme', 'maxSlides', 'visualScheme', 'firstSlide'].includes(field),
             )
             if (unknown)
               throw Object.assign(new Error(`frontmatter deck has unknown field "${unknown}"`), { statusCode: 422 })
+            const template = String(value.template || 'freeform')
+            if (!DECK_TEMPLATES.includes(template)) {
+              throw Object.assign(new Error(`frontmatter deck.template must be one of ${DECK_TEMPLATES.join(', ')}`), {
+                statusCode: 422,
+              })
+            }
             const theme = String(value.theme || 'neutral')
             if (!['neutral', 'editorial'].includes(theme)) {
               throw Object.assign(new Error('frontmatter deck.theme must be neutral or editorial'), { statusCode: 422 })
@@ -1557,7 +1564,7 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
                 { statusCode: 422 },
               )
             }
-            return { theme, visual_scheme: visualScheme, max_slides: maxSlides, first_slide: firstSlide }
+            return { template, theme, visual_scheme: visualScheme, max_slides: maxSlides, first_slide: firstSlide }
           })(),
         }
       : {}),

@@ -4,9 +4,11 @@ import { parseSync as parseSlidev } from '@slidev/parser'
 import { hasCompositionSemantics, renderMarkdown } from './markdown.mjs'
 import { compileCompositionMarkdown } from './composition-output.mjs'
 import { patternRegistryHash } from './composition-registry.mjs'
+import { deckDesignStyle } from './design-system.mjs'
+import { DECK_TEMPLATES, deckTemplateRegistryHash, getDeckTemplate, validateDeckTemplate } from './deck-templates.mjs'
 import { VERSION } from './version.mjs'
 
-export const DECK_PLAN_SCHEMA_VERSION = '1'
+export const DECK_PLAN_SCHEMA_VERSION = '2'
 export const DECK_THEMES = Object.freeze(['editorial', 'neutral'])
 export const DECK_SCHEMES = Object.freeze(['auto', 'dark', 'light'])
 
@@ -70,8 +72,9 @@ function titleFor(markdown, index) {
     .slice(0, 160)
 }
 
-function roleFor(index, total, markdown) {
+function roleFor(index, total, markdown, explicitRole) {
   if (index === 0) return 'opening'
+  if (explicitRole) return String(explicitRole).trim()
   if (index === total - 1) return /source|quelle/i.test(markdown) ? 'sources' : 'conclusion'
   if (/source|quelle/i.test(titleFor(markdown, index))) return 'sources'
   if (/limit|grenze|risiko|caveat|einschränk/i.test(markdown)) return 'limitations'
@@ -111,18 +114,25 @@ function narrativeFrom(meta, rendered, titles) {
 
 function normalizedSettings(frontmatter, preferences = {}) {
   const authored = frontmatter.deck && typeof frontmatter.deck === 'object' ? frontmatter.deck : {}
-  const theme = String(preferences.theme || authored.theme || 'neutral')
+  const template = String(preferences.template || authored.template || 'freeform')
+  if (!DECK_TEMPLATES.includes(template)) {
+    throw invalid(`deck template must be one of ${DECK_TEMPLATES.join(', ')}`)
+  }
+  const templateDefinition = getDeckTemplate(template)
+  const theme = String(preferences.theme || authored.theme || templateDefinition.defaults.theme)
   if (!DECK_THEMES.includes(theme)) throw invalid(`deck theme must be one of ${DECK_THEMES.join(', ')}`)
   const visualScheme = String(preferences.visual_scheme || preferences.visualScheme || authored.visualScheme || 'auto')
   if (!DECK_SCHEMES.includes(visualScheme)) {
     throw invalid(`deck visualScheme must be one of ${DECK_SCHEMES.join(', ')}`)
   }
-  const maxSlides = Number(preferences.max_slides ?? preferences.maxSlides ?? authored.maxSlides ?? 120)
+  const maxSlides = Number(
+    preferences.max_slides ?? preferences.maxSlides ?? authored.maxSlides ?? templateDefinition.defaults.max_slides,
+  )
   if (!Number.isInteger(maxSlides) || maxSlides < 1 || maxSlides > 120) {
     throw invalid('deck maxSlides must be an integer from 1 to 120')
   }
   const firstSlide = authored.firstSlide && typeof authored.firstSlide === 'object' ? authored.firstSlide : {}
-  return { theme, visual_scheme: visualScheme, max_slides: maxSlides, first_slide: firstSlide }
+  return { template, theme, visual_scheme: visualScheme, max_slides: maxSlides, first_slide: firstSlide }
 }
 
 export async function planDeck(source, preferences = {}) {
@@ -135,19 +145,26 @@ export async function planDeck(source, preferences = {}) {
     throw invalid(`deck has ${sources.length} slides, exceeding maxSlides ${settings.max_slides}`)
   }
   const titles = sources.map((slide, index) => titleFor(slide.markdown, index))
-  const slides = sources.map((sourceSlide, index) => ({
-    id: `slide-${String(index + 1).padStart(3, '0')}-${hash(sourceSlide.raw).slice(0, 8)}`,
-    index,
-    title: titles[index],
-    role: roleFor(index, sources.length, sourceSlide.markdown),
-    goal: index === 0 ? 'Introduce the central question.' : `Explain ${titles[index]}.`,
-    source_sha256: hash(sourceSlide.raw),
-    source_refs: sourceReferences(sourceSlide.markdown, index),
-    markdown: sourceSlide.markdown,
-    slide_frontmatter: sourceSlide.slide_frontmatter,
-    slide_frontmatter_raw: sourceSlide.slide_frontmatter_raw,
-  }))
+  const slides = sources.map((sourceSlide, index) => {
+    const explicitRole = sourceSlide.slide_frontmatter.deckRole || sourceSlide.slide_frontmatter.deck_role || null
+    const role = roleFor(index, sources.length, sourceSlide.markdown, explicitRole)
+    return {
+      id: `slide-${String(index + 1).padStart(3, '0')}-${hash(sourceSlide.raw).slice(0, 8)}`,
+      index,
+      title: titles[index],
+      role,
+      role_source: index === 0 || explicitRole ? 'authored' : 'inferred',
+      goal: index === 0 ? 'Introduce the central question.' : `Explain ${titles[index]}.`,
+      source_sha256: hash(sourceSlide.raw),
+      source_refs: sourceReferences(sourceSlide.markdown, index),
+      markdown: sourceSlide.markdown,
+      slide_frontmatter: sourceSlide.slide_frontmatter,
+      slide_frontmatter_raw: sourceSlide.slide_frontmatter_raw,
+    }
+  })
   const narrative = narrativeFrom(frontmatter, rendered, titles)
+  const templateDefinition = getDeckTemplate(settings.template)
+  const diagnostics = validateDeckTemplate(templateDefinition, slides)
   const informationArchitecture = {
     opening: slides[0].id,
     sections: slides.map(({ id, title, role }) => ({ id, title, role })),
@@ -158,10 +175,15 @@ export async function planDeck(source, preferences = {}) {
   const plan = {
     schema_version: DECK_PLAN_SCHEMA_VERSION,
     source_sha256: hash(source),
-    compiler: { name: 'contentkit', version: VERSION, pattern_registry_sha256: patternRegistryHash },
+    compiler: {
+      name: 'contentkit',
+      version: VERSION,
+      pattern_registry_sha256: patternRegistryHash,
+      deck_template_registry_sha256: deckTemplateRegistryHash,
+    },
     title: rendered.meta.title,
     locale: rendered.meta.locale,
-    settings,
+    settings: { ...settings, template_contract: templateDefinition },
     information_architecture: informationArchitecture,
     narrative,
     sources: [
@@ -170,7 +192,7 @@ export async function planDeck(source, preferences = {}) {
       ),
     ],
     slides,
-    diagnostics: [],
+    diagnostics,
   }
   return { ...plan, plan_sha256: hash(JSON.stringify(plan)) }
 }
@@ -238,6 +260,10 @@ export async function compileDeck(
   { settings = {}, preferences = {}, renderHtml, includeArtifactData = false } = {},
 ) {
   const plan = await planDeck(source, preferences)
+  const templateErrors = plan.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+  if (templateErrors.length) {
+    throw invalid(`deck template validation failed: ${templateErrors.map((diagnostic) => diagnostic.code).join(', ')}`)
+  }
   const artifacts = []
   const slides = []
   for (const slide of plan.slides) {
@@ -301,9 +327,16 @@ export async function compileDeck(
     routerMode: 'hash',
     colorSchema: plan.settings.visual_scheme === 'auto' ? 'all' : plan.settings.visual_scheme,
   }
+  const designStyle = deckDesignStyle(settings)
+  const compiledSlides = slides
+    .map((slide, index) => {
+      if (index === 0) return slide
+      return `${plan.slides[index].slide_frontmatter_raw ? '\n\n---\n' : '\n\n---\n\n'}${slide}`
+    })
+    .join('')
   const compiledMarkdown = `---\n${Object.entries(headmatter)
     .map(([key, value]) => `${key}: ${typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value)}`)
-    .join('\n')}\n---\n\n${slides.join('\n\n---\n\n')}`
+    .join('\n')}\n---\n\n${designStyle}\n\n${compiledSlides}`
   const html = renderHtml ? await renderHtml(compiledMarkdown, plan.settings.theme) : null
   return {
     schema_version: '1',

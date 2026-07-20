@@ -9,6 +9,7 @@ import {
 } from './render-tree.mjs'
 import { renderInformationPattern } from './composition-information-svg.mjs'
 import { contentkitFontFaceCss, contentkitFontFamilyCompact, contentkitFontFile } from './typography.mjs'
+import { resolveDesignSystem } from './design-system.mjs'
 import { escapeXml } from './utils.mjs'
 
 export const compositionFont = readFileSync(contentkitFontFile)
@@ -22,61 +23,11 @@ const canvases = {
   flow: { width: 1200, height: 1500 },
 }
 
-const defaults = {
-  light: {
-    background: '#ffffff',
-    surface: '#ffffff',
-    foreground: '#18181b',
-    muted: '#f4f4f5',
-    muted_foreground: '#52525b',
-    border: '#d4d4d8',
-    primary: '#18181b',
-    primary_foreground: '#fafafa',
-    chart_1: '#2563eb',
-    chart_2: '#0f766e',
-    chart_3: '#b45309',
-    chart_4: '#7c3aed',
-    chart_5: '#be123c',
-  },
-  dark: {
-    background: '#09090b',
-    surface: '#111113',
-    foreground: '#fafafa',
-    muted: '#27272a',
-    muted_foreground: '#a1a1aa',
-    border: '#3f3f46',
-    primary: '#fafafa',
-    primary_foreground: '#18181b',
-    chart_1: '#60a5fa',
-    chart_2: '#5eead4',
-    chart_3: '#fbbf24',
-    chart_4: '#c4b5fd',
-    chart_5: '#fda4af',
-  },
-}
-
-function color(value, fallback) {
-  const raw = String(value || '').trim()
-  if (/^-?[\d.]+\s+-?[\d.]+%\s+-?[\d.]+%$/.test(raw)) return `hsl(${raw})`
-  if (/^(?:#[\da-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([^<>]+\)|[a-z]+)$/i.test(raw)) return raw
-  return fallback
-}
-
 export function compositionTheme(settings = {}, scheme = 'light') {
-  const authored = settings.theme?.tokens || {}
-  const base = defaults[scheme]
-  const theme = Object.fromEntries(
-    Object.entries(base).map(([key, fallback]) => {
-      const entry = authored[key]
-      const value = entry && typeof entry === 'object' ? entry[scheme] : entry
-      return [key, color(value, fallback)]
-    }),
-  )
-  theme.surface = color(
-    authored.card && typeof authored.card === 'object' ? authored.card[scheme] : authored.card,
-    theme.surface,
-  )
-  theme.subtle = scheme === 'dark' ? '#18181b' : '#fafafa'
+  const design = resolveDesignSystem(settings)
+  const theme = { ...design[scheme] }
+  theme.border_strong = scheme === 'dark' ? '#64748b' : '#94a3b8'
+  theme.subtle = design[scheme].muted
   theme.elevated = scheme === 'dark' ? '#1c1c1f' : '#ffffff'
   theme.accent_soft = scheme === 'dark' ? '#172554' : '#eff6ff'
   theme.success_soft = scheme === 'dark' ? '#052e2b' : '#f0fdfa'
@@ -992,7 +943,9 @@ function hub(items, frame, theme) {
       const angle = -Math.PI / 2 + (index * Math.PI * 2) / Math.max(spokes.length, 1)
       const nodeCx = cx + Math.cos(angle) * radiusX
       const nodeCy = cy + Math.sin(angle) * radiusY
-      return `<g>${line(cx + Math.cos(angle) * hubRadius, cy + Math.sin(angle) * hubRadius, nodeCx, nodeCy, { stroke: theme.border, width: 2 })}${circle(nodeCx, nodeCy, 5, { fill: theme.chart_1 })}${rect(nodeCx - nodeW / 2, nodeCy - nodeH / 2, nodeW, nodeH, { fill: theme.surface, stroke: theme.border, radius: 14 })}${text(item.title, nodeCx, nodeCy + 6, { size: 17, weight: 680, fill: theme.foreground, width: nodeW - 26, lines: 2, anchor: 'middle' }).svg}</g>`
+      const edgeX = nodeCx - Math.cos(angle) * (nodeW / 2 + 10)
+      const edgeY = nodeCy - Math.sin(angle) * (nodeH / 2 + 10)
+      return `<g>${line(cx + Math.cos(angle) * (hubRadius + 8), cy + Math.sin(angle) * (hubRadius + 8), edgeX, edgeY, { stroke: theme.border_strong, width: 2 })}${circle(nodeCx, nodeCy, 5, { fill: theme.chart_1 })}${rect(nodeCx - nodeW / 2, nodeCy - nodeH / 2, nodeW, nodeH, { fill: theme.surface, stroke: theme.border_strong, radius: 14 })}${text(item.title, nodeCx, nodeCy + 6, { size: 17, weight: 680, fill: theme.foreground, width: nodeW - 26, lines: 2, anchor: 'middle' }).svg}</g>`
     })
     .join(
       '',
@@ -1346,12 +1299,16 @@ function architectureMap(items, frame, theme) {
   const nodes = (entries, side) =>
     entries
       .map((item, index) => {
-        const h = Math.min(100, (frame.height - 18 * Math.max(0, entries.length - 1)) / Math.max(1, entries.length))
-        const y = frame.y + index * (h + 18)
+        const h = Math.min(104, (frame.height - 28 * Math.max(0, entries.length - 1)) / Math.max(1, entries.length))
+        const total = entries.length * h + Math.max(0, entries.length - 1) * 28
+        const y = frame.y + (frame.height - total) / 2 + index * (h + 28)
         const x = side === 'left' ? frame.x : frame.x + frame.width - sideW
-        const startX = side === 'left' ? x + sideW : coreX + coreW
-        const endX = side === 'left' ? coreX : x
-        return `<g>${line(startX, y + h / 2, endX, coreY + coreH / 2, { stroke: theme.border, width: 2, marker: true })}${rect(x, y, sideW, h, { fill: theme.surface, stroke: theme.border, radius: 12 })}${text(item.title, x + sideW / 2, y + h / 2 + 6, { size: 15, weight: 680, fill: theme.foreground, width: sideW - 28, lines: 2, anchor: 'middle' }).svg}</g>`
+        const portY = coreY + (coreH * (index + 1)) / (entries.length + 1)
+        const startX = side === 'left' ? x + sideW + 10 : coreX + coreW + 10
+        const startY = side === 'left' ? y + h / 2 : portY
+        const endX = side === 'left' ? coreX - 10 : x - 10
+        const endY = side === 'left' ? portY : y + h / 2
+        return `<g>${line(startX, startY, endX, endY, { stroke: theme.border_strong, width: 2.5, marker: true })}${rect(x, y, sideW, h, { fill: theme.surface, stroke: theme.border_strong, radius: 12 })}${text(item.title, x + sideW / 2, y + h / 2 + 6, { size: 15, weight: 680, fill: theme.foreground, width: sideW - 28, lines: 2, anchor: 'middle' }).svg}</g>`
       })
       .join('')
   return `<g>${nodes(left, 'left')}${nodes(right, 'right')}${rect(coreX, coreY, coreW, coreH, { fill: theme.foreground, stroke: theme.foreground, radius: 18 })}<text x="${coreX + 24}" y="${coreY + 34}" font-size="11" font-weight="760" fill="${theme.chart_1}" letter-spacing="1.2">CORE</text>${text(core.title, coreX + coreW / 2, coreY + coreH / 2 + 8, { size: Math.min(27, coreW / 8), weight: 760, fill: theme.primary_foreground, width: coreW - 44, lines: 3, anchor: 'middle' }).svg}</g>`

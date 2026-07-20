@@ -12,6 +12,7 @@ import { getPattern, patternRegistry, patternRegistryHash, recommendPatterns } f
 import { getPublishingGuide, publishingGuideRegistry, publishingGuideRegistryHash } from './publishing-guides.mjs'
 import { contentkitFontFamily } from './typography.mjs'
 import { compileDeck, DECK_THEMES, planDeck } from './decks.mjs'
+import { DECK_TEMPLATES, deckTemplateRegistry, deckTemplateRegistryHash } from './deck-templates.mjs'
 import { publicDeckJob } from './deck-jobs.mjs'
 import {
   getAudioStats,
@@ -201,6 +202,7 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/deck-jobs\/[^/]+$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/deck-jobs\/[^/]+\/result$/, methods: ['GET'] },
   { pattern: /^\/v1\/deck-themes$/, methods: ['GET'] },
+  { pattern: /^\/v1\/deck-templates$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/published$/, methods: ['GET'] },
   {
     pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+\/composition\.(svg|png)$/,
@@ -1089,6 +1091,18 @@ export function createRequestHandler(ctx) {
       if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
       return sendJson(res, 200, body, { etag, 'cache-control': 'public,max-age=3600' })
     }
+    if (path === '/v1/deck-templates' && req.method === 'GET') {
+      const body = {
+        schema_version: '1',
+        templates: deckTemplateRegistry,
+        ids: DECK_TEMPLATES,
+        default: 'freeform',
+        registry_sha256: deckTemplateRegistryHash,
+      }
+      const etag = `"${sha256(JSON.stringify(body))}"`
+      if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+      return sendJson(res, 200, body, { etag, 'cache-control': 'public,max-age=3600' })
+    }
     const deckJobMatch = path.match(/^\/v1\/sites\/([^/]+)\/deck-jobs\/([^/]+)(\/result)?$/)
     if (deckJobMatch && req.method === 'GET') {
       const site = await repo.getSite(deckJobMatch[1])
@@ -1136,7 +1150,7 @@ export function createRequestHandler(ctx) {
         }
         if (action === 'validate') {
           const plan = await planDeck(input.markdown, input.preferences)
-          const valid = plan.diagnostics.length === 0
+          const valid = !plan.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
           await recordDeckEvent(site.id, {
             mode: 'validate',
             result: valid ? 'success' : 'rejected',

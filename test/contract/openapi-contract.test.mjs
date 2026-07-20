@@ -98,6 +98,7 @@ test('the OpenAPI authoring contract documents semantic compositions, charts and
 test('semantic deck, async job and statistics paths are documented and routable', () => {
   for (const path of [
     '/v1/deck-themes',
+    '/v1/deck-templates',
     '/v1/sites/{site}/decks/plan',
     '/v1/sites/{site}/decks/validate',
     '/v1/sites/{site}/decks/compile',

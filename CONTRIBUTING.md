@@ -55,6 +55,10 @@ Format your changes with `npm run format` before committing.
 - Keep `README.md`, `docs/llms.txt`, `docs/llms-full.txt` and the focused guides
   consistent with behavior and OpenAPI. Code, comments, tests and documentation
   are written in English.
+- Keep ContentKit tenant-neutral. First-party sites and public examples may
+  dogfood the product, but customer identity, corporate design, endpoints and
+  workflow bindings must enter through the same validated configuration surface
+  available to every tenant; they must not become product defaults.
 - If you add a migration, add ordered `.sql` files plus journal entries under
   `src/db/migrations/` and run `npm run db:gen-embedded`.
 

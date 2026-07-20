@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { contentkitFontFaceCss, contentkitFontFile } from './typography.mjs'
 
 export class DeckBuildError extends Error {
   constructor(message, code, statusCode) {
@@ -139,11 +140,13 @@ export function createDeckRenderer(config, logger, observer = {}) {
     observer.cache?.('miss')
     const started = Date.now()
     try {
-      const [built, css] = await Promise.all([
+      const [built, css, font] = await Promise.all([
         slidev(markdown),
         readFile(join(config.root, 'assets', `deck-${theme}.css`), 'utf8'),
+        readFile(contentkitFontFile),
       ])
-      const html = injectTheme(built, css)
+      const fontCss = contentkitFontFaceCss(`data:font/woff2;base64,${font.toString('base64')}`, { display: 'swap' })
+      const html = injectTheme(built, `${fontCss}\n${css}`)
       cache.set(key, html)
       while (cache.size > config.deckCacheMax) cache.delete(cache.keys().next().value)
       observer.build?.({

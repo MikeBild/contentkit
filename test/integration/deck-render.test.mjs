@@ -36,10 +36,21 @@ test('real Slidev compiler emits one offline presenter-capable semantic deck', {
     assert.ok(compiled.artifacts.length >= 2)
     assert.match(compiled.html, /^<!DOCTYPE html>/i)
     assert.match(compiled.html, /data-contentkit-deck-theme/)
+    assert.match(compiled.html, /--ck-deck-bg/)
+    assert.match(compiled.html, /data:font\/woff2;base64/)
     assert.match(compiled.html, /presenter/)
     assert.doesNotMatch(compiled.html, /<(?:script|link|img)\b[^>]*(?:src|href)=["']https?:/i)
     assert.doesNotMatch(compiled.html, /fonts\.googleapis|fonts\.gstatic/)
     assert.match(compiled.html_sha256, /^[0-9a-f]{64}$/)
+
+    const roleSource = source.replace(
+      '\n---\n\n# Verified outcome',
+      '\n---\ndeckRole: evidence\n---\n\n# Verified outcome',
+    )
+    const roleCompiled = await compileDeck(roleSource, {
+      renderHtml: async (markdown, theme) => (await renderer.render(markdown, theme)).html,
+    })
+    assert.doesNotMatch(roleCompiled.html, />deckRole: evidence</)
 
     const cached = await renderer.render(compiled.markdown, compiled.plan.settings.theme)
     assert.equal(cached.cache, 'hit')

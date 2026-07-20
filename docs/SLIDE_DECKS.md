@@ -19,6 +19,7 @@ slug: product-decision
 question: What should we ship?
 goal: Make the evidence actionable.
 deck:
+  template: decision-brief
   theme: editorial
   visualScheme: auto
   maxSlides: 24
@@ -44,7 +45,25 @@ What should we ship?
 Ship the verified path.
 ```
 
-The supported themes are `neutral` and `editorial`. `visualScheme` is `auto`,
+The supported templates are `freeform`, `editorial-story`, `decision-brief`,
+`technical-explainer` and `status-report`. A selected non-freeform template
+defines ordered narrative slots, required roles, defaults and visual acceptance
+rules. Assign a slot to every content slide with bounded Slidev frontmatter:
+
+```md
+---
+deckRole: evidence
+---
+
+# Evidence
+```
+
+Planning exposes the complete template contract and its registry hash. Missing,
+unknown or out-of-order roles are deterministic diagnostics and block compilation.
+`freeform` preserves existing authored decks without requiring roles.
+
+The supported themes are `neutral` and `editorial`. A theme controls presentation;
+a template controls narrative structure. `visualScheme` is `auto`,
 `light` or `dark`; `auto` emits both visual schemes. `maxSlides` is a bounded
 integer from 1 through 120. ContentKit rejects unknown values and never accepts
 an uploaded CSS/template override.
@@ -58,10 +77,10 @@ separator-like text inside fenced code is not treated as a new slide.
 
 The production-shaped source is
 [`examples/decks/decision.en.md`](../examples/decks/decision.en.md). A larger
-German example is maintained in
-[`examples/decks/contentkit-semantic-publishing.de.md`](../examples/decks/contentkit-semantic-publishing.de.md).
+technical-explainer example is maintained in
+[`examples/decks/contentkit-semantic-publishing.en.md`](../examples/decks/contentkit-semantic-publishing.en.md).
 When released, its permanent site path is
-`/de/slides/contentkit-semantic-publishing/`.
+`/en/slides/contentkit-semantic-publishing/`.
 
 ## Deterministic compiler
 
@@ -95,6 +114,12 @@ Theme discovery is public:
 
 ```bash
 curl "$CONTENTKIT_URL/v1/deck-themes"
+```
+
+Template discovery is public and intended for editors, automation and LLM clients:
+
+```bash
+curl "$CONTENTKIT_URL/v1/deck-templates"
 ```
 
 Planning and validation require `content:write`:
@@ -197,3 +222,16 @@ ContentKit production deployment:
 - the signed `contentkit.deck.published` webhook arrives once;
 - activating the previous release restores the old site, and reactivating the
   new release restores the deck.
+
+Run the same real-browser geometry, typography, offline-resource and
+pixel-stability gate against the published artifact by setting its canonical
+URL explicitly:
+
+```bash
+CONTENTKIT_DECK_PUBLIC_URL=https://example.com/en/slides/example/ \
+  npm run validate:deck-showcase
+```
+
+The validator still compiles the committed source locally to establish the
+expected narrative, slide titles and semantic-visual inventory, then compares
+the deployed artifact at desktop, laptop, mobile and dark-mode viewports.

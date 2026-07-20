@@ -212,6 +212,7 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | POST | `/v1/sites/{site}/compositions/validate` | `content:write` | Validate semantics and resolve a requested pattern or safe fallback |
 | POST | `/v1/sites/{site}/compositions/compile` | `content:write` | Headlessly compile models, responsive HTML, SVG and/or PNG |
 | GET | `/v1/deck-themes` | public | List the controlled deck themes |
+| GET | `/v1/deck-templates` | public | List reusable narrative templates, ordered slots, defaults and visual contracts |
 | POST | `/v1/sites/{site}/decks/plan` | `content:write` | Derive a deterministic information architecture, narrative and source-addressed DeckPlan |
 | POST | `/v1/sites/{site}/decks/validate` | `content:write` | Validate a deck source and return bounded diagnostics |
 | POST | `/v1/sites/{site}/decks/compile` | `content:write deck:render` | Compile semantic SVG/PNG visuals and one self-contained Slidev HTML deck |
@@ -449,7 +450,7 @@ Supported YAML frontmatter:
 |---|---:|---|
 | `kind` | no | `page`, `post`, `project` or `deck`; defaults to `page` |
 | `layout` | no | Controlled layout: `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` or `deck`; `report` is a compatibility alias for report compositions |
-| `deck` | deck only | Optional `{ theme, visualScheme, maxSlides }`; controlled themes are `neutral` and `editorial`, schemes are `auto`, `light`, `dark` |
+| `deck` | deck only | Optional `{ template, theme, visualScheme, maxSlides }`; templates are `freeform`, `editorial-story`, `decision-brief`, `technical-explainer`, `status-report`; controlled themes are `neutral` and `editorial`, schemes are `auto`, `light`, `dark` |
 | `composition` | composition only | `{ format, canvas, intent, density?, preferredPattern? }`; geometry and executable code are forbidden |
 | `title` | yes | Title, navigation label and SEO title basis |
 | `locale` | yes | IETF-ish tag such as `de`, `en` or `en-us` |
