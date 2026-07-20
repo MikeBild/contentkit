@@ -34,11 +34,11 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/inter": "^5.3.0",
     "@resvg/resvg-wasm": "^2.6.2",
     "@shikijs/rehype": "^4.3.1",
     "echarts": "^6.1.0",
-    "katex": "^0.17.0",
+    "katex": "^0.18.1",
     "mermaid": "^11.12.2",
     "pg": "^8.16.3",
     "rehype-autolink-headings": "^7.1.0",
