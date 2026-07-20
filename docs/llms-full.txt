@@ -213,7 +213,7 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.svg` | `content:read` | Fetch a published standalone light/dark SVG |
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.png` | `content:read` | Fetch a published deterministic light/dark PNG |
 | GET | `/v1/sites/{site}/search` | `content:read` | Full-text search over published content: required `q`, optional `locale`, `kind`, `limit`; ranked results with `<mark>` headlines |
-| POST | `/v1/sites/{site}/previews` | `release:write` | Build an expiring preview release and return a preview URL |
+| POST | `/v1/sites/{site}/previews` | `release:write` | Build a named expiring preview and return separate invitation and preview URLs |
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
@@ -258,7 +258,8 @@ The same service also serves published static sites:
 
 | Route | Function |
 |---|---|
-| `/p/{token}/...` | Expiring preview release; `noindex`, `private,no-store` |
+| `/preview-invitations/{token}` | One-time exchange into a path-scoped HttpOnly preview session |
+| `/previews/{slug}/...` | Memorable session-protected preview; `noindex`, `private,no-store` |
 | `/media/{asset-id}/...` | Content-addressed uploaded asset; immutable cache |
 | Custom domain paths | Active release files resolved by request host |
 
@@ -890,7 +891,7 @@ Build a preview:
 curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/previews" \
   -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"revision_ids":["<revision-id>"],"expires_in":3600,"reason":"review"}'
+  -d '{"slug":"article-review","revision_ids":["<revision-id>"],"expires_in":3600,"reason":"review"}'
 ```
 
 Preview details:
@@ -898,11 +899,29 @@ Preview details:
 - overlays selected revisions on top of the currently published snapshot;
 - creates a release row with kind `preview`;
 - uploads complete static output under an immutable release prefix;
-- returns a URL under `/p/{token}/`;
-- stores only a hash of the preview token;
+- requires a human-readable, globally addressed `slug` of 3–80 lowercase
+  letters, numbers or hyphens; reusing the slug replaces its previous preview;
+- returns a one-time `invitation_url` and a memorable `preview_url` under
+  `/previews/{slug}/`;
+- stores separate hashes for the invitation and resulting session; raw secrets
+  are never stored;
+- consumes the invitation atomically, sets a path-scoped HttpOnly cookie and
+  redirects to the clean preview URL;
 - caps expiration at seven days internally;
 - serves preview HTML with `X-Robots-Tag: noindex,nofollow,noarchive` and
   `private,no-store`.
+
+Browser clients follow `invitation_url` normally. A headless client must retain
+the response cookie while following the redirect and on later requests:
+
+```bash
+curl -L -c preview.cookies -b preview.cookies "$INVITATION_URL"
+curl -b preview.cookies "$PREVIEW_URL/de/"
+```
+
+Do not persist or log `invitation_url`; it is the only bearer credential and is
+invalid immediately after the successful exchange. `preview_url` contains no
+secret and can be retained as the human-readable review address.
 
 Publish a release:
 
@@ -964,7 +983,7 @@ snapshots accumulate. `POST /v1/maintenance/storage-gc` (cron-triggered, an
 unrestricted `release:write` key) sweeps them: it deletes the objects and rows
 of releases that are past `CONTENTKIT_RELEASE_RETENTION_MS`, not currently
 active, outside the per-site `CONTENTKIT_RELEASE_HISTORY_KEEP` rollback window,
-and not referenced by a live preview token; it also reaps releases stuck in
+and not referenced by live named preview access; it also reaps releases stuck in
 `building` past `CONTENTKIT_BUILDING_REAP_MS`. A failed or concurrency-aborted
 build also removes its own partial uploads immediately. The active release and
 recent rollback targets are never deleted.
@@ -1264,7 +1283,7 @@ Production config is explicit. Missing required production values fail startup.
 | `DATABASE_URL` | dedicated Contentkit PostgreSQL database URL |
 | `CONTENTKIT_BOOTSTRAP_API_KEY` | initial break-glass admin key |
 | `CONTENTKIT_KEY_PEPPER` | server-side API key hashing pepper |
-| `CONTENTKIT_PREVIEW_SECRET` | preview token hashing secret |
+| `CONTENTKIT_PREVIEW_SECRET` | preview invitation and session token hashing secret |
 | `CONTENTKIT_SESSION_SECRET` | independent HMAC secret for reader session tokens and login CSRF |
 | `SUPABASE_URL` | Supabase project URL for Storage API |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
@@ -1371,7 +1390,8 @@ Security boundaries:
 - CMS metadata lives in the dedicated `contentkit` PostgreSQL database.
 - The Storage bucket is private; Contentkit alone has the service-role key.
 - API keys are HMAC-hashed with a server-side pepper and scoped to sites/actions.
-- Preview tokens are random, hashed, expiring and revocable.
+- Preview invitations are one-time; invitation and session tokens are random,
+  separately hashed, expiring and revocable.
 - Markdown raw HTML is sanitized; unsafe links/scripts do not pass through.
 - Mermaid runs in strict mode.
 - Public writes pass Turnstile, honeypot, length checks and IP rate limits.
@@ -1431,7 +1451,10 @@ Common failures:
   ingress path that does not exist on the receiver. Point it at a live hook and
   ensure the shared secret matches on both sides (the whole `whsec_...` string is
   the HMAC key verbatim, not base64-decoded);
-- preview returns 404: token expired, was revoked or was typed incorrectly;
+- preview invitation returns 404: it was already consumed, expired, revoked or
+  copied incorrectly; create a new invitation by rebuilding the named preview;
+- named preview returns 401: the browser has no valid path-scoped preview
+  session; open its current invitation URL first;
 - custom-domain route returns 503: the site has no active release;
 - every custom-domain path returns 404 (`{"error":"not found"}`): the request
   `Host` matches no site domain. A wildcard domain (`*.example.com`) matches

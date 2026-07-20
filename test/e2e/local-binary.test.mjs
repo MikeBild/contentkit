@@ -322,15 +322,33 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           body: JSON.stringify({
             revision_ids: [ingested.revision.id, reportEntry.revision.id, ...docs.map((entry) => entry.revision.id)],
             expires_in: 600,
+            slug: 'local-release-review',
           }),
         }),
         201,
       )
-      const previewPage = await fetch(`${preview.url}de/blog/lokaler-e2e-beitrag/`)
+      assert.equal(preview.preview_url, `${origin}/previews/local-release-review/`)
+      assert.match(preview.invitation_url, /\/preview-invitations\/[A-Za-z0-9_-]+$/)
+      const unauthenticatedPreview = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`)
+      assert.equal(unauthenticatedPreview.status, 401)
+      const invitation = await fetch(preview.invitation_url, { redirect: 'manual' })
+      assert.equal(invitation.status, 303)
+      assert.equal(invitation.headers.get('location'), '/previews/local-release-review/')
+      const previewCookie = invitation.headers.get('set-cookie')?.split(';')[0]
+      assert.match(previewCookie || '', /^contentkit_preview=/)
+      const consumedInvitation = await fetch(preview.invitation_url, { redirect: 'manual' })
+      assert.equal(consumedInvitation.status, 404)
+      const legacyPreview = await fetch(`${origin}/p/legacy-token/de/blog/lokaler-e2e-beitrag/`)
+      assert.equal(legacyPreview.status, 404)
+      const previewPage = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`, {
+        headers: { cookie: previewCookie },
+      })
       assert.equal(previewPage.status, 200)
       assert.equal(previewPage.headers.get('x-robots-tag'), 'noindex,nofollow,noarchive')
       assert.match(await previewPage.text(), /Lokaler E2E Beitrag/)
-      const previewReport = await fetch(`${preview.url}en/q2-business-review/`)
+      const previewReport = await fetch(`${preview.preview_url}en/q2-business-review/`, {
+        headers: { cookie: previewCookie },
+      })
       assert.equal(previewReport.status, 200)
       const previewReportHtml = await previewReport.text()
       assert.match(previewReportHtml, /report-chart-picture/)
@@ -338,9 +356,9 @@ Markdown rein, veröffentlichte HTML-Seite raus.
         (match) => match[1],
       )
       assert.ok(previewAssetPaths.length >= 2)
-      assert.ok(previewAssetPaths.every((path) => path.startsWith(new URL(preview.url).pathname)))
+      assert.ok(previewAssetPaths.every((path) => path.startsWith(new URL(preview.preview_url).pathname)))
       for (const assetPath of [...new Set(previewAssetPaths)].slice(0, 4)) {
-        const previewAsset = await fetch(new URL(assetPath, origin))
+        const previewAsset = await fetch(new URL(assetPath, origin), { headers: { cookie: previewCookie } })
         assert.equal(previewAsset.status, 200, assetPath)
       }
 

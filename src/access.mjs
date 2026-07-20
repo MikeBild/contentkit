@@ -8,6 +8,8 @@ export const SESSION_IDLE_MS = 12 * 60 * 60 * 1000
 export const SESSION_ABSOLUTE_MS = 7 * 24 * 60 * 60 * 1000
 export const READER_COOKIE = '__Host-contentkit_session'
 export const INSECURE_READER_COOKIE = 'contentkit_session'
+export const PREVIEW_COOKIE = '__Secure-contentkit_preview'
+export const INSECURE_PREVIEW_COOKIE = 'contentkit_preview'
 
 export function normalizeUsername(value) {
   const username = String(value || '')
@@ -83,6 +85,12 @@ export function sessionCookie(token, { secure = true, maxAge = Math.floor(SESSIO
 export function clearSessionCookie({ secure = true } = {}) {
   const name = secure ? READER_COOKIE : INSECURE_READER_COOKIE
   return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`
+}
+
+export function previewSessionCookie(token, slug, { secure = true, maxAge = 3600 } = {}) {
+  const name = secure ? PREVIEW_COOKIE : INSECURE_PREVIEW_COOKIE
+  const path = `/previews/${encodeURIComponent(slug)}/`
+  return `${name}=${encodeURIComponent(token)}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
 }
 
 export function validReturnTo(value, fallback = '/') {

@@ -86,7 +86,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   download link, blogcast feed, a per-locale blogcast page at
   `/{locale}/blogcast/`, budgets and automatic rebuilds.
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
-- Expiring preview links and pointer-based instant rollback.
+- Named, session-protected previews with one-time invitations and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
 - Cloudflare Turnstile, honeypot and rate limits on public writes.
 - Signed Standard Webhooks notifications for contact, comment and release events.
@@ -188,13 +188,18 @@ Build a preview or release using the returned revision ID:
 curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/previews" \
   -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"revision_ids":["<revision-id>"],"expires_in":3600}'
+  -d '{"slug":"article-review","revision_ids":["<revision-id>"],"expires_in":3600}'
 
 curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
   -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"revision_ids":["<revision-id>"],"reason":"initial release"}'
 ```
+
+The preview response separates access from navigation. Send the one-time
+`invitation_url` to the reviewer. Opening it creates a path-scoped HttpOnly
+session and redirects to the memorable `preview_url`, for example
+`/previews/article-review/`. The invitation cannot be used a second time.
 
 The full live contract is available at `/openapi.json`. A committed canonical
 snapshot lives in [docs/openapi.json](docs/openapi.json); update it with

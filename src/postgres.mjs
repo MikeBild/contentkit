@@ -12,7 +12,7 @@ const TABLES = new Set([
   'ck_assets',
   'ck_releases',
   'ck_release_entries',
-  'ck_preview_tokens',
+  'ck_preview_access',
   'ck_comments',
   'ck_contact_submissions',
   'ck_post_feedback',

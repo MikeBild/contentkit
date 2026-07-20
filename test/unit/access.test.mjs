@@ -6,6 +6,7 @@ import {
   mostSpecificAccess,
   normalizeUsername,
   parseCookies,
+  previewSessionCookie,
   readerAllowed,
   sessionCookie,
   validReturnTo,
@@ -56,4 +57,14 @@ test('reader cookies are HttpOnly, same-site and clearable', () => {
   assert.deepEqual(parseCookies('broken=%E0%A4%A; usable=yes'), { usable: 'yes' })
   assert.match(clearSessionCookie({ secure: true }), /Max-Age=0/)
   assert.match(clearSessionCookie({ secure: false }), /^contentkit_session=/)
+})
+
+test('preview cookies are secure and scoped to one memorable preview path', () => {
+  const cookie = previewSessionCookie('session-secret', 'article-review', { secure: true, maxAge: 600 })
+  assert.match(cookie, /^__Secure-contentkit_preview=session-secret;/)
+  assert.match(cookie, /Path=\/previews\/article-review\//)
+  assert.match(cookie, /HttpOnly/)
+  assert.match(cookie, /SameSite=Lax/)
+  assert.match(cookie, /Max-Age=600/)
+  assert.match(cookie, /Secure/)
 })

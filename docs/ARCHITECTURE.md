@@ -99,7 +99,9 @@ provision the database and login; they do not copy or execute migration files.
   supply geometry, CSS, executable code or renderer specifications. Markdown,
   viewport and chart limits bound compile work; SVG markup comes only from the
   Contentkit renderer and PNG uses a bundled font rather than host fonts.
-- Preview tokens are random, stored only as hashes, expiring and revocable.
+- Preview invitation and session tokens are random, stored only as separate
+  hashes, expiring and revocable. A one-time invitation exchanges into a
+  path-scoped HttpOnly cookie before the browser reaches the named preview URL.
 - Public writes pass Turnstile, honeypot, length and in-memory IP rate limits.
 - Contentkit signs exact webhook bytes using Standard Webhooks HMAC-SHA256; the
   HMAC key is the full `whsec_...` secret string verbatim (not base64-decoded).
@@ -201,7 +203,7 @@ get `noindex,follow`, no sitemap entry and no `hreflang`.
 
 `archive.js` filters the archive in place by tag and free text. It fetches nothing —
 the preview HTML rewriter only patches `href|src|action|data-index`, so a fifth path
-attribute would 404 under `/p/<token>/`. Every post is server-rendered before the
+attribute would 404 under `/previews/<slug>/`. Every post is server-rendered before the
 script runs and the facet chips are real links to the tag pages, so the archive is a
 complete crawlable index without scripting.
 

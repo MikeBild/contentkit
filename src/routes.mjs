@@ -23,8 +23,11 @@ import {
 import {
   clearSessionCookie,
   INSECURE_READER_COOKIE,
+  INSECURE_PREVIEW_COOKIE,
   mostSpecificAccess,
   parseCookies,
+  PREVIEW_COOKIE,
+  previewSessionCookie,
   readerAllowed,
   READER_COOKIE,
   sessionCookie,
@@ -45,7 +48,9 @@ function documentation(config, name) {
 }
 
 export function routeName(path) {
-  return path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id').replace(/\/p\/[^/]+/, '/p/:token')
+  return path
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+    .replace(/\/preview-invitations\/[^/]+/, '/preview-invitations/:token')
 }
 
 // Content types for gateway-served release objects. Order matters: `feed.xml`
@@ -184,6 +189,7 @@ export const API_ROUTES = [
   { pattern: /^\/_contentkit\/login$/, methods: ['GET', 'POST'] },
   { pattern: /^\/_contentkit\/logout$/, methods: ['POST'] },
   { pattern: /^\/_contentkit\/(session|navigation\.json|search-index\.json)$/, methods: ['GET'] },
+  { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/v1\/sites$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
@@ -633,13 +639,21 @@ export function createRequestHandler(ctx) {
 
   async function gateway(req, res, url) {
     if (!['GET', 'HEAD'].includes(req.method)) return false
-    const preview = url.pathname.match(/^\/p\/([^/]+)(\/.*)?$/)
+    const preview = url.pathname.match(/^\/previews\/([^/]+)(\/.*)?$/)
     if (preview) {
-      const tokenHash = sha256(`${config.previewSecret}:${preview[1]}`)
-      const token = await repo.getPreviewByHash(tokenHash)
-      if (!token || new Date(token.expires_at) <= new Date()) return sendJson(res, 404, { error: 'preview not found' })
-      const release = await repo.getRelease(token.release_id)
-      await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/p/${preview[1]}`)
+      const cookies = parseCookies(req.headers.cookie || '')
+      const sessionToken = cookies[PREVIEW_COOKIE] || cookies[INSECURE_PREVIEW_COOKIE]
+      const access = await repo.authenticatePreview(preview[1], sessionToken)
+      if (!access)
+        return sendJson(
+          res,
+          401,
+          { error: 'preview invitation required' },
+          { 'cache-control': 'private,no-store', 'www-authenticate': 'ContentKitPreview' },
+        )
+      const release = await repo.getRelease(access.release_id)
+      if (!release) return sendJson(res, 404, { error: 'preview not found' })
+      await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/previews/${preview[1]}`)
       return true
     }
     const site = await repo.getSiteByHost(req.headers.host || '')
@@ -768,6 +782,20 @@ export function createRequestHandler(ctx) {
     // through to the gateway, which serves the release's own llms.txt/robots.txt
     // or a 404 — never contentkit's documentation or its request telemetry.
     const apiHost = isApiHost(req, config)
+    const invitation = apiHost && path.match(/^\/preview-invitations\/([^/]+)$/)
+    if (invitation && req.method === 'GET') {
+      const access = await repo.exchangePreviewInvitation(invitation[1])
+      if (!access) return sendJson(res, 404, { error: 'preview invitation not found' })
+      const maxAge = Math.max(1, Math.floor((new Date(access.expires_at).getTime() - Date.now()) / 1000))
+      const secure = String(config.publicUrl || '').startsWith('https://')
+      return send(res, 303, '', {
+        location: `/previews/${access.slug}/`,
+        'cache-control': 'private,no-store',
+        'set-cookie': previewSessionCookie(access.token, access.slug, { secure, maxAge }),
+        'referrer-policy': 'no-referrer',
+        'x-robots-tag': 'noindex,nofollow,noarchive',
+      })
+    }
     if (apiHost && req.method === 'GET' && path === '/metrics')
       return send(res, 200, metrics.render(releases.inflight()), { 'content-type': 'text/plain; version=0.0.4' })
     if (apiHost && req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
@@ -1190,6 +1218,7 @@ export function createRequestHandler(ctx) {
         siteId: site.id,
         revisionIds: input.revision_ids || [],
         expiresIn: input.expires_in || 3600,
+        previewSlug: input.slug,
         reason: input.reason || '',
       })
       metrics.build(Date.now() - started)

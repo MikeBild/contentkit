@@ -32,7 +32,7 @@ function fixture() {
   const db = {
     async select(table, q = {}) {
       if (table === 'ck_sites') return sites
-      if (table === 'ck_preview_tokens') return tokens
+      if (table === 'ck_preview_access') return tokens
       if (table === 'ck_release_entries') return entriesByRelease[q.release_id.slice(3)] || []
       if (table === 'ck_releases') {
         if (q.status === 'eq.building') return releases.filter((r) => r.status === 'building')

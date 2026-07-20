@@ -175,16 +175,23 @@ test('a failed build marks the release failed, emits an event and cleans up uplo
   assert.deepEqual(storage.removed, storage.uploaded, 'partial uploads must be removed')
 })
 
-test('preview returns a token URL and stores only the token hash', async () => {
+test('preview returns a named URL plus one-time invitation and stores only hashes', async () => {
   const db = makeDb()
   const releases = createReleaseManager(config, makeRepo(), db, makeStorage(), logger)
 
-  const result = await releases.preview({ siteId: 'site-1', revisionIds: [], expiresIn: 60 })
-  assert.match(result.url, new RegExp(`^${config.publicUrl}/p/[A-Za-z0-9_-]+/$`))
-  const token = result.url.split('/p/')[1].replace(/\/$/, '')
-  const stored = db.calls.inserts.find((call) => call.table === 'ck_preview_tokens')
-  assert.match(stored.body.token_hash, /^[0-9a-f]{64}$/)
-  assert.ok(!stored.body.token_hash.includes(token), 'raw token must never be stored')
+  const result = await releases.preview({
+    siteId: 'site-1',
+    revisionIds: [],
+    expiresIn: 60,
+    previewSlug: 'release-review',
+  })
+  assert.equal(result.preview_url, `${config.publicUrl}/previews/release-review/`)
+  assert.match(result.invitation_url, new RegExp(`^${config.publicUrl}/preview-invitations/[A-Za-z0-9_-]+$`))
+  const token = result.invitation_url.split('/').at(-1)
+  const stored = db.calls.inserts.find((call) => call.table === 'ck_preview_access')
+  assert.equal(stored.body.slug, 'release-review')
+  assert.match(stored.body.invite_token_hash, /^[0-9a-f]{64}$/)
+  assert.ok(!stored.body.invite_token_hash.includes(token), 'raw invitation token must never be stored')
   const noActivation = db.calls.rpcs.every((call) => call.name !== 'ck_activate_release')
   assert.ok(noActivation, 'previews must not activate a release')
 })
@@ -192,12 +199,22 @@ test('preview returns a token URL and stores only the token hash', async () => {
 test('preview fails with 503 when no preview secret is configured', async () => {
   const releases = createReleaseManager({ ...config, previewSecret: '' }, makeRepo(), makeDb(), makeStorage(), logger)
   await assert.rejects(
-    () => releases.preview({ siteId: 'site-1', revisionIds: [] }),
+    () => releases.preview({ siteId: 'site-1', revisionIds: [], previewSlug: 'release-review' }),
     (error) => {
       assert.equal(error.statusCode, 503)
       return true
     },
   )
+})
+
+test('preview rejects missing or non-human-readable slugs before building', async () => {
+  const db = makeDb()
+  const releases = createReleaseManager(config, makeRepo(), db, makeStorage(), logger)
+  await assert.rejects(
+    () => releases.preview({ siteId: 'site-1', previewSlug: 'Not memorable!' }),
+    (error) => error.statusCode === 422,
+  )
+  assert.equal(db.calls.inserts.length, 0)
 })
 
 test('rollback rejects unknown or foreign releases and activates known ones', async () => {

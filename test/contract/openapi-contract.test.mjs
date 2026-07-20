@@ -30,6 +30,18 @@ test('public access schemas never expose password hashes or session tokens', () 
   assert.deepEqual(spec.components.schemas.AccessRule.properties.match.enum, ['exact', 'prefix'])
 })
 
+test('preview contract separates one-time invitation access from the memorable URL', () => {
+  const operation = spec.paths['/v1/sites/{site}/previews'].post
+  const request = operation.requestBody.content['application/json'].schema
+  const response = operation.responses[201].content['application/json'].schema
+  assert.ok(request.required.includes('slug'))
+  assert.equal(request.properties.slug.maxLength, 80)
+  assert.ok(response.required.includes('invitation_url'))
+  assert.ok(response.required.includes('preview_url'))
+  assert.equal(response.properties.url, undefined)
+  assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[303])
+})
+
 test('every documented access operation has a routable method', () => {
   const normalize = (path) => path.replaceAll(/\{[^}]+\}/g, '[^/]+').replaceAll('.', '\\.')
   for (const [path, item] of Object.entries(spec.paths).filter(

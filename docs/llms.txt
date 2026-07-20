@@ -140,7 +140,7 @@ Pattern Package and export as an independent visual.
   twin per post and report (`.../index.md`), an AI share row on posts ("copy as Markdown", "open in
   Claude/ChatGPT" — the reader's own assistant, no site→AI data flow) and
   authored `tldr`/`faq` frontmatter rendered on the page and in JSON-LD.
-- Publishing: expiring previews, atomic releases, scheduled publishing through
+- Publishing: named previews with one-time invitations, atomic releases, scheduled publishing through
   `/v1/publish-due`, and pointer rollback to an existing release.
 - Public interaction: contact form, post comments, Turnstile, honeypot, rate
   limit, moderation queue and signed webhook notifications.

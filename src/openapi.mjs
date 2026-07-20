@@ -1406,11 +1406,85 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/previews': {
         post: {
-          summary: 'Build a time-limited preview',
+          summary: 'Build a named, time-limited preview',
+          description:
+            'Builds an immutable preview and replaces any prior preview with the same slug. The response separates the one-time secret invitation URL from the memorable session-protected preview URL. Opening the invitation atomically consumes it, creates a path-scoped HttpOnly session and redirects to the preview URL.',
           security: secured,
           parameters: [siteParameter],
-          requestBody: jsonBody(),
-          responses: { 201: { description: 'Preview built' } },
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['slug'],
+                  properties: {
+                    slug: {
+                      type: 'string',
+                      pattern: '^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$',
+                      minLength: 3,
+                      maxLength: 80,
+                      description: 'Memorable preview name. Reusing it atomically replaces the prior preview access.',
+                    },
+                    revision_ids: { type: 'array', items: { type: 'string', format: 'uuid' }, default: [] },
+                    expires_in: { type: 'integer', minimum: 60, maximum: 604800, default: 3600 },
+                    reason: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: 'Named preview built',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['release_id', 'preview_url', 'invitation_url', 'expires_in'],
+                    properties: {
+                      release_id: { type: 'string', format: 'uuid' },
+                      preview_url: { type: 'string', format: 'uri' },
+                      invitation_url: {
+                        type: 'string',
+                        format: 'uri',
+                        description: 'Secret one-time URL. Distribute it only to the intended reviewer.',
+                      },
+                      expires_in: { type: 'integer' },
+                    },
+                  },
+                },
+              },
+            },
+            422: { description: 'Invalid or missing preview slug' },
+          },
+        },
+      },
+      '/preview-invitations/{token}': {
+        get: {
+          summary: 'Exchange a one-time preview invitation',
+          description:
+            'Consumes the invitation, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.',
+          security: [],
+          parameters: [
+            {
+              name: 'token',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Secret invitation value returned once by the preview build endpoint.',
+            },
+          ],
+          responses: {
+            303: {
+              description: 'Invitation exchanged; redirect to the clean preview URL',
+              headers: {
+                Location: { schema: { type: 'string' } },
+                'Set-Cookie': { schema: { type: 'string' } },
+              },
+            },
+            404: { description: 'Invitation unavailable' },
+          },
         },
       },
       '/v1/sites/{site}/releases': {
@@ -1452,7 +1526,7 @@ export function openApi(config) {
         post: {
           summary: 'Garbage-collect old release objects and reap stuck builds',
           description:
-            'Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by a live preview token; reaps builds stuck in building. Requires an unrestricted release:write key.',
+            'Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by live named preview access; reaps builds stuck in building. Requires an unrestricted release:write key.',
           security: secured,
           responses: { 200: { description: 'Sweep counts' }, 403: { description: 'Requires an unrestricted key' } },
         },

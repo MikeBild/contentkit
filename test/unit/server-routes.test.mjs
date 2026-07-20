@@ -18,16 +18,16 @@ test('clientIp trusts only the rightmost X-Forwarded-For hop behind a proxy', ()
 
 test('preview rewriting covers responsive and styled release assets without capturing API routes', () => {
   const html = `<picture><source srcset="/assets/chart-small.svg 390w, /assets/chart.svg 1200w"><img src="/assets/chart.svg" style="background:url('/assets/grid.svg')"></picture><form action="/public/v1/contact"><a href="/de/report/">Report</a><a href="/_contentkit/login">Sign in</a></form>`
-  const rewritten = rewritePreviewHtml(html, '/p/token')
-  assert.match(rewritten, /\/p\/token\/assets\/chart-small\.svg 390w/)
-  assert.match(rewritten, /src="\/p\/token\/assets\/chart\.svg"/)
-  assert.match(rewritten, /url\('\/p\/token\/assets\/grid\.svg'\)/)
-  assert.match(rewritten, /href="\/p\/token\/de\/report\/"/)
+  const rewritten = rewritePreviewHtml(html, '/previews/release-review')
+  assert.match(rewritten, /\/previews\/release-review\/assets\/chart-small\.svg 390w/)
+  assert.match(rewritten, /src="\/previews\/release-review\/assets\/chart\.svg"/)
+  assert.match(rewritten, /url\('\/previews\/release-review\/assets\/grid\.svg'\)/)
+  assert.match(rewritten, /href="\/previews\/release-review\/de\/report\/"/)
   assert.match(rewritten, /action="\/public\/v1\/contact"/)
   assert.match(rewritten, /href="\/_contentkit\/login"/)
   assert.equal(
-    rewritePreviewCss('.hero{background:url(/assets/hero.svg)}', '/p/token'),
-    '.hero{background:url(/p/token/assets/hero.svg)}',
+    rewritePreviewCss('.hero{background:url(/assets/hero.svg)}', '/previews/release-review'),
+    '.hero{background:url(/previews/release-review/assets/hero.svg)}',
   )
 })
 
@@ -333,6 +333,35 @@ async function withApp(
     await new Promise((resolve) => app.server.close(resolve))
   }
 }
+
+test('one-time preview invitation sets a path-scoped HttpOnly cookie and redirects to the clean URL', async () => {
+  await withApp(
+    {
+      config: { publicUrl: 'http://127.0.0.1' },
+      repo: {
+        async exchangePreviewInvitation(token) {
+          assert.equal(token, 'secret-token')
+          return {
+            token: 'session-token',
+            slug: 'article-review',
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+          }
+        },
+      },
+    },
+    async (request) => {
+      const response = await request('/preview-invitations/secret-token', {
+        redirect: 'manual',
+      })
+      assert.equal(response.status, 303)
+      assert.equal(response.headers.get('location'), '/previews/article-review/')
+      assert.match(response.headers.get('set-cookie'), /^contentkit_preview=/)
+      assert.match(response.headers.get('set-cookie'), /Path=\/previews\/article-review\//)
+      assert.match(response.headers.get('set-cookie'), /HttpOnly/)
+      assert.equal(response.headers.get('referrer-policy'), 'no-referrer')
+    },
+  )
+})
 
 test('site gateway terminates after sending a no-release response', async () => {
   const errors = []

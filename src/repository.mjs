@@ -1256,8 +1256,44 @@ export function createRepository(config, db, storage) {
     async getRelease(id) {
       return one('ck_releases', { id: `eq.${id}` })
     },
-    async getPreviewByHash(tokenHash) {
-      return one('ck_preview_tokens', { token_hash: `eq.${tokenHash}`, revoked_at: 'is.null' })
+    async exchangePreviewInvitation(token) {
+      if (!token || !config.previewSecret) return null
+      const inviteHash = sha256(`${config.previewSecret}:invite:${token}`)
+      return db.tx(async (tx) => {
+        const [invite] = await tx.select('ck_preview_access', {
+          invite_token_hash: `eq.${inviteHash}`,
+          consumed_at: 'is.null',
+          revoked_at: 'is.null',
+          limit: '1',
+        })
+        const now = Date.now()
+        if (!invite || new Date(invite.expires_at).getTime() <= now) return null
+        const sessionToken = createSessionToken()
+        const [consumed] = await tx.update(
+          'ck_preview_access',
+          { id: `eq.${invite.id}`, consumed_at: 'is.null', revoked_at: 'is.null' },
+          {
+            consumed_at: new Date(now).toISOString(),
+            session_token_hash: sha256(`${config.previewSecret}:session:${sessionToken}`),
+          },
+        )
+        if (!consumed) return null
+        return {
+          token: sessionToken,
+          slug: consumed.slug,
+          release_id: consumed.release_id,
+          expires_at: consumed.expires_at,
+        }
+      })
+    },
+    async authenticatePreview(slug, token) {
+      if (!slug || !token || !config.previewSecret) return null
+      const access = await one('ck_preview_access', {
+        slug: `eq.${slug}`,
+        session_token_hash: `eq.${sha256(`${config.previewSecret}:session:${token}`)}`,
+        revoked_at: 'is.null',
+      })
+      return access && new Date(access.expires_at).getTime() > Date.now() ? access : null
     },
     async asset(id) {
       return one('ck_assets', { id: `eq.${id}` })

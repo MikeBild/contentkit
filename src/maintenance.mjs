@@ -61,8 +61,8 @@ export function createMaintenance(config, db, storage, logger) {
       })
       recent.slice(0, KEEP).forEach((release) => keep.add(release.id))
     }
-    // Keep releases still reachable through a live (non-expired, non-revoked) preview token.
-    const tokens = await db.select('ck_preview_tokens', { revoked_at: 'is.null' })
+    // Keep releases still reachable through live named preview access.
+    const tokens = await db.select('ck_preview_access', { revoked_at: 'is.null' })
     tokens.filter((token) => new Date(token.expires_at).getTime() > now).forEach((token) => keep.add(token.release_id))
     return keep
   }

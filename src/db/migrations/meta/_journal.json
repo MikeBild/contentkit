@@ -55,6 +55,12 @@
       "tag": "0008_contentkit_product_stats",
       "when": 1784359200000,
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "tag": "0009_contentkit_named_previews",
+      "when": 1784538000000,
+      "breakpoints": true
     }
   ]
 }
