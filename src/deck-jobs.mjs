@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-// Bounded, process-local job results mirror SlideKit's proven async contract.
+// Bounded, process-local job results keep asynchronous rendering ephemeral.
 // Published decks remain durable release artifacts; these short-lived jobs are
 // only for headless authoring/compile calls and never persist source Markdown.
 export function createDeckJobStore({ max = 32, ttlMs = 10 * 60 * 1000, now = () => Date.now() } = {}) {

@@ -77,7 +77,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   The controlled deck layout is `deck`; rendering requires the additional
   `deck:render` scope because a real Slidev/Vite build executes trusted source.
   See [semantic slide decks](docs/SLIDE_DECKS.md) and the
-  [SlideKit retirement runbook](docs/SLIDEKIT_MIGRATION.md).
+  [production-shaped German example](examples/decks/contentkit-semantic-publishing.de.md).
 - Composition reports and dashboards with neutral metric cards, status,
   progress and table-driven charts with direct values and accessible source
   tables. Static report pages use semantic HTML for their information hierarchy

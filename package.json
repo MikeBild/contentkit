@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "Headless Markdown mini-CMS with semantic visual composition and information patterns",
   "private": true,
   "type": "module",
@@ -29,7 +29,6 @@
     "validate:visuals": "npm run docs:gen-patterns && node scripts/validate-pattern-gallery.mjs && node scripts/validate-pattern-gallery-browser.mjs && node scripts/validate-composition-html-browser.mjs && node scripts/validate-pattern-gallery-page.mjs",
     "validate:visuals:browser": "node scripts/validate-pattern-gallery-browser.mjs",
     "migrate:reports": "node scripts/migrate-report-compositions.mjs",
-    "migrate:slidekit": "node scripts/migrate-slidekit-deck.mjs",
     "check:embedded-drift": "node --test test/unit/migrations-bundle.test.mjs",
     "check:docs-drift": "node --test test/unit/docs-drift.test.mjs",
     "format": "prettier --write ."

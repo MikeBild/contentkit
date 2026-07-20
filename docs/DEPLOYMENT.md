@@ -97,7 +97,7 @@ For releases that change the deck compiler, the production canary must also
 plan/validate the committed example, run sync and async compilation, publish a
 named preview, exercise navigation and presenter mode in a real browser, assert
 zero runtime network dependencies, inspect deck metrics/statistics and perform
-release rollback/reactivation before a legacy SlideKit service is removed.
+release rollback/reactivation before the release is accepted.
 
 ## API host vs. site hosts
 

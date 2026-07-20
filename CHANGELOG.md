@@ -6,13 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.18.1 - 2026-07-20
+
+### Added
+
+- Add a production-shaped German semantic-deck example and document its
+  permanent public ContentKit URL.
+
+### Changed
+
+- Present semantic decks solely as a native ContentKit capability and remove
+  obsolete one-time conversion tooling and retirement documentation.
+
 ## 1.18.0 - 2026-07-20
 
 ### Added
 
-- Absorb SlideKit into ContentKit as a first-class `deck` content kind with a
-  deterministic, source-addressed DeckPlan, information architecture,
-  narrative roles and immutable release artifacts.
+- Add a first-class `deck` content kind with a deterministic,
+  source-addressed DeckPlan, information architecture, narrative roles and
+  immutable release artifacts.
 - Compile semantic slide regions through ContentKit's controlled Composition
   pipeline into accessible light/dark SVG and PNG representations before a
   bounded Slidev build produces one self-contained, presenter-capable deck.
@@ -22,9 +34,8 @@ and this project adheres to
 - Add deck build telemetry, site-scoped aggregate statistics, Prometheus
   counters/gauges, readiness queue state and publication/failure webhooks
   without retaining source Markdown or author identity in telemetry.
-- Add the ordered PostgreSQL deck migration, a deterministic SlideKit source
-  migration CLI, production canary procedure, authoring reference, example
-  deck and binary lifecycle verification.
+- Add the ordered PostgreSQL deck migration, production canary procedure,
+  authoring reference, example deck and binary lifecycle verification.
 
 ### Changed
 

@@ -3,8 +3,6 @@
 ContentKit owns the complete slide-deck lifecycle: immutable Markdown source,
 deterministic information architecture and narrative, semantic visual
 components, preview, atomic release, static delivery, telemetry and rollback.
-The former standalone SlideKit service is no longer required once the
-production migration checklist below has passed.
 
 ## Authoring contract
 
@@ -59,7 +57,11 @@ frontmatter uses normal Slidev syntax and is preserved by the official parser;
 separator-like text inside fenced code is not treated as a new slide.
 
 The production-shaped source is
-[`examples/decks/decision.en.md`](../examples/decks/decision.en.md).
+[`examples/decks/decision.en.md`](../examples/decks/decision.en.md). A larger
+German example is maintained in
+[`examples/decks/contentkit-semantic-publishing.de.md`](../examples/decks/contentkit-semantic-publishing.de.md).
+When released, its permanent site path is
+`/de/slides/contentkit-semantic-publishing/`.
 
 ## Deterministic compiler
 
@@ -195,7 +197,3 @@ ContentKit production deployment:
 - the signed `contentkit.deck.published` webhook arrives once;
 - activating the previous release restores the old site, and reactivating the
   new release restores the deck.
-
-The GitHub repository for SlideKit is archived only after this checklist and
-the compatibility matrix in [`SLIDEKIT_MIGRATION.md`](SLIDEKIT_MIGRATION.md)
-are green.

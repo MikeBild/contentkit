@@ -44,9 +44,7 @@ Pattern Package and export as an independent visual.
   tokens and limits.
 - [Semantic slide decks](docs/SLIDE_DECKS.md): `kind: deck`, deterministic
   DeckPlan, semantic SVG/PNG components, bounded Slidev compiler, async jobs,
-  publishing, security and telemetry.
-- [SlideKit migration](docs/SLIDEKIT_MIGRATION.md): compatibility matrix,
-  production cutover, deployment cleanup and GitHub archival gate.
+  publishing, security, telemetry and the permanent public example.
 - [Product analytics API](docs/PRODUCT_ANALYTICS.md): Bounded site-scoped
   release, content, reader, webhook, audio and engagement aggregates for
   external collectors using the existing `content:read` scope.
