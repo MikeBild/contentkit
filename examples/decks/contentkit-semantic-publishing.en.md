@@ -172,8 +172,6 @@ deckRole: conclusion
 
 A website, report, slide deck and machine-readable record are not four separate stories. They are four verified views of the same content contract.
 
-[Open the public dogfooding deck](https://www.mikebild.dev/en/slides/contentkit-semantic-publishing/)
-
 ---
 deckRole: sources
 ---

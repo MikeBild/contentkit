@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.19.1 - 2026-07-20
+
+### Fixed
+
+- Keep the reusable English deck example free of tenant production-domain
+  references so tenant dogfooding remains deployment configuration.
+
 ## 1.19.0 - 2026-07-20
 
 ### Added
