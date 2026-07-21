@@ -187,6 +187,9 @@ test(
         CONTENTKIT_USAGE_TELEMETRY_ENABLED: 'true',
         CONTENTKIT_USAGE_HMAC_SECRET: 'local-e2e-usage-only-secret',
         CONTENTKIT_USAGE_RETENTION_DAYS: '90',
+        CONTENTKIT_MCP_ENABLED: 'true',
+        CONTENTKIT_OAUTH_SECRET: 'local-e2e-oauth-secret-that-is-long-enough',
+        CONTENTKIT_OAUTH_LOGIN_PROVIDER: 'api_key',
         LOG_LEVEL: 'warn',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -198,6 +201,63 @@ test(
     try {
       await waitForReady(origin, child, logs)
       assert.equal(bucketExists, true)
+
+      // Exercise the packaged MCP runtime before the CMS lifecycle. In
+      // particular, this proves that the root-level MCP.md agent guide is part
+      // of the single-binary payload rather than only available from a source
+      // checkout.
+      const mcpHeaders = {
+        ...auth,
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-11-25',
+      }
+      const initializeResponse = await fetch(`${origin}/mcp`, {
+        method: 'POST',
+        headers: mcpHeaders,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-11-25',
+            capabilities: { elicitation: { form: {}, url: {} } },
+            clientInfo: { name: 'contentkit-binary-e2e', version: '1' },
+          },
+        }),
+      })
+      assert.equal(initializeResponse.status, 200)
+      assert.match(initializeResponse.headers.get('content-type') || '', /^text\/event-stream/)
+      const mcpSession = initializeResponse.headers.get('mcp-session-id')
+      assert.ok(mcpSession)
+      assert.match(await initializeResponse.text(), /"protocolVersion":"2025-11-25"/)
+
+      const sessionHeaders = { ...mcpHeaders, 'mcp-session-id': mcpSession }
+      const initializedResponse = await fetch(`${origin}/mcp`, {
+        method: 'POST',
+        headers: sessionHeaders,
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      })
+      assert.ok([200, 202].includes(initializedResponse.status))
+      await initializedResponse.arrayBuffer()
+
+      const resourcesResponse = await fetch(`${origin}/mcp`, {
+        method: 'POST',
+        headers: sessionHeaders,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'resources/list', params: {} }),
+      })
+      assert.equal(resourcesResponse.status, 200)
+      assert.match(await resourcesResponse.text(), /contentkit:\/\/system\/agent-guide/)
+
+      const closeMcpResponse = await fetch(`${origin}/mcp`, {
+        method: 'DELETE',
+        headers: {
+          authorization: auth.authorization,
+          'mcp-protocol-version': '2025-11-25',
+          'mcp-session-id': mcpSession,
+        },
+      })
+      assert.equal(closeMcpResponse.status, 200)
 
       const site = await responseJson(
         await fetch(`${origin}/v1/sites`, {
