@@ -50,6 +50,61 @@ function bool(name, fallback = false) {
   return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase())
 }
 
+function csv(name, fallback = []) {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return [...fallback]
+  return [
+    ...new Set(
+      raw
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ]
+}
+
+function oidcProviders(name) {
+  const raw = process.env[name]
+  if (!raw?.trim()) return []
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`${name} must be valid JSON`)
+  }
+  if (!Array.isArray(parsed)) throw new Error(`${name} must be a JSON array`)
+  const ids = new Set()
+  return parsed.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`${name}[${index}] must be an object`)
+    }
+    const id = String(entry.id || '').trim()
+    const label = String(entry.label || '').trim()
+    const issuer = String(entry.issuer || '')
+      .trim()
+      .replace(/\/$/, '')
+    const clientId = String(entry.client_id || '').trim()
+    const clientSecret = String(entry.client_secret || '').trim()
+    const scopes = String(entry.scopes || 'openid profile email').trim()
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id) || ids.has(id)) {
+      throw new Error(`${name}[${index}].id must be a unique lowercase slug`)
+    }
+    if (!label || label.length > 120 || !clientId) {
+      throw new Error(`${name}[${index}] requires label and client_id`)
+    }
+    let issuerUrl
+    try {
+      issuerUrl = new URL(issuer)
+    } catch {
+      throw new Error(`${name}[${index}].issuer must be an HTTPS URL`)
+    }
+    if (issuerUrl.protocol !== 'https:') throw new Error(`${name}[${index}].issuer must use HTTPS`)
+    if (!scopes.split(/\s+/).includes('openid')) throw new Error(`${name}[${index}].scopes must include openid`)
+    ids.add(id)
+    return Object.freeze({ id, label, issuer, clientId, clientSecret, scopes })
+  })
+}
+
 export function loadConfig() {
   loadEnvironment()
   const config = {
@@ -63,6 +118,33 @@ export function loadConfig() {
     sessionSecret:
       process.env.CONTENTKIT_SESSION_SECRET ||
       (process.env.NODE_ENV === 'production' ? '' : process.env.CONTENTKIT_PREVIEW_SECRET || ''),
+    mcpEnabled: bool('CONTENTKIT_MCP_ENABLED', true),
+    mcpSessionTtlMs: integer('CONTENTKIT_MCP_SESSION_TTL_MS', 30 * 60 * 1000, {
+      min: 60 * 1000,
+      max: 24 * 60 * 60 * 1000,
+    }),
+    mcpMaxSessions: integer('CONTENTKIT_MCP_MAX_SESSIONS', 1000, { min: 1, max: 10000 }),
+    mcpElicitationTimeoutMs: integer('CONTENTKIT_MCP_ELICITATION_TIMEOUT_MS', 5 * 60 * 1000, {
+      min: 10 * 1000,
+      max: 15 * 60 * 1000,
+    }),
+    oauthSecret: process.env.CONTENTKIT_OAUTH_SECRET || '',
+    oauthLoginProvider: process.env.CONTENTKIT_OAUTH_LOGIN_PROVIDER || 'api_key',
+    oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring']),
+    oauthDynamicRegistrationEnabled: bool('CONTENTKIT_OAUTH_DCR_ENABLED', true),
+    oauthOidcProviders: oidcProviders('CONTENTKIT_OAUTH_OIDC_PROVIDERS'),
+    oauthAuthorizationCodeTtlMs: integer('CONTENTKIT_OAUTH_CODE_TTL_MS', 10 * 60 * 1000, {
+      min: 60 * 1000,
+      max: 60 * 60 * 1000,
+    }),
+    oauthAccessTokenTtlMs: integer('CONTENTKIT_OAUTH_ACCESS_TOKEN_TTL_MS', 60 * 60 * 1000, {
+      min: 5 * 60 * 1000,
+      max: 24 * 60 * 60 * 1000,
+    }),
+    oauthRefreshTokenTtlMs: integer('CONTENTKIT_OAUTH_REFRESH_TOKEN_TTL_MS', 30 * 24 * 60 * 60 * 1000, {
+      min: 24 * 60 * 60 * 1000,
+      max: 365 * 24 * 60 * 60 * 1000,
+    }),
     storageUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
     storageServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     databaseUrl: process.env.DATABASE_URL || '',
@@ -124,12 +206,26 @@ export function loadConfig() {
   if (config.usageTelemetryEnabled && !config.usageHmacSecret) {
     throw new Error('CONTENTKIT_USAGE_HMAC_SECRET is required when usage telemetry is enabled')
   }
+  if (!['api_key', 'oidc', 'federated'].includes(config.oauthLoginProvider)) {
+    throw new Error('CONTENTKIT_OAUTH_LOGIN_PROVIDER must be api_key, oidc or federated')
+  }
+  const supportedOauthScopes = new Set(['mcp:read', 'mcp:authoring', 'mcp:admin'])
+  if (
+    !config.oauthAllowedScopes.includes('mcp:read') ||
+    config.oauthAllowedScopes.some((scope) => !supportedOauthScopes.has(scope))
+  ) {
+    throw new Error('CONTENTKIT_OAUTH_ALLOWED_SCOPES must contain mcp:read and only supported MCP OAuth scopes')
+  }
+  if (['oidc', 'federated'].includes(config.oauthLoginProvider) && !config.oauthOidcProviders.length) {
+    throw new Error('OIDC OAuth login requires CONTENTKIT_OAUTH_OIDC_PROVIDERS')
+  }
   if (process.env.NODE_ENV === 'production') {
     const required = {
       CONTENTKIT_BOOTSTRAP_API_KEY: config.bootstrapApiKey,
       CONTENTKIT_KEY_PEPPER: config.keyPepper,
       CONTENTKIT_PREVIEW_SECRET: config.previewSecret,
       CONTENTKIT_SESSION_SECRET: config.sessionSecret,
+      CONTENTKIT_OAUTH_SECRET: config.oauthSecret,
       SUPABASE_URL: config.storageUrl,
       SUPABASE_SERVICE_ROLE_KEY: config.storageServiceKey,
       DATABASE_URL: config.databaseUrl,

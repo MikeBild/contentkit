@@ -104,3 +104,35 @@ test('disabled telemetry is a no-op and retention cleanup is parameterized', asy
   assert.deepEqual(calls[0].values, [90])
   assert.match(calls[0].sql, /DELETE FROM ck_usage_events/)
 })
+
+test('MCP telemetry keeps only bounded categories and HMAC identities', async () => {
+  const rows = []
+  const usage = createUsageTelemetry(
+    { usageTelemetryEnabled: true, usageHmacSecret: 'usage-secret', usageRetentionDays: 90 },
+    {
+      async insert(_table, row) {
+        rows.push(row)
+      },
+    },
+    { warn() {} },
+  )
+  await usage.recordMcp({
+    siteId: 'site-1',
+    operation: 'tool_call',
+    toolName: 'contentkit_read',
+    principal: { id: 'raw-operator-id' },
+    sessionId: 'raw-session-id',
+    outcome: 'success',
+    durationMs: 12,
+    resultCount: 3,
+    responseMode: 'sse',
+    prompt: 'must not be stored',
+    arguments: { markdown: 'must not be stored' },
+  })
+  assert.equal(rows[0].surface, 'mcp')
+  assert.equal(rows[0].request_source, 'mcp')
+  assert.equal(rows[0].tool_name, 'contentkit_read')
+  assert.equal(rows[0].result_count, 3)
+  assert.equal(rows[0].response_mode, 'sse')
+  assert.doesNotMatch(JSON.stringify(rows[0]), /raw-operator|raw-session|must not be stored|markdown/)
+})

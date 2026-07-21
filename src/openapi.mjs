@@ -75,8 +75,15 @@ export function openApi(config) {
         '| `content:read` | Read content/revisions and site-scoped product statistics |',
         '| `content:write` | Upload Markdown/assets and create revisions |',
         '| `deck:render` | Compile trusted deck Markdown with the isolated Slidev renderer |',
+        '| `release:preview` | Build isolated, expiring named previews without changing the live site |',
         '| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |',
-        '| `site:admin` | Create/update sites, manage API keys and webhook endpoints |',
+        '| `site:admin` | Update granted sites and manage their API keys/webhooks; only unrestricted principals may create sites |',
+        '| `access:admin` | Manage reader users, groups and rules |',
+        '| `webhook:admin` | Manage webhook endpoints and deliveries |',
+        '| `api-key:admin` | List, create and revoke API keys |',
+        '| `identity:admin` | Pre-provision and revoke exact OIDC identity grants |',
+        '| `audit:read` | Read redacted append-only audit events |',
+        '| `stats:read` | Read privacy-bounded product and MCP usage statistics |',
         '| `moderation:write` | List/moderate comments and contact submissions |',
         '| `*` | Global wildcard; held only by the bootstrap key, never grantable via `/v1/api-keys` |',
         '',
@@ -358,7 +365,7 @@ export function openApi(config) {
           ],
           properties: {
             schema_version: { const: 'contentkit.usage-stats.v1' },
-            surface: { enum: ['http', 'compositions'] },
+            surface: { enum: ['http', 'compositions', 'mcp'] },
             bucket: { type: 'string', enum: ['hour', 'day', 'month', 'year'] },
             tz: { const: 'UTC' },
             from: { type: 'string', format: 'date-time' },
@@ -1131,10 +1138,13 @@ export function openApi(config) {
       },
       '/v1/sites': {
         post: {
-          summary: 'Create a site',
+          summary: 'Create a site (unrestricted site administrator)',
           security: secured,
           requestBody: jsonBody(['name', 'base_url', 'default_locale']),
-          responses: { 201: { description: 'Created' } },
+          responses: {
+            201: { description: 'Created' },
+            403: { description: 'A site-restricted administrator cannot create a global site' },
+          },
         },
       },
       '/v1/sites/{site}': {
@@ -2010,11 +2020,66 @@ export function openApi(config) {
         },
       },
       '/v1/api-keys': {
+        get: {
+          summary: 'List API keys without hashes or secrets',
+          security: secured,
+          responses: { 200: { description: 'API-key metadata' } },
+        },
         post: {
           summary: 'Create a scoped API key',
           security: secured,
           requestBody: jsonBody(['name', 'scopes']),
           responses: { 201: { description: 'Created; raw key returned once' } },
+        },
+      },
+      '/v1/api-keys/{id}': {
+        delete: {
+          summary: 'Revoke an API key',
+          security: secured,
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: { 200: { description: 'Revoked' }, 404: { description: 'Not found' } },
+        },
+      },
+      '/v1/identity-grants': {
+        get: {
+          summary: 'List OAuth identity grants',
+          security: secured,
+          responses: { 200: { description: 'Pre-provisioned exact OIDC subject grants' } },
+        },
+        post: {
+          summary: 'Pre-provision an OAuth identity grant',
+          description:
+            'provider_id and issuer must exactly match a configured OIDC provider. A grant binds the immutable OIDC subject to a role, product-scope ceiling and optional sites.',
+          security: secured,
+          requestBody: jsonBody(['provider_id', 'issuer', 'subject', 'role']),
+          responses: {
+            201: { description: 'Identity grant created' },
+            422: { description: 'Invalid provider, role or scope ceiling' },
+          },
+        },
+      },
+      '/v1/identity-grants/{id}': {
+        patch: {
+          summary: 'Update an OAuth identity grant ceiling',
+          security: secured,
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          requestBody: jsonBody(),
+          responses: { 200: { description: 'Updated' }, 404: { description: 'Not found' } },
+        },
+        delete: {
+          summary: 'Revoke an OAuth identity grant and active sessions/access/refresh tokens',
+          security: secured,
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: { 200: { description: 'Revoked' }, 404: { description: 'Not found' } },
+        },
+      },
+      '/v1/audit-events': {
+        get: {
+          summary: 'Read redacted append-only audit events',
+          description:
+            'Optional site, action and limit filters. Audit metadata excludes credentials, content, Markdown, request bodies and email addresses.',
+          security: secured,
+          responses: { 200: { description: 'Audit events' }, 404: { description: 'Site not found' } },
         },
       },
       '/v1/sites/{site}/webhooks': {
@@ -2097,26 +2162,29 @@ export function openApi(config) {
     http: 'canonical HTTP routes, methods, outcomes, transfer sizes, latency and exact local HMAC actors/sessions',
     compositions:
       'semantic recommend/validate/compile operations, requested versus resolved patterns, fallbacks, diagnostics and latency',
+    mcp: 'MCP sessions, transports, resources, prompts and scope-filtered tool calls without prompts, arguments or result content',
   }
   for (const [kind, description] of Object.entries(stats)) {
     spec.paths[`/v1/sites/{site}/stats/${kind}`] = {
       get: {
         summary: `Read site ${kind} statistics`,
-        description: `Bounded UTC aggregates for ${description}. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.${['http', 'compositions'].includes(kind) ? ' Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.' : ''}`,
+        description: `Bounded UTC aggregates for ${description}. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.${['http', 'compositions', 'mcp'].includes(kind) ? ' Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.' : ''}`,
         security: secured,
-        parameters: ['http', 'compositions'].includes(kind)
+        parameters: ['http', 'compositions', 'mcp'].includes(kind)
           ? usageStatsParameters(
               kind === 'http'
                 ? ['route', 'method', 'outcome', 'status_class', 'traffic_class', 'request_source']
-                : [
-                    'operation',
-                    'outcome',
-                    'requested_pattern',
-                    'resolved_pattern',
-                    'fallback',
-                    'traffic_class',
-                    'request_source',
-                  ],
+                : kind === 'compositions'
+                  ? [
+                      'operation',
+                      'outcome',
+                      'requested_pattern',
+                      'resolved_pattern',
+                      'fallback',
+                      'traffic_class',
+                      'request_source',
+                    ]
+                  : ['operation', 'tool_name', 'outcome', 'response_mode', 'traffic_class'],
             )
           : statsParameters,
         responses: {
@@ -2125,7 +2193,7 @@ export function openApi(config) {
             content: {
               'application/json': {
                 schema: {
-                  $ref: ['http', 'compositions'].includes(kind)
+                  $ref: ['http', 'compositions', 'mcp'].includes(kind)
                     ? '#/components/schemas/UsageStats'
                     : '#/components/schemas/ProductStats',
                 },

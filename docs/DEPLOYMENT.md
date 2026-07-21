@@ -44,6 +44,7 @@ Required production environment values:
 - `CONTENTKIT_KEY_PEPPER`
 - `CONTENTKIT_PREVIEW_SECRET`
 - `CONTENTKIT_SESSION_SECRET`
+- `CONTENTKIT_OAUTH_SECRET`
 - `DATABASE_URL`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
 - `CONTENTKIT_TURNSTILE_SECRET`
@@ -66,13 +67,22 @@ out every reader immediately. Published sites must use HTTPS so the
 `__Host-contentkit_session` cookie can keep its Secure attribute; the reverse
 proxy must preserve the original site `Host` header.
 
+Remote MCP is enabled by default. Give `CONTENTKIT_OAUTH_SECRET` its own random
+value; never reuse the API-key pepper, reader-session, preview, webhook or usage
+secret. For production OIDC, set `CONTENTKIT_OAUTH_LOGIN_PROVIDER=oidc` (or
+`federated`) and configure `CONTENTKIT_OAUTH_OIDC_PROVIDERS`; pre-provision exact
+issuer/subject grants before login. The reverse proxy must forward `/mcp`,
+`/.well-known/oauth-*`, `/v1/oauth/*`, `/v1/identity/login/*` and the one-time
+`/oauth/secret/*` handoff paths to ContentKit without buffering SSE responses.
+See `MCP.md` for the complete auth and transport contract.
+
 Set `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` to the stable environment name used by
 your log backend (for example `production`). Structured request logs carry the
 service name/version, environment and W3C trace/span IDs. Reader-auth product
 facts and deck-build product facts contain no identity/source and are pruned by the existing maintenance run
 after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (default 400).
 
-Product usage telemetry is a separate, explicit opt-in. Set
+Product usage telemetry, including MCP operations, is a separate, explicit opt-in. Set
 `CONTENTKIT_USAGE_TELEMETRY_ENABLED=true`, generate an independent
 `CONTENTKIT_USAGE_HMAC_SECRET`, and leave `CONTENTKIT_USAGE_RETENTION_DAYS=90`
 unless policy requires a shorter supported window. The secret must not be reused

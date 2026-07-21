@@ -1052,6 +1052,29 @@ const siteAdminAuth = (scopes, site_ids) => ({
   },
 })
 
+test('site-scoped administrators cannot create globally addressable sites', async () => {
+  let created = false
+  await withApp(
+    {
+      repo: {
+        async createSite() {
+          created = true
+        },
+      },
+      auth: siteAdminAuth(['site:admin'], ['site-1']),
+    },
+    async (request) => {
+      const response = await request('/v1/sites', {
+        method: 'POST',
+        headers: { 'x-api-key': 'valid' },
+        body: JSON.stringify({ name: 'Escaped site' }),
+      })
+      assert.equal(response.status, 403)
+      assert.equal(created, false)
+    },
+  )
+})
+
 test('API-key minting forbids the global * scope for a non-bootstrap caller', async () => {
   const repo = {
     async createApiKey() {
@@ -1125,6 +1148,136 @@ test('API-key minting allows an in-scope subset', async () => {
     })
     assert.equal(response.status, 201)
     assert.equal(created.length, 1)
+  })
+})
+
+test('site-scoped API-key administrators can only list and revoke keys inside their sites', async () => {
+  const updates = []
+  const keys = [
+    { id: 'inside', name: 'inside', site_ids: ['site-1'], key_hash: 'hidden' },
+    { id: 'outside', name: 'outside', site_ids: ['site-2'], key_hash: 'hidden' },
+    { id: 'global', name: 'global', site_ids: [], key_hash: 'hidden' },
+  ]
+  const db = {
+    async select(table, query) {
+      assert.equal(table, 'ck_api_keys')
+      if (query.id) return keys.filter((row) => `eq.${row.id}` === query.id)
+      return keys
+    },
+    async update(table, filter, values) {
+      updates.push([table, filter, values])
+      return keys.filter((row) => `eq.${row.id}` === filter.id).map((row) => ({ ...row, ...values }))
+    },
+  }
+  await withApp({ db, auth: siteAdminAuth(['api-key:admin'], ['site-1']) }, async (request) => {
+    const listed = await request('/v1/api-keys', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(listed.status, 200)
+    assert.deepEqual(
+      (await listed.json()).api_keys.map((row) => row.id),
+      ['inside'],
+    )
+
+    const outside = await request('/v1/api-keys/outside', {
+      method: 'DELETE',
+      headers: { 'x-api-key': 'valid' },
+    })
+    assert.equal(outside.status, 404)
+    assert.equal(updates.length, 0)
+
+    const inside = await request('/v1/api-keys/inside', {
+      method: 'DELETE',
+      headers: { 'x-api-key': 'valid' },
+    })
+    assert.equal(inside.status, 200)
+    assert.equal(updates.length, 1)
+  })
+})
+
+test('site-scoped identity administrators cannot enumerate or mutate cross-site grants', async () => {
+  const grants = [
+    { id: 'inside', provider_id: 'corp', site_ids: ['site-1'], revoked_at: null, source_credential_hash: 'hidden' },
+    { id: 'outside', provider_id: 'corp', site_ids: ['site-2'], revoked_at: null, source_credential_hash: 'hidden' },
+    { id: 'global', provider_id: 'corp', site_ids: [], revoked_at: null, source_credential_hash: 'hidden' },
+  ]
+  const updates = []
+  const db = {
+    async select(table, query) {
+      assert.equal(table, 'ck_oauth_identity_grants')
+      if (query.id) return grants.filter((row) => `eq.${row.id}` === query.id)
+      return grants
+    },
+    async update(table, filter, values) {
+      updates.push([table, filter, values])
+      if (table !== 'ck_oauth_identity_grants') return []
+      return grants.filter((row) => `eq.${row.id}` === filter.id).map((row) => ({ ...row, ...values }))
+    },
+  }
+  await withApp(
+    {
+      db,
+      auth: siteAdminAuth(['identity:admin'], ['site-1']),
+      config: {
+        oauthOidcProviders: [
+          { id: 'corp', issuer: 'https://login.example', clientId: 'contentkit', scopes: ['openid'] },
+        ],
+      },
+    },
+    async (request) => {
+      const listed = await request('/v1/identity-grants', { headers: { 'x-api-key': 'valid' } })
+      assert.equal(listed.status, 200)
+      const listedBody = await listed.json()
+      assert.deepEqual(
+        listedBody.identities.map((row) => row.id),
+        ['inside'],
+      )
+      assert.equal('source_credential_hash' in listedBody.identities[0], false)
+
+      const outside = await request('/v1/identity-grants/outside', {
+        method: 'DELETE',
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(outside.status, 404)
+      assert.equal(updates.length, 0)
+
+      const escape = await request('/v1/identity-grants/inside', {
+        method: 'PATCH',
+        headers: { 'x-api-key': 'valid' },
+        body: JSON.stringify({ site_ids: ['site-2'] }),
+      })
+      assert.equal(escape.status, 403)
+      assert.equal(updates.length, 0)
+
+      const revoked = await request('/v1/identity-grants/inside', {
+        method: 'DELETE',
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(revoked.status, 200)
+      assert.deepEqual(
+        updates.map(([table]) => table),
+        ['ck_oauth_identity_grants', 'ck_operator_sessions', 'ck_oauth_access_tokens', 'ck_oauth_refresh_tokens'],
+      )
+    },
+  )
+})
+
+test('site-scoped audit readers never receive global or cross-site audit events', async () => {
+  const db = {
+    async select(table) {
+      assert.equal(table, 'ck_audit_events')
+      return [
+        { id: 'inside', site_id: 'site-1' },
+        { id: 'outside', site_id: 'site-2' },
+        { id: 'global', site_id: null },
+      ]
+    },
+  }
+  await withApp({ db, auth: siteAdminAuth(['audit:read'], ['site-1']) }, async (request) => {
+    const response = await request('/v1/audit-events', { headers: { 'x-api-key': 'valid' } })
+    assert.equal(response.status, 200)
+    assert.deepEqual(
+      (await response.json()).events.map((row) => row.id),
+      ['inside'],
+    )
   })
 })
 

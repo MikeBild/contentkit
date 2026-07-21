@@ -9,10 +9,12 @@ import {
   getContentStats,
   getDeckStats,
   getEngagementStats,
+  getMcpStats,
   getReaderStats,
   getReleaseStats,
   getWebhookStats,
   resolveStatsWindow,
+  resolveUsageStatsWindow,
 } from '../../src/stats.mjs'
 
 const databaseUrl = process.env.CONTENTKIT_TEST_DATABASE_URL
@@ -75,6 +77,10 @@ test(
         [siteId],
       )
       await pool.query(
+        "INSERT INTO ck_deck_build_events (site_id,mode,result,execution,cache_result,slide_count,svg_count,png_count,output_bytes,duration_ms,diagnostic_count) VALUES ($1,'compile','success','mcp','hit',2,1,1,512,50,0)",
+        [siteId],
+      )
+      await pool.query(
         "INSERT INTO ck_reader_sessions (site_id,user_id,token_hash,expires_at,absolute_expires_at) VALUES ($1,$2,$3,now()+interval '1 hour',now()+interval '1 day')",
         [siteId, userId, `token-${suffix}`],
       )
@@ -103,6 +109,10 @@ test(
         siteId,
         itemId,
       ])
+      await pool.query(
+        "INSERT INTO ck_usage_events (site_id,surface,operation,outcome,request_source,tool_name,response_mode,result_count,active_sessions,duration_ms) VALUES ($1,'mcp','tool.call','success','mcp','contentkit_read','json',2,1,20)",
+        [siteId],
+      )
 
       const window = resolveStatsWindow({
         bucket: 'hour',
@@ -123,14 +133,16 @@ test(
       assert.equal(releases.totals.duration_seconds_max, 4)
       assert.equal(content.totals.items_created, 1)
       assert.equal(content.totals.asset_bytes, 123)
-      assert.equal(decks.totals.compiles, 1)
+      assert.equal(decks.totals.compiles, 2)
       assert.equal(decks.totals.async_compiles, 1)
+      assert.equal(decks.totals.mcp_compiles, 1)
+      assert.equal(decks.totals.cache_hits, 1)
       assert.equal(decks.totals.cache_misses, 1)
-      assert.equal(decks.totals.slides, 8)
-      assert.equal(decks.totals.svg_components, 4)
-      assert.equal(decks.totals.output_bytes, 2048)
+      assert.equal(decks.totals.slides, 10)
+      assert.equal(decks.totals.svg_components, 5)
+      assert.equal(decks.totals.output_bytes, 2560)
       assert.equal(decks.totals.diagnostics, 1)
-      assert.equal(decks.totals.duration_ms_avg, 250)
+      assert.equal(decks.totals.duration_ms_avg, 150)
       assert.equal(readers.totals.auth_success, 1)
       assert.equal(readers.totals.auth_failed, 1)
       assert.equal(readers.totals.sessions_created, 1)
@@ -141,6 +153,23 @@ test(
       assert.equal(engagement.totals.comments_approved, 1)
       assert.equal(engagement.totals.contacts_read, 1)
       assert.equal(engagement.totals.feedback_up, 1)
+
+      const mcp = await getMcpStats(
+        db,
+        siteId,
+        resolveUsageStatsWindow(
+          {
+            bucket: 'hour',
+            from: new Date(Date.now() - 3600_000).toISOString(),
+            to: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          'mcp',
+        ),
+        {},
+      )
+      assert.equal(mcp.totals[0].metrics.calls.value, 1)
+      assert.equal(mcp.totals[0].metrics.results.value, 2)
+      assert.equal(mcp.totals[0].metrics.active_sessions_max.value, 1)
     } finally {
       if (siteId) await pool.query('DELETE FROM ck_sites WHERE id=$1', [siteId]).catch(() => {})
       await pool.end()

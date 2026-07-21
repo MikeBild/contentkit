@@ -24,6 +24,7 @@ import {
   getReaderStats,
   getReleaseStats,
   getHttpStats,
+  getMcpStats,
   getWebhookStats,
   resolveStatsWindow,
   resolveUsageStatsWindow,
@@ -41,6 +42,7 @@ import {
   sessionCookie,
   validReturnTo,
 } from './access.mjs'
+import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant } from './oauth/policy.mjs'
 
 export const SERVICE = {
   name: 'contentkit',
@@ -48,7 +50,15 @@ export const SERVICE = {
   openapi: '/openapi.json',
   llms: '/llms.txt',
   llms_full: '/llms-full.txt',
+  mcp: '/mcp',
+  oauth_protected_resource: '/.well-known/oauth-protected-resource/mcp',
   health: '/health',
+}
+
+function withinPrincipalSites(principal, siteIds) {
+  const ceiling = Array.isArray(principal?.site_ids) ? principal.site_ids : []
+  if (!ceiling.length) return true
+  return Array.isArray(siteIds) && siteIds.length > 0 && siteIds.every((id) => ceiling.includes(id))
 }
 
 function documentation(config, name) {
@@ -57,6 +67,11 @@ function documentation(config, name) {
 
 export function routeName(path) {
   const clean = String(path || '/').split('?')[0]
+  if (clean === '/mcp') return '/mcp'
+  if (/^\/oauth\/secret\//.test(clean)) return '/oauth/secret/:handoff'
+  if (/^\/\.well-known\/oauth-/.test(clean)) return clean
+  if (/^\/v1\/oauth\//.test(clean)) return clean.replace(/\/(?:ck[a-z]+_)?[A-Za-z0-9_-]{20,}/g, '/:token')
+  if (/^\/v1\/identity\/login\//.test(clean)) return clean
   if (/^\/media\//.test(clean)) return '/media/:asset'
   if (/^\/previews\//.test(clean)) return '/previews/:preview/:published-path'
   if (
@@ -244,13 +259,17 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/releases$/, methods: ['GET', 'POST'] },
   {
     pattern:
-      /^\/v1\/sites\/[^/]+\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions)$/,
+      /^\/v1\/sites\/[^/]+\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions|mcp)$/,
     methods: ['GET'],
   },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
   { pattern: /^\/v1\/publish-due$/, methods: ['POST'] },
   { pattern: /^\/v1\/maintenance\/storage-gc$/, methods: ['POST'] },
-  { pattern: /^\/v1\/api-keys$/, methods: ['POST'] },
+  { pattern: /^\/v1\/api-keys$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/api-keys\/[^/]+$/, methods: ['DELETE'] },
+  { pattern: /^\/v1\/identity-grants$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/identity-grants\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
+  { pattern: /^\/v1\/audit-events$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/webhooks$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/webhooks\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/webhooks\/[^/]+\/rotate$/, methods: ['POST'] },
@@ -282,7 +301,9 @@ export function createRequestHandler(ctx) {
     deckRenderer,
     deckJobs,
     usage,
+    mcp,
   } = ctx
+  const audit = ctx.audit || { async record() {} }
   const loginLimiter = ctx.loginLimiter || limiter
 
   async function recordReaderAuth(siteId, outcome) {
@@ -948,6 +969,7 @@ export function createRequestHandler(ctx) {
         metrics.render(releases.inflight(), {
           deckInflight: deckRenderer.inflight?.() || 0,
           deckQueued: deckRenderer.queued?.() || 0,
+          mcpSessions: mcp?.sessions?.sessions?.size || 0,
         }),
         { 'content-type': 'text/plain; version=0.0.4' },
       )
@@ -1000,7 +1022,11 @@ export function createRequestHandler(ctx) {
     }
 
     if (req.method === 'POST' && path === '/v1/sites') {
-      if (!(await requireScope(req, res, 'site:admin'))) return
+      const principal = await requireScope(req, res, 'site:admin')
+      if (!principal) return
+      if (Array.isArray(principal.site_ids) && principal.site_ids.length > 0) {
+        return sendJson(res, 403, { error: 'creating a site requires an unrestricted site administrator' })
+      }
       return sendJson(res, 201, await repo.createSite(parseJson(await bodyFor(req))))
     }
     const siteMatch = path.match(/^\/v1\/sites\/([^/]+)$/)
@@ -1018,14 +1044,14 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
     }
     const statsMatch = path.match(
-      /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions)$/,
+      /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions|mcp)$/,
     )
     if (statsMatch && req.method === 'GET') {
       const site = await repo.getSite(statsMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
-      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      if (!(await requireAnyScope(req, res, ['stats:read', 'content:read'], site.id))) return
       const input = Object.fromEntries(url.searchParams)
-      const window = ['http', 'compositions'].includes(statsMatch[2])
+      const window = ['http', 'compositions', 'mcp'].includes(statsMatch[2])
         ? resolveUsageStatsWindow(input, statsMatch[2])
         : resolveStatsWindow(input)
       const readers = {
@@ -1038,6 +1064,7 @@ export function createRequestHandler(ctx) {
         engagement: getEngagementStats,
         http: getHttpStats,
         compositions: getCompositionStats,
+        mcp: getMcpStats,
       }
       return sendJson(res, 200, await readers[statsMatch[2]](db, site.id, window, usage?.quality?.()), {
         'cache-control': 'private,max-age=60',
@@ -1526,7 +1553,7 @@ export function createRequestHandler(ctx) {
     if (previewMatch && req.method === 'POST') {
       const site = await repo.getSite(previewMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
-      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      if (!(await requireAnyScope(req, res, ['release:preview', 'release:write'], site.id))) return
       const input = parseJson(await bodyFor(req))
       if ((await revisionsContainDeck(input.revision_ids)) && !(await requireScope(req, res, 'deck:render', site.id)))
         return
@@ -1625,16 +1652,177 @@ export function createRequestHandler(ctx) {
       }
       return sendJson(res, 200, await maintenance.run())
     }
-    if (path === '/v1/api-keys' && req.method === 'POST') {
-      const principal = await requireScope(req, res, 'site:admin')
+    if (path === '/v1/audit-events' && req.method === 'GET') {
+      const principal = await requireScope(req, res, 'audit:read')
       if (!principal) return
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50), 1), 200)
+      const siteRef = url.searchParams.get('site')
+      const site = siteRef ? await repo.getSite(siteRef) : null
+      if (siteRef && !site) return sendJson(res, 404, { error: 'site not found' })
+      if (site && !auth.authorize(principal, 'audit:read', site.id)) {
+        return sendJson(res, 403, { error: 'insufficient_scope', scope: 'audit:read', site: site.id })
+      }
+      const rows = await db.select('ck_audit_events', {
+        ...(site ? { site_id: `eq.${site.id}` } : {}),
+        ...(url.searchParams.get('action') ? { action: `eq.${url.searchParams.get('action')}` } : {}),
+        order: 'created_at.desc',
+        limit: String(limit),
+      })
+      const visible =
+        Array.isArray(principal.site_ids) && principal.site_ids.length
+          ? rows.filter((row) => row.site_id && principal.site_ids.includes(row.site_id))
+          : rows
+      return sendJson(res, 200, { events: visible })
+    }
+    if (path === '/v1/identity-grants' && ['GET', 'POST'].includes(req.method)) {
+      const principal = await requireScope(req, res, 'identity:admin')
+      if (!principal) return
+      if (req.method === 'GET') {
+        const rows = await db.select('ck_oauth_identity_grants', { order: 'created_at.desc' })
+        return sendJson(res, 200, {
+          identities: rows.filter((row) => withinPrincipalSites(principal, row.site_ids)).map(publicIdentityGrant),
+        })
+      }
       const input = parseJson(await bodyFor(req))
+      const provider = (config.oauthOidcProviders || []).find((entry) => entry.id === input.provider_id)
+      if (!provider || provider.issuer !== input.issuer) {
+        return sendJson(res, 422, { error: 'provider_id and issuer must match a configured OIDC provider' })
+      }
+      if (!input.subject || !['reader', 'author', 'admin'].includes(input.role)) {
+        return sendJson(res, 422, { error: 'subject and a valid role are required' })
+      }
+      const scopes = input.product_scopes || defaultProductScopes(input.role)
+      if (!Array.isArray(scopes) || scopes.some((scope) => !PRODUCT_SCOPES.includes(scope))) {
+        return sendJson(res, 422, { error: 'product_scopes contains an unsupported scope' })
+      }
+      const siteIds = Array.isArray(input.site_ids) ? input.site_ids : []
+      if (!withinPrincipalSites(principal, siteIds)) {
+        return sendJson(res, 403, { error: 'identity grant must be restricted to your own site(s)' })
+      }
+      const [grant] = await db.insert('ck_oauth_identity_grants', {
+        provider_id: provider.id,
+        issuer: provider.issuer,
+        subject: String(input.subject),
+        email: input.email || null,
+        display_name: input.display_name || '',
+        role: input.role,
+        product_scopes: scopes,
+        site_ids: siteIds,
+      })
+      await audit.record({
+        actorType: principal.oauth ? 'oauth' : 'api_key',
+        actorId: principal.id,
+        action: 'identity.create',
+        resourceType: 'identity_grant',
+        resourceId: grant.id,
+        result: 'success',
+        transport: 'http',
+      })
+      return sendJson(res, 201, publicIdentityGrant(grant))
+    }
+    const identityGrantMatch = path.match(/^\/v1\/identity-grants\/([^/]+)$/)
+    if (identityGrantMatch && ['PATCH', 'DELETE'].includes(req.method)) {
+      const principal = await requireScope(req, res, 'identity:admin')
+      if (!principal) return
+      const [existing] = await db.select('ck_oauth_identity_grants', {
+        id: `eq.${identityGrantMatch[1]}`,
+        revoked_at: 'is.null',
+        limit: '1',
+      })
+      if (!existing || !withinPrincipalSites(principal, existing.site_ids)) {
+        return sendJson(res, 404, { error: 'identity grant not found' })
+      }
+      let rows
+      if (req.method === 'DELETE') {
+        rows = await db.update(
+          'ck_oauth_identity_grants',
+          { id: `eq.${identityGrantMatch[1]}`, revoked_at: 'is.null' },
+          { revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+        )
+        if (rows[0]) {
+          await db.update(
+            'ck_operator_sessions',
+            { grant_id: `eq.${rows[0].id}`, revoked_at: 'is.null' },
+            { revoked_at: new Date().toISOString() },
+            { returning: false },
+          )
+          await db.update(
+            'ck_oauth_access_tokens',
+            { grant_id: `eq.${rows[0].id}`, revoked_at: 'is.null' },
+            { revoked_at: new Date().toISOString() },
+            { returning: false },
+          )
+          await db.update(
+            'ck_oauth_refresh_tokens',
+            { grant_id: `eq.${rows[0].id}`, revoked_at: 'is.null' },
+            { revoked_at: new Date().toISOString() },
+            { returning: false },
+          )
+        }
+      } else {
+        const input = parseJson(await bodyFor(req))
+        const allowed = Object.fromEntries(
+          Object.entries(input).filter(([key]) =>
+            ['email', 'display_name', 'role', 'product_scopes', 'site_ids'].includes(key),
+          ),
+        )
+        if (allowed.role && !['reader', 'author', 'admin'].includes(allowed.role))
+          return sendJson(res, 422, { error: 'role is invalid' })
+        if (
+          allowed.product_scopes &&
+          (!Array.isArray(allowed.product_scopes) ||
+            allowed.product_scopes.some((scope) => !PRODUCT_SCOPES.includes(scope)))
+        )
+          return sendJson(res, 422, { error: 'product_scopes contains an unsupported scope' })
+        if (allowed.site_ids && !withinPrincipalSites(principal, allowed.site_ids)) {
+          return sendJson(res, 403, { error: 'identity grant must stay inside your own site(s)' })
+        }
+        rows = await db.update(
+          'ck_oauth_identity_grants',
+          { id: `eq.${identityGrantMatch[1]}`, revoked_at: 'is.null' },
+          { ...allowed, updated_at: new Date().toISOString() },
+        )
+      }
+      const grant = rows[0]
+      if (!grant) return sendJson(res, 404, { error: 'identity grant not found' })
+      await audit.record({
+        actorType: principal.oauth ? 'oauth' : 'api_key',
+        actorId: principal.id,
+        action: req.method === 'DELETE' ? 'identity.revoke' : 'identity.update',
+        resourceType: 'identity_grant',
+        resourceId: grant.id,
+        result: 'success',
+        transport: 'http',
+      })
+      return sendJson(res, 200, req.method === 'DELETE' ? { revoked: true, id: grant.id } : publicIdentityGrant(grant))
+    }
+    if (path === '/v1/api-keys' && ['GET', 'POST'].includes(req.method)) {
+      const principal = await requireAnyScope(req, res, ['api-key:admin', 'site:admin'])
+      if (!principal) return
+      if (req.method === 'GET') {
+        const rows = await db.select('ck_api_keys', { order: 'created_at.desc' })
+        return sendJson(res, 200, {
+          api_keys: rows
+            .filter((row) => withinPrincipalSites(principal, row.site_ids))
+            .map(({ key_hash, ...row }) => row),
+        })
+      }
+      const input = parseJson(await bodyFor(req))
+      if ((input.scopes || []).includes('*')) {
+        return sendJson(res, 403, { error: 'cannot grant the * (global) scope' })
+      }
+      if (
+        input.scopes &&
+        (!Array.isArray(input.scopes) || input.scopes.some((scope) => !PRODUCT_SCOPES.includes(scope)))
+      ) {
+        return sendJson(res, 422, { error: 'scopes contains an unsupported product scope' })
+      }
       if (!principal.bootstrap) {
         // site:admin's job is to provision scoped keys, so it may grant the
         // normal scopes — but never the bootstrap-only global wildcard, and
         // never an implicitly-global or cross-tenant key.
-        if ((input.scopes || []).includes('*')) {
-          return sendJson(res, 403, { error: 'cannot grant the * (global) scope' })
+        if (principal.oauth && (input.scopes || []).some((scope) => !auth.authorize(principal, scope))) {
+          return sendJson(res, 403, { error: 'cannot grant product scopes above the OAuth identity ceiling' })
         }
         if (Array.isArray(principal.site_ids) && principal.site_ids.length > 0) {
           const target = input.site_ids || []
@@ -1643,7 +1831,42 @@ export function createRequestHandler(ctx) {
           }
         }
       }
-      return sendJson(res, 201, await repo.createApiKey(input))
+      const created = await repo.createApiKey(input)
+      await audit.record({
+        actorType: principal.oauth ? 'oauth' : 'api_key',
+        actorId: principal.id,
+        action: 'api_key.create',
+        resourceType: 'api_key',
+        resourceId: created.id,
+        result: 'success',
+        transport: 'http',
+      })
+      return sendJson(res, 201, created)
+    }
+    const apiKeyMatch = path.match(/^\/v1\/api-keys\/([^/]+)$/)
+    if (apiKeyMatch && req.method === 'DELETE') {
+      const principal = await requireAnyScope(req, res, ['api-key:admin', 'site:admin'])
+      if (!principal) return
+      const [target] = await db.select('ck_api_keys', { id: `eq.${apiKeyMatch[1]}`, limit: '1' })
+      if (!target || !withinPrincipalSites(principal, target.site_ids)) {
+        return sendJson(res, 404, { error: 'API key not found' })
+      }
+      const [revoked] = await db.update(
+        'ck_api_keys',
+        { id: `eq.${apiKeyMatch[1]}`, revoked_at: 'is.null' },
+        { revoked_at: new Date().toISOString() },
+      )
+      if (!revoked) return sendJson(res, 404, { error: 'API key not found' })
+      await audit.record({
+        actorType: principal.oauth ? 'oauth' : 'api_key',
+        actorId: principal.id,
+        action: 'api_key.revoke',
+        resourceType: 'api_key',
+        resourceId: revoked.id,
+        result: 'success',
+        transport: 'http',
+      })
+      return sendJson(res, 200, { revoked: true, id: revoked.id })
     }
     const webhooksMatch = path.match(/^\/v1\/sites\/([^/]+)\/webhooks$/)
     if (webhooksMatch && ['GET', 'POST'].includes(req.method)) {

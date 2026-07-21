@@ -22,6 +22,13 @@ const USAGE_GROUPS = {
     traffic_class: 'traffic_class',
     request_source: 'request_source',
   },
+  mcp: {
+    operation: 'operation',
+    tool_name: 'tool_name',
+    outcome: 'outcome',
+    response_mode: 'response_mode',
+    traffic_class: 'traffic_class',
+  },
 }
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
@@ -229,6 +236,7 @@ const DECK_METRICS = [
   'compiles',
   'sync_compiles',
   'async_compiles',
+  'mcp_compiles',
   'previews',
   'releases',
   'success',
@@ -432,12 +440,20 @@ function usageMetrics(row, surface) {
       request_bytes: usageMetric(row.request_bytes, 'data-size', requestSizes > 0),
       response_bytes: usageMetric(row.response_bytes, 'data-size', responseSizes > 0),
     })
-  } else {
+  } else if (surface === 'compositions') {
     Object.assign(metrics, {
       fallbacks: usageMetric(row.fallbacks || 0),
       semantic_nodes: usageMetric(row.semantic_nodes || 0),
       diagnostics: usageMetric(row.diagnostics || 0),
       fallback_ratio: usageRatio(row.fallbacks, calls),
+    })
+  } else {
+    Object.assign(metrics, {
+      results: usageMetric(row.results || 0),
+      active_sessions_max: usageMetric(row.active_sessions_max, 'count', row.active_sessions_max != null),
+      sse_responses: usageMetric(row.sse_responses || 0),
+      timeouts: usageMetric(row.timeouts || 0),
+      cancelled: usageMetric(row.cancelled || 0),
     })
   }
   return metrics
@@ -453,13 +469,31 @@ function usageSelect(surface) {
          0::double precision AS fallbacks,
          0::double precision AS semantic_nodes,
          0::double precision AS diagnostics`
-      : `0::double precision AS request_size_count,
+      : surface === 'compositions'
+        ? `0::double precision AS request_size_count,
          0::double precision AS response_size_count,
          0::double precision AS request_bytes,
          0::double precision AS response_bytes,
          count(*) FILTER (WHERE fallback)::double precision AS fallbacks,
          coalesce(sum(semantic_node_count), 0)::double precision AS semantic_nodes,
-         coalesce(sum(diagnostic_count), 0)::double precision AS diagnostics`
+         coalesce(sum(diagnostic_count), 0)::double precision AS diagnostics,
+         0::double precision AS results,
+         NULL::double precision AS active_sessions_max,
+         0::double precision AS sse_responses,
+         0::double precision AS timeouts,
+         0::double precision AS cancelled`
+        : `0::double precision AS request_size_count,
+         0::double precision AS response_size_count,
+         0::double precision AS request_bytes,
+         0::double precision AS response_bytes,
+         0::double precision AS fallbacks,
+         0::double precision AS semantic_nodes,
+         0::double precision AS diagnostics,
+         coalesce(sum(result_count), 0)::double precision AS results,
+         max(active_sessions)::double precision AS active_sessions_max,
+         count(*) FILTER (WHERE response_mode = 'sse')::double precision AS sse_responses,
+         count(*) FILTER (WHERE outcome = 'timeout')::double precision AS timeouts,
+         count(*) FILTER (WHERE outcome = 'cancelled')::double precision AS cancelled`
   return `count(*)::double precision AS calls,
           count(*) FILTER (WHERE outcome = 'success')::double precision AS success,
           count(*) FILTER (WHERE outcome = 'client_error')::double precision AS client_errors,
@@ -547,4 +581,8 @@ export function getHttpStats(db, siteId, window, runtimeQuality) {
 
 export function getCompositionStats(db, siteId, window, runtimeQuality) {
   return getUsageStats(db, siteId, window, 'compositions', runtimeQuality)
+}
+
+export function getMcpStats(db, siteId, window, runtimeQuality) {
+  return getUsageStats(db, siteId, window, 'mcp', runtimeQuality)
 }

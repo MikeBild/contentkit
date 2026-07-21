@@ -5,6 +5,7 @@ import {
   getContentStats,
   getEngagementStats,
   getHttpStats,
+  getMcpStats,
   getReaderStats,
   getReleaseStats,
   getWebhookStats,
@@ -26,6 +27,48 @@ test('stats windows default to a bounded 24h UTC range and reject invalid input'
     () => resolveStatsWindow({ from: '2026-01-01T00:00:00Z', to: '2026-07-01T00:00:00Z' }, now),
     /window is too large/,
   )
+})
+
+test('MCP statistics expose bounded operations without prompts or payloads', async () => {
+  const window = resolveUsageStatsWindow(
+    {
+      from: '2026-07-18T10:00:00Z',
+      to: '2026-07-18T12:00:00Z',
+      group_by: 'tool_name,outcome',
+    },
+    'mcp',
+    now,
+  )
+  const statements = []
+  const db = {
+    async query(sql, values) {
+      statements.push({ sql, values })
+      return /date_trunc/.test(sql)
+        ? [
+            {
+              ts: new Date('2026-07-18T10:00:00Z'),
+              dimension_1: 'contentkit_read',
+              dimension_2: 'success',
+              calls: 2,
+              success: 2,
+              results: 4,
+              active_sessions_max: 3,
+              sse_responses: 2,
+              timeouts: 0,
+              cancelled: 0,
+            },
+          ]
+        : []
+    },
+  }
+  const result = await getMcpStats(db, 'site-1', window, {})
+  assert.equal(result.surface, 'mcp')
+  assert.equal(result.buckets[0].metrics.results.value, 4)
+  assert.equal(result.buckets[0].metrics.active_sessions_max.value, 3)
+  for (const { sql } of statements) {
+    assert.match(sql, /surface = \$5|surface = \$4/)
+    assert.doesNotMatch(sql, /prompt|arguments|markdown|result_json/)
+  }
 })
 
 test('usage stats validate traffic/grouping and preserve exact window uniques and ratio evidence', async () => {

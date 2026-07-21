@@ -26,6 +26,9 @@ Pattern Package and export as an independent visual.
 ## Start here
 
 - [README](README.md): What Contentkit is, local zero-config setup, content upload, preview/release flow and verification commands.
+- [MCP API](MCP.md): Domain-driven remote MCP tools, resources, prompts,
+  OAuth 2.1/PKCE discovery, SubKit-style consent, native form/URL elicitation,
+  identity grants, audit and privacy-bounded telemetry.
 - [Example page](examples/page.de.md): German Markdown page with supported frontmatter.
 - [Example post](examples/post.de.md): German Markdown blog post with supported frontmatter.
 - [Template examples](docs/TEMPLATES.md): Controlled site presets, layouts,
@@ -62,6 +65,11 @@ Pattern Package and export as an independent visual.
   `GET /ready`, `GET /metrics`, `GET /openapi.json`, `GET /llms.txt`,
   `GET /llms-full.txt`, plus `/v1/*` management routes and public submission
   routes.
+- Remote MCP: `POST|GET|DELETE /mcp`, discovered through
+  `/.well-known/oauth-protected-resource/mcp` and
+  `/.well-known/oauth-authorization-server`. Start with
+  `contentkit_context`; tool visibility follows the OAuth/API-key product
+  scopes and site ceiling. MCP is a domain API, not a generic REST proxy.
 - Pattern discovery: `GET /v1/composition-patterns` and
   `GET /v1/composition-patterns/{pattern}`. Site-scoped agents use
   `/v1/sites/{site}/compositions/recommend`, `/validate` and `/compile`, then
@@ -95,8 +103,10 @@ Pattern Package and export as an independent visual.
   valid legacy/Other reports and empty configuration preserves old output.
 - Markdown upload accepts raw `text/markdown` or `multipart/form-data` with a
   `document` field and optional `asset:<path>` file fields.
-- API keys are scoped. Use `site:admin` for site/key administration,
-  `content:read content:write release:write` for publishing, add
+- API keys are scoped. Use unrestricted `site:admin` to create sites and
+  site-scoped `site:admin` for granted-site/key administration; use
+  `content:read content:write release:preview` for non-live authoring previews
+  or `content:read content:write release:write` for publishing, add
   `deck:render` only to trusted deck automation, and use
   `moderation:write` for comments/contact moderation. Send the key as
   `Authorization: Bearer ck_...` or `X-API-Key: ck_...`; the raw key is shown
@@ -176,7 +186,7 @@ Pattern Package and export as an independent visual.
   published content with locale-aware PostgreSQL stemming (de/en) and returns
   `<mark>`-highlighted headlines, behind `content:read` scoped keys — published
   sites keep their static client-side search. See llms-full section 4.
-- Product analytics API: `GET /v1/sites/{site}/stats/{releases|content|decks|readers|webhooks|audio|engagement|http|compositions}`
+- Product analytics API: `GET /v1/sites/{site}/stats/{releases|content|decks|readers|webhooks|audio|engagement|http|compositions|mcp}`
   returns privacy-safe dense UTC aggregates for bounded `from`/`to` windows,
   behind existing site-scoped `content:read` keys. ContentKit does not own the
   downstream cockpit or reporting store. HTTP/composition collection is opt-in,

@@ -30,6 +30,15 @@ const TABLES = new Set([
   'ck_reader_auth_events',
   'ck_deck_build_events',
   'ck_usage_events',
+  'ck_oauth_identity_grants',
+  'ck_operator_sessions',
+  'ck_oauth_clients',
+  'ck_oauth_login_states',
+  'ck_oauth_authorization_codes',
+  'ck_oauth_access_tokens',
+  'ck_oauth_refresh_tokens',
+  'ck_audit_events',
+  'ck_idempotency_keys',
 ])
 
 function assertKnownContentkitIdentifiers(text) {

@@ -69,6 +69,46 @@ test('usage telemetry is opt-in, keeps 90 days and requires its own HMAC secret'
   }
 })
 
+test('MCP defaults are bounded and OIDC login requires configured HTTPS providers', () => {
+  const names = [
+    'CONTENTKIT_MCP_ENABLED',
+    'CONTENTKIT_MCP_SESSION_TTL_MS',
+    'CONTENTKIT_MCP_MAX_SESSIONS',
+    'CONTENTKIT_OAUTH_LOGIN_PROVIDER',
+    'CONTENTKIT_OAUTH_OIDC_PROVIDERS',
+  ]
+  const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
+  try {
+    delete process.env.CONTENTKIT_MCP_ENABLED
+    delete process.env.CONTENTKIT_MCP_SESSION_TTL_MS
+    delete process.env.CONTENTKIT_MCP_MAX_SESSIONS
+    delete process.env.CONTENTKIT_OAUTH_LOGIN_PROVIDER
+    delete process.env.CONTENTKIT_OAUTH_OIDC_PROVIDERS
+    const defaults = loadConfig()
+    assert.equal(defaults.mcpEnabled, true)
+    assert.equal(defaults.mcpSessionTtlMs, 30 * 60 * 1000)
+    assert.equal(defaults.mcpMaxSessions, 1000)
+    process.env.CONTENTKIT_OAUTH_LOGIN_PROVIDER = 'oidc'
+    assert.throws(() => loadConfig(), /requires CONTENTKIT_OAUTH_OIDC_PROVIDERS/)
+    process.env.CONTENTKIT_OAUTH_OIDC_PROVIDERS = JSON.stringify([
+      {
+        id: 'company',
+        label: 'Company',
+        issuer: 'https://id.example.com',
+        client_id: 'client',
+        client_secret: 'secret',
+        scopes: 'openid email profile',
+      },
+    ])
+    assert.equal(loadConfig().oauthOidcProviders[0].id, 'company')
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
 test('production fails closed when secrets are absent', () => {
   const previous = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'
@@ -77,6 +117,7 @@ test('production fails closed when secrets are absent', () => {
     'CONTENTKIT_KEY_PEPPER',
     'CONTENTKIT_PREVIEW_SECRET',
     'CONTENTKIT_SESSION_SECRET',
+    'CONTENTKIT_OAUTH_SECRET',
     'DATABASE_URL',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
@@ -109,6 +150,7 @@ test('production supports managed webhooks without a legacy global endpoint', ()
     CONTENTKIT_KEY_PEPPER: 'pepper',
     CONTENTKIT_PREVIEW_SECRET: 'preview',
     CONTENTKIT_SESSION_SECRET: 'session',
+    CONTENTKIT_OAUTH_SECRET: 'oauth',
     DATABASE_URL: 'postgresql://contentkit:secret@127.0.0.1/contentkit',
     SUPABASE_URL: 'https://storage.example.com',
     SUPABASE_SERVICE_ROLE_KEY: 'storage-role',

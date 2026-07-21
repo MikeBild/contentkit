@@ -98,6 +98,12 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
 - Named, session-protected previews with one-time invitations and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
+- A domain-driven remote MCP API at `/mcp` with scope-filtered tools,
+  resources and prompts for published knowledge, authoring, semantic visual
+  composition, narrative decks, releases and bounded administration. OAuth
+  2.1/PKCE discovery, SubKit-style consent, site-bound identity grants, native
+  form/URL elicitation, session leases, redacted audit and privacy-bounded MCP
+  telemetry are built in. See [MCP.md](MCP.md).
 - Cloudflare Turnstile, honeypot and rate limits on public writes.
 - Signed Standard Webhooks notifications for contact, comment and release events.
 - One self-contained Linux binary and hardened systemd deployment.
@@ -149,6 +155,35 @@ The application applies the SQL bundle embedded in this exact build under a
 PostgreSQL advisory lock before opening HTTP. A migration or storage failure
 aborts startup. To migrate without starting HTTP, run
 `node server.mjs --migrate` (or `NODE_ENV=production dist/contentkit --migrate`).
+
+## MCP API
+
+Connect any remote MCP client to:
+
+```text
+https://contentkit-api.example.com/mcp
+```
+
+The client discovers ContentKit's OAuth 2.1 authorization server from the
+endpoint's `401 WWW-Authenticate` challenge. Authorization uses PKCE-S256 and
+the exact MCP resource URI; local deployments can sign in with an existing
+scoped API key, while production can federate to one or more pre-configured
+OIDC providers. The visible consent UI follows SubKit's compact card design and
+shows client, identity, sites and independently selectable capability tiers.
+
+Start agent work with `contentkit_context`. The MCP API deliberately models
+ContentKit domains—published knowledge, immutable revision authoring, semantic
+composition, narrative decks and release activation—while access/webhooks/
+credentials/identity moderation use bounded CRUD tools. Tool discovery is
+scope-filtered, and every target is checked against the principal's site grant.
+Live or destructive changes require native human form elicitation. API-key
+secrets use a one-time URL elicitation handoff and never enter the MCP transcript.
+
+The complete tool/resource/prompt catalog, OAuth deployment settings and
+security invariants are in [MCP.md](MCP.md). MCP itself is discovered through
+its protocol metadata; the generated [OpenAPI 3.1](docs/openapi.json) continues
+to describe the REST administration and statistics surface, including identity
+grants, audit events and `/stats/mcp`.
 
 ## Create content
 

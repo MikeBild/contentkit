@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Contentkit API",
-    "version": "1.22.0",
-    "description": "API-first Markdown CMS publishing immutable multilingual static-site releases.\n\n## Authentication\n\nManagement endpoints accept a scoped API key as either `Authorization: Bearer <key>`\nor `X-API-Key: <key>`. Keys look like `ck_<43-char base64url>` and the raw value is\nreturned only once, by `POST /v1/api-keys` (and never listed or recoverable again).\nKeys are stored as `HMAC-SHA256(key = CONTENTKIT_KEY_PEPPER, message = raw key)` in hex;\nonly a short `key_prefix` (the first 11 characters, e.g. `ck_A1b2C3d4`) is kept in clear\nfor identification.\n\n### 401 vs 403 — these mean different things\n\n- **401 `{\"error\":\"unauthorized\"}`** — the key was missing, malformed, revoked, expired,\n  or its HMAC hash did not match any stored key. The credential itself was not accepted.\n  A `WWW-Authenticate: Bearer` header is returned. Do **not** re-scope the key; check that\n  you sent the exact raw key and that the server's `CONTENTKIT_KEY_PEPPER` matches the one\n  in force when the key was created.\n- **403 `{\"error\":\"insufficient_scope\",\"scope\":\"<required>\",\"site\":\"<site-id>\"}`** — the key\n  is valid and recognized, but lacks the scope (or the per-site grant) that the endpoint\n  requires. The `scope` field names the scope you need; `site` appears when the check was\n  site-scoped. Fix by using a key that carries that scope for that site.\n\n### Scopes\n\n| Scope | Grants |\n|---|---|\n| `content:read` | Read content/revisions and site-scoped product statistics |\n| `content:write` | Upload Markdown/assets and create revisions |\n| `deck:render` | Compile trusted deck Markdown with the isolated Slidev renderer |\n| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |\n| `site:admin` | Create/update sites, manage API keys and webhook endpoints |\n| `moderation:write` | List/moderate comments and contact submissions |\n| `*` | Global wildcard; held only by the bootstrap key, never grantable via `/v1/api-keys` |\n\nA key may also be restricted to specific `site_ids`. An empty `site_ids` is global for the\nkey's scopes; a non-empty list authorizes only those sites (a mismatch yields 403).\n\n## Webhooks\n\n`POST /v1/sites/{site}/webhooks` registers a delivery endpoint and returns a `whsec_<base64url>`\nsigning secret **once** (also on `/rotate`); it is encrypted at rest and never listed again.\nDeliveries are signed with Standard Webhooks headers: `webhook-id` (unique per delivery — dedupe\non it), `webhook-timestamp` (unix seconds), `webhook-type`, and\n`webhook-signature: v1,<base64 HMAC-SHA256 of \"{webhook-id}.{webhook-timestamp}.{raw-body}\">`.\nConsumers verify by recomputing that HMAC with the endpoint secret and comparing in constant time.\nNote: the HMAC key is the **entire secret string including the `whsec_` prefix**, used as raw UTF-8\nbytes — do not strip `whsec_` or base64-decode it (this differs from the reference Standard\nWebhooks libraries). Also reject deliveries whose timestamp is outside your tolerance window.\nRelease activation additionally emits `contentkit.content.published`,\n`contentkit.content.unpublished`, `contentkit.deck.published` and\n`contentkit.release.published` events in the same transaction as the pointer switch."
+    "version": "1.23.0",
+    "description": "API-first Markdown CMS publishing immutable multilingual static-site releases.\n\n## Authentication\n\nManagement endpoints accept a scoped API key as either `Authorization: Bearer <key>`\nor `X-API-Key: <key>`. Keys look like `ck_<43-char base64url>` and the raw value is\nreturned only once, by `POST /v1/api-keys` (and never listed or recoverable again).\nKeys are stored as `HMAC-SHA256(key = CONTENTKIT_KEY_PEPPER, message = raw key)` in hex;\nonly a short `key_prefix` (the first 11 characters, e.g. `ck_A1b2C3d4`) is kept in clear\nfor identification.\n\n### 401 vs 403 — these mean different things\n\n- **401 `{\"error\":\"unauthorized\"}`** — the key was missing, malformed, revoked, expired,\n  or its HMAC hash did not match any stored key. The credential itself was not accepted.\n  A `WWW-Authenticate: Bearer` header is returned. Do **not** re-scope the key; check that\n  you sent the exact raw key and that the server's `CONTENTKIT_KEY_PEPPER` matches the one\n  in force when the key was created.\n- **403 `{\"error\":\"insufficient_scope\",\"scope\":\"<required>\",\"site\":\"<site-id>\"}`** — the key\n  is valid and recognized, but lacks the scope (or the per-site grant) that the endpoint\n  requires. The `scope` field names the scope you need; `site` appears when the check was\n  site-scoped. Fix by using a key that carries that scope for that site.\n\n### Scopes\n\n| Scope | Grants |\n|---|---|\n| `content:read` | Read content/revisions and site-scoped product statistics |\n| `content:write` | Upload Markdown/assets and create revisions |\n| `deck:render` | Compile trusted deck Markdown with the isolated Slidev renderer |\n| `release:preview` | Build isolated, expiring named previews without changing the live site |\n| `release:write` | Build previews, publish/activate releases, scheduled publish, unpublish |\n| `site:admin` | Update granted sites and manage their API keys/webhooks; only unrestricted principals may create sites |\n| `access:admin` | Manage reader users, groups and rules |\n| `webhook:admin` | Manage webhook endpoints and deliveries |\n| `api-key:admin` | List, create and revoke API keys |\n| `identity:admin` | Pre-provision and revoke exact OIDC identity grants |\n| `audit:read` | Read redacted append-only audit events |\n| `stats:read` | Read privacy-bounded product and MCP usage statistics |\n| `moderation:write` | List/moderate comments and contact submissions |\n| `*` | Global wildcard; held only by the bootstrap key, never grantable via `/v1/api-keys` |\n\nA key may also be restricted to specific `site_ids`. An empty `site_ids` is global for the\nkey's scopes; a non-empty list authorizes only those sites (a mismatch yields 403).\n\n## Webhooks\n\n`POST /v1/sites/{site}/webhooks` registers a delivery endpoint and returns a `whsec_<base64url>`\nsigning secret **once** (also on `/rotate`); it is encrypted at rest and never listed again.\nDeliveries are signed with Standard Webhooks headers: `webhook-id` (unique per delivery — dedupe\non it), `webhook-timestamp` (unix seconds), `webhook-type`, and\n`webhook-signature: v1,<base64 HMAC-SHA256 of \"{webhook-id}.{webhook-timestamp}.{raw-body}\">`.\nConsumers verify by recomputing that HMAC with the endpoint secret and comparing in constant time.\nNote: the HMAC key is the **entire secret string including the `whsec_` prefix**, used as raw UTF-8\nbytes — do not strip `whsec_` or base64-decode it (this differs from the reference Standard\nWebhooks libraries). Also reject deliveries whose timestamp is outside your tolerance window.\nRelease activation additionally emits `contentkit.content.published`,\n`contentkit.content.unpublished`, `contentkit.deck.published` and\n`contentkit.release.published` events in the same transaction as the pointer switch."
   },
   "servers": [
     {
@@ -589,7 +589,8 @@
           "surface": {
             "enum": [
               "http",
-              "compositions"
+              "compositions",
+              "mcp"
             ]
           },
           "bucket": {
@@ -2377,7 +2378,7 @@
     },
     "/v1/sites": {
       "post": {
-        "summary": "Create a site",
+        "summary": "Create a site (unrestricted site administrator)",
         "security": [
           {
             "bearerAuth": []
@@ -2409,7 +2410,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "A site-restricted administrator cannot create a global site"
           }
         }
       }
@@ -5155,6 +5156,28 @@
       }
     },
     "/v1/api-keys": {
+      "get": {
+        "summary": "List API keys without hashes or secrets",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API-key metadata"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
       "post": {
         "summary": "Create a scoped API key",
         "security": [
@@ -5188,6 +5211,223 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/api-keys/{id}": {
+      "delete": {
+        "summary": "Revoke an API key",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/v1/identity-grants": {
+      "get": {
+        "summary": "List OAuth identity grants",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pre-provisioned exact OIDC subject grants"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "summary": "Pre-provision an OAuth identity grant",
+        "description": "provider_id and issuer must exactly match a configured OIDC provider. A grant binds the immutable OIDC subject to a role, product-scope ceiling and optional sites.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "provider_id",
+                  "issuer",
+                  "subject",
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Identity grant created"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "description": "Invalid provider, role or scope ceiling"
+          }
+        }
+      }
+    },
+    "/v1/identity-grants/{id}": {
+      "patch": {
+        "summary": "Update an OAuth identity grant ceiling",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revoke an OAuth identity grant and active sessions/access/refresh tokens",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/v1/audit-events": {
+      "get": {
+        "summary": "Read redacted append-only audit events",
+        "description": "Optional site, action and limit filters. Audit metadata excludes credentials, content, Markdown, request bodies and email addresses.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit events"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Site not found"
           }
         }
       }
@@ -5487,7 +5727,7 @@
     "/v1/sites/{site}/stats/releases": {
       "get": {
         "summary": "Read site releases statistics",
-        "description": "Bounded UTC aggregates for release builds, activation, output size and build duration. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for release builds, activation, output size and build duration. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -5576,7 +5816,7 @@
     "/v1/sites/{site}/stats/content": {
       "get": {
         "summary": "Read site content statistics",
-        "description": "Bounded UTC aggregates for content items, revisions, publications and assets. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for content items, revisions, publications and assets. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -5665,7 +5905,7 @@
     "/v1/sites/{site}/stats/decks": {
       "get": {
         "summary": "Read site decks statistics",
-        "description": "Bounded UTC aggregates for deterministic planning, rendering, cache, SVG/PNG components, duration and output bytes. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for deterministic planning, rendering, cache, SVG/PNG components, duration and output bytes. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -5754,7 +5994,7 @@
     "/v1/sites/{site}/stats/readers": {
       "get": {
         "summary": "Read site readers statistics",
-        "description": "Bounded UTC aggregates for privacy-safe reader authentication outcomes and sessions. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for privacy-safe reader authentication outcomes and sessions. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -5843,7 +6083,7 @@
     "/v1/sites/{site}/stats/webhooks": {
       "get": {
         "summary": "Read site webhooks statistics",
-        "description": "Bounded UTC aggregates for outbox events and webhook delivery outcomes. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for outbox events and webhook delivery outcomes. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -5932,7 +6172,7 @@
     "/v1/sites/{site}/stats/audio": {
       "get": {
         "summary": "Read site audio statistics",
-        "description": "Bounded UTC aggregates for read-aloud jobs, characters and generated duration. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for read-aloud jobs, characters and generated duration. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -6021,7 +6261,7 @@
     "/v1/sites/{site}/stats/engagement": {
       "get": {
         "summary": "Read site engagement statistics",
-        "description": "Bounded UTC aggregates for comments, contact submissions and anonymous feedback. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
+        "description": "Bounded UTC aggregates for comments, contact submissions and anonymous feedback. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.",
         "security": [
           {
             "bearerAuth": []
@@ -6110,7 +6350,7 @@
     "/v1/sites/{site}/stats/http": {
       "get": {
         "summary": "Read site http statistics",
-        "description": "Bounded UTC aggregates for canonical HTTP routes, methods, outcomes, transfer sizes, latency and exact local HMAC actors/sessions. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets. Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.",
+        "description": "Bounded UTC aggregates for canonical HTTP routes, methods, outcomes, transfer sizes, latency and exact local HMAC actors/sessions. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets. Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.",
         "security": [
           {
             "bearerAuth": []
@@ -6221,7 +6461,7 @@
     "/v1/sites/{site}/stats/compositions": {
       "get": {
         "summary": "Read site compositions statistics",
-        "description": "Bounded UTC aggregates for semantic recommend/validate/compile operations, requested versus resolved patterns, fallbacks, diagnostics and latency. Requires the existing content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets. Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.",
+        "description": "Bounded UTC aggregates for semantic recommend/validate/compile operations, requested versus resolved patterns, fallbacks, diagnostics and latency. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets. Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.",
         "security": [
           {
             "bearerAuth": []
@@ -6298,6 +6538,117 @@
             "name": "group_by",
             "in": "query",
             "description": "Comma-separated list of at most two dimensions: operation, outcome, requested_pattern, resolved_pattern, fallback, traffic_class, request_source.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dense, site-scoped aggregate time series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Site not found"
+          },
+          "422": {
+            "description": "Invalid or excessive time window"
+          }
+        }
+      }
+    },
+    "/v1/sites/{site}/stats/mcp": {
+      "get": {
+        "summary": "Read site mcp statistics",
+        "description": "Bounded UTC aggregates for MCP sessions, transports, resources, prompts and scope-filtered tool calls without prompts, arguments or result content. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets. Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day",
+                "month",
+                "year"
+              ],
+              "default": "hour"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "UTC"
+              ],
+              "default": "UTC"
+            }
+          },
+          {
+            "name": "traffic_class",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "organic",
+                "synthetic",
+                "internal",
+                "all"
+              ],
+              "default": "organic"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "description": "Comma-separated list of at most two dimensions: operation, tool_name, outcome, response_mode, traffic_class.",
             "schema": {
               "type": "string"
             }

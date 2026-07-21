@@ -6,6 +6,7 @@ export function createMetrics() {
   const deckCache = new Map()
   const deckJobs = new Map()
   const deckOperations = new Map()
+  const mcpOperations = new Map()
   let deckBuildMs = 0
   let deckOutputBytes = 0
   return {
@@ -32,7 +33,11 @@ export function createMetrics() {
       const key = `${mode}|${result}|${execution}`
       deckOperations.set(key, (deckOperations.get(key) || 0) + 1)
     },
-    render(inflight = 0, { deckInflight = 0, deckQueued = 0 } = {}) {
+    mcpOperation({ operation = 'unknown', outcome = 'success' }) {
+      const key = `${operation}|${outcome}`
+      mcpOperations.set(key, (mcpOperations.get(key) || 0) + 1)
+    },
+    render(inflight = 0, { deckInflight = 0, deckQueued = 0, mcpSessions = 0 } = {}) {
       const lines = ['# HELP contentkit_requests_total HTTP requests', '# TYPE contentkit_requests_total counter']
       for (const [key, value] of requests) {
         const [method, route, status] = key.split('|')
@@ -69,6 +74,12 @@ export function createMetrics() {
         '# TYPE contentkit_deck_output_bytes_total counter',
         `contentkit_deck_output_bytes_total ${deckOutputBytes}`,
       )
+      lines.push('# TYPE contentkit_mcp_sessions gauge', `contentkit_mcp_sessions ${mcpSessions}`)
+      lines.push('# TYPE contentkit_mcp_operations_total counter')
+      for (const [key, value] of mcpOperations) {
+        const [operation, outcome] = key.split('|')
+        lines.push(`contentkit_mcp_operations_total{operation="${operation}",outcome="${outcome}"} ${value}`)
+      }
       return `${lines.join('\n')}\n`
     },
   }

@@ -1,7 +1,7 @@
 import { hmac256 } from './utils.mjs'
 
 const TRAFFIC_CLASSES = new Set(['organic', 'synthetic', 'internal'])
-const REQUEST_SOURCES = new Set(['api', 'gateway', 'reader', 'scheduler', 'manual'])
+const REQUEST_SOURCES = new Set(['api', 'gateway', 'reader', 'scheduler', 'manual', 'mcp'])
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
 
 function bounded(value, max) {
@@ -47,7 +47,7 @@ export function createUsageTelemetry(config, db, logger) {
   const hash = (kind, value) => (value && secret ? hmac256(secret, `${kind}:${value}`) : null)
 
   async function write(row) {
-    if (!enabled || !row.site_id || !db.insert) return false
+    if (!enabled || !db.insert) return false
     try {
       await db.insert('ck_usage_events', row, { returning: false })
       return true
@@ -146,6 +146,40 @@ export function createUsageTelemetry(config, db, logger) {
     })
   }
 
+  async function recordMcp(input = {}) {
+    if (!enabled) return false
+    const principal = input.principal || {}
+    const declaredTraffic = bounded(input.trafficClass, 16)
+    return write({
+      site_id: input.siteId || null,
+      surface: 'mcp',
+      operation: bounded(input.operation, 80) || 'unknown',
+      route: null,
+      method: null,
+      status_code: null,
+      outcome: ['success', 'client_error', 'server_error', 'rejected', 'timeout', 'cancelled'].includes(input.outcome)
+        ? input.outcome
+        : 'success',
+      traffic_class: TRAFFIC_CLASSES.has(declaredTraffic) ? declaredTraffic : 'organic',
+      request_source: 'mcp',
+      ...identity({ actorId: principal.id, sessionId: input.sessionId }),
+      duration_ms: integer(input.durationMs) || 0,
+      request_bytes: null,
+      response_bytes: null,
+      semantic_node_count: null,
+      diagnostic_count: null,
+      requested_pattern: null,
+      resolved_pattern: null,
+      fallback: null,
+      output_format: null,
+      tool_name: bounded(input.toolName, 128),
+      resource_kind: bounded(input.resourceKind, 80),
+      response_mode: ['json', 'sse', 'none'].includes(input.responseMode) ? input.responseMode : null,
+      result_count: integer(input.resultCount),
+      active_sessions: integer(input.activeSessions),
+    })
+  }
+
   async function cleanup() {
     if (!enabled || !db.query) return 0
     try {
@@ -168,6 +202,7 @@ export function createUsageTelemetry(config, db, logger) {
     enabled,
     recordHttp,
     recordComposition,
+    recordMcp,
     cleanup,
     quality: () => ({ sampled: false, dropped_events: dropped, retention_days: retentionDays }),
     start() {

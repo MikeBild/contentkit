@@ -73,6 +73,12 @@
       "tag": "0011_contentkit_usage_telemetry",
       "when": 1784570400000,
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "tag": "0012_contentkit_mcp_oauth",
+      "when": 1784656800000,
+      "breakpoints": true
     }
   ]
 }

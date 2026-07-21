@@ -132,12 +132,19 @@ admin-only endpoint returns `403 insufficient_scope` with `"scope":"site:admin"`
 
 | Scope | Allows |
 |---|---|
-| `site:admin` | Create/read/update sites and create scoped API keys |
+| `site:admin` | Update granted sites and create scoped API keys; site creation requires an unrestricted principal |
 | `content:read` | List content items and revisions, read site metadata |
 | `content:write` | Upload Markdown/assets, create immutable revisions and plan/validate decks |
 | `deck:render` | Execute trusted deck source through the bounded Slidev/Vite compiler |
+| `release:preview` | Build isolated expiring previews without changing the live site |
 | `release:write` | Build previews, publish releases, run scheduled publish and roll back |
 | `moderation:write` | List/moderate comments and contact submissions |
+| `access:admin` | Manage reader users, groups and release-scoped path rules |
+| `webhook:admin` | Manage webhook endpoints and delivery retries |
+| `api-key:admin` | List, create and revoke API keys |
+| `identity:admin` | Manage exact OIDC identity grants and revoke their sessions/access/refresh tokens |
+| `audit:read` | Query redacted append-only administrative and publication audit events |
+| `stats:read` | Read privacy-bounded product, HTTP, composition and MCP aggregates |
 | `*` | Bootstrap-only global access |
 
 Keys can also be restricted to `site_ids`. If `site_ids` is empty, the key is
@@ -149,6 +156,7 @@ Recommended key split:
 | Key | Scopes | Use |
 |---|---|---|
 | Site admin key | `site:admin` | Create/read/update sites and create additional scoped keys |
+| Authoring key | `content:read content:write release:preview` | Upload Markdown and build isolated previews without live publication rights |
 | Publishing key | `content:read content:write release:write` | Upload Markdown, build previews, publish releases and roll back |
 | Moderation key | `moderation:write` | Review comments and contact submissions |
 | Scheduler key | `content:read content:write release:write moderation:write` if needed by workflow design | Scheduled publish automation |
@@ -187,6 +195,36 @@ export CONTENTKIT_SITE_ADMIN_KEY="ck_..."
 export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 ```
 
+### Remote MCP authorization
+
+The remote Streamable HTTP MCP endpoint is `/mcp`. It accepts existing scoped
+API keys directly and also exposes a built-in OAuth 2.1 authorization server.
+Clients discover it from `/.well-known/oauth-protected-resource/mcp` and
+`/.well-known/oauth-authorization-server`. Authorization code requests require
+PKCE-S256 and the exact RFC 8707 resource `https://<api-host>/mcp`; public-client
+refresh tokens rotate, and replay revokes the complete token family.
+
+Local/API-key login proves the operator identity with an existing key.
+Derived OAuth access is continuously bound to that source key and becomes
+invalid when the key is revoked, expires or rotates; an OAuth bearer token
+cannot be reused as an operator key.
+Production OIDC login uses configured HTTPS issuers and a pre-provisioned exact
+`provider_id + issuer + sub` identity grant; an email address alone is never an
+authorization identity. The compact SubKit-style consent card shows the client,
+identity, site ceiling and OAuth tiers `mcp:read`, `mcp:authoring` and
+`mcp:admin`. Those tiers are intersected with the role and product-scope ceiling
+on every access-token authentication.
+
+The domain tools cover context/site selection, published search/read, immutable
+revision authoring, semantic visual composition, narrative decks, releases,
+publication, statistics and bounded administrative CRUD. `tools/list` is
+scope-filtered. Live/destructive changes require native form elicitation; API
+key/webhook secret creation uses a one-time URL elicitation handoff with an
+explicit browser reveal step so the secret never enters the MCP client
+transcript or gets consumed by link prefetching. Resources expose this guide, both LLM documents and
+OpenAPI; prompts cover authoring, visualization, decks and publication review.
+See `MCP.md` for the exact tool catalog, safety boundaries and operations.
+
 ---
 
 ## 4. Complete HTTP API
@@ -195,7 +233,7 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 
 | Method | Path | Scope | Function |
 |---|---|---|---|
-| POST | `/v1/sites` | `site:admin` | Create a site, locales and optional hostnames |
+| POST | `/v1/sites` | unrestricted `site:admin` | Create a site, locales and optional hostnames |
 | GET | `/v1/sites/{site}` | `content:read` or `site:admin` | Read site metadata and settings |
 | PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings |
 | GET | `/v1/sites/{site}/content` | `content:read` | List content items for a site |
@@ -221,7 +259,7 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.svg` | `content:read` | Fetch a published standalone light/dark SVG |
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.png` | `content:read` | Fetch a published deterministic light/dark PNG |
 | GET | `/v1/sites/{site}/search` | `content:read` | Full-text search over published content: required `q`, optional `locale`, `kind`, `limit`; ranked results with `<mark>` headlines |
-| POST | `/v1/sites/{site}/previews` | `release:write` | Build a named expiring preview and return separate invitation and preview URLs |
+| POST | `/v1/sites/{site}/previews` | `release:preview` or `release:write` | Build a named expiring preview and return separate invitation and preview URLs |
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
@@ -237,7 +275,14 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | GET | `/v1/contact-submissions` | `moderation:write` | List contact submissions, optionally filtered by site |
 | PATCH | `/v1/contact-submissions/{id}` | `moderation:write` | Mark a contact submission as `read` or `closed` |
 | GET | `/v1/feedback` | `moderation:write` | Per-post feedback aggregates (`up`/`down` counts), optionally filtered by `site_id`/`post` |
-| POST | `/v1/api-keys` | `site:admin` | Create a scoped API key; raw key is returned once |
+| GET | `/v1/api-keys` | `api-key:admin` or `site:admin` | List API-key metadata without hash or secret |
+| POST | `/v1/api-keys` | `api-key:admin` or `site:admin` | Create a scoped API key; raw key is returned once over REST |
+| DELETE | `/v1/api-keys/{id}` | `api-key:admin` or `site:admin` | Revoke an API key |
+| GET | `/v1/identity-grants` | `identity:admin` | List exact OIDC subject grants |
+| POST | `/v1/identity-grants` | `identity:admin` | Pre-provision an identity role/scope/site ceiling |
+| PATCH | `/v1/identity-grants/{id}` | `identity:admin` | Update the mutable grant ceiling |
+| DELETE | `/v1/identity-grants/{id}` | `identity:admin` | Revoke the grant and its sessions/access/refresh tokens |
+| GET | `/v1/audit-events` | `audit:read` | Read redacted append-only audit events with site/action/limit filters |
 | GET | `/v1/sites/{site}/webhooks` | `site:admin` | List webhook endpoints (secrets never returned) |
 | POST | `/v1/sites/{site}/webhooks` | `site:admin` | Register a signed webhook endpoint; `whsec_` secret returned once |
 | PATCH | `/v1/sites/{site}/webhooks/{endpoint}` | `site:admin` | Update url/events/description or enable/disable an endpoint |
@@ -1380,6 +1425,15 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_KEY_PEPPER` | server-side API key hashing pepper |
 | `CONTENTKIT_PREVIEW_SECRET` | preview invitation and session token hashing secret |
 | `CONTENTKIT_SESSION_SECRET` | independent HMAC secret for reader session tokens and login CSRF |
+| `CONTENTKIT_MCP_ENABLED` | expose MCP, OAuth discovery and authorization routes; default true |
+| `CONTENTKIT_MCP_SESSION_TTL_MS` | idle session lease; default 1800000 |
+| `CONTENTKIT_MCP_MAX_SESSIONS` | hard session cap with oldest-idle eviction; default 1000 |
+| `CONTENTKIT_MCP_ELICITATION_TIMEOUT_MS` | maximum native human interaction wait; default 300000 |
+| `CONTENTKIT_OAUTH_SECRET` | independent HMAC key for OAuth codes/tokens/sessions; required in production |
+| `CONTENTKIT_OAUTH_LOGIN_PROVIDER` | `api_key`, `oidc` or `federated` |
+| `CONTENTKIT_OAUTH_ALLOWED_SCOPES` | comma-separated OAuth tier ceiling; must include `mcp:read` |
+| `CONTENTKIT_OAUTH_DCR_ENABLED` | enable bounded public-client dynamic registration; default true |
+| `CONTENTKIT_OAUTH_OIDC_PROVIDERS` | JSON array of provider id/label/HTTPS issuer/client credentials/scopes |
 | `SUPABASE_URL` | Supabase project URL for Storage API |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
 | `CONTENTKIT_STORAGE_BUCKET` | Storage bucket name; default `contentkit` |
@@ -1408,7 +1462,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible; default 7 days |
 | `CONTENTKIT_BUILDING_REAP_MS` | age after which a release stuck in building is reaped; default 1 hour |
 | `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` | reader-auth aggregate source retention; default 400 days |
-| `CONTENTKIT_USAGE_TELEMETRY_ENABLED` | opt in to privacy-bounded HTTP/composition usage events; default false |
+| `CONTENTKIT_USAGE_TELEMETRY_ENABLED` | opt in to privacy-bounded HTTP/composition/MCP usage events; default false |
 | `CONTENTKIT_USAGE_HMAC_SECRET` | independent product-local actor/session HMAC key; required when usage telemetry is enabled |
 | `CONTENTKIT_USAGE_RETENTION_DAYS` | raw usage-event retention; default 90 days, allowed 31–365 |
 | `CONTENTKIT_AUDIO_ENABLED` | start the read-aloud TTS worker; default false |
@@ -1726,7 +1780,7 @@ not know about a downstream cockpit, workflow engine, report schedule or
 central storage bucket. Consumers reuse an existing site-scoped `content:read`
 key rather than provisioning a reporting-specific credential.
 
-The nine read-only endpoints are:
+The ten read-only endpoints are:
 
 - `/v1/sites/{site}/stats/releases`: builds, outcomes, activation, output size
   and build duration;
@@ -1743,6 +1797,9 @@ The nine read-only endpoints are:
 - `/v1/sites/{site}/stats/compositions`: recommend/validate/compile outcomes,
   requested and resolved repository-owned patterns, fallbacks, semantic-node and
   diagnostic counts, output size and latency.
+- `/v1/sites/{site}/stats/mcp`: session/transport/resource/prompt/tool
+  operation, outcome, latency, response mode, result counts and active-session
+  high water marks; prompts, arguments and results are never collected.
 
 Every route accepts `bucket=hour|day|month|year`, RFC 3339 `from`/`to`, and
 `tz=UTC`. It defaults to the previous 24 hours in hourly buckets, uses
@@ -1750,7 +1807,7 @@ inclusive-from/exclusive-to semantics, returns dense zero-filled buckets and
 rejects invalid or excessive windows with 422. Hourly windows are capped at 31
 days, daily at 366 days, monthly at five years and yearly at ten years.
 
-The two usage endpoints additionally accept
+The three usage endpoints additionally accept
 `traffic_class=organic|synthetic|internal|all` (default `organic`) and at most
 two comma-separated `group_by` dimensions. Their
 `schema_version=contentkit.usage-stats.v1` response returns semantic metric

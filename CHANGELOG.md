@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.23.0 - 2026-07-21
+
+### Added
+
+- Add a domain-driven MCP 2025-11-25 Streamable HTTP API with scope-filtered
+  tools, code-versioned resources, reusable prompts, per-principal session
+  servers, bounded leases, SSE lifetime tracking and graceful shutdown.
+- Add OAuth 2.1 authorization-code/PKCE discovery, RFC 8707 resource binding,
+  public-client registration, opaque short-lived access tokens, rotating
+  refresh-token families and exact pre-provisioned OIDC subject grants.
+- Add the SubKit-inspired sign-in/consent UI plus native MCP form elicitation
+  for live/destructive changes and one-time URL elicitation handoffs for API-key
+  secrets.
+- Add append-only redacted audit events, idempotent live publication boundaries,
+  identity/API-key administration, MCP usage telemetry and site-scoped
+  `/stats/mcp` aggregates.
+
+### Changed
+
+- Extend the REST/OpenAPI surface with identity-grant CRUD, API-key list/revoke,
+  audit queries and MCP statistics; update README, deployment, analytics,
+  `llms.txt`, `llms-full.txt` and the dedicated MCP guide consistently.
+- Expand the scope model into explicit read, authoring and bounded
+  administrative aggregates while preserving API-key authentication and the
+  backwards-compatible `content:read` statistics grant.
+
+### Security
+
+- Bind every MCP session to its initializing credential without treating the
+  session ID as authentication; reject foreign/unknown sessions identically,
+  validate browser Origin and protocol revision, and cap bodies/sessions/time.
+- Keep OAuth codes/tokens/operator sessions hashed at rest, intersect live grant
+  ceilings during token authentication, revoke token families on refresh replay
+  and keep credentials, prompts, arguments, results and content out of telemetry
+  and audit metadata.
+
 ## 1.21.0 - 2026-07-20
 
 ### Added

@@ -516,6 +516,7 @@ export function createRepository(config, db, storage) {
         secret_encrypted: encryptSecret(secret, config.keyPepper),
         events: Array.isArray(input.events) ? input.events : [],
         description: input.description || '',
+        disabled_at: input.enabled === false ? new Date().toISOString() : null,
       })
       return { ...publicEndpoint(row), secret }
     },
@@ -543,14 +544,18 @@ export function createRepository(config, db, storage) {
       const [row] = await db.update('ck_webhook_endpoints', { id: `eq.${id}`, site_id: `eq.${siteId}` }, patch)
       return row ? publicEndpoint(row) : null
     },
-    async rotateWebhookSecret(siteId, id) {
+    async rotateWebhookSecret(siteId, id, options = {}) {
       const existing = await one('ck_webhook_endpoints', { id: `eq.${id}`, site_id: `eq.${siteId}` })
       if (!existing) return null
       const secret = generateWebhookSecret()
       await db.update(
         'ck_webhook_endpoints',
         { id: `eq.${id}`, site_id: `eq.${siteId}` },
-        { secret_encrypted: encryptSecret(secret, config.keyPepper), updated_at: new Date().toISOString() },
+        {
+          secret_encrypted: encryptSecret(secret, config.keyPepper),
+          ...(options.disable ? { disabled_at: new Date().toISOString() } : {}),
+          updated_at: new Date().toISOString(),
+        },
         { returning: false },
       )
       return { id, secret }

@@ -19,6 +19,12 @@ import { createRequestHandler, routeName } from './routes.mjs'
 import { runMigrations } from './db/migrate.mjs'
 import { createTraceContext } from './trace-context.mjs'
 import { createUsageTelemetry } from './usage.mjs'
+import { createAudit } from './audit.mjs'
+import { createOAuthMount } from './oauth/server.mjs'
+import { createMcpMount } from './mcp/server.mjs'
+import { createSecretHandoffs } from './secret-handoffs.mjs'
+import { nodeWebHandler } from './web-bridge.mjs'
+import { isApiHost } from './routes.mjs'
 
 export function createApp(config = loadConfig(), dependencies = {}) {
   const logger = dependencies.logger || createLogger(config)
@@ -29,6 +35,13 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const repo = dependencies.repo || createRepository(config, db, storage)
   const metrics = createMetrics()
   const usage = dependencies.usage || createUsageTelemetry(config, db, logger)
+  const mcpUsage = {
+    ...usage,
+    async recordMcp(input) {
+      metrics.mcpOperation(input)
+      return usage.recordMcp(input)
+    },
+  }
   const deckRenderer =
     dependencies.deckRenderer ||
     createDeckRenderer(config, logger, {
@@ -52,6 +65,24 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   // onPublished hook only fires for releases with revisions.
   audio.setPublisher?.((input) => releases.publish(input))
   const auth = dependencies.auth || createAuth(config, db)
+  const audit = dependencies.audit || createAudit(db, logger)
+  const secretHandoffs = dependencies.secretHandoffs || createSecretHandoffs(config, logger)
+  const oauth = dependencies.oauth || createOAuthMount(config, { db, auth, audit, logger })
+  const mcp =
+    dependencies.mcp ||
+    createMcpMount(config, {
+      config,
+      db,
+      repo,
+      releases,
+      auth,
+      audit,
+      logger,
+      usage: mcpUsage,
+      deckRenderer,
+      deckJobs,
+      secretHandoffs,
+    })
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()
@@ -75,6 +106,15 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     deckRenderer,
     deckJobs,
     usage,
+    audit,
+    mcp,
+  })
+
+  const mcpHandler = nodeWebHandler(mcp, { maxBodyBytes: config.maxBodyBytes, publicUrl: config.publicUrl })
+  const oauthHandler = nodeWebHandler(oauth, { maxBodyBytes: config.maxBodyBytes, publicUrl: config.publicUrl })
+  const handoffHandler = nodeWebHandler(secretHandoffs, {
+    maxBodyBytes: config.maxBodyBytes,
+    publicUrl: config.publicUrl,
   })
 
   const server = createServer((req, res) => {
@@ -99,7 +139,23 @@ export function createApp(config = loadConfig(), dependencies = {}) {
         ms: durationMs,
       })
     })
-    handle(req, res).catch((error) => {
+    const path = (req.url || '').split('?')[0]
+    const onApiHost = isApiHost(req, config)
+    const oauthPath =
+      path === '/.well-known/oauth-protected-resource' ||
+      path === '/.well-known/oauth-protected-resource/mcp' ||
+      path === '/.well-known/oauth-authorization-server' ||
+      /^\/v1\/(?:oauth|identity\/login)\//.test(path)
+    const handoffPath = /^\/oauth\/secret\//.test(path)
+    const dispatched =
+      config.mcpEnabled && onApiHost && path === '/mcp'
+        ? mcpHandler(req, res)
+        : config.mcpEnabled && onApiHost && oauthPath
+          ? oauthHandler(req, res)
+          : config.mcpEnabled && onApiHost && handoffPath
+            ? handoffHandler(req, res)
+            : handle(req, res)
+    dispatched.catch((error) => {
       // A committed response cannot be rewritten, and the client already got
       // its real status (e.g. the gateway's 503) — report that instead of
       // filing the late write attempt (ERR_HTTP_HEADERS_SENT) as a fresh 500.
@@ -131,6 +187,10 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     deckRenderer,
     deckJobs,
     usage,
+    audit,
+    oauth,
+    mcp,
+    secretHandoffs,
     database,
     handle,
     async ensureStorage() {
@@ -172,6 +232,7 @@ export async function start(config = loadConfig()) {
   }
   app.outbox.start()
   app.usage.start()
+  if (config.mcpEnabled) app.oauth.start()
   // Deployment-level switch: the poller only runs where ffmpeg and TTS
   // credentials exist. Which sites get audio is decided per site at enqueue
   // time via settings.audio.enabled.
@@ -190,6 +251,9 @@ export async function start(config = loadConfig()) {
     app.audio.stop()
     app.deckJobs.stop()
     app.usage.stop()
+    app.oauth.stop()
+    app.mcp.stop()
+    await app.secretHandoffs.stop()
     app.limiter.stop()
     app.loginLimiter.stop()
     app.server.close(async () => {

@@ -3,8 +3,8 @@
 ContentKit exposes bounded, site-scoped aggregates from its own PostgreSQL
 database. These endpoints are a generic product capability: ContentKit does
 not know about a reporting cockpit, a workflow engine or a central report
-store. A collector can call the API with an existing site-scoped
-`content:read` key.
+store. A collector can call the API with a site-scoped `stats:read` key; the
+existing `content:read` scope remains accepted for backwards compatibility.
 
 ## Endpoints
 
@@ -14,13 +14,14 @@ All endpoints are `GET /v1/sites/{site}/stats/{kind}`:
 |---|---|
 | `releases` | builds started/completed/failed/activated, release vs preview builds, files, bytes and build duration |
 | `content` | items, revisions, publications, assets and asset bytes |
-| `decks` | plans, validations, sync/async compiles, previews, releases, outcomes, cache results, slides, SVG/PNG components, duration and output bytes |
+| `decks` | plans, validations, sync/async/MCP compiles, previews, releases, outcomes, cache results, slides, SVG/PNG components, duration and output bytes |
 | `readers` | successful, failed and rate-limited authentication attempts plus sessions created |
 | `webhooks` | outbox events, deliveries and their current outcome |
 | `audio` | jobs and current outcome, synthesized characters and audio duration |
 | `engagement` | comments, contact submissions and anonymous up/down feedback |
 | `http` | canonical route templates, methods, outcome classes, latency, transfer sizes and exact local HMAC actors/sessions |
 | `compositions` | recommend/validate/compile outcomes, requested/resolved controlled patterns, fallbacks, semantic nodes, diagnostics, output size and latency |
+| `mcp` | session/transport/resource/prompt/tool operations, outcomes, latency, response mode, result counts and active-session high water mark |
 
 Common query parameters are `bucket=hour|day|month|year`, RFC 3339 `from` and
 `to`, and `tz=UTC`. The default is the previous 24 hours in hourly buckets.
@@ -29,13 +30,15 @@ saving changes. Windows are capped at 31 days for hourly, 366 days for daily,
 five years for monthly and ten years for yearly requests. Invalid or excessive
 windows return 422.
 
-`http` and `compositions` additionally accept
+`http`, `compositions` and `mcp` additionally accept
 `traffic_class=organic|synthetic|internal|all` (default `organic`) and a
 comma-separated `group_by` with at most two allowlisted dimensions. HTTP can
 group by `route`, `method`, `outcome`, `status_class`, `traffic_class` or
 `request_source`; compositions can group by `operation`, `outcome`,
 `requested_pattern`, `resolved_pattern`, `fallback`, `traffic_class` or
 `request_source`.
+MCP can group by `operation`, `tool_name`, `outcome`, `response_mode` or
+`traffic_class`.
 
 ```bash
 curl "$CONTENTKIT_URL/v1/sites/$SITE/stats/content?bucket=hour&from=2026-07-18T10:00:00Z&to=2026-07-18T12:00:00Z" \
@@ -113,11 +116,11 @@ maintenance run after `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` (400 by
 default).
 
 Deck build facts follow the same retention. They contain only site, operation,
-sync/async execution, outcome, cache result and bounded numeric counters. They
+sync/async/MCP execution, outcome, cache result and bounded numeric counters. They
 never store source Markdown, a deck title or URL, a job ID, an API key or an
 author/reader identity.
 
-HTTP/composition usage is a separate opt-in with a separate 90-day default
+HTTP/composition/MCP usage is a separate opt-in with a separate 90-day default
 retention. Enable it with `CONTENTKIT_USAGE_TELEMETRY_ENABLED=true` and an
 independent `CONTENTKIT_USAGE_HMAC_SECRET`. Authenticated actors and explicit
 sessions are HMACed before insertion in a ContentKit-only namespace; rotating
@@ -125,7 +128,8 @@ the secret intentionally ends cohort continuity. Anonymous HTTP is never
 fingerprinted. Events contain canonical route templates and bounded enums or
 numeric counters only—never Markdown, semantic input, prompts, request/response
 bodies, raw path/query strings, dynamic IDs, IP, User-Agent, cookies, OAuth
-details or credentials. Stats/probe traffic is `internal`; authenticated
+details or credentials. MCP events likewise never contain prompts, tool
+arguments, results, elicitation answers or authorization tokens. Stats/probe traffic is `internal`; authenticated
 canaries may use the `synthetic` headers. Organic is the reporting default.
 
 The API continues an incoming W3C `traceparent`, returns the server span in a
