@@ -9,6 +9,7 @@ payload.tgz
 *.log
 .DS_Store
 .claude/
+.wikikit/
 
 # Reproducible visual-review output. Regenerate with `npm run review:patterns`.
 examples/pattern-gallery/
