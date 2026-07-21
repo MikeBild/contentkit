@@ -1430,6 +1430,7 @@ export function createRequestHandler(ctx) {
       // Strong ETag: the source hash names the revision bytes, the service
       // version covers renderer changes that alter the on-demand HTML.
       const { source_sha256: sourceHash, _composition_assets, ...body } = record
+      delete body.revision_sha256
       const themeHash = sha256(JSON.stringify(site.settings?.theme || {})).slice(0, 16)
       const etag = `"${sourceHash}:${config.version}:${themeHash}:${patternRegistryHash.slice(0, 16)}"`
       if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })

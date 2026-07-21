@@ -104,6 +104,7 @@ function publishedEntry(item, revision) {
     metadata: revision.metadata,
     report_series: revision.metadata?.report_series ?? null,
     revision_id: revision.id,
+    revision_sha256: revision.source_sha256,
     published_at: revision.published_at,
     updated_at: item.updated_at,
   }

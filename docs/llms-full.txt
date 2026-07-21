@@ -202,7 +202,7 @@ export CONTENTKIT_PUBLISH_API_KEY="ck_..."
 | POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
 | GET | `/v1/content/{item}/revisions` | `content:read` | List immutable revisions for one content item |
 | PUT | `/v1/content/{item}/revisions` | `content:write` | Create another immutable revision for an existing content item |
-| GET | `/v1/sites/{site}/published` | `content:read` | List published content as JSON (read API): `kind`, `locale`, exact `tag`, `updated_since`, keyset `limit`/`cursor` |
+| GET | `/v1/sites/{site}/published` | `content:read` | List published content as JSON (read API), including the immutable `revision_sha256` for metadata-only inventory consumers: `kind`, `locale`, exact `tag`, `updated_since`, keyset `limit`/`cursor` |
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}` | `content:read` | Read one document including Markdown, HTML, Semantic AST, Narrative, Composition, diagnostics and representation links |
 | GET | `/v1/composition-patterns` | public | List/filter declarative Pattern Packages with a registry ETag |
 | GET | `/v1/composition-patterns/{pattern}` | public | Read one machine- and human-readable Pattern Package |

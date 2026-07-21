@@ -1827,6 +1827,7 @@ describe('published read API', () => {
     markdown: '# Hello',
     html: '<h1>Hello</h1>',
     source_sha256: 'abc123',
+    revision_sha256: 'abc123',
     _composition_assets: {
       light: { svg: '<svg/>', png: Buffer.from('png'), svg_sha256: 'svg-hash', png_sha256: 'png-hash' },
       dark: {
@@ -1915,6 +1916,7 @@ describe('published read API', () => {
       assert.equal(body.markdown, '# Hello')
       assert.equal(body.html, '<h1>Hello</h1>')
       assert.equal(body.source_sha256, undefined, 'the ETag ingredient must not leak into the body')
+      assert.equal(body.revision_sha256, undefined, 'the inventory hash is list-only')
       assert.deepEqual(calls[0], ['doc', 'site-1', 'post', 'de', 'hello', { formats: [] }])
 
       const cached = await request('/v1/sites/my-site/published/post/de/hello', {

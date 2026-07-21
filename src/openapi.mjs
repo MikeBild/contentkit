@@ -266,6 +266,12 @@ export function openApi(config) {
                 'Registered report-series ID authored as frontmatter `reportSeries`; null for legacy/unassigned reports and non-report content.',
             },
             revision_id: { type: 'string', format: 'uuid' },
+            revision_sha256: {
+              type: 'string',
+              pattern: '^[0-9a-f]{64}$',
+              description:
+                'Immutable source hash exposed by published list entries for privacy-bounded inventory consumers; omitted from single-document responses.',
+            },
             published_at: { type: ['string', 'null'], format: 'date-time' },
             updated_at: { type: 'string', format: 'date-time' },
           },

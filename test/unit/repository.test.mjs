@@ -674,6 +674,7 @@ test('listPublished merges items with their published revisions and skips drafts
     metadata: { kind: 'post', title: 'One', extra: { series: 'one' } },
     report_series: null,
     revision_id: 'rev-1',
+    revision_sha256: 'sha-rev-1',
     published_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-03T10:00:00.000Z',
   })
@@ -784,6 +785,7 @@ test('getPublished returns the merged document with markdown verbatim and on-dem
   const doc = await repo.getPublished('site-1', 'post', 'de', 'one')
   assert.equal(doc.item_id, 'item-1')
   assert.equal(doc.revision_id, 'rev-1')
+  assert.equal(doc.revision_sha256, 'sha-rev-1')
   assert.equal(doc.markdown, '---\nkind: post\ntitle: One\nlocale: de\nslug: one\n---\n\n**Hello** read API.')
   assert.match(doc.html, /<strong>Hello<\/strong>/)
   assert.equal(doc.source_sha256, 'sha-rev-1')
