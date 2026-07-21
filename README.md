@@ -170,6 +170,9 @@ the exact MCP resource URI; local deployments can sign in with an existing
 scoped API key, while production can federate to one or more pre-configured
 OIDC providers. The visible consent UI follows SubKit's compact card design and
 shows client, identity, sites and independently selectable capability tiers.
+Consent uses POST/Redirect/GET and safely replays the same encrypted response
+for a short window if an MCP client repeats the decision submission; only one
+single-use authorization code is minted.
 
 Start agent work with `contentkit_context`. The MCP API deliberately models
 ContentKit domains—published knowledge, immutable revision authoring, semantic

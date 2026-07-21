@@ -74,6 +74,9 @@ secret. For production OIDC, set `CONTENTKIT_OAUTH_LOGIN_PROVIDER=oidc` (or
 issuer/subject grants before login. The reverse proxy must forward `/mcp`,
 `/.well-known/oauth-*`, `/v1/oauth/*`, `/v1/identity/login/*` and the one-time
 `/oauth/secret/*` handoff paths to ContentKit without buffering SSE responses.
+OAuth decision responses use cross-origin `303` redirects to the client's
+registered callback; the reverse proxy must pass their `Location` header
+unchanged.
 See `MCP.md` for the complete auth and transport contract.
 
 Set `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` to the stable environment name used by

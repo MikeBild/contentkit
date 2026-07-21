@@ -15,7 +15,7 @@ An unauthenticated request returns `401` with `WWW-Authenticate` pointing to RFC
 - `/.well-known/oauth-protected-resource/mcp`
 - `/.well-known/oauth-authorization-server`
 
-The built-in OAuth 2.1 authorization server supports authorization code + PKCE-S256, RFC 8707 `resource`, short-lived opaque access tokens, rotating refresh tokens with family replay revocation, public clients and bounded dynamic registration. Authorize and token requests must use the exact resource `https://<api-host>/mcp`.
+The built-in OAuth 2.1 authorization server supports authorization code + PKCE-S256, RFC 8707 `resource`, short-lived opaque access tokens, rotating refresh tokens with family replay revocation, public clients and bounded dynamic registration. Authorize and token requests must use the exact resource `https://<api-host>/mcp`. The consent decision follows POST/Redirect/GET with `303`; repeated decision submissions receive the same short-lived encrypted authorization response and never mint a second code.
 
 The sign-in and consent screens use the compact, server-rendered SubKit-style card UI. In local/API-key mode, an existing scoped ContentKit key proves the operator identity; derived OAuth codes and tokens stop working as soon as that source key is revoked, expires or rotates. OAuth access tokens are never accepted as operator keys. In production OIDC mode, administrators first pre-provision the exact provider, issuer and immutable `sub`; email alone never grants access. The consent screen then limits the OAuth scopes to the identity's role and product-scope ceiling.
 

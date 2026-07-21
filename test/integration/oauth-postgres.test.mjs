@@ -130,7 +130,7 @@ test(
           body: decisionBody,
         }),
       )
-      assert.equal(approved.status, 302)
+      assert.equal(approved.status, 303)
       const callback = new URL(approved.headers.get('location'))
       assert.equal(callback.searchParams.get('state'), 'client-state')
       const code = callback.searchParams.get('code')
@@ -143,8 +143,22 @@ test(
           body: decisionBody,
         }),
       )
-      assert.equal(duplicateDecision.status, 400)
-      assert.equal((await duplicateDecision.json()).error, 'invalid_request')
+      assert.equal(duplicateDecision.status, 303)
+      assert.equal(duplicateDecision.headers.get('location'), approved.headers.get('location'))
+      const persistedDecision = await pool.query(
+        `SELECT authorization_response_encrypted,
+                (SELECT count(*)::int FROM ck_oauth_authorization_codes WHERE client_id = $1) AS code_count
+           FROM ck_oauth_login_states
+          WHERE client_id = $1`,
+        [clientId],
+      )
+      assert.equal(persistedDecision.rows[0].code_count, 1, 'duplicate consent must not mint another code')
+      assert.ok(persistedDecision.rows[0].authorization_response_encrypted)
+      assert.doesNotMatch(
+        persistedDecision.rows[0].authorization_response_encrypted,
+        new RegExp(code),
+        'authorization code must be encrypted at rest',
+      )
 
       const tokenUrl = `${config.publicUrl}/v1/oauth/token`
       const badExchange = await mount.handler(

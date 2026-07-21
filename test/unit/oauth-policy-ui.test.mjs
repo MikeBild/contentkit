@@ -39,5 +39,6 @@ test('SubKit-style consent escapes identities and keeps baseline read mandatory'
   assert.match(html, /max-width:420px/)
   const response = authHtmlResponse(html)
   assert.equal(response.headers.get('content-security-policy'), AUTH_UI_CSP)
+  assert.doesNotMatch(AUTH_UI_CSP, /form-action/, 'OAuth client redirects must not be blocked by the consent CSP')
   assert.equal(response.headers.get('cache-control'), 'private,no-store')
 })

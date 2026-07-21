@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.23.2 - 2026-07-21
+
+### Fixed
+
+- Allow the SubKit-style OAuth consent page to redirect to registered
+  cross-origin MCP client callbacks, use an explicit POST/Redirect/GET `303`,
+  and replay duplicate consent submissions idempotently for a short window.
+- Keep the replayed authorization response encrypted at rest, mint exactly one
+  single-use authorization code and record duplicate handling without logging
+  state, code, callback or credential values.
+
 ## 1.23.1 - 2026-07-21
 
 ### Fixed

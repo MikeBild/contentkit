@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { parseCookies } from '../access.mjs'
+import { decryptSecret, encryptSecret } from '../secrets.mjs'
 import { hmac256, safeEqual, sha256 } from '../utils.mjs'
 import { defaultProductScopes, MCP_OAUTH_SCOPES, roleForProductScopes, roleOauthScopes } from './policy.mjs'
 import { finishOidcLogin, startOidcLogin } from './oidc.mjs'
@@ -9,6 +10,7 @@ const DCR_MAX_PER_MINUTE = 30
 const FORM_MAX_BYTES = 64 * 1024
 const OPERATOR_IDLE_MS = 8 * 60 * 60 * 1000
 const OPERATOR_ABSOLUTE_MS = 24 * 60 * 60 * 1000
+const AUTHORIZATION_RESPONSE_REPLAY_MS = 60 * 1000
 
 class OAuthError extends Error {
   constructor(code, message, status = 400) {
@@ -17,6 +19,8 @@ class OAuthError extends Error {
     this.status = status
   }
 }
+
+class AuthorizationStateConsumed extends Error {}
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -38,6 +42,10 @@ function redirectError(uri, code, state) {
   target.searchParams.set('error', code)
   if (state) target.searchParams.set('state', state)
   return new Response(null, { status: 302, headers: { location: target.toString(), 'cache-control': 'no-store' } })
+}
+
+function decisionRedirect(target) {
+  return new Response(null, { status: 303, headers: { location: target, 'cache-control': 'no-store' } })
 }
 
 function randomToken(prefix) {
@@ -144,15 +152,56 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     return (await db.select('ck_oauth_clients', { client_id: `eq.${id}`, revoked_at: 'is.null', limit: '1' }))[0]
   }
 
-  async function loadState(raw) {
+  async function loadState(raw, { includeConsumed = false } = {}) {
     if (!/^ckls_[A-Za-z0-9_-]{43}$/.test(raw || '')) return null
-    return (
-      await db.select('ck_oauth_login_states', {
-        state_hash: `eq.${tokenHash(config, raw)}`,
-        consumed_at: 'is.null',
-        limit: '1',
+    const query = {
+      state_hash: `eq.${tokenHash(config, raw)}`,
+      limit: '1',
+    }
+    if (!includeConsumed) query.consumed_at = 'is.null'
+    return (await db.select('ck_oauth_login_states', query))[0]
+  }
+
+  function replayDecision(state) {
+    if (
+      !state?.consumed_at ||
+      !state.authorization_response_encrypted ||
+      !state.authorization_response_expires_at ||
+      new Date(state.authorization_response_expires_at) <= new Date()
+    ) {
+      throw new OAuthError('invalid_request', 'authorization state already used')
+    }
+    try {
+      return decisionRedirect(decryptSecret(state.authorization_response_encrypted, config.oauthSecret))
+    } catch {
+      throw new OAuthError('invalid_request', 'authorization state already used')
+    }
+  }
+
+  async function claimDecision(rawState, state, target, effect = async () => {}) {
+    const now = Date.now()
+    try {
+      await db.tx(async (tx) => {
+        const consumed = await tx.update(
+          'ck_oauth_login_states',
+          { id: `eq.${state.id}`, consumed_at: 'is.null' },
+          {
+            consumed_at: new Date(now).toISOString(),
+            authorization_response_encrypted: encryptSecret(target, config.oauthSecret),
+            authorization_response_expires_at: new Date(now + AUTHORIZATION_RESPONSE_REPLAY_MS).toISOString(),
+          },
+        )
+        if (!consumed.length) throw new AuthorizationStateConsumed()
+        await effect(tx)
       })
-    )[0]
+      return null
+    } catch (error) {
+      if (!(error instanceof AuthorizationStateConsumed)) throw error
+      const current = await loadState(rawState, { includeConsumed: true })
+      const response = replayDecision(current)
+      logger?.info?.('oauth consent decision replayed', { client_id: state.client_id })
+      return response
+    }
   }
 
   async function loadGrant(id) {
@@ -490,7 +539,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
   async function decide(request) {
     const values = await form(request)
     const rawState = values.get('login_state') || ''
-    const state = await loadState(rawState)
+    const state = await loadState(rawState, { includeConsumed: true })
     if (!state || !state.grant_id || new Date(state.expires_at) <= new Date())
       throw new OAuthError('invalid_request', 'authorization state expired')
     const operator = await loadOperator(request)
@@ -501,13 +550,17 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     const client = await loadClient(state.client_id)
     if (!client?.redirect_uris.includes(state.redirect_uri))
       throw new OAuthError('invalid_client', 'client is unavailable')
+    if (state.consumed_at) {
+      const response = replayDecision(state)
+      logger?.info?.('oauth consent decision replayed', { client_id: state.client_id })
+      return response
+    }
     if (values.get('decision') === 'deny') {
-      const consumed = await db.update(
-        'ck_oauth_login_states',
-        { id: `eq.${state.id}`, consumed_at: 'is.null' },
-        { consumed_at: new Date().toISOString() },
-      )
-      if (!consumed.length) throw new OAuthError('invalid_request', 'authorization state already used')
+      const target = new URL(state.redirect_uri)
+      target.searchParams.set('error', 'access_denied')
+      if (state.client_state) target.searchParams.set('state', state.client_state)
+      const replay = await claimDecision(rawState, state, target.toString())
+      if (replay) return replay
       await audit.record({
         actorType: 'operator',
         actorId: state.grant_id,
@@ -517,7 +570,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
         result: 'denied',
         transport: 'oauth',
       })
-      return redirectError(state.redirect_uri, 'access_denied', state.client_state)
+      return decisionRedirect(target.toString())
     }
     const grant = await loadGrant(state.grant_id)
     if (!grant) throw new OAuthError('access_denied', 'identity grant was revoked', 403)
@@ -528,13 +581,10 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     if (!selected.includes('mcp:read')) selected.unshift('mcp:read')
     if (!selected.length) return redirectError(state.redirect_uri, 'access_denied', state.client_state)
     const rawCode = randomToken('ckac_')
-    await db.tx(async (tx) => {
-      const consumed = await tx.update(
-        'ck_oauth_login_states',
-        { id: `eq.${state.id}`, consumed_at: 'is.null' },
-        { consumed_at: new Date().toISOString() },
-      )
-      if (!consumed.length) throw new OAuthError('invalid_request', 'authorization state already used')
+    const target = new URL(state.redirect_uri)
+    target.searchParams.set('code', rawCode)
+    if (state.client_state) target.searchParams.set('state', state.client_state)
+    const replay = await claimDecision(rawState, state, target.toString(), async (tx) => {
       await tx.insert('ck_oauth_authorization_codes', {
         code_hash: tokenHash(config, rawCode),
         client_id: state.client_id,
@@ -547,6 +597,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
         expires_at: new Date(Date.now() + config.oauthAuthorizationCodeTtlMs).toISOString(),
       })
     })
+    if (replay) return replay
     await audit.record({
       actorType: 'operator',
       actorId: grant.id,
@@ -557,10 +608,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       transport: 'oauth',
       metadata: { scopes: selected },
     })
-    const target = new URL(state.redirect_uri)
-    target.searchParams.set('code', rawCode)
-    if (state.client_state) target.searchParams.set('state', state.client_state)
-    return new Response(null, { status: 302, headers: { location: target.toString(), 'cache-control': 'no-store' } })
+    return decisionRedirect(target.toString())
   }
 
   async function issueTokens(exec, code, familyId = randomUUID()) {

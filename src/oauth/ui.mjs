@@ -1,7 +1,9 @@
 import { escapeHtml } from '../utils.mjs'
 
-export const AUTH_UI_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+// The form actions are fixed server-side. Do not add `form-action 'self'` here:
+// browsers apply it across the OAuth decision redirect and can block the
+// registered cross-origin client callback (for example chatgpt.com).
+export const AUTH_UI_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
 
 const TOKENS = `
   :root{color-scheme:light;--bg:#f4f5f7;--card:#fff;--ink:#1f2328;--muted:#6a7280;--line:#e3e5e9;--soft:#f7f8fa;--primary:#1f6feb;--primary-hover:#1a60d0}
