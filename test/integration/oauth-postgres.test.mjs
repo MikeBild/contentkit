@@ -94,7 +94,7 @@ test(
         code_challenge: challenge,
         code_challenge_method: 'S256',
         resource: `${config.publicUrl}/mcp`,
-        scope: 'mcp:read',
+        scope: 'mcp:read mcp:authoring mcp:admin',
         state: 'client-state',
       })
       const login = await mount.handler(new Request(authorizeUrl))
@@ -113,12 +113,14 @@ test(
       const consentHtml = await consent.text()
       const csrf = hidden(consentHtml, 'csrf_token')
 
-      // A forged checkbox may not expand the scopes requested by the OAuth client.
+      // Claude follows the complete scope set advertised by ContentKit's
+      // WWW-Authenticate challenge. The human can reduce, but never expand,
+      // that request beyond the live grant ceiling.
       const decisionBody = encoded({
         login_state: loginState,
         csrf_token: csrf,
         decision: 'approve',
-        scope: ['mcp:read', 'mcp:admin'],
+        scope: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
       })
       const approved = await mount.handler(
         new Request(`${config.publicUrl}/v1/oauth/authorize/decision`, {
@@ -197,12 +199,12 @@ test(
       const first = await exchanged.json()
       assert.match(first.access_token, /^cko_[A-Za-z0-9_-]{43}$/)
       assert.match(first.refresh_token, /^ckr_[A-Za-z0-9_-]{43}$/)
-      assert.equal(first.scope, 'mcp:read')
+      assert.equal(first.scope, 'mcp:read mcp:authoring mcp:admin')
       assert.equal(first.resource, `${config.publicUrl}/mcp`)
 
       const liveAuth = createAuth(config, db)
       const principal = await liveAuth.authenticate(new Headers({ authorization: `Bearer ${first.access_token}` }))
-      assert.deepEqual(principal.scopes, ['content:read', 'stats:read'])
+      assert.deepEqual(principal.scopes, defaultProductScopes('admin'))
 
       await db.update('ck_api_keys', { id: `eq.${apiKey.id}` }, { revoked_at: new Date().toISOString() })
       assert.equal(await liveAuth.authenticate(new Headers({ authorization: `Bearer ${first.access_token}` })), null)

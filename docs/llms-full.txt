@@ -214,6 +214,11 @@ authorization identity. The compact SubKit-style consent card shows the client,
 identity, site ceiling and OAuth tiers `mcp:read`, `mcp:authoring` and
 `mcp:admin`. Those tiers are intersected with the role and product-scope ceiling
 on every access-token authentication.
+The initial MCP `WWW-Authenticate` challenge advertises every enabled tier so
+general-purpose clients request the complete tool surface. Client-requested
+tiers are pre-selected, and the operator may reduce the grant within the live
+ceiling; consent never expands the request. The token response reports the
+actual granted scopes.
 The consent decision uses POST/Redirect/GET with `303`. If a client repeats the
 decision POST while following its callback, ContentKit replays the same
 short-lived encrypted authorization response and mints no additional code.

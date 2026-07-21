@@ -170,6 +170,11 @@ the exact MCP resource URI; local deployments can sign in with an existing
 scoped API key, while production can federate to one or more pre-configured
 OIDC providers. The visible consent UI follows SubKit's compact card design and
 shows client, identity, sites and independently selectable capability tiers.
+The initial MCP authentication challenge advertises every enabled capability
+tier so general-purpose clients can request the complete tool surface. The
+client request controls the initial checkbox selection, and the operator may
+reduce it within the live identity/API-key scope and site ceiling; consent can
+never expand the client's request.
 Consent uses POST/Redirect/GET and safely replays the same encrypted response
 for a short window if an MCP client repeats the decision submission; only one
 single-use authorization code is minted.

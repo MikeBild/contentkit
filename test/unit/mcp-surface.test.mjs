@@ -9,6 +9,7 @@ const config = {
   mcpSessionTtlMs: 60_000,
   mcpMaxSessions: 10,
   mcpElicitationTimeoutMs: 30_000,
+  oauthAllowedScopes: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
 }
 
 const principal = (id) => ({ id, name: id, scopes: ['content:read'], site_ids: [] })
@@ -100,6 +101,7 @@ test('MCP rejects invalid browser origins and advertises OAuth discovery on 401'
     const response = await mount.handler(missing)
     assert.equal(response.status, 401)
     assert.match(response.headers.get('www-authenticate'), /oauth-protected-resource\/mcp/)
+    assert.match(response.headers.get('www-authenticate'), /scope="mcp:read mcp:authoring mcp:admin"/)
   } finally {
     mount.stop()
   }

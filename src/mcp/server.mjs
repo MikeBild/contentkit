@@ -343,7 +343,7 @@ export function createMcpMount(config, deps) {
         status: 401,
         headers: {
           'content-type': 'application/json; charset=utf-8',
-          'www-authenticate': `Bearer resource_metadata="${config.publicUrl}/.well-known/oauth-protected-resource/mcp", scope="mcp:read"`,
+          'www-authenticate': `Bearer resource_metadata="${config.publicUrl}/.well-known/oauth-protected-resource/mcp", scope="${config.oauthAllowedScopes.join(' ')}"`,
         },
       })
     }

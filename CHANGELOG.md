@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.23.3 - 2026-07-21
+
+### Fixed
+
+- Advertise every enabled MCP capability tier in the initial
+  `WWW-Authenticate` scope challenge so standards-compliant clients such as
+  Claude request the authoring and administration tiers instead of discovering
+  only the six read-only tools.
+- Keep consent downscoping strict: the operator may select only scopes the
+  client requested and the live identity, product-scope and site ceiling
+  permits; the token response reports the actual granted scope set.
+
 ## 1.23.2 - 2026-07-21
 
 ### Fixed
