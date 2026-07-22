@@ -76,11 +76,18 @@ coexist. JWT bridge claim paths default to `sub`, `email`, and
 `user_metadata.email_verified` support adapters with nested claims without a
 product-code branch.
 Pre-provision exact provider/issuer/subject grants before login. The reverse proxy must forward `/mcp`,
-`/.well-known/oauth-*`, `/v1/oauth/*`, `/v1/identity/login/*` and the one-time
+`/.well-known/oauth-*`, `/v1/oauth/*`, `/v1/identity/providers`,
+`/v1/identity/sessions`, `/v1/identity/login/*`, `/v1/identity/logout` and the one-time
 `/oauth/secret/*` handoff paths to ContentKit without buffering SSE responses.
 OAuth decision responses use cross-origin `303` redirects to the client's
 registered callback; the reverse proxy must pass their `Location` header
 unchanged.
+
+The deployment gate must observe `mcp-auth-v2`, `Continue with SSO` before
+`Continue with API key`, canonical provider labels (`SSO`, `API key`), an
+opaque `login_state` redirect, and absence of provider-named routes. It also
+executes the API-key PKCE/token/MCP/revoke round-trip; SSO is verified through
+the configured provider boundary and exact callback allowlist.
 See `MCP.md` for the complete auth and transport contract.
 
 Set `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` to the stable environment name used by

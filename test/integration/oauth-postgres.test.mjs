@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createServer } from 'node:http'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
+import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createAuth, hashApiKey } from '../../src/auth.mjs'
 import { runMigrations } from '../../src/db/migrate.mjs'
 import { createMcpMount } from '../../src/mcp/server.mjs'
@@ -27,6 +29,12 @@ function hidden(html, name) {
   const match = html.match(new RegExp(`name="${name}" value="([^"]+)"`))
   assert.ok(match, `expected hidden field ${name}`)
   return match[1]
+}
+
+function providerHref(html, id) {
+  const match = html.match(new RegExp(`href="([^"]*provider=${encodeURIComponent(id)}[^"]*)"`))
+  assert.ok(match, `expected provider link ${id}`)
+  return match[1].replaceAll('&amp;', '&')
 }
 
 test(
@@ -96,9 +104,15 @@ test(
         scope: 'mcp:read mcp:authoring mcp:admin',
         state: 'client-state',
       })
-      const loginRedirect = await mount.handler(new Request(authorizeUrl))
-      assert.equal(loginRedirect.status, 302)
-      const login = await mount.handler(new Request(loginRedirect.headers.get('location')))
+      const providerChoice = await mount.handler(new Request(authorizeUrl))
+      assert.equal(providerChoice.status, 302)
+      const chooser = await mount.handler(new Request(providerChoice.headers.get('location')))
+      assert.equal(chooser.status, 200)
+      const providerChoiceHtml = await chooser.text()
+      assert.match(providerChoiceHtml, /Continue with API key/)
+      const login = await mount.handler(
+        new Request(new URL(providerHref(providerChoiceHtml, 'api-key'), config.publicUrl)),
+      )
       assert.equal(login.status, 200)
       const loginState = hidden(await login.text(), 'login_state')
 
@@ -293,6 +307,99 @@ test(
         .catch(() => {})
       await pool.query('DELETE FROM ck_api_keys WHERE id=$1', [apiKey.id]).catch(() => {})
       await pool.end()
+    }
+  },
+)
+
+test(
+  'configured SSO assertion exchange returns the common scoped identity-session contract',
+  { skip: databaseUrl ? false : 'CONTENTKIT_TEST_DATABASE_URL is not set', timeout: 30000 },
+  async () => {
+    await runMigrations({ databaseUrl }, logger)
+    const pool = new pg.Pool({ connectionString: databaseUrl })
+    const db = createPostgres({ databaseUrl }, { pool }).db
+    const { publicKey, privateKey } = await generateKeyPair('RS256')
+    const jwk = { ...(await exportJWK(publicKey)), kid: 'identity-session-test', alg: 'RS256', use: 'sig' }
+    const identityServer = createServer((req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ keys: req.url === '/jwks' ? [jwk] : [] }))
+    })
+    await new Promise((resolve) => identityServer.listen(0, '127.0.0.1', resolve))
+    const identityBase = `http://127.0.0.1:${identityServer.address().port}`
+    const config = {
+      publicUrl: 'https://contentkit-api.example.test',
+      bootstrapApiKey: '',
+      keyPepper: 'identity-session-key-pepper',
+      oauthAllowedScopes: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
+      oauthDynamicRegistrationEnabled: true,
+      oauthSecret: 'identity-session-oauth-secret',
+      oauthProviders: [
+        {
+          protocol: 'token_bridge',
+          id: 'workforce',
+          label: 'deployment identity',
+          loginUrl: `${identityBase}/login`,
+          issuer: identityBase,
+          audience: 'contentkit-session-test',
+          jwksUrl: `${identityBase}/jwks`,
+          allowedEmails: ['operator@example.test'],
+          subjectClaim: 'sub',
+          emailClaim: 'email',
+          emailVerifiedClaim: 'email_verified',
+        },
+      ],
+      oauthAuthorizationCodeTtlMs: 600000,
+      oauthAccessTokenTtlMs: 3600000,
+      oauthRefreshTokenTtlMs: 2592000000,
+    }
+    const [grant] = await db.insert('ck_oauth_identity_grants', {
+      provider_id: 'workforce',
+      issuer: identityBase,
+      subject: 'operator-subject',
+      email: 'operator@example.test',
+      display_name: 'Operator',
+      role: 'reader',
+      product_scopes: ['content:read'],
+      site_ids: [],
+    })
+    const mount = createOAuthMount(config, {
+      db,
+      auth: createAuth(config, db),
+      audit: { async record() {} },
+      logger,
+    })
+    let issuedKeyId
+    try {
+      const identityToken = await new SignJWT({ email: 'operator@example.test', email_verified: true })
+        .setProtectedHeader({ alg: 'RS256', kid: 'identity-session-test' })
+        .setIssuer(identityBase)
+        .setAudience('contentkit-session-test')
+        .setSubject('operator-subject')
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(privateKey)
+      const response = await mount.handler(
+        new Request(`${config.publicUrl}/v1/identity/sessions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ provider_id: 'workforce', identity_token: identityToken }),
+        }),
+      )
+      assert.equal(response.status, 200)
+      const session = await response.json()
+      assert.match(session.api_key, /^ck_/)
+      assert.equal(session.principal_id, grant.id)
+      assert.equal(session.context_id, null)
+      assert.equal(session.email, 'operator@example.test')
+      const principal = await createAuth(config, db).authenticate(`Bearer ${session.api_key}`)
+      assert.deepEqual(principal.scopes, ['content:read'])
+      issuedKeyId = principal.id
+    } finally {
+      mount.stop()
+      if (issuedKeyId) await pool.query('DELETE FROM ck_api_keys WHERE id=$1', [issuedKeyId]).catch(() => {})
+      await pool.query('DELETE FROM ck_oauth_identity_grants WHERE id=$1', [grant.id]).catch(() => {})
+      await pool.end()
+      await new Promise((resolve, reject) => identityServer.close((error) => (error ? reject(error) : resolve())))
     }
   },
 )

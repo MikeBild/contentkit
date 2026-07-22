@@ -145,6 +145,8 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       path === '/.well-known/oauth-protected-resource' ||
       path === '/.well-known/oauth-protected-resource/mcp' ||
       path === '/.well-known/oauth-authorization-server' ||
+      path === '/v1/identity/providers' ||
+      path === '/v1/identity/sessions' ||
       path === '/v1/identity/logout' ||
       /^\/v1\/(?:oauth|identity\/login)\//.test(path)
     const handoffPath = /^\/oauth\/secret\//.test(path)

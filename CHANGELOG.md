@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.1.0 - 2026-07-22
+
+### Added
+
+- Add the common provider discovery and assertion exchange boundary, including
+  `POST /v1/identity/sessions` with the shared
+  `{api_key,principal_id,context_id,email}` response and ContentKit's exact
+  pre-provisioned identity/site ceiling.
+- Publish the full common MCP-auth route and schema set in OpenAPI.
+
+### Changed
+
+- Upgrade every ContentKit login and consent page to `mcp-auth-v2`, the exact
+  shared style hash, an opaque `login_state` handoff and fixed
+  `Continue with SSO` then `Continue with API key` actions.
+- Cache standards-based OIDC discovery keys for assertion exchange while
+  retaining exact issuer, audience and identity-grant verification.
+- Update README, MCP/deployment docs, OpenAPI and both LLM documents to the
+  same provider-neutral contract as the other independent products.
+
+### Removed
+
+- Retain no provider-named routes, payload aliases or compatibility parsing.
+
 ## 2.0.2 - 2026-07-22
 
 ### Changed

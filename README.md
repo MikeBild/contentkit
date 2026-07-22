@@ -173,6 +173,12 @@ configuration values. Token bridges can map safe dotted subject, email and
 verification claim paths; OIDC adapters use discovery and Authorization Code
 + PKCE. The visible consent UI follows the shared compact card design and
 shows client, identity, sites and independently selectable capability tiers.
+The method chooser implements the same `mcp-auth-v2` contract as WikiKit and
+SubKit: **Continue with SSO** is always first and **Continue with API key** is
+always second. Configured provider labels cannot change those actions. OAuth
+authorize always enters the generic
+`/v1/identity/login/start?login_state=<opaque>` funnel; no provider-named or
+compatibility routes exist.
 The initial MCP authentication challenge advertises every enabled capability
 tier so general-purpose clients can request the complete tool surface. The
 client request controls the initial checkbox selection, and the operator may
@@ -183,6 +189,14 @@ or switch accounts.
 Consent uses POST/Redirect/GET and safely replays the same encrypted response
 for a short window if an MCP client repeats the decision submission; only one
 single-use authorization code is minted.
+
+Non-browser clients use the same provider-neutral boundary. They discover
+methods with `GET /v1/identity/providers` and exchange a configured assertion
+only at `POST /v1/identity/sessions` using
+`{"provider_id":"<id>","identity_token":"<assertion>"}`. The response is
+exactly `{api_key,principal_id,context_id,email}`; `context_id` is the sole
+granted site when unambiguous, otherwise null. ContentKit still enforces its
+own pre-provisioned identity, scope and site policy.
 
 Start agent work with `contentkit_context`. The MCP API deliberately models
 ContentKit domains—published knowledge, immutable revision authoring, semantic

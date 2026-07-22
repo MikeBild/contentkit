@@ -2,9 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { openApi } from '../../src/openapi.mjs'
 import { API_ROUTES } from '../../src/routes.mjs'
+import { MCP_AUTH_OPERATIONS } from '../../src/oauth/openapi.mjs'
 
 const config = { publicUrl: 'https://contentkit-api.example.com', version: '9.9.9' }
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
+const AUTH_OPERATIONS = new Set(MCP_AUTH_OPERATIONS)
 
 test('the spec carries version, server URL and OpenAPI 3.1', () => {
   const spec = openApi(config)
@@ -29,9 +31,11 @@ test('every documented API path and method is actually routable', () => {
     if (!path.startsWith('/v1') && !path.startsWith('/public')) continue
     // A `{param}` path template matches the same requests as the router's `[^/]+`.
     const concrete = path.replace(/\{[^}]+\}/g, 'x')
+    const methods = Object.keys(operations).filter((key) => HTTP_METHODS.includes(key))
+    if (methods.every((method) => AUTH_OPERATIONS.has(`${method} ${path}`))) continue
     const route = API_ROUTES.find((candidate) => candidate.pattern.test(concrete))
     assert.ok(route, `${path} is documented but matches no API route`)
-    for (const method of Object.keys(operations).filter((key) => HTTP_METHODS.includes(key))) {
+    for (const method of methods) {
       assert.ok(
         route.methods.includes(method.toUpperCase()),
         `${method.toUpperCase()} ${path} is documented but the router only allows ${route.methods.join(', ')}`,

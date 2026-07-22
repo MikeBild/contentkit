@@ -1,3 +1,5 @@
+import { registerMcpAuthOpenApi } from './oauth/openapi.mjs'
+
 export function openApi(config) {
   const secured = [{ oauth2: [] }, { bearerAuth: [] }, { apiKeyAuth: [] }]
   const siteParameter = { name: 'site', in: 'path', required: true, schema: { type: 'string' } }
@@ -2223,6 +2225,7 @@ export function openApi(config) {
       },
     }
   }
+  registerMcpAuthOpenApi(spec)
   // Every secured operation shares the same auth failure modes: 401 when the key
   // is not accepted and 403 when it is valid but under-scoped. Attach both without
   // clobbering any operation-specific override (e.g. storage-gc's tailored 403).

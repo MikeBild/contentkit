@@ -17,7 +17,15 @@ An unauthenticated request returns `401` with `WWW-Authenticate` pointing to RFC
 
 The built-in OAuth 2.1 authorization server supports authorization code + PKCE-S256, RFC 8707 `resource`, short-lived opaque access tokens, rotating refresh tokens with family replay revocation, public clients and bounded dynamic registration. Authorize and token requests must use the exact resource `https://<api-host>/mcp`. The consent decision follows POST/Redirect/GET with `303`; repeated decision submissions receive the same short-lived encrypted authorization response and never mint a second code.
 
-The sign-in and consent screens use the compact, server-rendered common MCP auth card, branded `ck`. One API-key plus multiple named token-bridge and OIDC adapters may be enabled concurrently. In API-key mode, an existing scoped ContentKit key proves the operator identity; derived OAuth codes and tokens stop working as soon as that source key is revoked, expires or rotates. OAuth access tokens are never accepted as operator keys. External adapters require an exact pre-provisioned identity grant; email alone never grants access. Operator sessions have an eight-hour idle and 24-hour absolute limit, are revalidated, can be explicitly logged out, and the consent page can switch accounts. Requested scopes are pre-selected, while the operator may reduce the grant within the identity's live role, product-scope and site ceiling; consent never displays or grants a scope the client did not request.
+The sign-in and consent screens use the compact, server-rendered `mcp-auth-v2` card, branded `ck`. One API-key plus multiple named token-bridge and OIDC adapters may be enabled concurrently. The chooser always renders **Continue with SSO** first and **Continue with API key** second; configured adapter labels do not become user-facing actions. In API-key mode, an existing scoped ContentKit key proves the operator identity; derived OAuth codes and tokens stop working as soon as that source key is revoked, expires or rotates. OAuth access tokens are never accepted as operator keys. External adapters require an exact pre-provisioned identity grant; email alone never grants access. Operator sessions have an eight-hour idle and 24-hour absolute limit, are revalidated, can be explicitly logged out, and the consent page can switch accounts. Requested scopes are pre-selected, while the operator may reduce the grant within the identity's live role, product-scope and site ceiling; consent never displays or grants a scope the client did not request.
+
+The public MCP-auth boundary is the same operation set as WikiKit and SubKit:
+OAuth discovery, DCR, authorize/decision, token/revoke, plus
+`GET /v1/identity/providers`, `POST /v1/identity/sessions`, and GET/POST on the
+generic login start/callback with POST logout. Authorize redirects to
+`/v1/identity/login/start?login_state=<opaque>`. Assertion exchange is exactly
+`{provider_id,identity_token}` → `{api_key,principal_id,context_id,email}`.
+There are no provider-named routes or legacy payload aliases.
 
 OAuth scopes map to product scopes:
 
@@ -102,5 +110,9 @@ CONTENTKIT_OAUTH_PROVIDERS=[{"protocol":"api_key","id":"api-key","label":"Conten
 ```
 
 `CONTENTKIT_OAUTH_SECRET` is mandatory in production and must be independent from the API-key pepper, preview/session secrets and usage HMAC. `CONTENTKIT_OAUTH_PROVIDERS` is the only browser-provider configuration: `api_key` may occur once, named `token_bridge` and `oidc` records may occur several times, and every id is unique. External URLs must use HTTPS. Bridge claim paths default to `sub`, `email`, and `email_verified`; safe dotted overrides support nested standards-based claims while verification must still resolve to boolean `true`. Identity grants are managed with `/v1/identity-grants` or the corresponding MCP admin tool. Product storage credentials remain unrelated to identity. All adapters use only `/v1/identity/login/start`, `/v1/identity/login/callback`, and `/v1/identity/logout`.
+
+Discovery exposes only `protocol`, opaque `id`, canonical `label` (`SSO` or
+`API key`) and necessary protocol metadata (`login_url` or `issuer`). The
+browser CTA is derived from the protocol, never from the configured label.
 
 Protocol references: [MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25), [authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), [elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation), and [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
