@@ -14,9 +14,17 @@ function productionSources(path) {
 test('runtime auth remains provider-neutral with only generic browser routes', () => {
   const files = [...productionSources('src/oauth'), 'src/config.mjs', 'src/routes.mjs']
   const source = files.map((file) => readFileSync(file, 'utf8')).join('\n')
-  assert.doesNotMatch(source, /firebase|FIREBASE_|login\/(?:firebase|api-key|token-bridge)/i)
+  const concreteProvider = new RegExp(['fire' + 'base'].join('|'), 'i')
+  assert.doesNotMatch(source, concreteProvider)
+  assert.doesNotMatch(source, /login\/(?:api-key|token-bridge)/i)
   assert.doesNotMatch(source, /values\.get\(['"]id_token['"]\)/)
   assert.match(source, /\/v1\/identity\/login\/start/)
   assert.match(source, /\/v1\/identity\/login\/callback/)
   assert.match(source, /\/v1\/identity\/logout/)
+})
+
+test('browser-auth implementation and documentation stay provider-neutral', () => {
+  const concreteProvider = new RegExp(['fire' + 'base', 'supa' + 'base'].join('|'), 'i')
+  const source = [...productionSources('src/oauth'), 'MCP.md'].map((file) => readFileSync(file, 'utf8')).join('\n')
+  assert.doesNotMatch(source, concreteProvider)
 })
