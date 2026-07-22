@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.0.1 - 2026-07-22
+
+### Fixed
+
+- Dispatch the shared `POST /v1/identity/logout` route through the public
+  server boundary so the implemented session revocation is reachable on the
+  canonical API host, matching WikiKit and SubKit.
+- Cover the outer HTTP mount with a regression test instead of testing only
+  the OAuth handler in isolation.
+
 ## 2.0.0 - 2026-07-22
 
 ### Added

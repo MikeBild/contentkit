@@ -110,6 +110,17 @@ test('public submission proceeds past the captcha when the dev bypass is enabled
   )
 })
 
+test('the public server dispatches the provider-neutral identity logout route to OAuth', async () => {
+  await withApp({ config: { mcpEnabled: true, publicUrl: 'http://127.0.0.1' } }, async (request) => {
+    const response = await request('/v1/identity/logout', {
+      method: 'POST',
+    })
+    const body = await response.text()
+    assert.equal(response.status, 204, body)
+    assert.equal(response.headers.get('cache-control'), 'no-store')
+  })
+})
+
 test('public comment submission returns 404 when comments are disabled for the site', async () => {
   await withApp(
     {
