@@ -3,7 +3,6 @@ import { parseCookies } from '../access.mjs'
 import { decryptSecret, encryptSecret } from '../secrets.mjs'
 import { hmac256, safeEqual, sha256 } from '../utils.mjs'
 import { defaultProductScopes, MCP_OAUTH_SCOPES, roleForProductScopes, roleOauthScopes } from './policy.mjs'
-import { verifyBridgedIdentity } from './token-bridge.mjs'
 import { finishOidcLogin, startOidcLogin, verifyOidcIdentityToken } from './oidc.mjs'
 import { authHtmlResponse, renderApiKeyLogin, renderConsentPage, renderProviderChoice } from './ui.mjs'
 
@@ -124,21 +123,8 @@ function loginProviders(config) {
   )
 }
 
-function tokenBridgeProvider(config, id) {
-  return (config.oauthProviders || []).find(
-    (provider) => provider.protocol === 'token_bridge' && (id === undefined || provider.id === id),
-  )
-}
-
 function oidcProvider(config, id) {
   return (config.oauthProviders || []).find((provider) => provider.protocol === 'oidc' && provider.id === id)
-}
-
-function bridgeLoginUrl(config, provider, rawState) {
-  const target = new URL(provider.loginUrl)
-  target.searchParams.set('mcp_callback', `${config.publicUrl}/v1/identity/login/callback`)
-  target.searchParams.set('mcp_state', rawState)
-  return target.toString()
 }
 
 function csrf(config, sessionId, stateId, expires = Date.now() + 5 * 60 * 1000) {
@@ -498,18 +484,6 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     if (selected?.protocol === 'api_key') {
       return authHtmlResponse(renderApiKeyLogin({ state: rawState, providerId: selected.id }))
     }
-    if (selected?.protocol === 'token_bridge') {
-      const changed = await db.update(
-        'ck_oauth_login_states',
-        { id: `eq.${state.id}`, consumed_at: 'is.null' },
-        { provider_id: selected.id },
-      )
-      if (!changed.length) throw new OAuthError('invalid_request', 'authorization state already used')
-      return new Response(null, {
-        status: 302,
-        headers: { location: bridgeLoginUrl(config, selected, rawState), 'cache-control': 'no-store' },
-      })
-    }
     const provider = oidcProvider(config, selected?.id)
     if (!provider) throw new OAuthError('not_found', 'identity provider is not available', 404)
     const started = await startOidcLogin({
@@ -529,58 +503,6 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       status: 302,
       headers: { location: started.authorizationUrl, 'cache-control': 'no-store' },
     })
-  }
-
-  async function finishBridgeLogin(request) {
-    const values = await form(request)
-    const rawState = values.get('login_state') || ''
-    const state = await loadState(rawState)
-    const bridge = tokenBridgeProvider(config, state?.provider_id)
-    if (!state || !bridge || new Date(state.expires_at) <= new Date()) {
-      throw new OAuthError('invalid_request', 'identity authorization state is invalid or expired')
-    }
-    const identity = await verifyBridgedIdentity({
-      token: values.get('identity_token') || '',
-      issuer: bridge.issuer,
-      audience: bridge.audience,
-      jwksUrl: bridge.jwksUrl,
-      subjectClaim: bridge.subjectClaim,
-      emailClaim: bridge.emailClaim,
-      emailVerifiedClaim: bridge.emailVerifiedClaim,
-      allowedEmails: bridge.allowedEmails,
-    }).catch((error) => {
-      throw new OAuthError('access_denied', error instanceof Error ? error.message : 'identity login rejected', 403)
-    })
-    const issuer = bridge.issuer
-    const grant = (
-      await db.select('ck_oauth_identity_grants', {
-        provider_id: `eq.${bridge.id}`,
-        issuer: `eq.${issuer}`,
-        subject: `eq.${identity.subject}`,
-        revoked_at: 'is.null',
-        limit: '1',
-      })
-    )[0]
-    if (!grant) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
-    await db.update(
-      'ck_oauth_identity_grants',
-      { id: `eq.${grant.id}` },
-      { email: identity.email, updated_at: new Date().toISOString() },
-      { returning: false },
-    )
-    const attached = await attachGrant(state, { ...grant, email: identity.email })
-    const session = await createOperatorSession(grant.id)
-    await audit.record({
-      actorType: 'operator',
-      actorId: grant.id,
-      action: 'oauth.login',
-      resourceType: 'oauth_grant',
-      resourceId: grant.id,
-      result: 'success',
-      transport: 'oauth',
-      metadata: { provider_id: bridge.id },
-    })
-    return consentResponse(attached, { ...grant, email: identity.email }, session.row, rawState, session.token)
   }
 
   async function finishLogin(url) {
@@ -1005,20 +927,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     if (provider.protocol === 'api_key') {
       throw new OAuthError('invalid_request', 'API key login does not accept identity assertions')
     }
-    const identity = await (
-      provider.protocol === 'token_bridge'
-        ? verifyBridgedIdentity({
-            token: identityToken,
-            issuer: provider.issuer,
-            audience: provider.audience,
-            jwksUrl: provider.jwksUrl,
-            subjectClaim: provider.subjectClaim,
-            emailClaim: provider.emailClaim,
-            emailVerifiedClaim: provider.emailVerifiedClaim,
-            allowedEmails: provider.allowedEmails,
-          })
-        : verifyOidcIdentityToken({ provider, identityToken })
-    ).catch(() => {
+    const identity = await verifyOidcIdentityToken({ provider, identityToken }).catch(() => {
       throw new OAuthError('invalid_token', 'identity assertion was rejected', 401)
     })
     const grant = (
@@ -1074,9 +983,6 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
             protocol,
             id,
             label: protocol === 'api_key' ? 'API key' : 'SSO',
-            ...(protocol === 'token_bridge'
-              ? { login_url: config.oauthProviders.find((provider) => provider.id === id)?.loginUrl }
-              : {}),
             ...(protocol === 'oidc'
               ? { issuer: config.oauthProviders.find((provider) => provider.id === id)?.issuer }
               : {}),
@@ -1119,9 +1025,6 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       if (request.method === 'POST' && url.pathname === '/v1/oauth/revoke') return await revoke(request)
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/start') return await startLogin(url)
       if (request.method === 'POST' && url.pathname === '/v1/identity/login/start') return await apiKeyLogin(request)
-      if (request.method === 'POST' && url.pathname === '/v1/identity/login/callback') {
-        return await finishBridgeLogin(request)
-      }
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/callback') return await finishLogin(url)
       if (request.method === 'POST' && url.pathname === '/v1/identity/logout') return await logout(request)
       return json({ error: 'not_found' }, 404)

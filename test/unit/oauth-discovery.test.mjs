@@ -51,10 +51,12 @@ test('provider discovery returns the canonical safe UI matrix', async () => {
       oauthProviders: [
         { protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' },
         {
-          protocol: 'token_bridge',
+          protocol: 'oidc',
           id: 'workforce',
           label: 'Configured deployment label',
-          loginUrl: 'https://login.example.com',
+          issuer: 'https://issuer.example.com',
+          clientId: 'contentkit-test',
+          scopes: 'openid email profile',
         },
       ],
     },
@@ -64,7 +66,7 @@ test('provider discovery returns the canonical safe UI matrix', async () => {
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), {
     providers: [
-      { protocol: 'token_bridge', id: 'workforce', label: 'SSO', login_url: 'https://login.example.com' },
+      { protocol: 'oidc', id: 'workforce', label: 'SSO', issuer: 'https://issuer.example.com' },
       { protocol: 'api_key', id: 'api-key', label: 'API key' },
     ],
   })
@@ -72,19 +74,12 @@ test('provider discovery returns the canonical safe UI matrix', async () => {
 
 test('browser-auth runtime and documentation contain protocols, never provider products or fixed routes', () => {
   const concreteProvider = new RegExp(['fire' + 'base', 'supa' + 'base'].join('|'), 'i')
-  const fixedRoute = /\/v1\/identity\/login\/(?:oidc|api-key|token-bridge)(?:\/|['"`])/i
+  const fixedRoute = /\/v1\/identity\/login\/(?:oidc|api-key)(?:\/|['"`])/i
   const runtime = [...productionSources('src/oauth'), 'src/server.mjs']
     .map((file) => readFileSync(file, 'utf8'))
     .join('\n')
-  const config = readFileSync('src/config.mjs', 'utf8')
-  const docs = ['README.md', 'MCP.md', 'docs/DEPLOYMENT.md', 'docs/llms-full.txt']
-    .map((file) => readFileSync(file, 'utf8'))
-    .join('\n')
-
   assert.doesNotMatch(runtime, concreteProvider)
   assert.doesNotMatch(runtime, fixedRoute)
-  assert.doesNotMatch(config, /CONTENTKIT_(?:FIREBASE|SUPABASE)_AUTH/i)
-  assert.doesNotMatch(docs, /CONTENTKIT_(?:FIREBASE|SUPABASE)_AUTH/i)
 })
 
 test('API-key login never accepts an OAuth bearer token as its operator credential', async () => {

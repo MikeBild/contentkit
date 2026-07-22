@@ -322,7 +322,11 @@ test(
     const jwk = { ...(await exportJWK(publicKey)), kid: 'identity-session-test', alg: 'RS256', use: 'sig' }
     const identityServer = createServer((req, res) => {
       res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ keys: req.url === '/jwks' ? [jwk] : [] }))
+      if (req.url === '/.well-known/openid-configuration') {
+        res.end(JSON.stringify({ issuer: identityBase, jwks_uri: `${identityBase}/jwks` }))
+      } else {
+        res.end(JSON.stringify({ keys: req.url === '/jwks' ? [jwk] : [] }))
+      }
     })
     await new Promise((resolve) => identityServer.listen(0, '127.0.0.1', resolve))
     const identityBase = `http://127.0.0.1:${identityServer.address().port}`
@@ -335,17 +339,13 @@ test(
       oauthSecret: 'identity-session-oauth-secret',
       oauthProviders: [
         {
-          protocol: 'token_bridge',
+          protocol: 'oidc',
           id: 'workforce',
           label: 'deployment identity',
-          loginUrl: `${identityBase}/login`,
           issuer: identityBase,
-          audience: 'contentkit-session-test',
-          jwksUrl: `${identityBase}/jwks`,
-          allowedEmails: ['operator@example.test'],
-          subjectClaim: 'sub',
-          emailClaim: 'email',
-          emailVerifiedClaim: 'email_verified',
+          clientId: 'contentkit-session-test',
+          clientSecret: '',
+          scopes: 'openid email profile',
         },
       ],
       oauthAuthorizationCodeTtlMs: 600000,

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.0.0 - 2026-07-22
+
+### Changed
+
+- Make API-key and direct OIDC the complete ContentKit-owned MCP
+  authentication model. ContentKit owns its OIDC clients, callbacks, secrets,
+  sessions and exact identity/site grants.
+- Preserve the common SSO-first UI and route/schema contract while keeping all
+  authentication runtime and configuration inside this product.
+- Update README, MCP/deployment docs, OpenAPI and both LLM documents to the
+  corrected independent-product architecture.
+
+### Removed
+
+- Remove the hosted assertion-adapter protocol and its POST callback surface.
+
 ## 2.1.0 - 2026-07-22
 
 ### Added
@@ -54,10 +70,10 @@ and this project adheres to
 ### Added
 
 - Add one provider-neutral MCP browser-auth list for one scoped API key plus
-  multiple named token-bridge and OIDC adapters; provider products are
+  multiple named direct OIDC adapters; provider products are
   configuration values rather than ContentKit modes.
-- Add configurable subject, email and verification claim paths for JWT bridge
-  adapters without adding provider-specific branches.
+- Apply verified-email and exact identity-grant policy to OIDC adapters without
+  adding provider-specific branches.
 - Add the shared `mcp-auth-v1` card with the ContentKit `ck` badge, verified
   external identity assertions, account switching/logout and OAuth 2.1
   OpenAPI metadata.

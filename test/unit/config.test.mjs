@@ -89,17 +89,6 @@ test('MCP defaults are bounded and providers use one canonical protocol list', (
     process.env.CONTENTKIT_OAUTH_PROVIDERS = JSON.stringify([
       { protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' },
       {
-        protocol: 'token_bridge',
-        id: 'workforce-bridge',
-        label: 'Workforce bridge',
-        login_url: 'https://login.example.com/contentkit',
-        issuer_url: 'https://issuer.example.com',
-        audience: 'contentkit',
-        jwks_url: 'https://issuer.example.com/.well-known/jwks.json',
-        email_verified_claim: 'user_metadata.email_verified',
-        allowed_emails: ['operator@example.com'],
-      },
-      {
         protocol: 'oidc',
         id: 'workforce-oidc',
         label: 'Workforce OIDC',
@@ -110,13 +99,9 @@ test('MCP defaults are bounded and providers use one canonical protocol list', (
       },
     ])
     const configured = loadConfig()
-    assert.equal(
-      configured.oauthProviders.find((provider) => provider.protocol === 'token_bridge').emailVerifiedClaim,
-      'user_metadata.email_verified',
-    )
     assert.deepEqual(
       configured.oauthProviders.map((provider) => provider.protocol),
-      ['api_key', 'token_bridge', 'oidc'],
+      ['api_key', 'oidc'],
     )
   } finally {
     for (const [name, value] of Object.entries(saved)) {

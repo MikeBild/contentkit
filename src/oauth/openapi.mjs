@@ -30,7 +30,6 @@ export const MCP_AUTH_OPERATIONS = [
   'get /v1/identity/login/start',
   'post /v1/identity/login/start',
   'get /v1/identity/login/callback',
-  'post /v1/identity/login/callback',
   'post /v1/identity/logout',
 ]
 
@@ -41,10 +40,9 @@ export function registerMcpAuthOpenApi(spec) {
       additionalProperties: false,
       required: ['protocol', 'id', 'label'],
       properties: {
-        protocol: { type: 'string', enum: ['api_key', 'token_bridge', 'oidc'] },
+        protocol: { type: 'string', enum: ['api_key', 'oidc'] },
         id: { type: 'string' },
         label: { type: 'string', enum: ['SSO', 'API key'] },
-        login_url: { type: 'string', format: 'uri' },
         issuer: { type: 'string', format: 'uri' },
       },
     },
@@ -213,13 +211,6 @@ export function registerMcpAuthOpenApi(spec) {
         tags: tag,
         summary: 'Complete an OIDC login adapter',
         responses: { 200: { description: 'Consent HTML', content: html }, 302: { description: 'Redirect' }, ...errors },
-      },
-      post: {
-        operationId: 'completeTokenBridgeLogin',
-        tags: tag,
-        summary: 'Complete a token-bridge login adapter',
-        requestBody: form,
-        responses: { 200: { description: 'Consent HTML', content: html }, ...errors },
       },
     },
     '/v1/identity/logout': {

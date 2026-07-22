@@ -71,6 +71,8 @@ Pattern Package and export as an independent visual.
   shows `Continue with SSO` before `Continue with API key`; the provider-neutral
   boundary is `GET /v1/identity/providers`, `POST /v1/identity/sessions`, and
   generic start/callback/logout routes with no provider-named or legacy aliases.
+  API key and direct OIDC are configured and operated independently by ContentKit;
+  it owns its clients, callbacks, sessions and exact identity/site grants.
   Assertion exchange is `{provider_id,identity_token}` →
   `{api_key,principal_id,context_id,email}`. Start with
   `contentkit_context`; tool visibility follows the OAuth/API-key product

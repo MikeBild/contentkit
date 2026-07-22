@@ -221,7 +221,6 @@ The complete provider-neutral browser and token boundary is:
 | GET | `/v1/identity/login/start` | Render the chooser or start a selected method |
 | POST | `/v1/identity/login/start` | Submit API-key proof |
 | GET | `/v1/identity/login/callback` | Complete redirect-based SSO |
-| POST | `/v1/identity/login/callback` | Complete assertion-bridge SSO |
 | POST | `/v1/identity/logout` | Revoke the product-local browser session |
 
 Local/API-key login proves the operator identity with an existing key.
@@ -1468,7 +1467,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_MCP_MAX_SESSIONS` | hard session cap with oldest-idle eviction; default 1000 |
 | `CONTENTKIT_MCP_ELICITATION_TIMEOUT_MS` | maximum native human interaction wait; default 300000 |
 | `CONTENTKIT_OAUTH_SECRET` | independent HMAC key for OAuth codes/tokens/sessions; required in production |
-| `CONTENTKIT_OAUTH_PROVIDERS` | only browser-provider configuration; provider-neutral JSON list with `api_key`, `token_bridge`, and named `oidc` records; UI actions are always SSO then API key |
+| `CONTENTKIT_OAUTH_PROVIDERS` | ContentKit-local browser-provider configuration with `api_key` and named direct `oidc` records; UI actions are always SSO then API key |
 | `CONTENTKIT_OAUTH_ALLOWED_SCOPES` | comma-separated OAuth tier ceiling; must include `mcp:read` |
 | `CONTENTKIT_OAUTH_DCR_ENABLED` | enable bounded public-client dynamic registration; default true |
 | `SUPABASE_URL` | Supabase project URL for Storage API |
@@ -1513,9 +1512,9 @@ Production config is explicit. Missing required production values fail startup.
 | `LOG_LEVEL` | structured log verbosity |
 | `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` | structured-log deployment environment; defaults to `production` or `development` from `NODE_ENV` |
 
-JWT bridge records may override the safe dotted `subject_claim`, `email_claim`,
-and `email_verified_claim` paths; verification must still resolve to boolean
-true. Every adapter uses the same generic start, callback, and logout routes.
+ContentKit owns each OIDC client, optional client secret, callback
+registration, session and exact identity grant. Every adapter uses the same
+generic start, GET callback, and logout routes.
 
 Never reuse the Supabase service-role key as a Contentkit, database or webhook
 credential.
