@@ -1,5 +1,5 @@
 export function openApi(config) {
-  const secured = [{ bearerAuth: [] }, { apiKeyAuth: [] }]
+  const secured = [{ oauth2: [] }, { bearerAuth: [] }, { apiKeyAuth: [] }]
   const siteParameter = { name: 'site', in: 'path', required: true, schema: { type: 'string' } }
   const statsParameters = [
     siteParameter,
@@ -52,6 +52,8 @@ export function openApi(config) {
         'Management endpoints accept a scoped API key as either `Authorization: Bearer <key>`',
         'or `X-API-Key: <key>`. Keys look like `ck_<43-char base64url>` and the raw value is',
         'returned only once, by `POST /v1/api-keys` (and never listed or recoverable again).',
+        'Remote MCP and API clients may instead use the built-in OAuth 2.1 authorization-code',
+        'flow with PKCE-S256. Consent is bounded to the scopes the client requested.',
         'Keys are stored as `HMAC-SHA256(key = CONTENTKIT_KEY_PEPPER, message = raw key)` in hex;',
         'only a short `key_prefix` (the first 11 characters, e.g. `ck_A1b2C3d4`) is kept in clear',
         'for identification.',
@@ -109,6 +111,21 @@ export function openApi(config) {
     servers: [{ url: config.publicUrl }],
     components: {
       securitySchemes: {
+        oauth2: {
+          type: 'oauth2',
+          description: 'OAuth 2.1 authorization code with PKCE-S256 for interactive clients.',
+          flows: {
+            authorizationCode: {
+              authorizationUrl: `${config.publicUrl}/v1/oauth/authorize`,
+              tokenUrl: `${config.publicUrl}/v1/oauth/token`,
+              scopes: {
+                'mcp:read': 'Published reads and bounded product statistics',
+                'mcp:authoring': 'Drafts, revisions, compositions, decks and previews',
+                'mcp:admin': 'Administration bounded by the live identity grant',
+              },
+            },
+          },
+        },
         bearerAuth: {
           type: 'http',
           scheme: 'bearer',
@@ -2049,7 +2066,7 @@ export function openApi(config) {
         post: {
           summary: 'Pre-provision an OAuth identity grant',
           description:
-            'provider_id and issuer must exactly match a configured OIDC provider. A grant binds the immutable OIDC subject to a role, product-scope ceiling and optional sites.',
+            'provider_id and issuer must exactly match a configured external identity provider. A grant binds the immutable provider subject to a role, product-scope ceiling and optional sites.',
           security: secured,
           requestBody: jsonBody(['provider_id', 'issuer', 'subject', 'role']),
           responses: {

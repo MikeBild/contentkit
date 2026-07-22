@@ -3,6 +3,7 @@ import { parseCookies } from '../access.mjs'
 import { decryptSecret, encryptSecret } from '../secrets.mjs'
 import { hmac256, safeEqual, sha256 } from '../utils.mjs'
 import { defaultProductScopes, MCP_OAUTH_SCOPES, roleForProductScopes, roleOauthScopes } from './policy.mjs'
+import { verifyBridgedIdentity } from './token-bridge.mjs'
 import { finishOidcLogin, startOidcLogin } from './oidc.mjs'
 import { authHtmlResponse, renderApiKeyLogin, renderConsentPage, renderProviderChoice } from './ui.mjs'
 
@@ -91,7 +92,6 @@ function requestedScopes(raw, configured) {
         .filter(Boolean),
     ),
   ]
-  if (!requested.includes('mcp:read')) requested.unshift('mcp:read')
   if (requested.some((scope) => !MCP_OAUTH_SCOPES.includes(scope) || !configured.includes(scope))) {
     throw new OAuthError('invalid_scope', 'one or more requested scopes are not supported')
   }
@@ -116,6 +116,27 @@ function cookieToken(request, config) {
   const secure = new URL(config.publicUrl).protocol === 'https:'
   const cookies = parseCookies(request.headers.get('cookie') || '')
   return cookies[secure ? '__Host-contentkit_operator' : 'contentkit_operator'] || ''
+}
+
+function loginProviders(config) {
+  return config.oauthProviders || []
+}
+
+function tokenBridgeProvider(config, id) {
+  return (config.oauthProviders || []).find(
+    (provider) => provider.protocol === 'token_bridge' && (id === undefined || provider.id === id),
+  )
+}
+
+function oidcProvider(config, id) {
+  return (config.oauthProviders || []).find((provider) => provider.protocol === 'oidc' && provider.id === id)
+}
+
+function bridgeLoginUrl(config, provider, rawState) {
+  const target = new URL(provider.loginUrl)
+  target.searchParams.set('mcp_callback', `${config.publicUrl}/v1/identity/login/callback`)
+  target.searchParams.set('mcp_state', rawState)
+  return target.toString()
 }
 
 function csrf(config, sessionId, stateId, expires = Date.now() + 5 * 60 * 1000) {
@@ -365,9 +386,12 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
   async function consentResponse(state, grant, session, rawState, setCookie) {
     const client = await loadClient(state.client_id)
     if (!client) throw new OAuthError('invalid_client', 'unknown or revoked client')
-    const offeredScopes = roleOauthScopes(grant.role, config.oauthAllowedScopes)
-    if (!offeredScopes.length) throw new OAuthError('access_denied', 'identity grant has no MCP scopes', 403)
-    const preChecked = offeredScopes.filter((scope) => state.requested_scopes.includes(scope) || scope === 'mcp:read')
+    const requested = new Set(state.requested_scopes)
+    const offeredScopes = roleOauthScopes(grant.role, config.oauthAllowedScopes).filter((scope) => requested.has(scope))
+    if (!offeredScopes.includes('mcp:read')) {
+      throw new OAuthError('access_denied', 'mcp:read is a mandatory requested baseline', 403)
+    }
+    const preChecked = [...offeredScopes]
     const html = renderConsentPage({
       clientName: client.client_name,
       identityLabel: grant.email || grant.display_name || grant.subject,
@@ -378,6 +402,21 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       loginState: rawState,
     })
     return authHtmlResponse(html, 200, setCookie ? { 'set-cookie': operatorCookie(config, setCookie) } : {})
+  }
+
+  function loginResponse(rawState) {
+    const providers = loginProviders(config)
+    if (!providers.length) throw new OAuthError('server_error', 'no OAuth login method is configured', 500)
+    if (providers.length === 1) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `${config.publicUrl}/v1/identity/login/start?login_state=${encodeURIComponent(rawState)}&provider=${encodeURIComponent(providers[0].id)}`,
+          'cache-control': 'no-store',
+        },
+      })
+    }
+    return authHtmlResponse(renderProviderChoice({ state: rawState, providers }))
   }
 
   async function beginAuthorization(request, url) {
@@ -420,29 +459,25 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       const grant = await loadGrant(operator.grant_id)
       if (grant) return consentResponse(state, grant, operator, rawState)
     }
-    if (config.oauthLoginProvider === 'api_key') return authHtmlResponse(renderApiKeyLogin({ state: rawState }))
-    const providers = config.oauthOidcProviders || []
-    if (providers.length === 1 && config.oauthLoginProvider === 'oidc') {
-      return new Response(null, {
-        status: 302,
-        headers: {
-          location: `${config.publicUrl}/v1/identity/login/start?state=${encodeURIComponent(rawState)}&provider=${encodeURIComponent(providers[0].id)}`,
-          'cache-control': 'no-store',
-        },
-      })
-    }
-    return authHtmlResponse(renderProviderChoice({ state: rawState, providers }))
+    return loginResponse(rawState)
   }
 
   async function apiKeyLogin(request) {
     const values = await form(request)
+    const selected = loginProviders(config).find(
+      (provider) => provider.protocol === 'api_key' && provider.id === values.get('provider'),
+    )
+    if (!selected) throw new OAuthError('not_found', 'identity provider is not available', 404)
     const rawState = values.get('login_state') || ''
     const state = await loadState(rawState)
     if (!state || new Date(state.expires_at) <= new Date())
       throw new OAuthError('invalid_request', 'authorization state expired')
     const principal = await auth.authenticate({ authorization: `Bearer ${values.get('api_key') || ''}` })
     if (!principal || principal.oauth)
-      return authHtmlResponse(renderApiKeyLogin({ state: rawState, error: 'The API key is invalid or expired.' }), 401)
+      return authHtmlResponse(
+        renderApiKeyLogin({ state: rawState, providerId: selected.id, error: 'The API key is invalid or expired.' }),
+        401,
+      )
     const grant = await upsertApiKeyGrant(principal)
     const attached = await attachGrant(state, grant)
     const session = await createOperatorSession(grant.id)
@@ -459,13 +494,27 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
   }
 
   async function startLogin(url) {
-    const rawState = url.searchParams.get('state') || ''
+    const rawState = url.searchParams.get('login_state') || ''
     const state = await loadState(rawState)
     if (!state || new Date(state.expires_at) <= new Date())
       throw new OAuthError('invalid_request', 'authorization state expired')
-    const provider = (config.oauthOidcProviders || []).find(
-      (candidate) => candidate.id === url.searchParams.get('provider'),
-    )
+    const selected = loginProviders(config).find((candidate) => candidate.id === url.searchParams.get('provider'))
+    if (selected?.protocol === 'api_key') {
+      return authHtmlResponse(renderApiKeyLogin({ state: rawState, providerId: selected.id }))
+    }
+    if (selected?.protocol === 'token_bridge') {
+      const changed = await db.update(
+        'ck_oauth_login_states',
+        { id: `eq.${state.id}`, consumed_at: 'is.null' },
+        { provider_id: selected.id },
+      )
+      if (!changed.length) throw new OAuthError('invalid_request', 'authorization state already used')
+      return new Response(null, {
+        status: 302,
+        headers: { location: bridgeLoginUrl(config, selected, rawState), 'cache-control': 'no-store' },
+      })
+    }
+    const provider = oidcProvider(config, selected?.id)
     if (!provider) throw new OAuthError('not_found', 'identity provider is not available', 404)
     const started = await startOidcLogin({
       provider,
@@ -486,12 +535,62 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     })
   }
 
+  async function finishBridgeLogin(request) {
+    const values = await form(request)
+    const rawState = values.get('login_state') || ''
+    const state = await loadState(rawState)
+    const bridge = tokenBridgeProvider(config, state?.provider_id)
+    if (!state || !bridge || new Date(state.expires_at) <= new Date()) {
+      throw new OAuthError('invalid_request', 'identity authorization state is invalid or expired')
+    }
+    const identity = await verifyBridgedIdentity({
+      token: values.get('identity_token') || '',
+      issuer: bridge.issuer,
+      audience: bridge.audience,
+      jwksUrl: bridge.jwksUrl,
+      subjectClaim: bridge.subjectClaim,
+      emailClaim: bridge.emailClaim,
+      emailVerifiedClaim: bridge.emailVerifiedClaim,
+      allowedEmails: bridge.allowedEmails,
+    }).catch((error) => {
+      throw new OAuthError('access_denied', error instanceof Error ? error.message : 'identity login rejected', 403)
+    })
+    const issuer = bridge.issuer
+    const grant = (
+      await db.select('ck_oauth_identity_grants', {
+        provider_id: `eq.${bridge.id}`,
+        issuer: `eq.${issuer}`,
+        subject: `eq.${identity.subject}`,
+        revoked_at: 'is.null',
+        limit: '1',
+      })
+    )[0]
+    if (!grant) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
+    await db.update(
+      'ck_oauth_identity_grants',
+      { id: `eq.${grant.id}` },
+      { email: identity.email, updated_at: new Date().toISOString() },
+      { returning: false },
+    )
+    const attached = await attachGrant(state, { ...grant, email: identity.email })
+    const session = await createOperatorSession(grant.id)
+    await audit.record({
+      actorType: 'operator',
+      actorId: grant.id,
+      action: 'oauth.login',
+      resourceType: 'oauth_grant',
+      resourceId: grant.id,
+      result: 'success',
+      transport: 'oauth',
+      metadata: { provider_id: bridge.id },
+    })
+    return consentResponse(attached, { ...grant, email: identity.email }, session.row, rawState, session.token)
+  }
+
   async function finishLogin(url) {
     const rawState = url.searchParams.get('state') || ''
     const state = await loadState(rawState)
-    const provider = state?.provider_id
-      ? (config.oauthOidcProviders || []).find((candidate) => candidate.id === state.provider_id)
-      : null
+    const provider = oidcProvider(config, state?.provider_id)
     if (!state || !provider || !state.oidc_nonce || !state.oidc_code_verifier) {
       throw new OAuthError('invalid_request', 'OIDC authorization state is invalid or expired')
     }
@@ -536,6 +635,31 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     return consentResponse(attached, { ...grant, email: identity.email }, session.row, rawState, session.token)
   }
 
+  async function logout(request) {
+    const operator = await loadOperator(request)
+    if (operator) {
+      await db.update(
+        'ck_operator_sessions',
+        { id: `eq.${operator.id}`, revoked_at: 'is.null' },
+        { revoked_at: new Date().toISOString() },
+        { returning: false },
+      )
+      await audit.record({
+        actorType: 'operator',
+        actorId: operator.grant_id,
+        action: 'oauth.logout',
+        resourceType: 'operator_session',
+        resourceId: operator.id,
+        result: 'success',
+        transport: 'oauth',
+      })
+    }
+    return new Response(null, {
+      status: 204,
+      headers: { 'cache-control': 'no-store', 'set-cookie': operatorCookie(config, '', 0) },
+    })
+  }
+
   async function decide(request) {
     const values = await form(request)
     const rawState = values.get('login_state') || ''
@@ -553,6 +677,33 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     if (state.consumed_at) {
       const response = replayDecision(state)
       logger?.info?.('oauth consent decision replayed', { client_id: state.client_id })
+      return response
+    }
+    if (values.get('decision') === 'switch_account') {
+      const now = new Date().toISOString()
+      await db.update(
+        'ck_operator_sessions',
+        { id: `eq.${operator.id}`, revoked_at: 'is.null' },
+        { revoked_at: now },
+        { returning: false },
+      )
+      await db.update(
+        'ck_oauth_login_states',
+        { id: `eq.${state.id}`, consumed_at: 'is.null' },
+        { grant_id: null, authenticated_at: null, provider_id: null, oidc_nonce: null, oidc_code_verifier: null },
+        { returning: false },
+      )
+      await audit.record({
+        actorType: 'operator',
+        actorId: state.grant_id,
+        action: 'oauth.logout',
+        resourceType: 'operator_session',
+        resourceId: operator.id,
+        result: 'success',
+        transport: 'oauth',
+      })
+      const response = loginResponse(rawState)
+      response.headers.append('set-cookie', operatorCookie(config, '', 0))
       return response
     }
     if (values.get('decision') === 'deny') {
@@ -578,8 +729,9 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     const selected = [...new Set(values.getAll('scope'))].filter(
       (scope) => ceiling.includes(scope) && state.requested_scopes.includes(scope),
     )
-    if (!selected.includes('mcp:read')) selected.unshift('mcp:read')
-    if (!selected.length) return redirectError(state.redirect_uri, 'access_denied', state.client_state)
+    if (!selected.includes('mcp:read')) {
+      return redirectError(state.redirect_uri, 'access_denied', state.client_state)
+    }
     const rawCode = randomToken('ckac_')
     const target = new URL(state.redirect_uri)
     target.searchParams.set('code', rawCode)
@@ -879,9 +1031,13 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       if (request.method === 'POST' && url.pathname === '/v1/oauth/authorize/decision') return await decide(request)
       if (request.method === 'POST' && url.pathname === '/v1/oauth/token') return await token(request)
       if (request.method === 'POST' && url.pathname === '/v1/oauth/revoke') return await revoke(request)
-      if (request.method === 'POST' && url.pathname === '/v1/identity/login/api-key') return await apiKeyLogin(request)
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/start') return await startLogin(url)
+      if (request.method === 'POST' && url.pathname === '/v1/identity/login/start') return await apiKeyLogin(request)
+      if (request.method === 'POST' && url.pathname === '/v1/identity/login/callback') {
+        return await finishBridgeLogin(request)
+      }
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/callback') return await finishLogin(url)
+      if (request.method === 'POST' && url.pathname === '/v1/identity/logout') return await logout(request)
       return json({ error: 'not_found' }, 404)
     } catch (error) {
       logger?.warn?.('oauth request failed', {

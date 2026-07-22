@@ -1438,10 +1438,9 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_MCP_MAX_SESSIONS` | hard session cap with oldest-idle eviction; default 1000 |
 | `CONTENTKIT_MCP_ELICITATION_TIMEOUT_MS` | maximum native human interaction wait; default 300000 |
 | `CONTENTKIT_OAUTH_SECRET` | independent HMAC key for OAuth codes/tokens/sessions; required in production |
-| `CONTENTKIT_OAUTH_LOGIN_PROVIDER` | `api_key`, `oidc` or `federated` |
+| `CONTENTKIT_OAUTH_PROVIDERS` | only browser-provider configuration; provider-neutral JSON list with `api_key`, `token_bridge`, and named `oidc` records |
 | `CONTENTKIT_OAUTH_ALLOWED_SCOPES` | comma-separated OAuth tier ceiling; must include `mcp:read` |
 | `CONTENTKIT_OAUTH_DCR_ENABLED` | enable bounded public-client dynamic registration; default true |
-| `CONTENTKIT_OAUTH_OIDC_PROVIDERS` | JSON array of provider id/label/HTTPS issuer/client credentials/scopes |
 | `SUPABASE_URL` | Supabase project URL for Storage API |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
 | `CONTENTKIT_STORAGE_BUCKET` | Storage bucket name; default `contentkit` |
@@ -1483,6 +1482,10 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_TTS_GOOGLE_QUOTA_PROJECT` | `x-goog-user-project` quota project header |
 | `LOG_LEVEL` | structured log verbosity |
 | `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` | structured-log deployment environment; defaults to `production` or `development` from `NODE_ENV` |
+
+JWT bridge records may override the safe dotted `subject_claim`, `email_claim`,
+and `email_verified_claim` paths; verification must still resolve to boolean
+true. Every adapter uses the same generic start, callback, and logout routes.
 
 Never reuse the Supabase service-role key as a Contentkit, database or webhook
 credential.

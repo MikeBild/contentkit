@@ -955,11 +955,14 @@ const TOOLS = [
         const required = ['provider_id', 'issuer', 'subject', 'role']
         if (required.some((key) => !input.input[key]))
           throw Object.assign(new Error(`${required.join(', ')} are required`), { statusCode: 422 })
-        const provider = (deps.config.oauthOidcProviders || []).find(
-          (candidate) => candidate.id === input.input.provider_id && candidate.issuer === input.input.issuer,
+        const provider = (deps.config.oauthProviders || []).find(
+          (candidate) =>
+            candidate.protocol !== 'api_key' &&
+            candidate.id === input.input.provider_id &&
+            candidate.issuer === input.input.issuer,
         )
         if (!provider) {
-          throw Object.assign(new Error('provider_id and issuer must match a configured OIDC provider'), {
+          throw Object.assign(new Error('provider_id and issuer must match a configured identity provider'), {
             statusCode: 422,
           })
         }

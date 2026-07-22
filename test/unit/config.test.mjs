@@ -69,43 +69,71 @@ test('usage telemetry is opt-in, keeps 90 days and requires its own HMAC secret'
   }
 })
 
-test('MCP defaults are bounded and OIDC login requires configured HTTPS providers', () => {
+test('MCP defaults are bounded and providers use one canonical protocol list', () => {
   const names = [
     'CONTENTKIT_MCP_ENABLED',
     'CONTENTKIT_MCP_SESSION_TTL_MS',
     'CONTENTKIT_MCP_MAX_SESSIONS',
-    'CONTENTKIT_OAUTH_LOGIN_PROVIDER',
-    'CONTENTKIT_OAUTH_OIDC_PROVIDERS',
+    'CONTENTKIT_OAUTH_PROVIDERS',
   ]
   const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
   try {
     delete process.env.CONTENTKIT_MCP_ENABLED
     delete process.env.CONTENTKIT_MCP_SESSION_TTL_MS
     delete process.env.CONTENTKIT_MCP_MAX_SESSIONS
-    delete process.env.CONTENTKIT_OAUTH_LOGIN_PROVIDER
-    delete process.env.CONTENTKIT_OAUTH_OIDC_PROVIDERS
+    delete process.env.CONTENTKIT_OAUTH_PROVIDERS
     const defaults = loadConfig()
     assert.equal(defaults.mcpEnabled, true)
     assert.equal(defaults.mcpSessionTtlMs, 30 * 60 * 1000)
     assert.equal(defaults.mcpMaxSessions, 1000)
-    process.env.CONTENTKIT_OAUTH_LOGIN_PROVIDER = 'oidc'
-    assert.throws(() => loadConfig(), /requires CONTENTKIT_OAUTH_OIDC_PROVIDERS/)
-    process.env.CONTENTKIT_OAUTH_OIDC_PROVIDERS = JSON.stringify([
+    process.env.CONTENTKIT_OAUTH_PROVIDERS = JSON.stringify([
+      { protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' },
       {
-        id: 'company',
-        label: 'Company',
-        issuer: 'https://id.example.com',
+        protocol: 'token_bridge',
+        id: 'workforce-bridge',
+        label: 'Workforce bridge',
+        login_url: 'https://login.example.com/contentkit',
+        issuer_url: 'https://issuer.example.com',
+        audience: 'contentkit',
+        jwks_url: 'https://issuer.example.com/.well-known/jwks.json',
+        email_verified_claim: 'user_metadata.email_verified',
+        allowed_emails: ['operator@example.com'],
+      },
+      {
+        protocol: 'oidc',
+        id: 'workforce-oidc',
+        label: 'Workforce OIDC',
+        issuer_url: 'https://id.example.com',
         client_id: 'client',
         client_secret: 'secret',
         scopes: 'openid email profile',
       },
     ])
-    assert.equal(loadConfig().oauthOidcProviders[0].id, 'company')
+    const configured = loadConfig()
+    assert.equal(
+      configured.oauthProviders.find((provider) => provider.protocol === 'token_bridge').emailVerifiedClaim,
+      'user_metadata.email_verified',
+    )
+    assert.deepEqual(
+      configured.oauthProviders.map((provider) => provider.protocol),
+      ['api_key', 'token_bridge', 'oidc'],
+    )
   } finally {
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }
+  }
+})
+
+test('removed provider type records are rejected', () => {
+  const saved = process.env.CONTENTKIT_OAUTH_PROVIDERS
+  process.env.CONTENTKIT_OAUTH_PROVIDERS = '[{"type":"api_key","id":"api-key","label":"ContentKit API key"}]'
+  try {
+    assert.throws(() => loadConfig(), /protocol/)
+  } finally {
+    if (saved === undefined) delete process.env.CONTENTKIT_OAUTH_PROVIDERS
+    else process.env.CONTENTKIT_OAUTH_PROVIDERS = saved
   }
 })
 
@@ -122,6 +150,7 @@ test('production fails closed when secrets are absent', () => {
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
     'CONTENTKIT_TURNSTILE_SECRET',
+    'CONTENTKIT_OAUTH_PROVIDERS',
   ]
   const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
   for (const name of names) delete process.env[name]
@@ -155,6 +184,7 @@ test('production supports managed webhooks without a legacy global endpoint', ()
     SUPABASE_URL: 'https://storage.example.com',
     SUPABASE_SERVICE_ROLE_KEY: 'storage-role',
     CONTENTKIT_TURNSTILE_SECRET: 'turnstile',
+    CONTENTKIT_OAUTH_PROVIDERS: '[{"protocol":"api_key","id":"api-key","label":"ContentKit API key"}]',
   }
   delete env.CONTENTKIT_WEBHOOK_URL
   delete env.CONTENTKIT_WEBHOOK_SECRET

@@ -63,50 +63,112 @@ function csv(name, fallback = []) {
   ]
 }
 
-function oidcProviders(name) {
+function oauthProviders(name) {
   const raw = process.env[name]
-  if (!raw?.trim()) return []
+  if (!raw?.trim()) return [Object.freeze({ protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' })]
   let parsed
   try {
     parsed = JSON.parse(raw)
   } catch {
     throw new Error(`${name} must be valid JSON`)
   }
-  if (!Array.isArray(parsed)) throw new Error(`${name} must be a JSON array`)
+  if (!Array.isArray(parsed) || !parsed.length) throw new Error(`${name} must be a non-empty JSON array`)
   const ids = new Set()
+  let apiKeyConfigured = false
   return parsed.map((entry, index) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       throw new Error(`${name}[${index}] must be an object`)
     }
+    const protocol = String(entry.protocol || '').trim()
     const id = String(entry.id || '').trim()
     const label = String(entry.label || '').trim()
-    const issuer = String(entry.issuer || '')
+    if (!['api_key', 'token_bridge', 'oidc'].includes(protocol)) {
+      throw new Error(`${name}[${index}].protocol must be api_key, token_bridge or oidc`)
+    }
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id) || ids.has(id)) {
+      throw new Error(`${name}[${index}].id must be a unique lowercase slug`)
+    }
+    if (!label || label.length > 120) throw new Error(`${name}[${index}] requires a label`)
+    ids.add(id)
+    if (protocol === 'api_key') {
+      if (apiKeyConfigured) throw new Error(`${name} may contain only one api_key provider`)
+      apiKeyConfigured = true
+      return Object.freeze({ protocol, id, label })
+    }
+
+    if (protocol === 'token_bridge') {
+      const loginUrl = String(entry.login_url || '')
+        .trim()
+        .replace(/\/$/, '')
+      const issuer = String(entry.issuer_url || '')
+        .trim()
+        .replace(/\/$/, '')
+      const audience = String(entry.audience || '').trim()
+      const jwksUrl = String(entry.jwks_url || '').trim()
+      const subjectClaim = String(entry.subject_claim || 'sub').trim()
+      const emailClaim = String(entry.email_claim || 'email').trim()
+      const emailVerifiedClaim = String(entry.email_verified_claim || 'email_verified').trim()
+      const claimPath = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/
+      const allowedEmails = Array.isArray(entry.allowed_emails)
+        ? [...new Set(entry.allowed_emails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))]
+        : []
+      let parsedLoginUrl, parsedIssuer, parsedJwksUrl
+      try {
+        parsedLoginUrl = new URL(loginUrl)
+        parsedIssuer = new URL(issuer)
+        parsedJwksUrl = new URL(jwksUrl)
+      } catch {
+        throw new Error(`${name}[${index}] bridge URLs must be HTTPS URLs`)
+      }
+      if (
+        !audience ||
+        !claimPath.test(subjectClaim) ||
+        !claimPath.test(emailClaim) ||
+        !claimPath.test(emailVerifiedClaim) ||
+        parsedLoginUrl.protocol !== 'https:' ||
+        parsedIssuer.protocol !== 'https:' ||
+        parsedJwksUrl.protocol !== 'https:' ||
+        !allowedEmails.length
+      ) {
+        throw new Error(`${name}[${index}] token_bridge requires HTTPS URLs, audience and allowed_emails`)
+      }
+      return Object.freeze({
+        protocol,
+        id,
+        label,
+        loginUrl,
+        issuer,
+        audience,
+        jwksUrl,
+        subjectClaim,
+        emailClaim,
+        emailVerifiedClaim,
+        allowedEmails,
+      })
+    }
+
+    const issuer = String(entry.issuer_url || '')
       .trim()
       .replace(/\/$/, '')
     const clientId = String(entry.client_id || '').trim()
     const clientSecret = String(entry.client_secret || '').trim()
     const scopes = String(entry.scopes || 'openid profile email').trim()
-    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id) || ids.has(id)) {
-      throw new Error(`${name}[${index}].id must be a unique lowercase slug`)
-    }
-    if (!label || label.length > 120 || !clientId) {
-      throw new Error(`${name}[${index}] requires label and client_id`)
-    }
+    if (!clientId) throw new Error(`${name}[${index}] OIDC provider requires client_id`)
     let issuerUrl
     try {
       issuerUrl = new URL(issuer)
     } catch {
-      throw new Error(`${name}[${index}].issuer must be an HTTPS URL`)
+      throw new Error(`${name}[${index}].issuer_url must be an HTTPS URL`)
     }
-    if (issuerUrl.protocol !== 'https:') throw new Error(`${name}[${index}].issuer must use HTTPS`)
+    if (issuerUrl.protocol !== 'https:') throw new Error(`${name}[${index}].issuer_url must use HTTPS`)
     if (!scopes.split(/\s+/).includes('openid')) throw new Error(`${name}[${index}].scopes must include openid`)
-    ids.add(id)
-    return Object.freeze({ id, label, issuer, clientId, clientSecret, scopes })
+    return Object.freeze({ protocol, id, label, issuer, clientId, clientSecret, scopes })
   })
 }
 
 export function loadConfig() {
   loadEnvironment()
+  const configuredOauthProviders = oauthProviders('CONTENTKIT_OAUTH_PROVIDERS')
   const config = {
     root,
     host: process.env.HOST || '127.0.0.1',
@@ -129,10 +191,9 @@ export function loadConfig() {
       max: 15 * 60 * 1000,
     }),
     oauthSecret: process.env.CONTENTKIT_OAUTH_SECRET || '',
-    oauthLoginProvider: process.env.CONTENTKIT_OAUTH_LOGIN_PROVIDER || 'api_key',
+    oauthProviders: configuredOauthProviders,
     oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring']),
     oauthDynamicRegistrationEnabled: bool('CONTENTKIT_OAUTH_DCR_ENABLED', true),
-    oauthOidcProviders: oidcProviders('CONTENTKIT_OAUTH_OIDC_PROVIDERS'),
     oauthAuthorizationCodeTtlMs: integer('CONTENTKIT_OAUTH_CODE_TTL_MS', 10 * 60 * 1000, {
       min: 60 * 1000,
       max: 60 * 60 * 1000,
@@ -206,18 +267,12 @@ export function loadConfig() {
   if (config.usageTelemetryEnabled && !config.usageHmacSecret) {
     throw new Error('CONTENTKIT_USAGE_HMAC_SECRET is required when usage telemetry is enabled')
   }
-  if (!['api_key', 'oidc', 'federated'].includes(config.oauthLoginProvider)) {
-    throw new Error('CONTENTKIT_OAUTH_LOGIN_PROVIDER must be api_key, oidc or federated')
-  }
   const supportedOauthScopes = new Set(['mcp:read', 'mcp:authoring', 'mcp:admin'])
   if (
     !config.oauthAllowedScopes.includes('mcp:read') ||
     config.oauthAllowedScopes.some((scope) => !supportedOauthScopes.has(scope))
   ) {
     throw new Error('CONTENTKIT_OAUTH_ALLOWED_SCOPES must contain mcp:read and only supported MCP OAuth scopes')
-  }
-  if (['oidc', 'federated'].includes(config.oauthLoginProvider) && !config.oauthOidcProviders.length) {
-    throw new Error('OIDC OAuth login requires CONTENTKIT_OAUTH_OIDC_PROVIDERS')
   }
   if (process.env.NODE_ENV === 'production') {
     const required = {
@@ -230,6 +285,7 @@ export function loadConfig() {
       SUPABASE_SERVICE_ROLE_KEY: config.storageServiceKey,
       DATABASE_URL: config.databaseUrl,
       CONTENTKIT_TURNSTILE_SECRET: config.turnstileSecret,
+      CONTENTKIT_OAUTH_PROVIDERS: process.env.CONTENTKIT_OAUTH_PROVIDERS || '',
     }
     const missing = Object.entries(required)
       .filter(([, value]) => !value)

@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "1.23.3",
+  "version": "2.0.0",
   "description": "Headless Markdown mini-CMS with semantic visual composition and information patterns",
   "private": true,
   "type": "module",
@@ -46,6 +46,7 @@
     "@slidev/theme-seriph": "^0.25.0",
     "echarts": "^6.1.0",
     "katex": "^0.18.1",
+    "jose": "^6.1.0",
     "mermaid": "^11.12.2",
     "openid-client": "^6.8.4",
     "pg": "^8.16.3",

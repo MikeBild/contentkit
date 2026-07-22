@@ -101,7 +101,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
 - A domain-driven remote MCP API at `/mcp` with scope-filtered tools,
   resources and prompts for published knowledge, authoring, semantic visual
   composition, narrative decks, releases and bounded administration. OAuth
-  2.1/PKCE discovery, SubKit-style consent, site-bound identity grants, native
+  2.1/PKCE discovery, common branded auth UI, one provider-neutral API-key/token-bridge/OIDC list, site-bound identity grants, native
   form/URL elicitation, session leases, redacted audit and privacy-bounded MCP
   telemetry are built in. See [MCP.md](MCP.md).
 - Cloudflare Turnstile, honeypot and rate limits on public writes.
@@ -166,15 +166,20 @@ https://contentkit-api.example.com/mcp
 
 The client discovers ContentKit's OAuth 2.1 authorization server from the
 endpoint's `401 WWW-Authenticate` challenge. Authorization uses PKCE-S256 and
-the exact MCP resource URI; local deployments can sign in with an existing
-scoped API key, while production can federate to one or more pre-configured
-OIDC providers. The visible consent UI follows SubKit's compact card design and
+the exact MCP resource URI. The common `ck` browser card is configured only by
+`CONTENTKIT_OAUTH_PROVIDERS`: one API-key adapter and any number of named
+`token_bridge` and `oidc` adapters may coexist. Provider products are
+configuration values. Token bridges can map safe dotted subject, email and
+verification claim paths; OIDC adapters use discovery and Authorization Code
++ PKCE. The visible consent UI follows the shared compact card design and
 shows client, identity, sites and independently selectable capability tiers.
 The initial MCP authentication challenge advertises every enabled capability
 tier so general-purpose clients can request the complete tool surface. The
 client request controls the initial checkbox selection, and the operator may
 reduce it within the live identity/API-key scope and site ceiling; consent can
-never expand the client's request.
+never expand the client's request. `mcp:read` is mandatory, browser sessions
+expire after eight idle hours or 24 hours absolutely, and the user can log out
+or switch accounts.
 Consent uses POST/Redirect/GET and safely replays the same encrypted response
 for a short window if an MCP client repeats the decision submission; only one
 single-use authorization code is minted.

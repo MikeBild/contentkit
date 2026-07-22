@@ -7,6 +7,7 @@ const config = {
   oauthAllowedScopes: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
   oauthDynamicRegistrationEnabled: true,
   oauthSecret: 'secret',
+  oauthProviders: [{ protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' }],
 }
 const mount = createOAuthMount(config, {
   db: {},
@@ -54,10 +55,10 @@ test('API-key login never accepts an OAuth bearer token as its operator credenti
     logger: { warn() {} },
   })
   const response = await guarded.handler(
-    new Request(`${config.publicUrl}/v1/identity/login/api-key`, {
+    new Request(`${config.publicUrl}/v1/identity/login/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ login_state: state, api_key: 'cko_not-an-operator-key' }),
+      body: new URLSearchParams({ provider: 'api-key', login_state: state, api_key: 'cko_not-an-operator-key' }),
     }),
   )
   assert.equal(response.status, 401)

@@ -43,8 +43,7 @@ test(
       oauthAllowedScopes: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
       oauthDynamicRegistrationEnabled: true,
       oauthSecret: 'oauth-integration-test-secret',
-      oauthLoginProvider: 'api_key',
-      oauthOidcProviders: [],
+      oauthProviders: [{ protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' }],
       oauthAuthorizationCodeTtlMs: 10 * 60 * 1000,
       oauthAccessTokenTtlMs: 60 * 60 * 1000,
       oauthRefreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
@@ -97,15 +96,17 @@ test(
         scope: 'mcp:read mcp:authoring mcp:admin',
         state: 'client-state',
       })
-      const login = await mount.handler(new Request(authorizeUrl))
+      const loginRedirect = await mount.handler(new Request(authorizeUrl))
+      assert.equal(loginRedirect.status, 302)
+      const login = await mount.handler(new Request(loginRedirect.headers.get('location')))
       assert.equal(login.status, 200)
       const loginState = hidden(await login.text(), 'login_state')
 
       const consent = await mount.handler(
-        new Request(`${config.publicUrl}/v1/identity/login/api-key`, {
+        new Request(`${config.publicUrl}/v1/identity/login/start`, {
           method: 'POST',
           headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: encoded({ login_state: loginState, api_key: 'operator-key' }),
+          body: encoded({ provider: 'api-key', login_state: loginState, api_key: 'operator-key' }),
         }),
       )
       assert.equal(consent.status, 200)

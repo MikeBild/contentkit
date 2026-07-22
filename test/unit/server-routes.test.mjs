@@ -1217,8 +1217,15 @@ test('site-scoped identity administrators cannot enumerate or mutate cross-site 
       db,
       auth: siteAdminAuth(['identity:admin'], ['site-1']),
       config: {
-        oauthOidcProviders: [
-          { id: 'corp', issuer: 'https://login.example', clientId: 'contentkit', scopes: ['openid'] },
+        oauthProviders: [
+          {
+            protocol: 'oidc',
+            id: 'corp',
+            label: 'Corporate SSO',
+            issuer: 'https://login.example',
+            clientId: 'contentkit',
+            scopes: 'openid',
+          },
         ],
       },
     },

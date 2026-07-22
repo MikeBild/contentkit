@@ -69,9 +69,13 @@ proxy must preserve the original site `Host` header.
 
 Remote MCP is enabled by default. Give `CONTENTKIT_OAUTH_SECRET` its own random
 value; never reuse the API-key pepper, reader-session, preview, webhook or usage
-secret. For production OIDC, set `CONTENTKIT_OAUTH_LOGIN_PROVIDER=oidc` (or
-`federated`) and configure `CONTENTKIT_OAUTH_OIDC_PROVIDERS`; pre-provision exact
-issuer/subject grants before login. The reverse proxy must forward `/mcp`,
+secret. Configure the browser funnel only through `CONTENTKIT_OAUTH_PROVIDERS`:
+one `api_key` plus multiple named `token_bridge` and `oidc` adapters may
+coexist. JWT bridge claim paths default to `sub`, `email`, and
+`email_verified`; safe dotted overrides such as
+`user_metadata.email_verified` support adapters with nested claims without a
+product-code branch.
+Pre-provision exact provider/issuer/subject grants before login. The reverse proxy must forward `/mcp`,
 `/.well-known/oauth-*`, `/v1/oauth/*`, `/v1/identity/login/*` and the one-time
 `/oauth/secret/*` handoff paths to ContentKit without buffering SSE responses.
 OAuth decision responses use cross-origin `303` redirects to the client's

@@ -189,7 +189,7 @@ test(
         CONTENTKIT_USAGE_RETENTION_DAYS: '90',
         CONTENTKIT_MCP_ENABLED: 'true',
         CONTENTKIT_OAUTH_SECRET: 'local-e2e-oauth-secret-that-is-long-enough',
-        CONTENTKIT_OAUTH_LOGIN_PROVIDER: 'api_key',
+        CONTENTKIT_OAUTH_PROVIDERS: '[{"protocol":"api_key","id":"api-key","label":"ContentKit API key"}]',
         LOG_LEVEL: 'warn',
       },
       stdio: ['ignore', 'pipe', 'pipe'],

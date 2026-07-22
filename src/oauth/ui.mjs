@@ -15,11 +15,11 @@ const TOKENS = `
   .scope-row{display:flex;align-items:flex-start;gap:10px;cursor:pointer}.scope-row input[type=checkbox]{margin-top:2px;flex:none}.scope-text{display:flex;flex-direction:column;gap:2px}.scope-name{font-weight:600;font-size:.92rem}.scope-desc{color:var(--muted);font-size:.85rem}
   label.field{display:block;margin:16px 0 0;font-size:.9rem;font-weight:600}input[type=password],input[type=text]{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #d6d9de;border-radius:9px;font:inherit}
   .actions{display:flex;gap:10px;margin-top:22px}button,.button{flex:1;padding:11px 18px;font-size:.95rem;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid transparent;font-family:inherit;text-align:center;text-decoration:none}.approve{background:var(--primary);color:#fff}.approve:hover{background:var(--primary-hover)}.deny{background:#fff;color:var(--ink);border-color:#d6d9de}.deny:hover{background:var(--bg)}
-  .footer{margin-top:20px;color:#99a0aa;font-size:.78rem;text-align:center}@media(max-width:480px){body{padding:12px}.card{padding:24px}.actions{flex-direction:column-reverse}}
+  .switch{display:block;margin:16px auto 0;padding:0;border:0;background:transparent;color:var(--muted);font-size:.82rem;text-decoration:underline}.footer{margin-top:20px;color:#99a0aa;font-size:.78rem;text-align:center}@media(max-width:480px){body{padding:12px}.card{padding:24px}.actions{flex-direction:column-reverse}}
 `
 
 function shell(title, body) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>${escapeHtml(title)} — contentkit</title><style>${TOKENS}</style></head><body><main class="card"><div class="brand" aria-label="ContentKit">ck</div>${body}<div class="footer">contentkit MCP · OAuth 2.1</div></main></body></html>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="mcp-auth-ui-contract" content="1"><title>${escapeHtml(title)} — ContentKit</title><style>${TOKENS}</style></head><body><main class="card" data-auth-contract="mcp-auth-v1"><div class="brand" aria-label="ContentKit">ck</div>${body}<div class="footer">ContentKit MCP · OAuth 2.1</div></main></body></html>`
 }
 
 const scopeLabels = {
@@ -40,27 +40,27 @@ export function renderConsentPage(options) {
   const siteText = options.siteNames?.length ? options.siteNames.join(', ') : 'all granted ContentKit sites'
   return shell(
     'Authorize access',
-    `<h1>Authorize access</h1><p><span class="strong">${escapeHtml(options.clientName)}</span> is requesting access to <span class="strong">${escapeHtml(siteText)}</span>.</p><p class="muted">Signed in as ${escapeHtml(options.identityLabel)}</p><p class="muted">It will be able to:</p><form method="POST" action="/v1/oauth/authorize/decision"><ul class="scopes">${items}</ul><input type="hidden" name="csrf_token" value="${escapeHtml(options.csrfToken)}"><input type="hidden" name="login_state" value="${escapeHtml(options.loginState)}"><div class="actions"><button type="submit" name="decision" value="deny" class="deny">Deny</button><button type="submit" name="decision" value="approve" class="approve">Approve</button></div></form>`,
+    `<h1>Authorize access</h1><p><span class="strong">${escapeHtml(options.clientName)}</span> is requesting access to <span class="strong">${escapeHtml(siteText)}</span>.</p><p class="muted">Signed in as ${escapeHtml(options.identityLabel)}</p><p class="muted">It will be able to:</p><form method="POST" action="/v1/oauth/authorize/decision"><ul class="scopes">${items}</ul><input type="hidden" name="csrf_token" value="${escapeHtml(options.csrfToken)}"><input type="hidden" name="login_state" value="${escapeHtml(options.loginState)}"><div class="actions"><button type="submit" name="decision" value="deny" class="deny">Deny</button><button type="submit" name="decision" value="approve" class="approve">Approve</button></div><button type="submit" name="decision" value="switch_account" class="switch">Use another account</button></form>`,
   )
 }
 
 export function renderProviderChoice(options) {
   const providers = options.providers
-    .map(
-      (provider) =>
-        `<li><a class="button approve" href="/v1/identity/login/start?state=${encodeURIComponent(options.state)}&provider=${encodeURIComponent(provider.id)}">Continue with ${escapeHtml(provider.label)}</a></li>`,
-    )
+    .map((provider) => {
+      const href = `/v1/identity/login/start?login_state=${encodeURIComponent(options.state)}&provider=${encodeURIComponent(provider.id)}`
+      return `<li><a class="button approve" href="${href}">Continue with ${escapeHtml(provider.label)}</a></li>`
+    })
     .join('')
   return shell(
     'Sign in',
-    `<h1>Sign in to ContentKit</h1><p class="muted">Choose the identity provider for this authorization request.</p><ul class="providers">${providers}</ul>`,
+    `<h1>Sign in to ContentKit</h1><p class="muted">Choose how to authenticate this authorization request.</p><ul class="providers">${providers}</ul>`,
   )
 }
 
 export function renderApiKeyLogin(options) {
   return shell(
     'Sign in',
-    `<h1>Sign in to ContentKit</h1><p class="muted">Use a scoped ContentKit API key to authorize this MCP client.</p>${options.error ? `<p class="error" role="alert">${escapeHtml(options.error)}</p>` : ''}<form method="POST" action="/v1/identity/login/api-key"><input type="hidden" name="login_state" value="${escapeHtml(options.state)}"><label class="field">API key<input type="password" name="api_key" autocomplete="current-password" required></label><div class="actions"><button class="approve" type="submit">Continue</button></div></form>`,
+    `<h1>Sign in to ContentKit</h1><p class="muted">Use a scoped ContentKit API key to authorize this MCP client.</p>${options.error ? `<p class="error" role="alert">${escapeHtml(options.error)}</p>` : ''}<form method="POST" action="/v1/identity/login/start"><input type="hidden" name="provider" value="${escapeHtml(options.providerId)}"><input type="hidden" name="login_state" value="${escapeHtml(options.state)}"><label class="field">API key<input type="password" name="api_key" autocomplete="current-password" required></label><div class="actions"><button class="approve" type="submit">Continue</button></div></form>`,
   )
 }
 
@@ -72,6 +72,7 @@ export function authHtmlResponse(html, status = 200, headers = {}) {
       'cache-control': 'private,no-store',
       'content-security-policy': AUTH_UI_CSP,
       'x-frame-options': 'DENY',
+      'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
       ...headers,
     },

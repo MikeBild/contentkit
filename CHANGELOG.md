@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.0.0 - 2026-07-22
+
+### Added
+
+- Add one provider-neutral MCP browser-auth list for one scoped API key plus
+  multiple named token-bridge and OIDC adapters; provider products are
+  configuration values rather than ContentKit modes.
+- Add configurable subject, email and verification claim paths for JWT bridge
+  adapters without adding provider-specific branches.
+- Add the shared `mcp-auth-v1` card with the ContentKit `ck` badge, verified
+  external identity assertions, account switching/logout and OAuth 2.1
+  OpenAPI metadata.
+
+### Changed
+
+- Replace every provider-specific login route and config branch with the
+  generic start/callback/logout contract and the `protocol` discriminator. No
+  legacy provider shape or route is accepted.
+
+- Bound operator sessions to an eight-hour idle and 24-hour absolute lifetime,
+  with live source-grant revalidation on every authorization step.
+- Constrain consent to the exact client request and live role/product/site
+  ceiling. `mcp:read` is mandatory and is never added to a request that omitted
+  it.
+
+### Removed
+
+- Remove the former provider-specific configuration and login endpoints with
+  no runtime compatibility parser. Deployments must supply the canonical
+  `protocol` records before starting 2.0.0.
+
+### Security
+
+- Keep authorization state, tokens and sessions opaque or hashed at rest;
+  require verified allow-listed identities from every configured adapter and
+  retain exact callback, issuer, audience, PKCE and resource binding.
+
 ## 1.23.3 - 2026-07-21
 
 ### Fixed

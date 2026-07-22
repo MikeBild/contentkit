@@ -1684,9 +1684,11 @@ export function createRequestHandler(ctx) {
         })
       }
       const input = parseJson(await bodyFor(req))
-      const provider = (config.oauthOidcProviders || []).find((entry) => entry.id === input.provider_id)
+      const provider = (config.oauthProviders || []).find(
+        (entry) => entry.protocol !== 'api_key' && entry.id === input.provider_id,
+      )
       if (!provider || provider.issuer !== input.issuer) {
-        return sendJson(res, 422, { error: 'provider_id and issuer must match a configured OIDC provider' })
+        return sendJson(res, 422, { error: 'provider_id and issuer must match a configured identity provider' })
       }
       if (!input.subject || !['reader', 'author', 'admin'].includes(input.role)) {
         return sendJson(res, 422, { error: 'subject and a valid role are required' })
