@@ -51,7 +51,8 @@ export function oidcIdentityFromClaims(claims) {
     claims?.email_verified === true && typeof claims.email === 'string' && claims.email.trim()
       ? claims.email.trim().toLowerCase()
       : null
-  return { subject, email }
+  const name = typeof claims?.name === 'string' && claims.name.trim() ? claims.name.trim().slice(0, 255) : null
+  return { subject, email, name }
 }
 
 export async function finishOidcLogin({ provider, redirectUri, callbackUrl, state, nonce, codeVerifier }) {

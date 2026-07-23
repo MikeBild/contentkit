@@ -1472,6 +1472,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_OAUTH_PROVIDERS` | ContentKit-local browser-provider configuration with `api_key` and named direct `oidc` records; UI actions are always SSO then API key |
 | `CONTENTKIT_OAUTH_ALLOWED_SCOPES` | comma-separated OAuth tier ceiling; must include `mcp:read` |
 | `CONTENTKIT_OAUTH_DCR_ENABLED` | enable bounded public-client dynamic registration; default true |
+| `CONTENTKIT_OAUTH_ENABLE_SIGNUP` | self-signup: auto-provision an unknown authenticated OIDC identity with the minimal `reader` role (`content:read`, `stats:read`); default false |
 | `SUPABASE_URL` | Supabase project URL for Storage API |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key for private Storage bucket |
 | `CONTENTKIT_STORAGE_BUCKET` | Storage bucket name; default `contentkit` |

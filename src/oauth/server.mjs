@@ -155,7 +155,7 @@ function verifyCsrf(config, value, sessionId, stateId) {
 }
 
 export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOverrides }) {
-  const oidcClient = { startOidcLogin, finishOidcLogin, ...oidcOverrides }
+  const oidcClient = { startOidcLogin, finishOidcLogin, verifyOidcIdentityToken, ...oidcOverrides }
   const dcrBuckets = new Map()
   let cleanupTimer = null
 
@@ -372,6 +372,53 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     return rows[0]
   }
 
+  // Self-signup (CONTENTKIT_OAUTH_ENABLE_SIGNUP, default off): an OIDC
+  // identity that authenticated at the provider but has no ContentKit grant is
+  // provisioned with the minimal reader role. The switch controls only this
+  // first-time creation — existing grants are never modified here, and a
+  // revoked grant stays revoked: the conflict-losing insert falls back to the
+  // non-revoked lookup, so a revoked identity keeps being denied.
+  async function provisionSignupGrant(provider, identity) {
+    const [created] = await db.query(
+      `INSERT INTO ck_oauth_identity_grants
+         (provider_id, issuer, subject, email, display_name, role, product_scopes, site_ids)
+       VALUES ($1, $2, $3, $4, $5, 'reader', $6, '{}')
+       ON CONFLICT (provider_id, issuer, subject) DO NOTHING
+       RETURNING *`,
+      [
+        provider.id,
+        provider.issuer,
+        identity.subject,
+        identity.email || null,
+        identity.name || identity.email || identity.subject,
+        defaultProductScopes('reader'),
+      ],
+    )
+    if (!created) {
+      return (
+        await db.select('ck_oauth_identity_grants', {
+          provider_id: `eq.${provider.id}`,
+          issuer: `eq.${provider.issuer}`,
+          subject: `eq.${identity.subject}`,
+          revoked_at: 'is.null',
+          limit: '1',
+        })
+      )[0]
+    }
+    logger?.info?.('oauth signup provisioned reader grant', { provider_id: provider.id, grant_id: created.id })
+    await audit.record({
+      actorType: 'operator',
+      actorId: created.id,
+      action: 'oauth.signup',
+      resourceType: 'oauth_grant',
+      resourceId: created.id,
+      result: 'success',
+      transport: 'oauth',
+      metadata: { provider_id: provider.id, role: created.role },
+    })
+    return created
+  }
+
   async function attachGrant(state, grant) {
     const [updated] = await db.update(
       'ck_oauth_login_states',
@@ -583,7 +630,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       })
       return rejectBrowserLogin(state, GENERIC_SIGN_IN_MESSAGE)
     }
-    const grant = (
+    let grant = (
       await db.select('ck_oauth_identity_grants', {
         provider_id: `eq.${provider.id}`,
         issuer: `eq.${provider.issuer}`,
@@ -592,6 +639,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
         limit: '1',
       })
     )[0]
+    if (!grant && config.oauthSignupEnabled) grant = await provisionSignupGrant(provider, identity)
     if (!grant) {
       if (wantsJson(request)) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
       logger?.warn?.('oauth browser sign-in failed', { path: url.pathname, code: 'access_denied' })
@@ -995,10 +1043,10 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     if (provider.protocol === 'api_key') {
       throw new OAuthError('invalid_request', 'API key login does not accept identity assertions')
     }
-    const identity = await verifyOidcIdentityToken({ provider, identityToken }).catch(() => {
+    const identity = await oidcClient.verifyOidcIdentityToken({ provider, identityToken }).catch(() => {
       throw new OAuthError('invalid_token', 'identity assertion was rejected', 401)
     })
-    const grant = (
+    let grant = (
       await db.select('ck_oauth_identity_grants', {
         provider_id: `eq.${provider.id}`,
         issuer: `eq.${provider.issuer}`,
@@ -1007,6 +1055,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
         limit: '1',
       })
     )[0]
+    if (!grant && config.oauthSignupEnabled) grant = await provisionSignupGrant(provider, identity)
     if (!grant) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
     if (identity.email && identity.email !== grant.email) {
       await db.update(

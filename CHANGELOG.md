@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- `CONTENTKIT_OAUTH_ENABLE_SIGNUP` (default `false`): opt-in self-signup for
+  the browser SSO funnel and the headless `POST /v1/identity/sessions`
+  exchange. When enabled, an OIDC identity that authenticated at the provider
+  but has no ContentKit grant is provisioned automatically in
+  `ck_oauth_identity_grants` with the minimal `reader` role and its product
+  scopes (`content:read`, `stats:read`); the display name comes from the `name`
+  claim, the verified email or the subject, and the email is stored only when
+  `email_verified=true`. The switch controls first-time creation only: existing
+  grants are never modified and a revoked grant keeps being denied. With the
+  switch off, unknown identities keep receiving the styled `Sign-in failed`
+  page or the RFC 6749 `error=access_denied` redirect exactly as before.
+
 ## 4.1.0 - 2026-07-23
 
 ### Added

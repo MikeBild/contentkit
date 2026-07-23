@@ -143,6 +143,9 @@ export function loadConfig() {
     oauthProviders: configuredOauthProviders,
     oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring', 'mcp:admin']),
     oauthDynamicRegistrationEnabled: bool('CONTENTKIT_OAUTH_DCR_ENABLED', true),
+    // Self-signup: provision an unknown, authenticated OIDC identity with the
+    // minimal reader role at sign-in. Existing grants are never affected.
+    oauthSignupEnabled: bool('CONTENTKIT_OAUTH_ENABLE_SIGNUP', false),
     oauthAuthorizationCodeTtlMs: integer('CONTENTKIT_OAUTH_CODE_TTL_MS', 10 * 60 * 1000, {
       min: 60 * 1000,
       max: 60 * 60 * 1000,
