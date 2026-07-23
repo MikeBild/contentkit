@@ -229,7 +229,9 @@ invalid when the key is revoked, expires or rotates; an OAuth bearer token
 cannot be reused as an operator key.
 Production OIDC login uses configured HTTPS issuers and a pre-provisioned exact
 `provider_id + issuer + sub` identity grant; an email address alone is never an
-authorization identity. The compact common MCP auth card shows the client,
+authorization identity. The immutable `sub` is mandatory. Email is optional;
+only a claim with `email_verified=true` refreshes the grant, and unverified
+email is ignored. The compact common MCP auth card shows the client,
 identity, site ceiling and OAuth tiers `mcp:read`, `mcp:authoring` and
 `mcp:admin`. Those tiers are intersected with the role and product-scope ceiling
 on every access-token authentication.
@@ -239,7 +241,7 @@ adapter labels. Authorize redirects through
 `/v1/identity/login/start?login_state=<opaque>`. Provider discovery is
 `GET /v1/identity/providers`; assertion exchange is
 `POST /v1/identity/sessions` with `{provider_id,identity_token}` and returns
-exactly `{api_key,principal_id,context_id,email}`. Only generic
+exactly `{api_key,principal_id,context_id,email}`; `email` is nullable. Only generic
 start/callback/logout routes exist—there are no provider-named or legacy
 aliases. ContentKit preserves its independent exact identity, product-scope
 and site grant policy.
@@ -1513,7 +1515,9 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` | structured-log deployment environment; defaults to `production` or `development` from `NODE_ENV` |
 
 ContentKit owns each OIDC client, optional client secret, callback
-registration, session and exact identity grant. Every adapter uses the same
+registration, session and exact `provider_id + issuer + sub` identity grant.
+The subject is required; email is optional and retained only when verified.
+Every adapter uses the same
 generic start, GET callback, and logout routes.
 
 Never reuse the Supabase service-role key as a Contentkit, database or webhook

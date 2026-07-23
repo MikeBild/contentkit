@@ -195,8 +195,10 @@ methods with `GET /v1/identity/providers` and exchange a configured assertion
 only at `POST /v1/identity/sessions` using
 `{"provider_id":"<id>","identity_token":"<assertion>"}`. The response is
 exactly `{api_key,principal_id,context_id,email}`; `context_id` is the sole
-granted site when unambiguous, otherwise null. ContentKit still enforces its
-own pre-provisioned identity, scope and site policy.
+granted site when unambiguous, otherwise null, and `email` is null unless the
+provider supplies a verified address or the grant already contains one.
+ContentKit requires the immutable OIDC `sub` and still enforces its own exact
+pre-provisioned identity, scope and site policy.
 
 Start agent work with `contentkit_context`. The MCP API deliberately models
 ContentKit domains—published knowledge, immutable revision authoring, semantic

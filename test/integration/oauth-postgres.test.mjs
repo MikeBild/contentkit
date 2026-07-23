@@ -370,7 +370,9 @@ test(
     })
     let issuedKeyId
     try {
-      const identityToken = await new SignJWT({ email: 'operator@example.test', email_verified: true })
+      // The immutable subject is sufficient. The existing grant's optional
+      // email remains the display/contact value when the IdP omits email.
+      const identityToken = await new SignJWT({})
         .setProtectedHeader({ alg: 'RS256', kid: 'identity-session-test' })
         .setIssuer(identityBase)
         .setAudience('contentkit-session-test')

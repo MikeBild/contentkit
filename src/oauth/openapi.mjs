@@ -69,7 +69,10 @@ export function registerMcpAuthOpenApi(spec) {
         api_key: { type: 'string' },
         principal_id: { type: 'string' },
         context_id: { type: ['string', 'null'] },
-        email: { type: 'string' },
+        email: {
+          type: ['string', 'null'],
+          description: 'Verified provider email when supplied; null when the subject alone identifies the account',
+        },
       },
     },
     OAuthError: {

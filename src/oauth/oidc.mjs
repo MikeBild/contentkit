@@ -44,6 +44,16 @@ export async function startOidcLogin({ provider, redirectUri, state }) {
   return { authorizationUrl: url.toString(), codeVerifier, nonce }
 }
 
+export function oidcIdentityFromClaims(claims) {
+  const subject = typeof claims?.sub === 'string' ? claims.sub : ''
+  if (!subject) throw new Error('OIDC identity must contain sub')
+  const email =
+    claims?.email_verified === true && typeof claims.email === 'string' && claims.email.trim()
+      ? claims.email.trim().toLowerCase()
+      : null
+  return { subject, email }
+}
+
 export async function finishOidcLogin({ provider, redirectUri, callbackUrl, state, nonce, codeVerifier }) {
   const config = await configuration(provider)
   const callback = new URL(redirectUri)
@@ -54,12 +64,7 @@ export async function finishOidcLogin({ provider, redirectUri, callbackUrl, stat
     pkceCodeVerifier: codeVerifier,
   })
   const claims = tokens.claims()
-  const subject = typeof claims?.sub === 'string' ? claims.sub : ''
-  const email = typeof claims?.email === 'string' ? claims.email.trim().toLowerCase() : ''
-  if (!subject || !email || claims?.email_verified !== true) {
-    throw new Error('OIDC identity must contain sub, email and email_verified=true')
-  }
-  return { subject, email }
+  return oidcIdentityFromClaims(claims)
 }
 
 async function providerMetadata(provider) {
@@ -97,10 +102,5 @@ export async function verifyOidcIdentityToken({ provider, identityToken }) {
     issuer: metadata.issuer,
     audience: provider.clientId,
   })
-  const subject = typeof payload.sub === 'string' ? payload.sub : ''
-  const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : ''
-  if (!subject || !email || payload.email_verified !== true) {
-    throw new Error('OIDC identity must contain sub, email and email_verified=true')
-  }
-  return { subject, email }
+  return oidcIdentityFromClaims(payload)
 }

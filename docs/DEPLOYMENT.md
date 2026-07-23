@@ -73,7 +73,9 @@ secret. Configure the browser funnel only through `CONTENTKIT_OAUTH_PROVIDERS`:
 one `api_key` plus multiple named direct `oidc` adapters may coexist.
 ContentKit owns each OIDC client, secret and callback registration; no shared
 cross-product authentication deployment is used.
-Pre-provision exact provider/issuer/subject grants before login. The reverse proxy must forward `/mcp`,
+Pre-provision exact provider/issuer/subject grants before login. OIDC requires
+`sub`; email is optional, and only `email_verified=true` may refresh the
+optional email stored on a grant. The reverse proxy must forward `/mcp`,
 `/.well-known/oauth-*`, `/v1/oauth/*`, `/v1/identity/providers`,
 `/v1/identity/sessions`, `/v1/identity/login/*`, `/v1/identity/logout` and the one-time
 `/oauth/secret/*` handoff paths to ContentKit without buffering SSE responses.

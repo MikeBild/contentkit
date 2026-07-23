@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.0.0 - 2026-07-23
+
+### Changed
+
+- Make OIDC identity subject-first: `sub` is mandatory and continues to require
+  an exact pre-provisioned provider/issuer/subject grant; email is optional,
+  and only a provider-verified claim may refresh the grant.
+
+### Removed
+
+- Stop fabricating a required email value for subject-only identities. The
+  common identity-session response now exposes `email` as `string | null`.
+
 ## 3.0.0 - 2026-07-22
 
 ### Changed

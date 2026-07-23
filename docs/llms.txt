@@ -74,7 +74,8 @@ Pattern Package and export as an independent visual.
   API key and direct OIDC are configured and operated independently by ContentKit;
   it owns its clients, callbacks, sessions and exact identity/site grants.
   Assertion exchange is `{provider_id,identity_token}` →
-  `{api_key,principal_id,context_id,email}`. Start with
+  `{api_key,principal_id,context_id,email}`; `sub` is mandatory while `email`
+  is nullable and only provider-verified email is retained. Start with
   `contentkit_context`; tool visibility follows the OAuth/API-key product
   scopes and site ceiling. MCP is a domain API, not a generic REST proxy.
 - Pattern discovery: `GET /v1/composition-patterns` and

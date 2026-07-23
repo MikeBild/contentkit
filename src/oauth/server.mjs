@@ -532,13 +532,16 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       })
     )[0]
     if (!grant) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
-    await db.update(
-      'ck_oauth_identity_grants',
-      { id: `eq.${grant.id}` },
-      { email: identity.email, updated_at: new Date().toISOString() },
-      { returning: false },
-    )
-    const attached = await attachGrant(state, { ...grant, email: identity.email })
+    if (identity.email && identity.email !== grant.email) {
+      await db.update(
+        'ck_oauth_identity_grants',
+        { id: `eq.${grant.id}` },
+        { email: identity.email, updated_at: new Date().toISOString() },
+        { returning: false },
+      )
+    }
+    const currentGrant = { ...grant, email: identity.email ?? grant.email ?? null }
+    const attached = await attachGrant(state, currentGrant)
     const session = await createOperatorSession(grant.id)
     await audit.record({
       actorType: 'operator',
@@ -550,7 +553,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       transport: 'oauth',
       metadata: { provider_id: provider.id },
     })
-    return consentResponse(attached, { ...grant, email: identity.email }, session.row, rawState, session.token)
+    return consentResponse(attached, currentGrant, session.row, rawState, session.token)
   }
 
   async function logout(request) {
@@ -940,16 +943,20 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       })
     )[0]
     if (!grant) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
-    await db.update(
-      'ck_oauth_identity_grants',
-      { id: `eq.${grant.id}` },
-      { email: identity.email, updated_at: new Date().toISOString() },
-      { returning: false },
-    )
+    if (identity.email && identity.email !== grant.email) {
+      await db.update(
+        'ck_oauth_identity_grants',
+        { id: `eq.${grant.id}` },
+        { email: identity.email, updated_at: new Date().toISOString() },
+        { returning: false },
+      )
+    }
+    const currentEmail = identity.email ?? grant.email ?? null
+    const identityLabel = currentEmail || grant.display_name || grant.subject
     if (!config.keyPepper) throw new OAuthError('temporarily_unavailable', 'API key issuance is not configured', 503)
     const apiKey = `ck_${randomBytes(32).toString('base64url')}`
     await db.insert('ck_api_keys', {
-      name: `SSO ${identity.email}`,
+      name: `SSO ${identityLabel}`,
       key_prefix: apiKey.slice(0, 11),
       key_hash: hmac256(config.keyPepper, apiKey),
       scopes: grant.product_scopes || [],
@@ -970,7 +977,7 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       api_key: apiKey,
       principal_id: grant.id,
       context_id: contexts.length === 1 ? contexts[0] : null,
-      email: identity.email,
+      email: currentEmail,
     })
   }
 
