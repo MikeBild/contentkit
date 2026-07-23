@@ -42,7 +42,7 @@ import {
   sessionCookie,
   validReturnTo,
 } from './access.mjs'
-import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant } from './oauth/policy.mjs'
+import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant, roleForProductScopes } from './oauth/policy.mjs'
 
 export const SERVICE = {
   name: 'contentkit',
@@ -1678,7 +1678,13 @@ export function createRequestHandler(ctx) {
       const principal = await requireScope(req, res, 'identity:admin')
       if (!principal) return
       if (req.method === 'GET') {
-        const rows = await db.select('ck_oauth_identity_grants', { order: 'created_at.desc' })
+        const providerFilter = url.searchParams.get('provider_id')
+        const subjectFilter = url.searchParams.get('subject')
+        const rows = await db.select('ck_oauth_identity_grants', {
+          ...(providerFilter ? { provider_id: `eq.${providerFilter}` } : {}),
+          ...(subjectFilter ? { subject: `eq.${subjectFilter}` } : {}),
+          order: 'created_at.desc',
+        })
         return sendJson(res, 200, {
           identities: rows.filter((row) => withinPrincipalSites(principal, row.site_ids)).map(publicIdentityGrant),
         })
@@ -1690,12 +1696,26 @@ export function createRequestHandler(ctx) {
       if (!provider || provider.issuer !== input.issuer) {
         return sendJson(res, 422, { error: 'provider_id and issuer must match a configured identity provider' })
       }
-      if (!input.subject || !['reader', 'author', 'admin'].includes(input.role)) {
-        return sendJson(res, 422, { error: 'subject and a valid role are required' })
+      if (!input.subject) {
+        return sendJson(res, 422, { error: 'subject is required' })
       }
-      const scopes = input.product_scopes || defaultProductScopes(input.role)
+      // role XOR product_scopes: a named role is a shorthand the server expands
+      // once; the stored truth is always the product-scope ceiling.
+      if (input.role !== undefined && input.product_scopes !== undefined) {
+        return sendJson(res, 422, { error: 'role and product_scopes are mutually exclusive' })
+      }
+      if (input.role === undefined && input.product_scopes === undefined) {
+        return sendJson(res, 422, { error: 'either role or product_scopes is required' })
+      }
+      if (input.role !== undefined && !['reader', 'author', 'admin'].includes(input.role)) {
+        return sendJson(res, 422, { error: 'role is invalid' })
+      }
+      const scopes = input.role !== undefined ? defaultProductScopes(input.role) : input.product_scopes
       if (!Array.isArray(scopes) || scopes.some((scope) => !PRODUCT_SCOPES.includes(scope))) {
         return sendJson(res, 422, { error: 'product_scopes contains an unsupported scope' })
+      }
+      if (input.source !== undefined && input.source !== 'seed') {
+        return sendJson(res, 422, { error: "source accepts only 'seed'" })
       }
       const siteIds = Array.isArray(input.site_ids) ? input.site_ids : []
       if (!withinPrincipalSites(principal, siteIds)) {
@@ -1707,9 +1727,10 @@ export function createRequestHandler(ctx) {
         subject: String(input.subject),
         email: input.email || null,
         display_name: input.display_name || '',
-        role: input.role,
+        role: input.role !== undefined ? input.role : roleForProductScopes(scopes),
         product_scopes: scopes,
         site_ids: siteIds,
+        grant_source: input.source === 'seed' ? 'seed' : 'admin',
       })
       await audit.record({
         actorType: principal.oauth ? 'oauth' : 'api_key',
@@ -1726,9 +1747,13 @@ export function createRequestHandler(ctx) {
     if (identityGrantMatch && ['PATCH', 'DELETE'].includes(req.method)) {
       const principal = await requireScope(req, res, 'identity:admin')
       if (!principal) return
+      const input = req.method === 'PATCH' ? parseJson(await bodyFor(req)) : {}
+      // restore:true is the only way to clear revoked_at; every other PATCH
+      // and the DELETE keep matching non-revoked rows only.
+      const restore = input.restore === true
       const [existing] = await db.select('ck_oauth_identity_grants', {
         id: `eq.${identityGrantMatch[1]}`,
-        revoked_at: 'is.null',
+        revoked_at: restore ? 'not.is.null' : 'is.null',
         limit: '1',
       })
       if (!existing || !withinPrincipalSites(principal, existing.site_ids)) {
@@ -1762,27 +1787,42 @@ export function createRequestHandler(ctx) {
           )
         }
       } else {
-        const input = parseJson(await bodyFor(req))
         const allowed = Object.fromEntries(
           Object.entries(input).filter(([key]) =>
             ['email', 'display_name', 'role', 'product_scopes', 'site_ids'].includes(key),
           ),
         )
-        if (allowed.role && !['reader', 'author', 'admin'].includes(allowed.role))
+        // role XOR product_scopes: a named role is a shorthand the server
+        // expands into a complete scope replacement; the stored truth is
+        // always the product-scope ceiling and role stays denormalized.
+        if (allowed.role !== undefined && allowed.product_scopes !== undefined) {
+          return sendJson(res, 422, { error: 'role and product_scopes are mutually exclusive' })
+        }
+        if (allowed.role !== undefined && !['reader', 'author', 'admin'].includes(allowed.role))
           return sendJson(res, 422, { error: 'role is invalid' })
+        if (allowed.role !== undefined) allowed.product_scopes = defaultProductScopes(allowed.role)
         if (
-          allowed.product_scopes &&
+          allowed.product_scopes !== undefined &&
           (!Array.isArray(allowed.product_scopes) ||
             allowed.product_scopes.some((scope) => !PRODUCT_SCOPES.includes(scope)))
         )
           return sendJson(res, 422, { error: 'product_scopes contains an unsupported scope' })
+        if (allowed.role === undefined && allowed.product_scopes !== undefined)
+          allowed.role = roleForProductScopes(allowed.product_scopes)
+        if (input.source !== undefined && input.source !== 'seed') {
+          return sendJson(res, 422, { error: "source accepts only 'seed'" })
+        }
         if (allowed.site_ids && !withinPrincipalSites(principal, allowed.site_ids)) {
           return sendJson(res, 403, { error: 'identity grant must stay inside your own site(s)' })
         }
+        // Every PATCH stamps who now manages the row: the seeder marks its
+        // rows with source:'seed'; any other PATCH is a manual takeover and
+        // the seeder skips the row from then on.
+        allowed.grant_source = input.source === 'seed' ? 'seed' : 'admin'
         rows = await db.update(
           'ck_oauth_identity_grants',
-          { id: `eq.${identityGrantMatch[1]}`, revoked_at: 'is.null' },
-          { ...allowed, updated_at: new Date().toISOString() },
+          { id: `eq.${identityGrantMatch[1]}`, revoked_at: restore ? 'not.is.null' : 'is.null' },
+          { ...allowed, ...(restore ? { revoked_at: null } : {}), updated_at: new Date().toISOString() },
         )
       }
       const grant = rows[0]
@@ -1790,7 +1830,7 @@ export function createRequestHandler(ctx) {
       await audit.record({
         actorType: principal.oauth ? 'oauth' : 'api_key',
         actorId: principal.id,
-        action: req.method === 'DELETE' ? 'identity.revoke' : 'identity.update',
+        action: req.method === 'DELETE' ? 'identity.revoke' : restore ? 'identity.restore' : 'identity.update',
         resourceType: 'identity_grant',
         resourceId: grant.id,
         result: 'success',

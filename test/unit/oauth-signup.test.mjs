@@ -169,6 +169,7 @@ test('signup on: an unknown identity is provisioned as reader and reaches the co
   assert.equal(displayName, 'New Operator')
   assert.deepEqual(productScopes, ['content:read', 'stats:read'])
   assert.match(inserts[0].sql, /'reader'/)
+  assert.match(inserts[0].sql, /'signup'/, 'self-provisioned grants must be marked grant_source=signup')
   assert.match(inserts[0].sql, /ON CONFLICT \(provider_id, issuer, subject\) DO NOTHING/)
   const signupEvents = audit.events.filter((event) => event.action === 'oauth.signup')
   assert.equal(signupEvents.length, 1)
@@ -230,6 +231,13 @@ test('signup on: a known identity uses its existing grant and no new grant is in
   assert.equal(response.status, 200)
   assert.equal(signupInserts(db).length, 0, 'an existing grant must never be re-provisioned')
   assert.equal(audit.events.filter((event) => event.action === 'oauth.signup').length, 0)
+  // The consent page derives the offered mcp tiers from the stored
+  // product-scope ceiling, not from the denormalized role: this grant says
+  // role=admin but its ceiling is only content:read, so authoring is absent.
+  const consentHtml = await response.text()
+  assert.match(consentHtml, /value="mcp:read"/)
+  assert.doesNotMatch(consentHtml, /value="mcp:authoring"/)
+  assert.doesNotMatch(consentHtml, /value="mcp:admin"/)
 })
 
 test('signup on: a revoked grant is never resurrected and sign-in stays denied', async () => {

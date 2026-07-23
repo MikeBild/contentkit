@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import {
   defaultProductScopes,
   effectiveProductScopes,
+  oauthTiersForCeiling,
   roleForProductScopes,
   roleOauthScopes,
 } from '../../src/oauth/policy.mjs'
@@ -30,6 +31,31 @@ test('OAuth roles and the live product ceiling both constrain effective scopes',
   assert.equal(roleForProductScopes(['content:read', 'audit:read']), 'admin')
   assert.equal(roleForProductScopes(['content:read', 'content:write']), 'author')
   assert.ok(defaultProductScopes('author').includes('release:preview'))
+})
+
+test('mcp tiers are derived from the stored product-scope ceiling, never from the role', () => {
+  assert.deepEqual(oauthTiersForCeiling([]), [])
+  assert.deepEqual(oauthTiersForCeiling(['content:read']), ['mcp:read'])
+  assert.deepEqual(oauthTiersForCeiling(['stats:read']), ['mcp:read'])
+  assert.deepEqual(oauthTiersForCeiling(['content:read', 'content:write']), ['mcp:read', 'mcp:authoring'])
+  assert.deepEqual(oauthTiersForCeiling(['content:read', 'deck:render']), ['mcp:read', 'mcp:authoring'])
+  assert.deepEqual(oauthTiersForCeiling(['release:preview']), ['mcp:authoring'])
+  assert.deepEqual(oauthTiersForCeiling(['content:read', 'stats:read', 'content:write', 'identity:admin']), [
+    'mcp:read',
+    'mcp:authoring',
+    'mcp:admin',
+  ])
+  assert.deepEqual(oauthTiersForCeiling(['release:write']), ['mcp:admin'])
+  assert.deepEqual(oauthTiersForCeiling(defaultProductScopes('admin')), ['mcp:read', 'mcp:authoring', 'mcp:admin'])
+  assert.deepEqual(oauthTiersForCeiling(defaultProductScopes('author')), ['mcp:read', 'mcp:authoring'])
+  assert.deepEqual(oauthTiersForCeiling(defaultProductScopes('reader')), ['mcp:read'])
+  // the configured allow-list still filters the offered tiers
+  assert.deepEqual(oauthTiersForCeiling(defaultProductScopes('admin'), ['mcp:read', 'mcp:authoring']), [
+    'mcp:read',
+    'mcp:authoring',
+  ])
+  // unknown scopes never unlock a tier
+  assert.deepEqual(oauthTiersForCeiling(['nonsense:scope']), [])
 })
 
 test('common consent escapes identities and keeps baseline read mandatory', async () => {

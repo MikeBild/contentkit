@@ -1,5 +1,5 @@
 import { hmac256, safeEqual, sha256 } from './utils.mjs'
-import { effectiveProductScopes, roleOauthScopes } from './oauth/policy.mjs'
+import { effectiveProductScopes, oauthTiersForCeiling } from './oauth/policy.mjs'
 
 export function keyFingerprint(key) {
   return key ? sha256(key).slice(0, 12) : 'none'
@@ -20,7 +20,7 @@ export function createAuth(config, db) {
 
       if (String(key).startsWith('cko_') && config.oauthSecret && db.query) {
         const rows = await db.query(
-          `SELECT t.id, t.scopes, t.site_ids AS token_site_ids, t.grant_id, g.role, g.product_scopes,
+          `SELECT t.id, t.scopes, t.site_ids AS token_site_ids, t.grant_id, g.product_scopes,
                   g.site_ids AS grant_site_ids,
                   g.subject, g.display_name
              FROM ck_oauth_access_tokens t
@@ -66,8 +66,12 @@ export function createAuth(config, db) {
           id: `oauth:${token.grant_id}`,
           credential_id: `oauth-token:${token.id}`,
           name: token.display_name || 'OAuth operator',
+          // The live product-scope ceiling of the grant row is the only truth:
+          // consented tiers are re-checked against the tiers the ceiling
+          // yields right now, so an admin edit takes effect on the very next
+          // request without reissuing the token.
           scopes: effectiveProductScopes(
-            token.scopes.filter((scope) => roleOauthScopes(token.role).includes(scope)),
+            token.scopes.filter((scope) => oauthTiersForCeiling(token.product_scopes).includes(scope)),
             token.product_scopes,
           ),
           oauth_scopes: token.scopes,

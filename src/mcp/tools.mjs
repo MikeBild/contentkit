@@ -15,7 +15,7 @@ import {
   resolveStatsWindow,
   resolveUsageStatsWindow,
 } from '../stats.mjs'
-import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant } from '../oauth/policy.mjs'
+import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant, roleForProductScopes } from '../oauth/policy.mjs'
 import { sha256 } from '../utils.mjs'
 
 const siteRef = z.string().min(1).max(100).describe('Site UUID or slug.')
@@ -1010,10 +1010,14 @@ const TOOLS = [
             statusCode: 403,
           })
         }
+        // product_scopes is the stored truth; role stays a denormalized
+        // display value. A manual update takes the row over from the seeder.
+        if (allowed.role && !allowed.product_scopes) allowed.product_scopes = defaultProductScopes(allowed.role)
+        if (allowed.product_scopes && !allowed.role) allowed.role = roleForProductScopes(allowed.product_scopes)
         ;[result] = await deps.db.update(
           'ck_oauth_identity_grants',
           { id: `eq.${input.id}`, revoked_at: 'is.null' },
-          { ...allowed, updated_at: new Date().toISOString() },
+          { ...allowed, grant_source: 'admin', updated_at: new Date().toISOString() },
         )
       } else {
         ;[result] = await deps.db.update(

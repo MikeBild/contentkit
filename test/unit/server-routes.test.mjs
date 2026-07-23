@@ -1278,6 +1278,178 @@ test('site-scoped identity administrators cannot enumerate or mutate cross-site 
   )
 })
 
+// Scope-ceiling contract v1: product_scopes is the only stored truth, role is
+// a server-expanded shorthand, grant_source records who manages a row and
+// restore:true is the only way to clear revoked_at.
+function identityGrantStore(seed = []) {
+  const grants = seed.map((row) => ({ revoked_at: null, site_ids: [], ...row }))
+  const matches = (row, query) => {
+    if (query.id && `eq.${row.id}` !== query.id) return false
+    if (query.provider_id && `eq.${row.provider_id}` !== query.provider_id) return false
+    if (query.subject && `eq.${row.subject}` !== query.subject) return false
+    if (query.revoked_at === 'is.null' && row.revoked_at) return false
+    if (query.revoked_at === 'not.is.null' && !row.revoked_at) return false
+    return true
+  }
+  return {
+    grants,
+    db: {
+      async select(table, query = {}) {
+        if (table !== 'ck_oauth_identity_grants') return []
+        return grants.filter((row) => matches(row, query)).map((row) => ({ ...row }))
+      },
+      async insert(table, values) {
+        assert.equal(table, 'ck_oauth_identity_grants')
+        const row = { id: `grant-${grants.length + 1}`, revoked_at: null, ...values }
+        grants.push(row)
+        return [{ ...row }]
+      },
+      async update(table, filter, values) {
+        if (table !== 'ck_oauth_identity_grants') return [{ ...values }]
+        const hits = grants.filter((row) => matches(row, filter))
+        for (const row of hits) Object.assign(row, values)
+        return hits.map((row) => ({ ...row }))
+      },
+    },
+  }
+}
+
+const identityAdminConfig = {
+  oauthProviders: [
+    {
+      protocol: 'oidc',
+      id: 'corp',
+      label: 'Corporate SSO',
+      issuer: 'https://login.example',
+      clientId: 'contentkit',
+      scopes: 'openid',
+    },
+  ],
+}
+
+test('identity grants accept role XOR product_scopes and stamp the denormalized role and grant_source', async () => {
+  const store = identityGrantStore()
+  await withApp(
+    { db: store.db, auth: siteAdminAuth(['identity:admin'], []), config: identityAdminConfig },
+    async (request) => {
+      const post = (body) =>
+        request('/v1/identity-grants', {
+          method: 'POST',
+          headers: { 'x-api-key': 'valid' },
+          body: JSON.stringify({ provider_id: 'corp', issuer: 'https://login.example', ...body }),
+        })
+
+      const both = await post({ subject: 's1', role: 'reader', product_scopes: ['content:read'] })
+      assert.equal(both.status, 422)
+      const neither = await post({ subject: 's1' })
+      assert.equal(neither.status, 422)
+      const badSource = await post({ subject: 's1', role: 'reader', source: 'admin' })
+      assert.equal(badSource.status, 422)
+
+      // scopes-only body: the denormalized display role is derived
+      const scoped = await post({ subject: 's1', product_scopes: ['content:read', 'identity:admin'] })
+      assert.equal(scoped.status, 201)
+      const scopedGrant = await scoped.json()
+      assert.deepEqual(scopedGrant.product_scopes, ['content:read', 'identity:admin'])
+      assert.equal(scopedGrant.role, 'admin')
+      assert.equal(scopedGrant.grant_source, 'admin')
+
+      // legacy role-only body keeps working and expands to the full scope set
+      const legacy = await post({ subject: 's2', role: 'author' })
+      assert.equal(legacy.status, 201)
+      const legacyGrant = await legacy.json()
+      assert.equal(legacyGrant.role, 'author')
+      assert.ok(legacyGrant.product_scopes.includes('content:write'))
+      assert.equal(legacyGrant.grant_source, 'admin')
+
+      // the seeder marks its rows
+      const seeded = await post({ subject: 's3', role: 'reader', source: 'seed' })
+      assert.equal(seeded.status, 201)
+      assert.equal((await seeded.json()).grant_source, 'seed')
+
+      // GET filters by provider_id and subject
+      const filtered = await request('/v1/identity-grants?provider_id=corp&subject=s2', {
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(filtered.status, 200)
+      const listed = (await filtered.json()).identities
+      assert.equal(listed.length, 1)
+      assert.equal(listed[0].subject, 's2')
+      assert.equal(listed[0].grant_source, 'admin')
+    },
+  )
+})
+
+test('identity grant PATCH stamps admin takeover, keeps role XOR product_scopes and only restore revives', async () => {
+  const store = identityGrantStore([
+    {
+      id: 'seeded',
+      provider_id: 'corp',
+      issuer: 'https://login.example',
+      subject: 'operator-1',
+      role: 'reader',
+      product_scopes: ['content:read', 'stats:read'],
+      grant_source: 'seed',
+    },
+    {
+      id: 'revoked',
+      provider_id: 'corp',
+      issuer: 'https://login.example',
+      subject: 'operator-2',
+      role: 'reader',
+      product_scopes: ['content:read', 'stats:read'],
+      grant_source: 'seed',
+      revoked_at: new Date().toISOString(),
+    },
+  ])
+  await withApp(
+    { db: store.db, auth: siteAdminAuth(['identity:admin'], []), config: identityAdminConfig },
+    async (request) => {
+      const patch = (id, body) =>
+        request(`/v1/identity-grants/${id}`, {
+          method: 'PATCH',
+          headers: { 'x-api-key': 'valid' },
+          body: JSON.stringify(body),
+        })
+
+      const conflicting = await patch('seeded', { role: 'reader', product_scopes: ['content:read'] })
+      assert.equal(conflicting.status, 422)
+
+      // a manual PATCH without source takes the row over from the seeder and
+      // a role shorthand replaces the complete scope ceiling
+      const takeover = await patch('seeded', { role: 'author' })
+      assert.equal(takeover.status, 200)
+      const taken = await takeover.json()
+      assert.equal(taken.grant_source, 'admin')
+      assert.equal(taken.role, 'author')
+      assert.ok(taken.product_scopes.includes('release:preview'))
+
+      // the seeder re-stamps its ownership explicitly
+      const reseeded = await patch('seeded', { source: 'seed', product_scopes: ['content:read'] })
+      assert.equal(reseeded.status, 200)
+      const reseededGrant = await reseeded.json()
+      assert.equal(reseededGrant.grant_source, 'seed')
+      assert.equal(reseededGrant.role, 'reader')
+
+      // a PATCH without restore never matches a revoked row
+      const untouched = await patch('revoked', { role: 'admin' })
+      assert.equal(untouched.status, 404)
+      assert.ok(store.grants.find((row) => row.id === 'revoked').revoked_at)
+
+      // restore:true is the only way back and audits as identity.restore
+      const restored = await patch('revoked', { restore: true })
+      assert.equal(restored.status, 200)
+      const restoredGrant = await restored.json()
+      assert.equal(restoredGrant.revoked_at, null)
+      assert.equal(restoredGrant.grant_source, 'admin')
+
+      // restore on a live row matches nothing
+      const doubleRestore = await patch('revoked', { restore: true })
+      assert.equal(doubleRestore.status, 404)
+    },
+  )
+})
+
 test('site-scoped audit readers never receive global or cross-site audit events', async () => {
   const db = {
     async select(table) {

@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.3.0 — 2026-07-23
+
+### Added
+
+- Canonical grant contract v1: `product_scopes` is now the only stored truth
+  of an identity grant (the scope ceiling). Named roles (`reader`, `author`,
+  `admin`) remain as pure server-side shorthands that expand into scope sets
+  on write; the `role` column is degraded to a nullable, denormalized display
+  value (migration `0014`) and is never read for authorization. It will be
+  removed in v5.0.0 once the rolling auto-deploy window no longer carries a
+  v4.2 binary.
+- New `grant_source` column (`admin`, `seed`, `signup`, `api-key`; migration
+  `0014` backfills `api-key` rows and marks all existing SSO rows `seed`).
+  Every manual write stamps `admin` so the reconcile seeder can skip
+  operator-managed rows; the seeder marks its rows with `source: "seed"`.
+- `POST /v1/identity-grants` accepts exactly one of `role` or
+  `product_scopes` (both set → 422); legacy role-only bodies keep working
+  unchanged. A new optional `source` body field accepts only `"seed"`.
+- `GET /v1/identity-grants` gains optional `provider_id` and `subject`
+  exact-match query filters and exposes `grant_source`.
+- `PATCH /v1/identity-grants/{id}` learns `restore: true` — the only way to
+  clear `revoked_at` on a revoked grant (audited as `identity.restore`). A
+  PATCH without `restore` keeps matching non-revoked grants only, so a
+  revoked identity stays revoked until an explicit admin act.
+- New policy function `oauthTiersForCeiling(product_scopes)`: the offered
+  `mcp:read`/`mcp:authoring`/`mcp:admin` consent tiers are derived from the
+  stored product-scope ceiling — `mcp:read` for read scopes, `mcp:authoring`
+  for authoring scopes, `mcp:admin` for any scope outside the authoring
+  bundle.
+
+### Fixed
+
+- OAuth consent, token issuance and the per-request bearer-token
+  authentication path previously derived the mcp tiers from the stored `role`
+  while product access used `product_scopes` — two truths that could diverge.
+  All three now read only the `product_scopes` ceiling;
+  a grant whose role said `reader` but whose ceiling carried admin scopes is
+  now offered `mcp:admin` (and vice versa a stale `admin` role without admin
+  scopes no longer unlocks the admin tier). The double truth was the bug.
+
 ## 4.2.0 — 2026-07-23
 
 ### Added

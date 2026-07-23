@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { parseCookies } from '../access.mjs'
 import { decryptSecret, encryptSecret } from '../secrets.mjs'
 import { hmac256, safeEqual, sha256 } from '../utils.mjs'
-import { defaultProductScopes, MCP_OAUTH_SCOPES, roleForProductScopes, roleOauthScopes } from './policy.mjs'
+import { defaultProductScopes, MCP_OAUTH_SCOPES, oauthTiersForCeiling, roleForProductScopes } from './policy.mjs'
 import { finishOidcLogin, startOidcLogin, verifyOidcIdentityToken } from './oidc.mjs'
 import { authHtmlResponse, renderApiKeyLogin, renderConsentPage, renderErrorPage, renderProviderChoice } from './ui.mjs'
 
@@ -316,13 +316,14 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     const rows = await db.query(
       `INSERT INTO ck_oauth_identity_grants
          (provider_id, issuer, subject, display_name, role, product_scopes, site_ids,
-          source_credential_hash, source_pepper_fingerprint, revoked_at, updated_at)
-       VALUES ('api-key', $1, $2, $3, $4, $5, $6, $7, $8, NULL, now())
+          source_credential_hash, source_pepper_fingerprint, grant_source, revoked_at, updated_at)
+       VALUES ('api-key', $1, $2, $3, $4, $5, $6, $7, $8, 'api-key', NULL, now())
        ON CONFLICT (provider_id, issuer, subject) DO UPDATE
          SET display_name = excluded.display_name, role = excluded.role,
              product_scopes = excluded.product_scopes, site_ids = excluded.site_ids,
              source_credential_hash = excluded.source_credential_hash,
              source_pepper_fingerprint = excluded.source_pepper_fingerprint,
+             grant_source = excluded.grant_source,
              updated_at = now()
          WHERE ck_oauth_identity_grants.revoked_at IS NULL
        RETURNING *`,
@@ -381,8 +382,8 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
   async function provisionSignupGrant(provider, identity) {
     const [created] = await db.query(
       `INSERT INTO ck_oauth_identity_grants
-         (provider_id, issuer, subject, email, display_name, role, product_scopes, site_ids)
-       VALUES ($1, $2, $3, $4, $5, 'reader', $6, '{}')
+         (provider_id, issuer, subject, email, display_name, role, product_scopes, site_ids, grant_source)
+       VALUES ($1, $2, $3, $4, $5, 'reader', $6, '{}', 'signup')
        ON CONFLICT (provider_id, issuer, subject) DO NOTHING
        RETURNING *`,
       [
@@ -439,7 +440,9 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     const client = await loadClient(state.client_id)
     if (!client) throw new OAuthError('invalid_client', 'unknown or revoked client')
     const requested = new Set(state.requested_scopes)
-    const offeredScopes = roleOauthScopes(grant.role, config.oauthAllowedScopes).filter((scope) => requested.has(scope))
+    const offeredScopes = oauthTiersForCeiling(grant.product_scopes, config.oauthAllowedScopes).filter((scope) =>
+      requested.has(scope),
+    )
     if (!offeredScopes.includes('mcp:read')) {
       throw new OAuthError('access_denied', 'mcp:read is a mandatory requested baseline', 403)
     }
@@ -759,7 +762,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     }
     const grant = await loadGrant(state.grant_id)
     if (!grant) throw new OAuthError('access_denied', 'identity grant was revoked', 403)
-    const ceiling = roleOauthScopes(grant.role, config.oauthAllowedScopes)
+    const ceiling = oauthTiersForCeiling(grant.product_scopes, config.oauthAllowedScopes)
     const selected = [...new Set(values.getAll('scope'))].filter(
       (scope) => ceiling.includes(scope) && state.requested_scopes.includes(scope),
     )

@@ -2062,24 +2062,32 @@ export function openApi(config) {
       '/v1/identity-grants': {
         get: {
           summary: 'List OAuth identity grants',
+          description:
+            'Optional exact-match filters: provider_id, subject. Each grant carries its product_scopes ceiling (the only stored truth), the denormalized display role and grant_source (admin, seed, signup or api-key).',
           security: secured,
+          parameters: [
+            { name: 'provider_id', in: 'query', required: false, schema: { type: 'string' } },
+            { name: 'subject', in: 'query', required: false, schema: { type: 'string' } },
+          ],
           responses: { 200: { description: 'Pre-provisioned exact OIDC subject grants' } },
         },
         post: {
           summary: 'Pre-provision an OAuth identity grant',
           description:
-            'provider_id and issuer must exactly match a configured external identity provider. A grant binds the immutable provider subject to a role, product-scope ceiling and optional sites.',
+            'provider_id and issuer must exactly match a configured external identity provider. A grant binds the immutable provider subject to a product-scope ceiling and optional sites. Exactly one of role or product_scopes is required: a named role (reader, author, admin) is a shorthand the server expands into the scope ceiling once; the stored truth is always product_scopes. source may only carry the value seed (seeder marking); everything else is stamped admin.',
           security: secured,
-          requestBody: jsonBody(['provider_id', 'issuer', 'subject', 'role']),
+          requestBody: jsonBody(['provider_id', 'issuer', 'subject']),
           responses: {
             201: { description: 'Identity grant created' },
-            422: { description: 'Invalid provider, role or scope ceiling' },
+            422: { description: 'Invalid provider, role/product_scopes conflict or unsupported scope' },
           },
         },
       },
       '/v1/identity-grants/{id}': {
         patch: {
           summary: 'Update an OAuth identity grant ceiling',
+          description:
+            'Accepts email, display_name, site_ids and exactly one of role or product_scopes (role expands to a complete scope replacement). restore:true is the only way to clear revoked_at on a revoked grant; a PATCH without restore matches non-revoked grants only. A PATCH without source:"seed" stamps grant_source=admin, taking the row over from the seeder.',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: jsonBody(),

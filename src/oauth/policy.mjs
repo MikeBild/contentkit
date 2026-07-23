@@ -33,6 +33,24 @@ export function roleOauthScopes(role, configured = MCP_OAUTH_SCOPES) {
   return MCP_OAUTH_SCOPES.filter((scope) => allowed.has(scope) && configured.includes(scope))
 }
 
+// The stored product-scope ceiling is the only truth of a grant; mcp:* tiers
+// are derived from it at consent/token time and never persisted. A tier is
+// offered when the ceiling would give it at least one product scope:
+// mcp:read for any read scope, mcp:authoring for any authoring-only scope and
+// mcp:admin for any scope outside the authoring bundle.
+export function oauthTiersForCeiling(productScopes, configured = MCP_OAUTH_SCOPES) {
+  const ceiling = new Set(productScopes || [])
+  const authoringBundle = new Set(TIER_PRODUCT_SCOPES['mcp:authoring'])
+  const wildcard = ceiling.has('*')
+  const tiers = new Set()
+  if (wildcard || TIER_PRODUCT_SCOPES['mcp:read'].some((scope) => ceiling.has(scope))) tiers.add('mcp:read')
+  if (wildcard || ['content:write', 'deck:render', 'release:preview'].some((scope) => ceiling.has(scope)))
+    tiers.add('mcp:authoring')
+  if (wildcard || PRODUCT_SCOPES.some((scope) => ceiling.has(scope) && !authoringBundle.has(scope)))
+    tiers.add('mcp:admin')
+  return MCP_OAUTH_SCOPES.filter((scope) => tiers.has(scope) && configured.includes(scope))
+}
+
 export function effectiveProductScopes(oauthScopes, ceiling = PRODUCT_SCOPES) {
   const granted = new Set()
   for (const scope of oauthScopes || []) for (const product of TIER_PRODUCT_SCOPES[scope] || []) granted.add(product)

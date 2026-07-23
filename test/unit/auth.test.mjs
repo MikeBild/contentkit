@@ -69,7 +69,7 @@ test('OAuth access tokens are resource-bound and intersect the live identity sit
   assert.equal(auth.authorize(principal, 'identity:admin', 'site-a'), false)
 })
 
-test('an active OAuth token immediately respects a live identity role downgrade', async () => {
+test('an active OAuth token immediately respects a live scope-ceiling downgrade and ignores the display role', async () => {
   const auth = createAuth(
     {
       bootstrapApiKey: '',
@@ -84,8 +84,10 @@ test('an active OAuth token immediately respects a live identity role downgrade'
             id: 'token-id',
             grant_id: 'grant-id',
             scopes: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
-            role: 'reader',
-            product_scopes: ['content:read', 'content:write', 'identity:admin', 'stats:read'],
+            // stale denormalized display role: never read for authorization
+            role: 'admin',
+            // the admin shrank the ceiling after the token was issued
+            product_scopes: ['content:read', 'stats:read'],
             token_site_ids: [],
             grant_site_ids: [],
           },
