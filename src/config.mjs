@@ -141,7 +141,7 @@ export function loadConfig() {
     }),
     oauthSecret: process.env.CONTENTKIT_OAUTH_SECRET || '',
     oauthProviders: configuredOauthProviders,
-    oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring']),
+    oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring', 'mcp:admin']),
     oauthDynamicRegistrationEnabled: bool('CONTENTKIT_OAUTH_DCR_ENABLED', true),
     oauthAuthorizationCodeTtlMs: integer('CONTENTKIT_OAUTH_CODE_TTL_MS', 10 * 60 * 1000, {
       min: 60 * 1000,

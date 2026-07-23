@@ -7,9 +7,15 @@ import {
   roleForProductScopes,
   roleOauthScopes,
 } from '../../src/oauth/policy.mjs'
-import { AUTH_UI_CSP, authHtmlResponse, renderConsentPage, renderProviderChoice } from '../../src/oauth/ui.mjs'
+import {
+  AUTH_UI_CSP,
+  authHtmlResponse,
+  renderConsentPage,
+  renderErrorPage,
+  renderProviderChoice,
+} from '../../src/oauth/ui.mjs'
 
-const COMMON_STYLE_SHA256 = '61333cf68d1c955484e7c8fd1e5b68ad9ff4caf9e99799493f868bd19dcb9e64'
+const COMMON_STYLE_SHA256 = 'fb9d19063e79757a73139720508cf27207214b98405e156bab894bad85796a0c'
 
 test('OAuth roles and the live product ceiling both constrain effective scopes', () => {
   assert.deepEqual(roleOauthScopes('reader'), ['mcp:read'])
@@ -61,5 +67,16 @@ test('provider chooser exposes the canonical SSO-first CTA contract', () => {
   assert.match(html, /class="provider-stack"/)
   assert.doesNotMatch(html, /Continue with Continue with/)
   const styles = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? ''
+  assert.match(styles, /--primary:#1f2328;--primary-hover:#000/)
   assert.equal(createHash('sha256').update(styles).digest('hex'), COMMON_STYLE_SHA256)
+})
+
+test('sign-in error page keeps the common template contract and escapes content', () => {
+  const html = renderErrorPage('Sign-in failed', '<b>Broken</b> & unsafe', '/v1/identity/login/start')
+  assert.match(html, /<h1>Sign-in failed<\/h1>/)
+  assert.doesNotMatch(html, /<b>Broken/)
+  assert.match(html, /&lt;b&gt;Broken&lt;\/b&gt; &amp; unsafe/)
+  assert.match(html, /<a class="button approve" href="\/v1\/identity\/login\/start">Sign in again<\/a>/)
+  assert.match(html, /data-auth-contract="mcp-auth-v2"/)
+  assert.match(html, /name="mcp-auth-ui-contract" content="2"/)
 })

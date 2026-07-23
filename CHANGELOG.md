@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.1.0 - 2026-07-23
+
+### Added
+
+- Render a human-readable `Sign-in failed` browser error page — in the same
+  shared page template and design tokens — for GET failures inside the browser
+  login funnel: rejected identity grants at the OIDC callback, unknown,
+  expired or already-used login states, and OIDC code-exchange failures. Every
+  page offers a `Sign in again` entry point.
+- Redirect the waiting OAuth client with an RFC 6749 `error=access_denied`
+  response when the login state carries a validated registered client and
+  redirect URI, so MCP clients no longer hang on rejected browser sign-ins.
+  JSON `{error,error_description}` bodies remain for the token, registration
+  and API endpoints and for requests preferring `application/json`.
+
+### Changed
+
+- Align the common auth UI action tokens with the shared product design
+  (`--primary:#1f2328`, `--primary-hover:#000`).
+- Start a fresh single-use login state for every `Continue with SSO` click
+  instead of overwriting the pending state's nonce and PKCE code verifier;
+  earlier attempts stay valid until the original authorization TTL, so the
+  browser back button keeps working.
+- Include `mcp:admin` in the default `CONTENTKIT_OAUTH_ALLOWED_SCOPES`
+  (`mcp:read,mcp:authoring,mcp:admin`), matching the documented deployment
+  configuration.
+
 ## 4.0.0 - 2026-07-23
 
 ### Changed

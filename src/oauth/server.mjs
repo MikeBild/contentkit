@@ -4,7 +4,7 @@ import { decryptSecret, encryptSecret } from '../secrets.mjs'
 import { hmac256, safeEqual, sha256 } from '../utils.mjs'
 import { defaultProductScopes, MCP_OAUTH_SCOPES, roleForProductScopes, roleOauthScopes } from './policy.mjs'
 import { finishOidcLogin, startOidcLogin, verifyOidcIdentityToken } from './oidc.mjs'
-import { authHtmlResponse, renderApiKeyLogin, renderConsentPage, renderProviderChoice } from './ui.mjs'
+import { authHtmlResponse, renderApiKeyLogin, renderConsentPage, renderErrorPage, renderProviderChoice } from './ui.mjs'
 
 const DCR_MAX_PER_MINUTE = 30
 const FORM_MAX_BYTES = 64 * 1024
@@ -21,6 +21,22 @@ class OAuthError extends Error {
 }
 
 class AuthorizationStateConsumed extends Error {}
+
+const SIGN_IN_FAILED_TITLE = 'Sign-in failed'
+const SIGN_IN_RETRY_PATH = '/v1/identity/login/start'
+const GRANT_DENIED_MESSAGE = 'Your account is not authorized for ContentKit. Contact the operator.'
+const STATE_PROBLEM_MESSAGE = 'This sign-in attempt expired or was already used. Please sign in again.'
+const GENERIC_SIGN_IN_MESSAGE = 'Sign-in could not be completed. Please sign in again.'
+const BROWSER_LOGIN_GET_PATHS = ['/v1/oauth/authorize', '/v1/identity/login/start', '/v1/identity/login/callback']
+
+function wantsJson(request) {
+  const accept = request.headers.get('accept') || ''
+  return accept.includes('application/json') && !accept.includes('text/html')
+}
+
+function browserErrorPage(message, status = 400) {
+  return authHtmlResponse(renderErrorPage(SIGN_IN_FAILED_TITLE, message, SIGN_IN_RETRY_PATH), status)
+}
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -138,7 +154,8 @@ function verifyCsrf(config, value, sessionId, stateId) {
   return safeEqual(signature, hmac256(config.oauthSecret, `${sessionId}:${stateId}:${expires}`))
 }
 
-export function createOAuthMount(config, { db, auth, audit, logger }) {
+export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOverrides }) {
+  const oidcClient = { startOidcLogin, finishOidcLogin, ...oidcOverrides }
   const dcrBuckets = new Map()
   let cleanupTimer = null
 
@@ -486,42 +503,86 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
     }
     const provider = oidcProvider(config, selected?.id)
     if (!provider) throw new OAuthError('not_found', 'identity provider is not available', 404)
-    const started = await startOidcLogin({
-      provider,
-      redirectUri: `${config.publicUrl}/v1/identity/login/callback`,
-      state: rawState,
-    }).catch(() => {
-      throw new OAuthError('temporarily_unavailable', 'OIDC provider discovery is unavailable', 503)
+    // Every SSO click starts its own single-use login state so an earlier
+    // pending attempt (browser back button, duplicate tab) keeps its own
+    // nonce and PKCE verifier until the original authorization TTL expires.
+    const freshState = randomToken('ckls_')
+    const started = await oidcClient
+      .startOidcLogin({
+        provider,
+        redirectUri: `${config.publicUrl}/v1/identity/login/callback`,
+        state: freshState,
+      })
+      .catch(() => {
+        throw new OAuthError('temporarily_unavailable', 'OIDC provider discovery is unavailable', 503)
+      })
+    await db.insert('ck_oauth_login_states', {
+      state_hash: tokenHash(config, freshState),
+      client_id: state.client_id,
+      redirect_uri: state.redirect_uri,
+      requested_scopes: state.requested_scopes,
+      code_challenge: state.code_challenge,
+      resource: state.resource,
+      client_state: state.client_state,
+      provider_id: provider.id,
+      oidc_nonce: started.nonce,
+      oidc_code_verifier: started.codeVerifier,
+      expires_at: state.expires_at,
     })
-    const changed = await db.update(
-      'ck_oauth_login_states',
-      { id: `eq.${state.id}`, consumed_at: 'is.null' },
-      { provider_id: provider.id, oidc_nonce: started.nonce, oidc_code_verifier: started.codeVerifier },
-    )
-    if (!changed.length) throw new OAuthError('invalid_request', 'authorization state already used')
     return new Response(null, {
       status: 302,
       headers: { location: started.authorizationUrl, 'cache-control': 'no-store' },
     })
   }
 
-  async function finishLogin(url) {
+  // Rejections inside the browser funnel must never strand the human on raw
+  // JSON: a validated waiting OAuth client receives the RFC 6749 error
+  // redirect so MCP clients do not hang, otherwise the human gets the shared
+  // sign-in error page with a fresh entry point.
+  async function rejectBrowserLogin(state, message, status = 403) {
+    const client = await loadClient(state.client_id)
+    if (client?.redirect_uris.includes(state.redirect_uri)) {
+      return redirectError(state.redirect_uri, 'access_denied', state.client_state || '')
+    }
+    return browserErrorPage(message, status)
+  }
+
+  async function finishLogin(request, url) {
     const rawState = url.searchParams.get('state') || ''
     const state = await loadState(rawState)
     const provider = oidcProvider(config, state?.provider_id)
-    if (!state || !provider || !state.oidc_nonce || !state.oidc_code_verifier) {
-      throw new OAuthError('invalid_request', 'OIDC authorization state is invalid or expired')
+    if (
+      !state ||
+      !provider ||
+      !state.oidc_nonce ||
+      !state.oidc_code_verifier ||
+      new Date(state.expires_at) <= new Date()
+    ) {
+      if (wantsJson(request)) throw new OAuthError('invalid_request', 'OIDC authorization state is invalid or expired')
+      logger?.warn?.('oauth browser sign-in failed', { path: url.pathname, code: 'invalid_request' })
+      return browserErrorPage(STATE_PROBLEM_MESSAGE)
     }
-    const identity = await finishOidcLogin({
-      provider,
-      redirectUri: `${config.publicUrl}/v1/identity/login/callback`,
-      callbackUrl: url,
-      state: rawState,
-      nonce: state.oidc_nonce,
-      codeVerifier: state.oidc_code_verifier,
-    }).catch((error) => {
-      throw new OAuthError('access_denied', error instanceof Error ? error.message : 'OIDC login rejected', 403)
-    })
+    let identity
+    try {
+      identity = await oidcClient.finishOidcLogin({
+        provider,
+        redirectUri: `${config.publicUrl}/v1/identity/login/callback`,
+        callbackUrl: url,
+        state: rawState,
+        nonce: state.oidc_nonce,
+        codeVerifier: state.oidc_code_verifier,
+      })
+    } catch (error) {
+      if (wantsJson(request)) {
+        throw new OAuthError('access_denied', error instanceof Error ? error.message : 'OIDC login rejected', 403)
+      }
+      logger?.warn?.('oauth browser sign-in failed', {
+        path: url.pathname,
+        code: 'access_denied',
+        error: String(error?.message || error),
+      })
+      return rejectBrowserLogin(state, GENERIC_SIGN_IN_MESSAGE)
+    }
     const grant = (
       await db.select('ck_oauth_identity_grants', {
         provider_id: `eq.${provider.id}`,
@@ -531,7 +592,11 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
         limit: '1',
       })
     )[0]
-    if (!grant) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
+    if (!grant) {
+      if (wantsJson(request)) throw new OAuthError('access_denied', 'this identity has no ContentKit grant', 403)
+      logger?.warn?.('oauth browser sign-in failed', { path: url.pathname, code: 'access_denied' })
+      return rejectBrowserLogin(state, GRANT_DENIED_MESSAGE)
+    }
     if (identity.email && identity.email !== grant.email) {
       await db.update(
         'ck_oauth_identity_grants',
@@ -1032,7 +1097,8 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
       if (request.method === 'POST' && url.pathname === '/v1/oauth/revoke') return await revoke(request)
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/start') return await startLogin(url)
       if (request.method === 'POST' && url.pathname === '/v1/identity/login/start') return await apiKeyLogin(request)
-      if (request.method === 'GET' && url.pathname === '/v1/identity/login/callback') return await finishLogin(url)
+      if (request.method === 'GET' && url.pathname === '/v1/identity/login/callback')
+        return await finishLogin(request, url)
       if (request.method === 'POST' && url.pathname === '/v1/identity/logout') return await logout(request)
       return json({ error: 'not_found' }, 404)
     } catch (error) {
@@ -1041,6 +1107,17 @@ export function createOAuthMount(config, { db, auth, audit, logger }) {
         code: error.code || 'server_error',
         error: String(error.message || error),
       })
+      if (request.method === 'GET' && BROWSER_LOGIN_GET_PATHS.includes(url.pathname) && !wantsJson(request)) {
+        const known = error instanceof OAuthError
+        const message = !known
+          ? GENERIC_SIGN_IN_MESSAGE
+          : error.code === 'access_denied'
+            ? GRANT_DENIED_MESSAGE
+            : /\bstate\b/i.test(error.message)
+              ? STATE_PROBLEM_MESSAGE
+              : GENERIC_SIGN_IN_MESSAGE
+        return browserErrorPage(message, known ? error.status : 500)
+      }
       return oauthError(error)
     }
   }
