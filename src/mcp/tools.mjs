@@ -919,7 +919,7 @@ const TOOLS = [
   tool({
     name: 'contentkit_manage_identities',
     title: 'Administer OAuth identity grants',
-    description: 'Pre-provision, update or revoke exact OIDC subject grants and their role/site ceiling.',
+    description: 'Pre-provision, update or revoke exact OIDC subject grants and their product-scope/site ceiling.',
     scopes: ['identity:admin'],
     schema: z.object({
       action: z.enum(['list', 'create', 'update', 'revoke']),
@@ -929,7 +929,11 @@ const TOOLS = [
     async execute(deps, principal, input, context) {
       requireScope(deps, principal, 'identity:admin')
       if (input.action === 'list') {
-        const rows = await deps.db.select('ck_oauth_identity_grants', { order: 'created_at.desc' })
+        const rows = await deps.db.select('ck_oauth_identity_grants', {
+          ...(input.input.provider_id ? { provider_id: `eq.${input.input.provider_id}` } : {}),
+          ...(input.input.subject ? { subject: `eq.${input.input.subject}` } : {}),
+          order: 'created_at.desc',
+        })
         return {
           identities: rows.filter((row) => withinPrincipalSites(principal, row.site_ids)).map(publicIdentityGrant),
         }
@@ -952,7 +956,7 @@ const TOOLS = [
       )
       let result
       if (input.action === 'create') {
-        const required = ['provider_id', 'issuer', 'subject', 'role']
+        const required = ['provider_id', 'issuer', 'subject']
         if (required.some((key) => !input.input[key]))
           throw Object.assign(new Error(`${required.join(', ')} are required`), { statusCode: 422 })
         const provider = (deps.config.oauthProviders || []).find(
@@ -966,10 +970,20 @@ const TOOLS = [
             statusCode: 422,
           })
         }
-        if (!['reader', 'author', 'admin'].includes(input.input.role)) {
+        // role XOR product_scopes, exactly like POST /v1/identity-grants: a
+        // named role is a shorthand the server expands once; the stored truth
+        // is always the product-scope ceiling and role stays denormalized.
+        if (input.input.role !== undefined && input.input.product_scopes !== undefined) {
+          throw Object.assign(new Error('role and product_scopes are mutually exclusive'), { statusCode: 422 })
+        }
+        if (input.input.role === undefined && input.input.product_scopes === undefined) {
+          throw Object.assign(new Error('either role or product_scopes is required'), { statusCode: 422 })
+        }
+        if (input.input.role !== undefined && !['reader', 'author', 'admin'].includes(input.input.role)) {
           throw Object.assign(new Error('role must be reader, author or admin'), { statusCode: 422 })
         }
-        const productScopes = input.input.product_scopes || defaultProductScopes(input.input.role)
+        const productScopes =
+          input.input.role !== undefined ? defaultProductScopes(input.input.role) : input.input.product_scopes
         if (!Array.isArray(productScopes) || productScopes.some((scope) => !PRODUCT_SCOPES.includes(scope))) {
           throw Object.assign(new Error('product_scopes contains an unsupported scope'), { statusCode: 422 })
         }
@@ -979,27 +993,55 @@ const TOOLS = [
             statusCode: 403,
           })
         }
-        ;[result] = await deps.db.insert('ck_oauth_identity_grants', {
-          provider_id: input.input.provider_id,
-          issuer: input.input.issuer,
-          subject: String(input.input.subject),
-          email: input.input.email || null,
-          display_name: input.input.display_name || '',
-          role: input.input.role,
-          product_scopes: productScopes,
-          site_ids: siteIds,
-        })
+        try {
+          ;[result] = await deps.db.insert('ck_oauth_identity_grants', {
+            provider_id: input.input.provider_id,
+            issuer: input.input.issuer,
+            subject: String(input.input.subject),
+            email: input.input.email || null,
+            display_name: input.input.display_name || '',
+            role: roleForProductScopes(productScopes),
+            product_scopes: productScopes,
+            site_ids: siteIds,
+            grant_source: 'admin',
+          })
+        } catch (error) {
+          // ck_oauth_identity_grants_provider_id_issuer_subject_key: one
+          // grant per identity, revoked rows included — surface a 409 with
+          // the existing grant instead of a server error.
+          if (error?.code !== '23505') throw error
+          const [existing] = await deps.db.select('ck_oauth_identity_grants', {
+            provider_id: `eq.${input.input.provider_id}`,
+            issuer: `eq.${input.input.issuer}`,
+            subject: `eq.${String(input.input.subject)}`,
+            limit: '1',
+          })
+          const id = existing ? existing.id : 'unknown'
+          throw Object.assign(
+            new Error(
+              existing?.revoked_at
+                ? `a revoked grant for this identity already exists (id ${id}); PATCH /v1/identity-grants/${id} with restore:true revives it`
+                : `a grant for this identity already exists (id ${id}); use action "update" (PATCH /v1/identity-grants/${id}) to change it`,
+            ),
+            { statusCode: 409 },
+          )
+        }
       } else if (input.action === 'update') {
         const allowed = Object.fromEntries(
           Object.entries(input.input).filter(([key]) =>
             ['display_name', 'email', 'role', 'product_scopes', 'site_ids'].includes(key),
           ),
         )
-        if (allowed.role && !['reader', 'author', 'admin'].includes(allowed.role)) {
+        // role XOR product_scopes, exactly like PATCH /v1/identity-grants/{id}.
+        if (allowed.role !== undefined && allowed.product_scopes !== undefined) {
+          throw Object.assign(new Error('role and product_scopes are mutually exclusive'), { statusCode: 422 })
+        }
+        if (allowed.role !== undefined && !['reader', 'author', 'admin'].includes(allowed.role)) {
           throw Object.assign(new Error('role must be reader, author or admin'), { statusCode: 422 })
         }
+        if (allowed.role !== undefined) allowed.product_scopes = defaultProductScopes(allowed.role)
         if (
-          allowed.product_scopes &&
+          allowed.product_scopes !== undefined &&
           (!Array.isArray(allowed.product_scopes) ||
             allowed.product_scopes.some((scope) => !PRODUCT_SCOPES.includes(scope)))
         ) {
@@ -1011,9 +1053,9 @@ const TOOLS = [
           })
         }
         // product_scopes is the stored truth; role stays a denormalized
-        // display value. A manual update takes the row over from the seeder.
-        if (allowed.role && !allowed.product_scopes) allowed.product_scopes = defaultProductScopes(allowed.role)
-        if (allowed.product_scopes && !allowed.role) allowed.role = roleForProductScopes(allowed.product_scopes)
+        // display value derived from the ceiling. A manual update takes the
+        // row over from the seeder.
+        if (allowed.product_scopes !== undefined) allowed.role = roleForProductScopes(allowed.product_scopes)
         ;[result] = await deps.db.update(
           'ck_oauth_identity_grants',
           { id: `eq.${input.id}`, revoked_at: 'is.null' },

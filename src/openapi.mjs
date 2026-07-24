@@ -2079,6 +2079,10 @@ export function openApi(config) {
           requestBody: jsonBody(['provider_id', 'issuer', 'subject']),
           responses: {
             201: { description: 'Identity grant created' },
+            409: {
+              description:
+                'A grant for this provider_id + issuer + subject already exists (revoked grants included). The body carries the existing grant id and a hint to PATCH /v1/identity-grants/{id} (with restore:true when the existing grant is revoked).',
+            },
             422: { description: 'Invalid provider, role/product_scopes conflict or unsupported scope' },
           },
         },

@@ -1300,6 +1300,22 @@ function identityGrantStore(seed = []) {
       },
       async insert(table, values) {
         assert.equal(table, 'ck_oauth_identity_grants')
+        // Same behavior as PostgreSQL's
+        // ck_oauth_identity_grants_provider_id_issuer_subject_key: one row
+        // per identity, revoked rows included.
+        if (
+          grants.some(
+            (row) =>
+              row.provider_id === values.provider_id && row.issuer === values.issuer && row.subject === values.subject,
+          )
+        ) {
+          throw Object.assign(
+            new Error(
+              'duplicate key value violates unique constraint "ck_oauth_identity_grants_provider_id_issuer_subject_key"',
+            ),
+            { code: '23505', constraint: 'ck_oauth_identity_grants_provider_id_issuer_subject_key' },
+          )
+        }
         const row = { id: `grant-${grants.length + 1}`, revoked_at: null, ...values }
         grants.push(row)
         return [{ ...row }]
@@ -1376,6 +1392,49 @@ test('identity grants accept role XOR product_scopes and stamp the denormalized 
       assert.equal(listed.length, 1)
       assert.equal(listed[0].subject, 's2')
       assert.equal(listed[0].grant_source, 'admin')
+    },
+  )
+})
+
+// Regression: a duplicate POST for an already-granted identity hit the unique
+// constraint ck_oauth_identity_grants_provider_id_issuer_subject_key and
+// surfaced as a 500 in production (2026-07-23 17:29). It is a client conflict:
+// 409 with the existing grant id and a PATCH hint.
+test('duplicate identity grant POST returns 409 with the existing grant id instead of 500', async () => {
+  const store = identityGrantStore()
+  await withApp(
+    { db: store.db, auth: siteAdminAuth(['identity:admin'], []), config: identityAdminConfig },
+    async (request) => {
+      const post = (body) =>
+        request('/v1/identity-grants', {
+          method: 'POST',
+          headers: { 'x-api-key': 'valid' },
+          body: JSON.stringify({ provider_id: 'corp', issuer: 'https://login.example', ...body }),
+        })
+
+      const first = await post({ subject: 'dup-1', role: 'reader' })
+      assert.equal(first.status, 201)
+      const grant = await first.json()
+
+      // the exact same identity again, regardless of role/scopes payload shape
+      const duplicate = await post({ subject: 'dup-1', product_scopes: ['content:read'] })
+      assert.equal(duplicate.status, 409)
+      const conflict = await duplicate.json()
+      assert.equal(conflict.error, 'identity_grant_exists')
+      assert.equal(conflict.id, grant.id)
+      assert.match(conflict.hint, new RegExp(`PATCH /v1/identity-grants/${grant.id}`))
+
+      // a revoked grant also owns the identity: the hint points to restore
+      const revoke = await request(`/v1/identity-grants/${grant.id}`, {
+        method: 'DELETE',
+        headers: { 'x-api-key': 'valid' },
+      })
+      assert.equal(revoke.status, 200)
+      const revokedDuplicate = await post({ subject: 'dup-1', role: 'reader' })
+      assert.equal(revokedDuplicate.status, 409)
+      const revokedConflict = await revokedDuplicate.json()
+      assert.equal(revokedConflict.id, grant.id)
+      assert.match(revokedConflict.hint, /restore:true/)
     },
   )
 })

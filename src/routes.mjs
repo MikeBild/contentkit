@@ -1721,17 +1721,38 @@ export function createRequestHandler(ctx) {
       if (!withinPrincipalSites(principal, siteIds)) {
         return sendJson(res, 403, { error: 'identity grant must be restricted to your own site(s)' })
       }
-      const [grant] = await db.insert('ck_oauth_identity_grants', {
-        provider_id: provider.id,
-        issuer: provider.issuer,
-        subject: String(input.subject),
-        email: input.email || null,
-        display_name: input.display_name || '',
-        role: input.role !== undefined ? input.role : roleForProductScopes(scopes),
-        product_scopes: scopes,
-        site_ids: siteIds,
-        grant_source: input.source === 'seed' ? 'seed' : 'admin',
-      })
+      let grant
+      try {
+        ;[grant] = await db.insert('ck_oauth_identity_grants', {
+          provider_id: provider.id,
+          issuer: provider.issuer,
+          subject: String(input.subject),
+          email: input.email || null,
+          display_name: input.display_name || '',
+          role: input.role !== undefined ? input.role : roleForProductScopes(scopes),
+          product_scopes: scopes,
+          site_ids: siteIds,
+          grant_source: input.source === 'seed' ? 'seed' : 'admin',
+        })
+      } catch (error) {
+        // ck_oauth_identity_grants_provider_id_issuer_subject_key: one grant
+        // per identity, revoked rows included — a duplicate is a client
+        // conflict (409), never a server error.
+        if (error?.code !== '23505') throw error
+        const [existing] = await db.select('ck_oauth_identity_grants', {
+          provider_id: `eq.${provider.id}`,
+          issuer: `eq.${provider.issuer}`,
+          subject: `eq.${String(input.subject)}`,
+          limit: '1',
+        })
+        return sendJson(res, 409, {
+          error: 'identity_grant_exists',
+          id: existing?.id || null,
+          hint: existing?.revoked_at
+            ? `a revoked grant for this identity already exists; PATCH /v1/identity-grants/${existing.id} with restore:true revives it`
+            : `a grant for this identity already exists; use PATCH /v1/identity-grants/${existing ? existing.id : '{id}'} to change it`,
+        })
+      }
       await audit.record({
         actorType: principal.oauth ? 'oauth' : 'api_key',
         actorId: principal.id,

@@ -267,7 +267,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     const token = cookieToken(request, config)
     if (!token) return null
     const rows = await db.query(
-      `SELECT s.*, g.provider_id, g.issuer, g.subject, g.email, g.display_name, g.role,
+      `SELECT s.*, g.provider_id, g.issuer, g.subject, g.email, g.display_name,
               g.product_scopes, g.site_ids AS grant_site_ids
          FROM ck_operator_sessions s
          JOIN ck_oauth_identity_grants g ON g.id = s.grant_id

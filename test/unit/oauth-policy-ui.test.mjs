@@ -6,7 +6,6 @@ import {
   effectiveProductScopes,
   oauthTiersForCeiling,
   roleForProductScopes,
-  roleOauthScopes,
 } from '../../src/oauth/policy.mjs'
 import {
   AUTH_UI_CSP,
@@ -18,10 +17,7 @@ import {
 
 const COMMON_STYLE_SHA256 = 'fb9d19063e79757a73139720508cf27207214b98405e156bab894bad85796a0c'
 
-test('OAuth roles and the live product ceiling both constrain effective scopes', () => {
-  assert.deepEqual(roleOauthScopes('reader'), ['mcp:read'])
-  assert.deepEqual(roleOauthScopes('author'), ['mcp:read', 'mcp:authoring'])
-  assert.ok(roleOauthScopes('admin').includes('mcp:admin'))
+test('the live product ceiling constrains effective scopes and derives the display role', () => {
   assert.deepEqual(effectiveProductScopes(['mcp:admin'], ['content:read', 'identity:admin']), [
     'content:read',
     'identity:admin',

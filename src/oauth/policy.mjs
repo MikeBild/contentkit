@@ -16,21 +16,10 @@ export const PRODUCT_SCOPES = [
   'stats:read',
 ]
 
-const ROLE_SCOPES = {
-  reader: ['mcp:read'],
-  author: ['mcp:read', 'mcp:authoring'],
-  admin: ['mcp:read', 'mcp:authoring', 'mcp:admin'],
-}
-
 const TIER_PRODUCT_SCOPES = {
   'mcp:read': ['content:read', 'stats:read'],
   'mcp:authoring': ['content:read', 'stats:read', 'content:write', 'deck:render', 'release:preview'],
   'mcp:admin': PRODUCT_SCOPES,
-}
-
-export function roleOauthScopes(role, configured = MCP_OAUTH_SCOPES) {
-  const allowed = new Set(ROLE_SCOPES[role] || [])
-  return MCP_OAUTH_SCOPES.filter((scope) => allowed.has(scope) && configured.includes(scope))
 }
 
 // The stored product-scope ceiling is the only truth of a grant; mcp:* tiers
