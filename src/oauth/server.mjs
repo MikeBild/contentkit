@@ -100,9 +100,13 @@ async function form(request) {
 }
 
 function requestedScopes(raw, configured) {
+  // RFC 6749 §3.3: no scope param → server-defined default. Default to the
+  // full configured set instead of bare mcp:read so scope-less clients
+  // (ChatGPT omits the param) can still be OFFERED write tiers; the identity
+  // grant ceiling and the consent checkboxes remain the actual gate.
   const requested = [
     ...new Set(
-      String(raw || 'mcp:read')
+      String(raw || configured.join(' '))
         .split(/\s+/)
         .filter(Boolean),
     ),
