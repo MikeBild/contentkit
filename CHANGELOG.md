@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.3.2 — 2026-07-24
+
+### Fixed
+
+- `POST /v1/identity-grants` and the MCP `contentkit_manage_identities`
+  create action now answer a duplicate identity (unique constraint
+  `ck_oauth_identity_grants_provider_id_issuer_subject_key`, revoked rows
+  included) with `409` instead of `500`. The conflict body/message carries
+  the existing grant id and a hint to `PATCH /v1/identity-grants/{id}`
+  (`restore: true` when the existing grant is revoked).
+- The MCP `contentkit_manage_identities` tool now follows the same
+  scope-ceiling contract as the REST admin surface: `role` XOR
+  `product_scopes` on create and update (both set → error), scopes-only
+  create works without a role, the stored `role` is always derived from the
+  product-scope ceiling via `roleForProductScopes` (previously the create
+  action stored the caller's role verbatim, diverging from the ceiling), and
+  every create/update stamps `grant_source: "admin"`. The list action gains
+  the `provider_id`/`subject` exact-match filters REST already had.
+
+### Removed
+
+- Legacy role-derived OAuth tier mapping `roleOauthScopes`/`ROLE_SCOPES` in
+  `src/oauth/policy.mjs` — dead since 4.3.0 derived consent tiers from the
+  stored product-scope ceiling (`oauthTiersForCeiling`). The operator-session
+  lookup no longer selects the unused denormalized `g.role` column.
+
+## 4.3.1 — 2026-07-24
+
+### Fixed
+
+- OAuth authorize requests without a `scope` parameter (RFC 6749 §3.3, e.g.
+  ChatGPT) were pinned to `mcp:read` forever because the requested scopes
+  hard-defaulted to `mcp:read` and consent only offers requested ∩ ceiling.
+  Scope-less requests now default to the full configured scope set; the
+  identity-grant ceiling and the consent checkboxes remain the actual gate.
+  (This fix shipped in 4.3.1 but was previously documented only in the
+  release commit message.)
+
 ## 4.3.0 — 2026-07-23
 
 ### Added
