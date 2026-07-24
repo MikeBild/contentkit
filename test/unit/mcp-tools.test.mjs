@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildToolManifest, findTool } from '../../src/mcp/tools.mjs'
+import { FORM_FAST_CANCEL_MS, buildToolManifest, findTool } from '../../src/mcp/tools.mjs'
 
 const principal = (scopes) => ({ id: 'actor', name: 'Actor', scopes, site_ids: ['site-1'] })
 
@@ -13,6 +13,18 @@ test('MCP tool discovery is product-scope filtered', () => {
 
   const admin = buildToolManifest(principal(['identity:admin', 'audit:read'])).map((entry) => entry.name)
   assert.deepEqual(admin.sort(), ['contentkit_audit', 'contentkit_manage_identities'])
+})
+
+test('every tool inputSchema root is a flat object so strict clients accept the listing', () => {
+  const manifest = buildToolManifest(principal(['*']))
+  assert.ok(manifest.length > 0)
+  for (const entry of manifest) {
+    assert.equal(entry.inputSchema.type, 'object', `${entry.name} root must be type object`)
+    assert.equal('oneOf' in entry.inputSchema, false, `${entry.name} root must not use oneOf`)
+    assert.equal('anyOf' in entry.inputSchema, false, `${entry.name} root must not use anyOf`)
+  }
+  const content = manifest.find((entry) => entry.name === 'contentkit_content')
+  assert.deepEqual(content.inputSchema.properties.action.enum, ['list', 'revisions', 'delete_draft'])
 })
 
 test('declining draft deletion performs no database mutation', async () => {
@@ -56,6 +68,116 @@ test('declining draft deletion performs no database mutation', async () => {
     /cancelled/,
   )
   assert.equal(removed, false)
+})
+
+function draftDeletionHarness() {
+  let removals = 0
+  const tool = findTool(principal(['content:write']), 'contentkit_content')
+  const deps = {
+    repo: {
+      async getSite() {
+        return { id: 'site-1', name: 'Site' }
+      },
+    },
+    auth: {
+      authorize() {
+        return true
+      },
+    },
+    db: {
+      async select(table) {
+        return table === 'ck_content_items'
+          ? [{ id: '11111111-1111-4111-8111-111111111111', site_id: 'site-1', published_revision_id: null }]
+          : []
+      },
+      async remove() {
+        removals += 1
+      },
+    },
+    audit: { async record() {} },
+  }
+  const run = (elicitForm) =>
+    tool.execute(
+      deps,
+      principal(['content:write']),
+      { action: 'delete_draft', site: 'site-1', item_id: '11111111-1111-4111-8111-111111111111' },
+      { elicitForm },
+    )
+  return { run, removals: () => removals }
+}
+
+test('a fast client cancel is retried once then surfaces elicitation_auto_cancelled without mutating', async () => {
+  const harness = draftDeletionHarness()
+  let calls = 0
+  await assert.rejects(
+    () =>
+      harness.run(async () => {
+        calls += 1
+        return { action: 'cancel' }
+      }),
+    (error) => {
+      assert.equal(error.statusCode, 409)
+      assert.equal(error.reason, 'elicitation_auto_cancelled')
+      assert.notEqual(error.cancelled, true)
+      return true
+    },
+  )
+  assert.equal(calls, 2)
+  assert.equal(harness.removals(), 0)
+})
+
+test('a fast cancel followed by a rendered accept performs the mutation exactly once', async () => {
+  const harness = draftDeletionHarness()
+  let calls = 0
+  const result = await harness.run(async () => {
+    calls += 1
+    return calls === 1 ? { action: 'cancel' } : { action: 'accept', content: { confirmed: true } }
+  })
+  assert.equal(calls, 2)
+  assert.equal(result.deleted, true)
+  assert.equal(harness.removals(), 1)
+})
+
+test('a cancel after the fast-cancel window is a human decision: no retry, byte-stable error', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'] })
+  const harness = draftDeletionHarness()
+  let calls = 0
+  await assert.rejects(
+    () =>
+      harness.run(async () => {
+        calls += 1
+        t.mock.timers.tick(FORM_FAST_CANCEL_MS + 100)
+        return { action: 'cancel' }
+      }),
+    (error) => {
+      assert.equal(error.message, 'Operation cancelled; no change was made.')
+      assert.equal(error.statusCode, 409)
+      assert.equal(error.cancelled, true)
+      return true
+    },
+  )
+  assert.equal(calls, 1)
+  assert.equal(harness.removals(), 0)
+})
+
+test('an immediate decline is never retried and keeps the byte-stable human-decline error', async () => {
+  const harness = draftDeletionHarness()
+  let calls = 0
+  await assert.rejects(
+    () =>
+      harness.run(async () => {
+        calls += 1
+        return { action: 'decline' }
+      }),
+    (error) => {
+      assert.equal(error.message, 'Operation cancelled; no change was made.')
+      assert.equal(error.statusCode, 409)
+      assert.equal(error.cancelled, true)
+      return true
+    },
+  )
+  assert.equal(calls, 1)
+  assert.equal(harness.removals(), 0)
 })
 
 test('MCP API-key creation returns only URL-handoff metadata and starts revoked', async () => {

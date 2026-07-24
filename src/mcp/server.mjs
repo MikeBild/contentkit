@@ -136,7 +136,33 @@ function outcome(error) {
 
 function toolError(error, id) {
   const status = error?.statusCode || error?.status || 500
-  const message = status >= 500 ? 'ContentKit could not complete the operation.' : String(error.message || error)
+  const timedOut = error instanceof McpError && error.code === ErrorCode.RequestTimeout
+  let reason = error?.reason
+  let message = status >= 500 ? 'ContentKit could not complete the operation.' : String(error.message || error)
+  let nextBestActions
+  if (timedOut) {
+    reason = 'elicitation_timeout'
+    message = 'Human confirmation timed out; no change was made.'
+    nextBestActions = [
+      'The human confirmation timed out; no change was made.',
+      'Re-run the operation when the user is present to answer the confirmation form.',
+    ]
+  } else if (reason === 'elicitation_unsupported') {
+    nextBestActions = [
+      'This MCP client advertised no form elicitation capability; no change was made.',
+      'Claude Code: requires >= 2.1.76 and a fresh session.',
+      'Codex: set approval_policy = { granular = { mcp_elicitations = true } } and approvals_reviewer = "user" in ~/.codex/config.toml, then restart the client.',
+    ]
+  } else if (reason === 'elicitation_auto_cancelled') {
+    nextBestActions = [
+      'The CLIENT auto-cancelled the confirmation form before a human could see it; this is not a human decision and no change was made.',
+      'Retry once; if it repeats, start a fresh client session and try again.',
+    ]
+  } else if (error?.cancelled === true) {
+    nextBestActions = [
+      'The human declined or cancelled; make no change and do not retry without a new user instruction.',
+    ]
+  }
   return {
     isError: true,
     content: [
@@ -144,13 +170,15 @@ function toolError(error, id) {
         type: 'text',
         text: JSON.stringify({
           error: message,
+          ...(reason ? { reason } : {}),
           request_id: id,
           next_best_actions:
-            status === 403
+            nextBestActions ||
+            (status === 403
               ? ['call tools/list and use an operation visible to this credential']
               : status === 422
                 ? ['correct the input using the tool schema and diagnostics']
-                : ['inspect the target state and retry only when appropriate'],
+                : ['inspect the target state and retry only when appropriate']),
         }),
       },
     ],
@@ -236,19 +264,46 @@ export function createSessionServer(config, deps, principal, sessionId = () => n
       const context = {
         async elicitForm(params) {
           if (!formCapable)
-            throw Object.assign(new Error('This operation requires MCP form elicitation support.'), { statusCode: 409 })
-          return server.request(
-            { method: 'elicitation/create', params: { mode: 'form', ...params } },
-            // Server.elicitInput validates accepted content and handles the current result schema.
-            // Using it here would reject the backwards-compatible elicitation:{} capability.
-            (await import('@modelcontextprotocol/sdk/types.js')).ElicitResultSchema,
-            {
-              relatedRequestId: extra.requestId,
-              signal: extra.signal,
-              timeout: config.mcpElicitationTimeoutMs,
-              maxTotalTimeout: config.mcpElicitationTimeoutMs,
-            },
-          )
+            throw Object.assign(new Error('This operation requires MCP form elicitation support.'), {
+              statusCode: 409,
+              reason: 'elicitation_unsupported',
+            })
+          const client = server.getClientVersion()
+          deps.logger.info('mcp elicitation requested', {
+            request_id: String(extra.requestId),
+            client: client?.name,
+            client_version: client?.version,
+          })
+          const startedAt = Date.now()
+          try {
+            const result = await server.request(
+              { method: 'elicitation/create', params: { mode: 'form', ...params } },
+              // Server.elicitInput validates accepted content and handles the current result schema.
+              // Using it here would reject the backwards-compatible elicitation:{} capability.
+              (await import('@modelcontextprotocol/sdk/types.js')).ElicitResultSchema,
+              {
+                relatedRequestId: extra.requestId,
+                // The elicitation stays coupled to its tool call (abort => tool call dead => fail closed, no orphaned approvals);
+                // subkit removed the signal only because its delivery is detached from a polling request — that pattern does not apply here.
+                signal: extra.signal,
+                timeout: config.mcpElicitationTimeoutMs,
+                maxTotalTimeout: config.mcpElicitationTimeoutMs,
+              },
+            )
+            deps.logger.info('mcp elicitation resolved', {
+              request_id: String(extra.requestId),
+              action: result.action,
+              elapsed_ms: Date.now() - startedAt,
+            })
+            return result
+          } catch (error) {
+            if (error instanceof McpError && error.code === ErrorCode.RequestTimeout)
+              deps.logger.warn('mcp elicitation timeout', {
+                request_id: String(extra.requestId),
+                timeout_ms: config.mcpElicitationTimeoutMs,
+              })
+            throw error
+          }
         },
         ...(urlCapable
           ? {

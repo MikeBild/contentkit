@@ -6,3 +6,4 @@ examples/
 package-lock.json
 src/db/migrations/embedded.mjs
 *.md
+tests/real-world/elicitation/shots/

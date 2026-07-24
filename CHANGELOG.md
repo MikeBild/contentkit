@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- MCP `tools/list` no longer serializes discriminated-union tool inputs with
+  a `oneOf` root: strict clients (e.g. Claude Code) reject the entire tool
+  listing when any `inputSchema` root is not `type: "object"` (regression
+  introduced with the domain-driven MCP OAuth API in 1.23.0). Union roots are
+  flattened into one object schema for discovery, with the discriminator
+  described per action; runtime validation still runs the exact zod union.
+- A confirmation-form cancel arriving faster than any human could have read
+  the form (< 2 s) is treated as a client auto-cancel, not a human decision:
+  the form is retried once silently, then the tool fails with reason
+  `elicitation_auto_cancelled` ("The MCP client auto-cancelled the
+  confirmation form without presenting it; no change was made."). A genuine
+  human decline keeps the byte-identical "Operation cancelled; no change was
+  made." error.
+- Elicitation failures now return cause-specific errors with
+  `next_best_actions`: `elicitation_unsupported` carries client guidance
+  (Claude Code >= 2.1.76 with a fresh session; Codex `approval_policy =
+  { granular = { mcp_elicitations = true } }` plus `approvals_reviewer =
+  "user"` in `~/.codex/config.toml`), and a timeout reports "Human
+  confirmation timed out; no change was made." as `elicitation_timeout`.
+  New log lines `mcp elicitation requested/resolved/timeout` trace the
+  elicitation lifecycle without recording form content.
+
 ## 4.3.2 — 2026-07-24
 
 ### Fixed

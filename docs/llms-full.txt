@@ -257,7 +257,12 @@ short-lived encrypted authorization response and mints no additional code.
 The domain tools cover context/site selection, published search/read, immutable
 revision authoring, semantic visual composition, narrative decks, releases,
 publication, statistics and bounded administrative CRUD. `tools/list` is
-scope-filtered. Live/destructive changes require native form elicitation; API
+scope-filtered. Live/destructive changes require native form elicitation; a
+form cancel faster than any human could have read the form is a client
+auto-cancel — retried once, then reported as `elicitation_auto_cancelled`,
+never as a human decision — while clients without form elicitation fail
+closed with `elicitation_unsupported` guidance (Claude Code >= 2.1.76 fresh
+session; Codex granular `mcp_elicitations` approval). API
 key/webhook secret creation uses a one-time URL elicitation handoff with an
 explicit browser reveal step so the secret never enters the MCP client
 transcript or gets consumed by link prefetching. Resources expose this guide, both LLM documents and
@@ -1467,7 +1472,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_MCP_ENABLED` | expose MCP, OAuth discovery and authorization routes; default true |
 | `CONTENTKIT_MCP_SESSION_TTL_MS` | idle session lease; default 1800000 |
 | `CONTENTKIT_MCP_MAX_SESSIONS` | hard session cap with oldest-idle eviction; default 1000 |
-| `CONTENTKIT_MCP_ELICITATION_TIMEOUT_MS` | maximum native human interaction wait; default 300000 |
+| `CONTENTKIT_MCP_ELICITATION_TIMEOUT_MS` | maximum native human interaction wait; default 300000; timeout fails closed as `elicitation_timeout`, and a form cancel faster than 2 s counts as a client auto-cancel (one silent retry, then `elicitation_auto_cancelled`), never as a human decline |
 | `CONTENTKIT_OAUTH_SECRET` | independent HMAC key for OAuth codes/tokens/sessions; required in production |
 | `CONTENTKIT_OAUTH_PROVIDERS` | ContentKit-local browser-provider configuration with `api_key` and named direct `oidc` records; UI actions are always SSO then API key |
 | `CONTENTKIT_OAUTH_ALLOWED_SCOPES` | comma-separated OAuth tier ceiling; must include `mcp:read` |

@@ -24,6 +24,41 @@ const kind = z.enum(['page', 'post', 'project', 'deck'])
 const locale = z.string().min(2).max(35)
 const limitedMarkdown = z.string().min(1).max(262_144)
 
+// Claude Code requires every tool inputSchema root to be type:"object" and
+// rejects the entire tools list otherwise, so a discriminated-union root
+// (oneOf without type) is flattened into one object schema for discovery.
+// Runtime validation still runs the exact zod union via candidate.schema.
+function flattenUnionSchema(schema) {
+  const branches = schema.oneOf || schema.anyOf
+  if (!branches || schema.type === 'object') return schema
+  const discriminator = Object.keys(branches[0].properties || {}).find((key) =>
+    branches.every((branch) => branch.properties?.[key]?.const !== undefined),
+  )
+  const required = (branches[0].required || []).filter((key) =>
+    branches.every((branch) => (branch.required || []).includes(key)),
+  )
+  const properties = {}
+  if (discriminator) {
+    const perAction = branches.map((branch) => {
+      const value = branch.properties[discriminator].const
+      const extra = (branch.required || []).filter((key) => key !== discriminator && !required.includes(key))
+      return extra.length ? `'${value}' additionally requires ${extra.join(', ')}` : `'${value}'`
+    })
+    properties[discriminator] = {
+      type: 'string',
+      enum: branches.map((branch) => branch.properties[discriminator].const),
+      description: `One of ${perAction.join('; ')}.`,
+    }
+  }
+  for (const branch of branches) {
+    for (const [key, value] of Object.entries(branch.properties || {})) {
+      if (key !== discriminator && !(key in properties)) properties[key] = value
+    }
+  }
+  const { oneOf, anyOf, ...rest } = schema
+  return { ...rest, type: 'object', properties, required }
+}
+
 function tool(definition) {
   return {
     annotations: {
@@ -34,7 +69,7 @@ function tool(definition) {
       ...definition.annotations,
     },
     ...definition,
-    inputSchema: toJsonSchemaCompat(definition.schema, { target: 'draft-2020-12' }),
+    inputSchema: flattenUnionSchema(toJsonSchemaCompat(definition.schema, { target: 'draft-2020-12' })),
   }
 }
 
@@ -112,8 +147,13 @@ async function recordDeckEvent(deps, siteId, event) {
     .catch((error) => deps.logger.warn('MCP deck metric write failed', { siteId, error: String(error) }))
 }
 
+// A form-mode cancel arriving faster than any human could have read the form
+// is the CLIENT auto-cancelling (capability advertised, form never rendered) —
+// from the wire indistinguishable from a deliberate dismissal except by time.
+export const FORM_FAST_CANCEL_MS = 2000
+
 async function confirm(context, message, label = 'Confirm') {
-  const result = await context.elicitForm({
+  const params = {
     mode: 'form',
     message,
     requestedSchema: {
@@ -129,10 +169,39 @@ async function confirm(context, message, label = 'Confirm') {
       },
       required: ['confirmed'],
     },
-  })
-  if (result.action !== 'accept' || result.content?.confirmed !== true) {
-    throw Object.assign(new Error('Operation cancelled; no change was made.'), { statusCode: 409, cancelled: true })
   }
+  let fastCancelled = false
+  // One silent retry on fast cancel: the human never saw attempt 1.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const startedAt = Date.now()
+    const result = await context.elicitForm(params)
+    const elapsed = Date.now() - startedAt
+    if (result.action === 'accept' && result.content?.confirmed === true) return
+    fastCancelled = result.action === 'cancel' && elapsed < FORM_FAST_CANCEL_MS
+    if (!fastCancelled) break
+  }
+  if (fastCancelled) {
+    throw Object.assign(
+      new Error('The MCP client auto-cancelled the confirmation form without presenting it; no change was made.'),
+      { statusCode: 409, reason: 'elicitation_auto_cancelled' },
+    )
+  }
+  throw Object.assign(new Error('Operation cancelled; no change was made.'), { statusCode: 409, cancelled: true })
+}
+
+async function elicitHandoffUrl(context, params) {
+  // Same fast-cancel discrimination as confirm(): a client auto-cancel is not
+  // a human decision, so retry once silently and never classify it as declined.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const startedAt = Date.now()
+    const result = await context.elicitUrl(params)
+    const fastCancelled = result.action === 'cancel' && Date.now() - startedAt < FORM_FAST_CANCEL_MS
+    if (!fastCancelled) return result
+  }
+  throw Object.assign(
+    new Error('The MCP client auto-cancelled the secret handoff without presenting it; no change was made.'),
+    { statusCode: 409, reason: 'elicitation_auto_cancelled' },
+  )
 }
 
 async function idempotent(deps, principal, operation, key, input, execute) {
@@ -701,6 +770,7 @@ const TOOLS = [
       if (['create', 'rotate'].includes(input.action) && !context.elicitUrl)
         throw Object.assign(new Error('Webhook secret handoff requires MCP URL elicitation support.'), {
           statusCode: 409,
+          reason: 'elicitation_unsupported',
         })
       let deliveryToRetry
       if (input.action === 'retry') {
@@ -772,7 +842,7 @@ const TOOLS = [
         })
         let elicited
         try {
-          elicited = await context.elicitUrl({
+          elicited = await elicitHandoffUrl(context, {
             mode: 'url',
             message:
               'Open ContentKit to reveal this webhook signing secret once. It never passes through the MCP client.',
@@ -849,6 +919,7 @@ const TOOLS = [
       if (!context.elicitUrl)
         throw Object.assign(new Error('API key creation requires a client with MCP URL elicitation.'), {
           statusCode: 409,
+          reason: 'elicitation_unsupported',
         })
       const requestedScopes = input.scopes || defaultProductScopes('author')
       const requestedSites = input.site_ids || []
@@ -889,7 +960,7 @@ const TOOLS = [
       })
       let result
       try {
-        result = await context.elicitUrl({
+        result = await elicitHandoffUrl(context, {
           mode: 'url',
           message: 'Open ContentKit to reveal this new API key once. The secret never passes through the MCP client.',
           url: handoff.url,

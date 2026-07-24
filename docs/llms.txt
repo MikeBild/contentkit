@@ -27,7 +27,10 @@ Pattern Package and export as an independent visual.
 
 - [README](README.md): What Contentkit is, local zero-config setup, content upload, preview/release flow and verification commands.
 - [MCP API](MCP.md): Domain-driven remote MCP tools, resources, prompts,
-  OAuth 2.1/PKCE discovery, SubKit-style consent, native form/URL elicitation,
+  OAuth 2.1/PKCE discovery, SubKit-style consent, native form/URL elicitation
+  (a fast client auto-cancel is retried once and never counts as a human
+  decision; Claude Code >= 2.1.76 or Codex granular `mcp_elicitations`
+  required, otherwise mutations fail closed with guidance),
   identity grants, audit and privacy-bounded telemetry.
 - [Example page](examples/page.de.md): German Markdown page with supported frontmatter.
 - [Example post](examples/post.de.md): German Markdown blog post with supported frontmatter.
