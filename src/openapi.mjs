@@ -1398,10 +1398,50 @@ export function openApi(config) {
       '/v1/sites/{site}/content': {
         get: {
           operationId: 'contentList',
-          summary: 'List content',
+          summary: 'List content items in the authoring workspace',
+          description:
+            'Newest first. Each item is merged with its newest revision, so `title`, `slug`, `summary` and `tags` are present without a second call; `latest_revision_status` describes that revision, while `published_revision_id` is what says whether the item is live. Optional `kind` and `locale` filters.',
           security: secured,
-          parameters: [siteParameter],
-          responses: { 200: { description: 'Content list' } },
+          parameters: [
+            siteParameter,
+            { name: 'kind', in: 'query', schema: { type: 'string', enum: ['page', 'post', 'project', 'deck'] } },
+            { name: 'locale', in: 'query', schema: { type: 'string' } },
+          ],
+          responses: {
+            200: {
+              description: 'Content items, newest first, each merged with its newest revision',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      required: ['id', 'site_id', 'kind', 'locale', 'translation_key'],
+                      properties: {
+                        id: { type: 'string', format: 'uuid' },
+                        site_id: { type: 'string', format: 'uuid' },
+                        kind: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
+                        locale: { type: 'string' },
+                        translation_key: { type: 'string' },
+                        published_revision_id: { type: ['string', 'null'], format: 'uuid' },
+                        title: { type: ['string', 'null'] },
+                        slug: { type: ['string', 'null'] },
+                        summary: { type: ['string', 'null'] },
+                        tags: { type: ['array', 'null'], items: { type: 'string' } },
+                        latest_revision_status: {
+                          type: ['string', 'null'],
+                          enum: ['draft', 'scheduled', 'published', 'archived', null],
+                        },
+                        latest_revision_at: { type: ['string', 'null'], format: 'date-time' },
+                        created_at: { type: 'string', format: 'date-time' },
+                        updated_at: { type: 'string', format: 'date-time' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         post: {
           operationId: 'contentCreate',

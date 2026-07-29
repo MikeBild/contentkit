@@ -934,12 +934,41 @@ export function createRepository(config, db, storage) {
         ...(locale ? { locale: `eq.${locale}` } : {}),
       })
     },
+    // Title, slug and summary live on the revision, not the item, so the bare
+    // item row identifies a document only by its translation_key — unusable as
+    // an authoring list. The newest revision of each item is merged in with one
+    // extra query (same two-query-join-in-JS shape as listPublished). Fields are
+    // added, never replaced, so existing consumers keep what they read today.
     async listContent(siteId, query = {}) {
-      return db.select('ck_content_items', {
+      const items = await db.select('ck_content_items', {
         site_id: `eq.${siteId}`,
         ...(query.kind ? { kind: `eq.${query.kind}` } : {}),
         ...(query.locale ? { locale: `eq.${query.locale}` } : {}),
         order: 'created_at.desc',
+      })
+      if (!items.length || !db.query) return items
+      const latest = await db.query(
+        `SELECT DISTINCT ON (item_id) item_id, title, slug, summary, tags, status, created_at
+           FROM ck_content_revisions
+          WHERE item_id = ANY($1::uuid[])
+          ORDER BY item_id, created_at DESC`,
+        [items.map((item) => item.id)],
+      )
+      const byItem = new Map(latest.map((revision) => [revision.item_id, revision]))
+      return items.map((item) => {
+        const revision = byItem.get(item.id)
+        if (!revision) return item
+        return {
+          ...item,
+          title: revision.title,
+          slug: revision.slug,
+          summary: revision.summary,
+          tags: revision.tags,
+          // What the newest revision is, which is not the same question as
+          // whether the item is live: published_revision_id answers that.
+          latest_revision_status: revision.status,
+          latest_revision_at: revision.created_at,
+        }
       })
     },
     // Headless read API over what is currently published. Two-query join like

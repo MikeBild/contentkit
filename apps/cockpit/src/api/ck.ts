@@ -30,20 +30,10 @@ export type ContentKind = 'page' | 'post' | 'project' | 'deck'
 // interface and switch the call back to `unwrap`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ContentItem {
-  id: string
-  site_id: string
-  kind: ContentKind
-  locale: string
-  translation_key: string
-  published_revision_id: string | null
-  title?: string | null
-  slug?: string | null
-  summary?: string | null
-  tags?: string[] | null
-  status?: 'draft' | 'scheduled' | 'published' | 'archived'
-  updated_at?: string
-}
+/** Mirrors the generated `contentList` item; kept as a name pages can pass around. */
+export type ContentItem = NonNullable<
+  operations['contentList']['responses'][200]['content']['application/json']
+>[number]
 
 export interface Revision {
   id: string
@@ -253,8 +243,9 @@ export const ck = {
   },
 
   content: {
+    // Typed by the spec since 4.5.3 — no hand-maintained shape needed here.
     list: (site: string, query?: Query<'contentList'>) =>
-      unwrapAs<ContentItem[]>(api.GET('/v1/sites/{site}/content', { params: { path: { site }, query } })),
+      unwrap(api.GET('/v1/sites/{site}/content', { params: { path: { site }, query } })),
     /** The request body is raw Markdown with frontmatter, not JSON. */
     create: (site: string, source: string) =>
       unwrapAs<{ item: ContentItem; revision: Revision }>(

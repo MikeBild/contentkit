@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.4 — 2026-07-29
+
+### Changed
+
+- `GET /v1/sites/{site}/content` now merges each item with its newest revision,
+  so `title`, `slug`, `summary` and `tags` come back without a second call, and
+  documents the response shape it always had plus these fields. Title and slug
+  live on the revision, never on the item, so the bare list identified a
+  document only by its `translation_key` — in the Cockpit that meant a Title
+  column full of slugs and a Slug column that was empty on every row. One extra
+  query per page, not one per item; `kind` and `locale` are now documented as
+  filters. `latest_revision_status` describes that revision and is a different
+  question from `published_revision_id`, which is what says whether the item is
+  live.
+
+### Fixed
+
+- The Cockpit's content list shows real titles and slugs, and marks a published
+  item whose newest revision is still a draft as having unreleased work.
+
 ## 4.5.3 — 2026-07-29
 
 ### Fixed

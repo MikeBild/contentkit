@@ -409,7 +409,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List content */
+        /**
+         * List content items in the authoring workspace
+         * @description Newest first. Each item is merged with its newest revision, so `title`, `slug`, `summary` and `tags` are present without a second call; `latest_revision_status` describes that revision, while `published_revision_id` is what says whether the item is live. Optional `kind` and `locale` filters.
+         */
         get: operations["contentList"];
         put?: never;
         /**
@@ -3229,7 +3232,10 @@ export interface operations {
     };
     contentList: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: "page" | "post" | "project" | "deck";
+                locale?: string;
+            };
             header?: never;
             path: {
                 site: string;
@@ -3238,12 +3244,37 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Content list */
+            /** @description Content items, newest first, each merged with its newest revision */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        site_id: string;
+                        /** @enum {string} */
+                        kind: "page" | "post" | "project" | "deck";
+                        locale: string;
+                        translation_key: string;
+                        /** Format: uuid */
+                        published_revision_id?: string | null;
+                        title?: string | null;
+                        slug?: string | null;
+                        summary?: string | null;
+                        tags?: string[] | null;
+                        /** @enum {string|null} */
+                        latest_revision_status?: "draft" | "scheduled" | "published" | "archived" | null;
+                        /** Format: date-time */
+                        latest_revision_at?: string | null;
+                        /** Format: date-time */
+                        created_at?: string;
+                        /** Format: date-time */
+                        updated_at?: string;
+                    }[];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];

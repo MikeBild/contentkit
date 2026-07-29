@@ -112,12 +112,18 @@ export function ContentPage() {
                   <TD className="text-muted-foreground">{item.kind}</TD>
                   <TD className="text-muted-foreground">{item.locale}</TD>
                   <TD className="text-muted-foreground">{item.slug || '—'}</TD>
-                  <TD>
+                  <TD className="space-x-1 whitespace-nowrap">
                     {item.published_revision_id ? (
                       <Badge tone="success">published</Badge>
                     ) : (
                       <Badge>draft only</Badge>
                     )}
+                    {/* A published item whose newest revision is still a draft
+                        has unreleased work — the single most useful thing to
+                        see in an authoring list. */}
+                    {item.published_revision_id && item.latest_revision_status === 'draft' ? (
+                      <Badge tone="warning">newer draft</Badge>
+                    ) : null}
                   </TD>
                   <TD className="text-muted-foreground">{formatDate(item.updated_at)}</TD>
                   <TD className="flex gap-2">
