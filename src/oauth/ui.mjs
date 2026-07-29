@@ -52,9 +52,16 @@ export function renderProviderChoice(options) {
       return `<a class="button approve" href="${href}">${label}</a>`
     })
     .join('')
+  // The same chooser serves two funnels. An MCP client is authorizing; an
+  // operator opening the console is not, and telling them they are authorizing
+  // "this authorization request" describes something that is not happening.
+  const purpose =
+    options.purpose === 'cockpit'
+      ? 'Choose how to sign in to ContentKit Cockpit.'
+      : 'Choose how to authenticate this authorization request.'
   return shell(
     'Sign in',
-    `<h1>Sign in to ContentKit</h1><p class="muted">Choose how to authenticate this authorization request.</p><div class="provider-stack">${providers}</div>`,
+    `<h1>Sign in to ContentKit</h1><p class="muted">${purpose}</p><div class="provider-stack">${providers}</div>`,
   )
 }
 

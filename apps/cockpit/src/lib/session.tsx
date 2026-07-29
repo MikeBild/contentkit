@@ -45,9 +45,12 @@ export function SessionGate({ children }: { children: ReactNode }) {
 
   if (query.error instanceof ApiError && query.error.isUnauthenticated) {
     const returnTo = window.location.pathname + window.location.search
+    // A 401 means "no session", which covers both a first visit and an expired
+    // one. The console cannot tell them apart — the cookie is HttpOnly — so it
+    // says the one thing that is true either way.
     return (
       <Splash>
-        <p className="text-muted-foreground">Your session has ended.</p>
+        <p className="text-muted-foreground">Sign in to continue.</p>
         <Button onClick={() => window.location.assign(ck.identity.loginUrl(returnTo))}>Sign in</Button>
       </Splash>
     )

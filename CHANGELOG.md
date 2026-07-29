@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.4.2 — 2026-07-29
+
+### Fixed
+
+- The Cockpit told a first-time visitor "Your session has ended." A 401 means
+  "no session", which covers a first visit as much as an expired one, and the
+  console cannot tell them apart because the cookie is HttpOnly. It now says
+  the one thing that is true either way.
+- The sign-in chooser told operators they were authenticating "this
+  authorization request" when they were simply opening their own console. The
+  page is shared with the MCP consent funnel and now names the purpose it is
+  actually serving.
+
 ## 4.4.1 — 2026-07-29
 
 ### Fixed

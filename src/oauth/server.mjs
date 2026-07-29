@@ -452,10 +452,10 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     return authHtmlResponse(html, 200, setCookie ? { 'set-cookie': operatorCookie(config, setCookie) } : {})
   }
 
-  function loginResponse(rawState) {
+  function loginResponse(rawState, purpose = 'oauth') {
     const providers = loginProviders(config)
     if (!providers.length) throw new OAuthError('server_error', 'no OAuth login method is configured', 500)
-    return authHtmlResponse(renderProviderChoice({ state: rawState, providers }))
+    return authHtmlResponse(renderProviderChoice({ state: rawState, providers, purpose }))
   }
 
   async function beginAuthorization(request, url) {
@@ -552,7 +552,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       return_to: returnTo,
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     })
-    return loginResponse(rawState)
+    return loginResponse(rawState, 'cockpit')
   }
 
   function cockpitRedirect(returnTo, setCookie) {
