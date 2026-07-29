@@ -1,10 +1,36 @@
-;(() => {
-  const all = (root, selector) => [...root.querySelectorAll(selector)]
-  document.documentElement.classList.add('ck-composition-enhanced')
+// Progressive enhancement for composition documents: code-variant tabs, table
+// filtering and sorting, and the application-shell navigation toggle.
+//
+// A module with an explicit root rather than a document-wide IIFE, because the
+// same markup is mounted twice: once as a published page, where the root is the
+// document, and once inside the console, where it is a container React owns and
+// re-renders. Both call the same code — a second implementation would drift
+// from the one the published site actually runs.
+const all = (root, selector) => [...root.querySelectorAll(selector)]
 
-  for (const [exampleIndex, example] of all(document, '.composition-code-example').entries()) {
+// React re-mounts the same nodes on every render, so enhancement has to be
+// idempotent: without this marker a second pass appends a second tablist, a
+// second filter and a second sort button to every element it already handled.
+const ENHANCED = 'data-ck-enhanced'
+const claim = (element) => {
+  if (element.hasAttribute(ENHANCED)) return false
+  element.setAttribute(ENHANCED, '')
+  return true
+}
+
+// Panel ids must stay unique across every root enhanced on one page — the
+// console can show several rendered documents at once, and duplicate ids would
+// point every `aria-controls` at the first match.
+let panelSequence = 0
+
+export function enhanceComposition(root = document) {
+  const host = root.documentElement || root
+  host.classList?.add('ck-composition-enhanced')
+
+  for (const example of all(root, '.composition-code-example')) {
     const panels = all(example, ':scope > .composition-code-variant')
-    if (panels.length < 2) continue
+    if (panels.length < 2 || !claim(example)) continue
+    panelSequence += 1
     const tabs = document.createElement('div')
     tabs.className = 'composition-code-tabs'
     tabs.setAttribute('role', 'tablist')
@@ -22,7 +48,7 @@
     }
     panels.forEach((panel, index) => {
       const heading = panel.querySelector(':scope > h3')
-      const id = panel.id || `composition-code-panel-${exampleIndex + 1}-${index + 1}`
+      const id = panel.id || `composition-code-panel-${panelSequence}-${index + 1}`
       panel.id = id
       const tab = document.createElement('button')
       tab.type = 'button'
@@ -65,10 +91,10 @@
     activate(0)
   }
 
-  for (const section of all(document, '.composition-data-table')) {
+  for (const section of all(root, '.composition-data-table')) {
     const table = section.querySelector(':scope > table')
     const body = table?.tBodies?.[0]
-    if (!table || !body) continue
+    if (!table || !body || !claim(section)) continue
     const rows = [...body.rows]
     const controls = document.createElement('div')
     controls.className = 'composition-table-controls'
@@ -108,9 +134,9 @@
     })
   }
 
-  for (const shell of all(document, '.composition-application-shell')) {
+  for (const shell of all(root, '.composition-application-shell')) {
     const navigation = shell.querySelector(':scope > .composition-shell-navigation')
-    if (!navigation) continue
+    if (!navigation || !claim(shell)) continue
     const toggle = document.createElement('button')
     toggle.type = 'button'
     toggle.className = 'composition-shell-toggle'
@@ -122,4 +148,4 @@
     })
     shell.querySelector(':scope > h2')?.after(toggle)
   }
-})()
+}

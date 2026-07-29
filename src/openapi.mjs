@@ -3,6 +3,18 @@ import { registerMcpAuthOpenApi } from './oauth/openapi.mjs'
 export function openApi(config) {
   const secured = [{ oauth2: [] }, { bearerAuth: [] }, { apiKeyAuth: [] }]
   const siteParameter = { name: 'site', in: 'path', required: true, schema: { type: 'string' } }
+  // The engagement and delivery lists are cross-site by nature: without a filter
+  // they answer for every site the credential reaches. `site_id` is what narrows
+  // one of them to a single site, and it has to be documented — a client that
+  // can only learn about it by reading routes.mjs will forget it, and a console
+  // list that silently mixes two sites is worse than one that fails.
+  const siteFilterParameter = {
+    name: 'site_id',
+    in: 'query',
+    required: false,
+    description: 'Restrict the result to one site. Omitted, the result covers every site this credential may reach.',
+    schema: { type: 'string', format: 'uuid' },
+  }
   const statsParameters = [
     siteParameter,
     {
@@ -32,6 +44,19 @@ export function openApi(config) {
     required: true,
     content: { 'application/json': { schema: { type: 'object', required } } },
   })
+  // A 2xx that names its schema. A response described in prose only generates
+  // no client type, and the client then guesses the shape — which is how the
+  // console came to read `delivery.event`, `endpoint.active` and
+  // `created.api_key`, three fields the server has never sent.
+  const jsonResponse = (description, schema) => ({ description, content: { 'application/json': { schema } } })
+  const ref = (name) => ({ $ref: `#/components/schemas/${name}` })
+  const listOf = (name) => ({ type: 'array', items: ref(name) })
+  const deletedResponse = (description, extra = {}) =>
+    jsonResponse(description, {
+      type: 'object',
+      required: ['deleted'],
+      properties: { deleted: { type: 'boolean' }, ...extra },
+    })
   const markdownBody = {
     required: true,
     content: {
@@ -241,6 +266,255 @@ export function openApi(config) {
             rebuild_required: { type: 'boolean' },
           },
         },
+        ReadinessReport: {
+          type: 'object',
+          description: 'Answered with 200 while ready and 503 while draining or initializing — the body is the same.',
+          required: ['status', 'version', 'inflight'],
+          properties: {
+            status: { type: 'string', enum: ['ready', 'draining', 'initializing'] },
+            version: { type: 'string' },
+            inflight: { type: 'integer', description: 'Release builds currently running.' },
+            deck_inflight: { type: 'integer' },
+            deck_queued: { type: 'integer' },
+          },
+        },
+        DeckThemeList: {
+          type: 'object',
+          required: ['themes', 'default'],
+          properties: {
+            themes: { type: 'array', items: { type: 'string' } },
+            default: { type: 'string' },
+          },
+        },
+        DeckTemplateList: {
+          type: 'object',
+          required: ['schema_version', 'templates', 'ids', 'default', 'registry_sha256'],
+          properties: {
+            schema_version: { type: 'string' },
+            templates: {
+              type: 'object',
+              additionalProperties: true,
+              description: 'Narrative slots, required roles, defaults and visual contract, keyed by template id.',
+            },
+            ids: { type: 'array', items: { type: 'string' } },
+            default: { type: 'string' },
+            registry_sha256: { type: 'string' },
+          },
+        },
+        AccessGroupMembers: {
+          allOf: [
+            { $ref: '#/components/schemas/AccessGroup' },
+            {
+              type: 'object',
+              required: ['user_ids'],
+              properties: { user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } } },
+            },
+          ],
+          description: 'A group plus the membership the PUT installed. The list replaces, it never merges.',
+        },
+        Comment: {
+          type: 'object',
+          required: ['id', 'site_id', 'content_item_id', 'author_name', 'body', 'status', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            content_item_id: { type: 'string', format: 'uuid' },
+            author_name: { type: 'string' },
+            author_email: { type: ['string', 'null'] },
+            body: { type: 'string' },
+            status: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+            moderated_at: { type: ['string', 'null'], format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        ContactSubmission: {
+          type: 'object',
+          required: ['id', 'site_id', 'name', 'email', 'body', 'status', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            email: { type: 'string' },
+            body: { type: 'string', description: 'The message itself. There is no `message` field.' },
+            status: { type: 'string', enum: ['new', 'read', 'closed'] },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        FeedbackAggregate: {
+          type: 'object',
+          description: 'Anonymous up/down votes summed per post. There are no individual vote records to read.',
+          required: ['content_item_id', 'site_id', 'up', 'down'],
+          properties: {
+            content_item_id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            up: { type: 'integer' },
+            down: { type: 'integer' },
+          },
+        },
+        WebhookEndpoint: {
+          type: 'object',
+          description:
+            'A subscription without its signing secret. Enablement is `disabled_at`: a timestamp means paused, null means live.',
+          required: ['id', 'site_id', 'url', 'events', 'description', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            url: { type: 'string', format: 'uri' },
+            events: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Event filter. Empty means every event.',
+            },
+            description: { type: 'string' },
+            disabled_at: { type: ['string', 'null'], format: 'date-time' },
+            consecutive_failures: { type: 'integer' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+        CreatedWebhookEndpoint: {
+          allOf: [
+            { $ref: '#/components/schemas/WebhookEndpoint' },
+            {
+              type: 'object',
+              required: ['secret'],
+              properties: {
+                secret: {
+                  type: 'string',
+                  description: 'The signing secret, in this response and never again. A later GET omits it.',
+                },
+              },
+            },
+          ],
+        },
+        WebhookSecret: {
+          type: 'object',
+          description: 'The rotated signing secret. It is returned once here and is unreadable afterwards.',
+          required: ['id', 'secret'],
+          properties: { id: { type: 'string', format: 'uuid' }, secret: { type: 'string' } },
+        },
+        WebhookDelivery: {
+          type: 'object',
+          description: 'One attempt ledger row. The event name is `type`; there is no `event` field.',
+          required: ['id', 'site_id', 'event_id', 'type', 'status', 'attempts', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            endpoint_id: { type: ['string', 'null'], format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            event_id: { type: 'string', format: 'uuid' },
+            type: { type: 'string' },
+            payload: { type: 'object', additionalProperties: true },
+            status: { type: 'string', enum: ['pending', 'delivered', 'failed'] },
+            attempts: { type: 'integer' },
+            next_attempt_at: { type: ['string', 'null'], format: 'date-time' },
+            last_error: { type: ['string', 'null'] },
+            response_status: { type: ['integer', 'null'] },
+            delivered_at: { type: ['string', 'null'], format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        Release: {
+          type: 'object',
+          description: 'A built, immutable snapshot. Only `kind: release` is activatable; a preview never is.',
+          required: ['id', 'site_id', 'kind', 'status', 'reason', 'revision_ids', 'file_count', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            kind: { type: 'string', enum: ['release', 'preview'] },
+            status: {
+              type: 'string',
+              enum: ['building', 'preview', 'ready', 'active', 'superseded', 'failed'],
+            },
+            reason: { type: 'string' },
+            revision_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            storage_prefix: { type: ['string', 'null'] },
+            file_count: { type: 'integer' },
+            error: { type: ['string', 'null'] },
+            completed_at: { type: ['string', 'null'], format: 'date-time' },
+            activated_at: { type: ['string', 'null'], format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        ReleaseBuildResult: {
+          type: 'object',
+          description: 'What a build or an activation answers. It is not a release row.',
+          required: ['release_id', 'active'],
+          properties: {
+            release_id: { type: 'string', format: 'uuid' },
+            file_count: { type: 'integer' },
+            active: { type: 'boolean' },
+          },
+        },
+        CreatedApiKey: {
+          allOf: [
+            { $ref: '#/components/schemas/ApiKeySummary' },
+            {
+              type: 'object',
+              required: ['key'],
+              properties: {
+                key: {
+                  type: 'string',
+                  description: 'The raw key, in this response only. ContentKit stores a hash and cannot show it again.',
+                },
+              },
+            },
+          ],
+        },
+        IdentityGrantConflict: {
+          type: 'object',
+          description:
+            'One grant exists per provider/issuer/subject, revoked rows included. `id` names the row to edit or restore.',
+          required: ['error'],
+          properties: {
+            error: { type: 'string', enum: ['identity_grant_exists'] },
+            id: { type: ['string', 'null'], format: 'uuid' },
+            hint: { type: 'string' },
+          },
+        },
+        RevokedResource: {
+          type: 'object',
+          required: ['revoked', 'id'],
+          properties: { revoked: { type: 'boolean' }, id: { type: 'string', format: 'uuid' } },
+        },
+        AudioJob: {
+          type: 'object',
+          required: ['id', 'item_id', 'status', 'attempts', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            item_id: { type: 'string', format: 'uuid' },
+            slug: { type: ['string', 'null'] },
+            title: { type: ['string', 'null'] },
+            status: { type: 'string', enum: ['pending', 'processing', 'done', 'failed', 'skipped'] },
+            attempts: { type: 'integer' },
+            chars: { type: ['integer', 'null'] },
+            error: { type: ['string', 'null'] },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+        AudioJobList: {
+          type: 'object',
+          description: 'The page of jobs plus a `summary`; the budget lives in the summary, not beside it.',
+          required: ['jobs', 'summary'],
+          properties: {
+            jobs: { type: 'array', items: { $ref: '#/components/schemas/AudioJob' } },
+            summary: {
+              type: 'object',
+              additionalProperties: true,
+              required: ['chars_this_month', 'monthly_char_budget', 'budget_remaining'],
+              properties: {
+                pending: { type: 'integer' },
+                processing: { type: 'integer' },
+                done: { type: 'integer' },
+                failed: { type: 'integer' },
+                skipped: { type: 'integer' },
+                chars_this_month: { type: 'integer' },
+                monthly_char_budget: { type: ['integer', 'null'] },
+                budget_remaining: { type: ['integer', 'null'] },
+              },
+            },
+          },
+        },
         ReportSeriesSetting: {
           type: 'object',
           additionalProperties: false,
@@ -307,6 +581,31 @@ export function openApi(config) {
             base_url: { type: 'string', format: 'uri' },
             default_locale: { type: 'string' },
             settings: { $ref: '#/components/schemas/SiteSettings' },
+          },
+        },
+        ContentItem: {
+          type: 'object',
+          description:
+            'A content item merged with its newest revision. Title, slug, summary and tags live on the revision, so an unmerged item row identifies a document only by its translation_key.',
+          required: ['id', 'site_id', 'kind', 'locale', 'translation_key'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            kind: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
+            locale: { type: 'string' },
+            translation_key: { type: 'string' },
+            published_revision_id: { type: ['string', 'null'], format: 'uuid' },
+            title: { type: ['string', 'null'] },
+            slug: { type: ['string', 'null'] },
+            summary: { type: ['string', 'null'] },
+            tags: { type: ['array', 'null'], items: { type: 'string' } },
+            latest_revision_status: {
+              type: ['string', 'null'],
+              enum: ['draft', 'scheduled', 'published', 'archived', null],
+            },
+            latest_revision_at: { type: ['string', 'null'], format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
           },
         },
         PublishedEntry: {
@@ -1161,13 +1460,22 @@ export function openApi(config) {
         },
       },
       '/health': {
-        get: { operationId: 'healthCheck', summary: 'Liveness', responses: { 200: { description: 'OK' } } },
+        get: {
+          operationId: 'healthCheck',
+          summary: 'Liveness',
+          responses: {
+            200: { description: 'OK', content: { 'text/plain': { schema: { type: 'string', const: 'ok' } } } },
+          },
+        },
       },
       '/ready': {
         get: {
           operationId: 'readinessCheck',
           summary: 'Readiness',
-          responses: { 200: { description: 'Ready' }, 503: { description: 'Draining' } },
+          responses: {
+            200: jsonResponse('Ready', ref('ReadinessReport')),
+            503: jsonResponse('Draining or still initializing', ref('ReadinessReport')),
+          },
         },
       },
       '/metrics': {
@@ -1255,7 +1563,14 @@ export function openApi(config) {
           description:
             'Ordered by name. A credential restricted to specific sites sees only those; an unrestricted one sees every site. Without this a caller cannot discover which sites exist and can only address a slug it already knows.',
           security: secured,
-          responses: { 200: { description: 'Sites visible to this credential' } },
+          responses: {
+            200: {
+              description: 'Sites visible to this credential',
+              content: {
+                'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Site' } } },
+              },
+            },
+          },
         },
         post: {
           operationId: 'siteCreate',
@@ -1263,7 +1578,10 @@ export function openApi(config) {
           security: secured,
           requestBody: jsonBody(['name', 'base_url', 'default_locale']),
           responses: {
-            201: { description: 'Created' },
+            201: {
+              description: 'Created',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Site' } } },
+            },
             403: { description: 'A site-restricted administrator cannot create a global site' },
           },
         },
@@ -1273,14 +1591,27 @@ export function openApi(config) {
           operationId: 'siteGet',
           summary: 'Read site metadata and settings',
           description:
-            'Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object.',
+            'Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object. The response carries a strong `ETag` over that row; send it back as `If-Match` on the `PATCH` to be told about a concurrent write instead of overwriting it.',
           security: secured,
-          parameters: [siteParameter],
+          parameters: [
+            siteParameter,
+            {
+              name: 'If-None-Match',
+              in: 'header',
+              required: false,
+              description: 'The ETag of a previously read site row.',
+              schema: { type: 'string' },
+            },
+          ],
           responses: {
             200: {
               description: 'Site',
+              headers: {
+                ETag: { description: 'Strong validator over the site row.', schema: { type: 'string' } },
+              },
               content: { 'application/json': { schema: { $ref: '#/components/schemas/Site' } } },
             },
+            304: { description: 'The site row is unchanged' },
             404: { description: 'Site not found' },
           },
         },
@@ -1288,9 +1619,18 @@ export function openApi(config) {
           operationId: 'siteUpdate',
           summary: 'Update site metadata, settings and domains',
           description:
-            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean. Optional `If-Match` with the ETag from `GET` makes the update conditional: a site written by someone else in the meantime answers 412 instead of dropping their change.',
           security: secured,
-          parameters: [siteParameter],
+          parameters: [
+            siteParameter,
+            {
+              name: 'If-Match',
+              in: 'header',
+              required: false,
+              description: 'The ETag the caller read. `*` matches any existing site.',
+              schema: { type: 'string' },
+            },
+          ],
           requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/SitePatch' } } },
@@ -1298,7 +1638,71 @@ export function openApi(config) {
           responses: {
             200: {
               description: 'Updated',
+              headers: {
+                ETag: { description: 'Strong validator over the updated site row.', schema: { type: 'string' } },
+              },
               content: { 'application/json': { schema: { $ref: '#/components/schemas/Site' } } },
+            },
+            412: {
+              description: 'If-Match did not match: the site changed since it was read',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+            },
+          },
+        },
+        delete: {
+          operationId: 'siteDelete',
+          summary: 'Delete a site and everything it owns',
+          description:
+            'Irreversible and total. Deleting a site removes its content items and every immutable revision of them, all releases and previews together with their storage objects, every uploaded and narrated asset, readers, reader groups, access rules and sessions, comments, contact submissions, feedback votes, webhook endpoints and their deliveries, audio jobs, domains and locales. Published pages stop being served at once. Audit events survive with their site reference cleared. A site that still owns content, releases or readers answers 409 and names the counts; `purge=true` is the explicit acknowledgement of those numbers and performs the cascade. API keys and identity grants are not deleted — they keep referring to a site id that no longer exists.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            {
+              name: 'purge',
+              in: 'query',
+              required: false,
+              description: 'Must be `true` to delete a site that still owns content, releases or readers.',
+              schema: { type: 'boolean', default: false },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Site and everything it owned deleted',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['site_id', 'deleted', 'content_items', 'releases', 'readers', 'removed_objects'],
+                    properties: {
+                      site_id: { type: 'string', format: 'uuid' },
+                      deleted: { type: 'boolean' },
+                      content_items: { type: 'integer' },
+                      releases: { type: 'integer' },
+                      readers: { type: 'integer' },
+                      assets: { type: 'integer' },
+                      removed_objects: { type: 'integer', description: 'Storage objects deleted.' },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'Site not found' },
+            409: {
+              description: 'The site is not empty and purge was not requested; the body carries the counts',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['error', 'content_items', 'releases', 'readers'],
+                    properties: {
+                      error: { type: 'string' },
+                      content_items: { type: 'integer' },
+                      releases: { type: 'integer' },
+                      readers: { type: 'integer' },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -1309,7 +1713,7 @@ export function openApi(config) {
           summary: 'List site reader accounts',
           security: secured,
           parameters: [siteParameter],
-          responses: { 200: { description: 'Users without password hashes' } },
+          responses: { 200: jsonResponse('Users without password hashes', listOf('AccessUser')) },
         },
         post: {
           operationId: 'accessUserCreate',
@@ -1317,7 +1721,7 @@ export function openApi(config) {
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(['username', 'password']),
-          responses: { 201: { description: 'Reader created; password is never returned' } },
+          responses: { 201: jsonResponse('Reader created; password is never returned', ref('AccessUser')) },
         },
       },
       '/v1/sites/{site}/access/users/{user}': {
@@ -1330,7 +1734,10 @@ export function openApi(config) {
             { name: 'user', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
           requestBody: jsonBody(),
-          responses: { 200: { description: 'Updated' }, 404: { description: 'Reader not found' } },
+          responses: {
+            200: jsonResponse('Updated', ref('AccessUser')),
+            404: { description: 'Reader not found' },
+          },
         },
         delete: {
           operationId: 'accessUserDelete',
@@ -1340,7 +1747,7 @@ export function openApi(config) {
             siteParameter,
             { name: 'user', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'Deleted' }, 404: { description: 'Reader not found' } },
+          responses: { 200: deletedResponse('Deleted'), 404: { description: 'Reader not found' } },
         },
       },
       '/v1/sites/{site}/access/users/{user}/revoke-sessions': {
@@ -1352,7 +1759,13 @@ export function openApi(config) {
             siteParameter,
             { name: 'user', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'Revocation count' } },
+          responses: {
+            200: jsonResponse('Revocation count', {
+              type: 'object',
+              required: ['revoked'],
+              properties: { revoked: { type: 'integer' } },
+            }),
+          },
         },
       },
       '/v1/sites/{site}/access/groups': {
@@ -1361,7 +1774,7 @@ export function openApi(config) {
           summary: 'List reader groups',
           security: secured,
           parameters: [siteParameter],
-          responses: { 200: { description: 'Groups' } },
+          responses: { 200: jsonResponse('Groups', listOf('AccessGroup')) },
         },
         post: {
           operationId: 'accessGroupCreate',
@@ -1369,7 +1782,7 @@ export function openApi(config) {
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(['slug']),
-          responses: { 201: { description: 'Group created' } },
+          responses: { 201: jsonResponse('Group created', ref('AccessGroup')) },
         },
       },
       '/v1/sites/{site}/access/groups/{group}': {
@@ -1382,7 +1795,7 @@ export function openApi(config) {
             { name: 'group', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
           requestBody: jsonBody(),
-          responses: { 200: { description: 'Updated' } },
+          responses: { 200: jsonResponse('Updated', ref('AccessGroup')) },
         },
         delete: {
           operationId: 'accessGroupDelete',
@@ -1392,7 +1805,10 @@ export function openApi(config) {
             siteParameter,
             { name: 'group', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'Deleted' }, 409: { description: 'Group is referenced by a rule' } },
+          responses: {
+            200: deletedResponse('Deleted'),
+            409: jsonResponse('Group is referenced by a rule', ref('Error')),
+          },
         },
       },
       '/v1/sites/{site}/access/groups/{group}/members': {
@@ -1405,7 +1821,7 @@ export function openApi(config) {
             { name: 'group', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
           requestBody: jsonBody(['user_ids']),
-          responses: { 200: { description: 'Membership replaced' } },
+          responses: { 200: jsonResponse('Membership replaced', ref('AccessGroupMembers')) },
         },
       },
       '/v1/sites/{site}/access/rules': {
@@ -1414,7 +1830,7 @@ export function openApi(config) {
           summary: 'List draft access rules',
           security: secured,
           parameters: [siteParameter],
-          responses: { 200: { description: 'Rules' } },
+          responses: { 200: jsonResponse('Rules', listOf('AccessRule')) },
         },
         post: {
           operationId: 'accessRuleCreate',
@@ -1423,7 +1839,7 @@ export function openApi(config) {
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(['path']),
-          responses: { 201: { description: 'Rule created; rebuild_required is true' } },
+          responses: { 201: jsonResponse('Rule created; rebuild_required is true', ref('AccessRule')) },
         },
       },
       '/v1/sites/{site}/access/rules/{rule}': {
@@ -1436,7 +1852,7 @@ export function openApi(config) {
             { name: 'rule', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
           requestBody: jsonBody(),
-          responses: { 200: { description: 'Updated; rebuild_required is true' } },
+          responses: { 200: jsonResponse('Updated; rebuild_required is true', ref('AccessRule')) },
         },
         delete: {
           operationId: 'accessRuleDelete',
@@ -1446,7 +1862,9 @@ export function openApi(config) {
             siteParameter,
             { name: 'rule', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'Deleted; rebuild_required is true' } },
+          responses: {
+            200: deletedResponse('Deleted; rebuild_required is true', { rebuild_required: { type: 'boolean' } }),
+          },
         },
       },
       '/v1/sites/{site}/content': {
@@ -1466,32 +1884,7 @@ export function openApi(config) {
               description: 'Content items, newest first, each merged with its newest revision',
               content: {
                 'application/json': {
-                  schema: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      required: ['id', 'site_id', 'kind', 'locale', 'translation_key'],
-                      properties: {
-                        id: { type: 'string', format: 'uuid' },
-                        site_id: { type: 'string', format: 'uuid' },
-                        kind: { type: 'string', enum: ['page', 'post', 'project', 'deck'] },
-                        locale: { type: 'string' },
-                        translation_key: { type: 'string' },
-                        published_revision_id: { type: ['string', 'null'], format: 'uuid' },
-                        title: { type: ['string', 'null'] },
-                        slug: { type: ['string', 'null'] },
-                        summary: { type: ['string', 'null'] },
-                        tags: { type: ['array', 'null'], items: { type: 'string' } },
-                        latest_revision_status: {
-                          type: ['string', 'null'],
-                          enum: ['draft', 'scheduled', 'published', 'archived', null],
-                        },
-                        latest_revision_at: { type: ['string', 'null'], format: 'date-time' },
-                        created_at: { type: 'string', format: 'date-time' },
-                        updated_at: { type: 'string', format: 'date-time' },
-                      },
-                    },
-                  },
+                  schema: { type: 'array', items: { $ref: '#/components/schemas/ContentItem' } },
                 },
               },
             },
@@ -1693,7 +2086,7 @@ export function openApi(config) {
           operationId: 'deckThemeList',
           summary: 'List controlled slide-deck themes',
           responses: {
-            200: { description: 'Theme identifiers and the default theme' },
+            200: jsonResponse('Theme identifiers and the default theme', ref('DeckThemeList')),
             304: { description: 'Strong ETag matched' },
           },
         },
@@ -1705,7 +2098,10 @@ export function openApi(config) {
           description:
             'Returns machine-readable narrative slots, required roles, defaults and visual contracts for every reusable deck template.',
           responses: {
-            200: { description: 'Versioned template registry, identifiers, default and registry hash' },
+            200: jsonResponse(
+              'Versioned template registry, identifiers, default and registry hash',
+              ref('DeckTemplateList'),
+            ),
             304: { description: 'Strong ETag matched' },
           },
         },
@@ -1993,6 +2389,21 @@ export function openApi(config) {
         },
       },
       '/v1/content/{item}': {
+        get: {
+          operationId: 'contentGet',
+          summary: 'Read one content item merged with its newest revision',
+          description:
+            'The single-item form of the content list, in the same shape: a detail view addresses an item by id and should not have to page the whole workspace to learn its title. The Markdown itself lives on the revisions, not here.',
+          security: secured,
+          parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: {
+              description: 'Content item merged with its newest revision',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ContentItem' } } },
+            },
+            404: { description: 'Content item not found' },
+          },
+        },
         delete: {
           operationId: 'contentDeleteDraft',
           summary: 'Discard a draft content item and all of its revisions',
@@ -2053,6 +2464,64 @@ export function openApi(config) {
             404: { description: 'Content item not found' },
           },
         },
+        post: {
+          operationId: 'contentAudioCreate',
+          summary: 'Narrate one published post',
+          description:
+            "Enqueues a read-aloud (TTS) job for this item alone — the backfill narrowed to one post, so the site's `settings.audio.enabled` gate (409 otherwise), the monthly character budget and the speech-hash idempotency behave exactly as they do for the archive walk. Only published posts can be narrated: another kind, or an unpublished item, is a 409. `force: true` re-renders even when the speech text is unchanged (e.g. after a voice change), `dry_run: true` prices it without enqueuing. Synthesis happens in the background worker; poll `GET /v1/content/{item}/audio` for the outcome.",
+          security: secured,
+          parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    force: { type: 'boolean', default: false },
+                    dry_run: { type: 'boolean', default: false },
+                    limit_chars: { type: 'integer', minimum: 1 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            202: {
+              description: 'Job enqueued (or the dry-run estimate)',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['dry_run', 'jobs', 'total_chars', 'estimated_usd', 'skipped'],
+                    properties: {
+                      dry_run: { type: 'boolean' },
+                      jobs: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          required: ['item_id', 'revision_id', 'chars'],
+                          properties: {
+                            item_id: { type: 'string', format: 'uuid' },
+                            revision_id: { type: 'string', format: 'uuid' },
+                            title: { type: ['string', 'null'] },
+                            chars: { type: 'integer' },
+                          },
+                        },
+                      },
+                      total_chars: { type: 'integer' },
+                      estimated_usd: { type: 'number' },
+                      skipped: { type: 'integer', description: 'Already narrated or without speech text.' },
+                      enqueued: { type: 'integer', description: 'Absent on a dry run.' },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'Content item not found' },
+            409: { description: 'Not a published post, or audio is not enabled for this site' },
+          },
+        },
         delete: {
           operationId: 'contentAudioDelete',
           summary: 'Delete read-aloud audio for a content item',
@@ -2091,9 +2560,44 @@ export function openApi(config) {
             },
           ],
           responses: {
-            200: { description: 'Job list and summary' },
+            200: jsonResponse('Job list and summary', ref('AudioJobList')),
             404: { description: 'Site not found' },
             422: { description: 'Invalid status filter' },
+          },
+        },
+      },
+      '/v1/sites/{site}/audio/jobs/{job}/retry': {
+        post: {
+          operationId: 'audioJobRetry',
+          summary: 'Re-queue one failed or finished audio job',
+          description:
+            'Resets the job to `pending` with a cleared error and a zeroed attempt counter, keeping its speech hash so every other enqueue path stays idempotent. A job that is already `pending` or `processing` answers 409 — the worker holds it. Retrying a `done` job re-renders it; the existing MP3 stays referenced until the new one is stored, so a live player never 404s.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'job', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: {
+            200: {
+              description: 'Job re-queued',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['id', 'item_id', 'status', 'attempts', 'previous_status'],
+                    properties: {
+                      id: { type: 'string', format: 'uuid' },
+                      item_id: { type: 'string', format: 'uuid' },
+                      status: { type: 'string', enum: ['pending'] },
+                      attempts: { type: 'integer' },
+                      previous_status: { type: 'string', enum: ['done', 'failed', 'skipped'] },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'Site or audio job not found' },
+            409: { description: 'The job is already pending or processing' },
           },
         },
       },
@@ -2203,7 +2707,7 @@ export function openApi(config) {
           summary: 'List releases newest first',
           security: secured,
           parameters: [siteParameter],
-          responses: { 200: { description: 'Release list' } },
+          responses: { 200: jsonResponse('Release list', listOf('Release')) },
         },
         post: {
           operationId: 'releaseCreate',
@@ -2213,7 +2717,40 @@ export function openApi(config) {
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(),
-          responses: { 201: { description: 'Release active' } },
+          responses: { 201: jsonResponse('Release active', ref('ReleaseBuildResult')) },
+        },
+      },
+      '/v1/sites/{site}/releases/{release}': {
+        delete: {
+          operationId: 'releaseDelete',
+          summary: 'Delete a built release or preview ahead of the retention sweep',
+          description:
+            'Removes the release row and its storage objects, and with it every row that pointed at the release: its file entries, its reader-access catalog and any named preview access, whose links stop working immediately. The published content itself is untouched — a release is a rendered snapshot, not the source. The site’s active release answers 409: the live site is served out of its objects, so activate another release first. Deleting a release that is still inside the rollback window simply removes that rollback target.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'release', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: {
+            200: {
+              description: 'Release deleted',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['release_id', 'deleted', 'removed_objects'],
+                    properties: {
+                      release_id: { type: 'string', format: 'uuid' },
+                      deleted: { type: 'boolean' },
+                      removed_objects: { type: 'integer' },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'Site or release not found' },
+            409: { description: 'The release is active' },
+          },
         },
       },
       '/v1/sites/{site}/releases/{release}/activate': {
@@ -2225,7 +2762,7 @@ export function openApi(config) {
             siteParameter,
             { name: 'release', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'Release active' } },
+          responses: { 200: jsonResponse('Release active', ref('ReleaseBuildResult')) },
         },
       },
       '/v1/publish-due': {
@@ -2278,7 +2815,16 @@ export function openApi(config) {
           operationId: 'commentList',
           summary: 'List the moderation queue',
           security: secured,
-          responses: { 200: { description: 'Comment list' } },
+          parameters: [
+            siteFilterParameter,
+            {
+              name: 'status',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+            },
+          ],
+          responses: { 200: jsonResponse('Comment list', listOf('Comment')) },
         },
       },
       '/v1/comments/{comment}': {
@@ -2288,7 +2834,48 @@ export function openApi(config) {
           security: secured,
           parameters: [{ name: 'comment', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: jsonBody(['status']),
-          responses: { 200: { description: 'Moderated' } },
+          responses: { 200: jsonResponse('Moderated', ref('Comment')) },
+        },
+        delete: {
+          operationId: 'commentDelete',
+          summary: 'Delete a comment for good',
+          description:
+            'Removes the row; rejecting instead keeps it for the record. An approved comment is rendered into the published pages, so deleting one also builds and activates a release without it — best-effort, exactly like approval: a failed build leaves the comment deleted and reports `republish_error`. `publish=false` skips that build when many comments are deleted in a row; the next release removes them all.',
+          security: secured,
+          parameters: [
+            { name: 'comment', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+            {
+              name: 'publish',
+              in: 'query',
+              required: false,
+              description: 'Set to `false` to leave the live site to the next release.',
+              schema: { type: 'boolean', default: true },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Comment deleted',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['id', 'deleted'],
+                    properties: {
+                      id: { type: 'string', format: 'uuid' },
+                      deleted: { type: 'boolean' },
+                      release: {
+                        type: ['object', 'null'],
+                        additionalProperties: true,
+                        description: 'The republish result, null when nothing was rebuilt.',
+                      },
+                      republish_error: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'Comment not found' },
+          },
         },
       },
       '/v1/contact-submissions': {
@@ -2296,26 +2883,105 @@ export function openApi(config) {
           operationId: 'contactSubmissionList',
           summary: 'List contact submissions',
           security: secured,
-          responses: { 200: { description: 'Submission list' } },
+          parameters: [siteFilterParameter],
+          responses: { 200: jsonResponse('Submission list', listOf('ContactSubmission')) },
         },
       },
       '/v1/contact-submissions/{id}': {
         patch: {
           operationId: 'contactSubmissionUpdate',
-          summary: 'Mark a contact submission read or closed',
+          summary: 'Move a contact submission between new, read and closed',
+          description:
+            'Triage is not one-way: `new` is accepted as well, so a submission marked read or closed by mistake goes back to the inbox.',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
-          requestBody: jsonBody(['status']),
-          responses: { 200: { description: 'Updated' } },
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['status'],
+                  properties: { status: { type: 'string', enum: ['new', 'read', 'closed'] } },
+                },
+              },
+            },
+          },
+          responses: {
+            200: jsonResponse('Updated', ref('ContactSubmission')),
+            404: { description: 'Contact submission not found' },
+            422: { description: 'status must be new, read or closed' },
+          },
+        },
+        delete: {
+          operationId: 'contactSubmissionDelete',
+          summary: 'Delete a contact submission',
+          description:
+            'Removes the message, the name and the email address the sender left. Closing keeps the record instead; this is the erasure path, and it is irreversible.',
+          security: secured,
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: {
+              description: 'Submission deleted',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['id', 'deleted'],
+                    properties: { id: { type: 'string', format: 'uuid' }, deleted: { type: 'boolean' } },
+                  },
+                },
+              },
+            },
+            404: { description: 'Contact submission not found' },
+          },
         },
       },
       '/v1/feedback': {
         get: {
           operationId: 'feedbackList',
           summary: 'Per-post feedback aggregates (up/down counts)',
-          description: 'Optional query filters: site_id, post (content item id). Sorted by total votes, descending.',
+          description: 'Sorted by total votes, descending.',
           security: secured,
-          responses: { 200: { description: 'Aggregated votes per post' } },
+          parameters: [
+            siteFilterParameter,
+            {
+              name: 'post',
+              in: 'query',
+              required: false,
+              description: 'Restrict the result to one content item.',
+              schema: { type: 'string', format: 'uuid' },
+            },
+          ],
+          responses: { 200: jsonResponse('Aggregated votes per post', listOf('FeedbackAggregate')) },
+        },
+      },
+      '/v1/feedback/{item}': {
+        delete: {
+          operationId: 'feedbackReset',
+          summary: 'Reset the feedback counter of one post',
+          description:
+            'Deletes every up/down vote stored for the content item, which sets its counter back to zero. Votes are anonymous rows with no moderation state, so there is nothing to keep — this is for a brigaded post or one that was rewritten past the point where its old score describes it. Published pages never render the totals, so no rebuild follows.',
+          security: secured,
+          parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: {
+              description: 'Votes deleted',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['content_item_id', 'deleted_votes'],
+                    properties: {
+                      content_item_id: { type: 'string', format: 'uuid' },
+                      deleted_votes: { type: 'integer' },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'Content item not found' },
+          },
         },
       },
       '/v1/api-keys': {
@@ -2343,7 +3009,7 @@ export function openApi(config) {
           summary: 'Create a scoped API key',
           security: secured,
           requestBody: jsonBody(['name', 'scopes']),
-          responses: { 201: { description: 'Created; raw key returned once' } },
+          responses: { 201: jsonResponse('Created; raw key returned once', ref('CreatedApiKey')) },
         },
       },
       '/v1/api-keys/{id}': {
@@ -2352,7 +3018,10 @@ export function openApi(config) {
           summary: 'Revoke an API key',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
-          responses: { 200: { description: 'Revoked' }, 404: { description: 'Not found' } },
+          responses: {
+            200: jsonResponse('Revoked', ref('RevokedResource')),
+            404: { description: 'Not found' },
+          },
         },
       },
       '/v1/identity-grants': {
@@ -2391,11 +3060,11 @@ export function openApi(config) {
           security: secured,
           requestBody: jsonBody(['provider_id', 'issuer', 'subject']),
           responses: {
-            201: { description: 'Identity grant created' },
-            409: {
-              description:
-                'A grant for this provider_id + issuer + subject already exists (revoked grants included). The body carries the existing grant id and a hint to PATCH /v1/identity-grants/{id} (with restore:true when the existing grant is revoked).',
-            },
+            201: jsonResponse('Identity grant created', ref('IdentityGrantSummary')),
+            409: jsonResponse(
+              'A grant for this provider_id + issuer + subject already exists (revoked grants included). The body carries the existing grant id and a hint to PATCH /v1/identity-grants/{id} (with restore:true when the existing grant is revoked).',
+              ref('IdentityGrantConflict'),
+            ),
             422: { description: 'Invalid provider, role/product_scopes conflict or unsupported scope' },
           },
         },
@@ -2409,14 +3078,20 @@ export function openApi(config) {
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: jsonBody(),
-          responses: { 200: { description: 'Updated' }, 404: { description: 'Not found' } },
+          responses: {
+            200: jsonResponse('Updated', ref('IdentityGrantSummary')),
+            404: { description: 'Not found' },
+          },
         },
         delete: {
           operationId: 'identityGrantRevoke',
           summary: 'Revoke an OAuth identity grant and active sessions/access/refresh tokens',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
-          responses: { 200: { description: 'Revoked' }, 404: { description: 'Not found' } },
+          responses: {
+            200: jsonResponse('Revoked', ref('RevokedResource')),
+            404: { description: 'Not found' },
+          },
         },
       },
       '/v1/audit-events': {
@@ -2426,6 +3101,22 @@ export function openApi(config) {
           description:
             'Optional site, action and limit filters. Audit metadata excludes credentials, content, Markdown, request bodies and email addresses.',
           security: secured,
+          parameters: [
+            {
+              name: 'site',
+              in: 'query',
+              required: false,
+              description: 'Site slug or id. Undocumented until now, so every client filtered client-side instead.',
+              schema: { type: 'string' },
+            },
+            { name: 'action', in: 'query', required: false, schema: { type: 'string' } },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 50, minimum: 1, maximum: 200 },
+            },
+          ],
           responses: {
             200: {
               description: 'Audit events, wrapped in an `events` array',
@@ -2507,19 +3198,19 @@ export function openApi(config) {
           summary: 'List webhook endpoints',
           security: secured,
           parameters: [siteParameter],
-          responses: { 200: { description: 'Endpoint list (no secrets)' } },
+          responses: { 200: jsonResponse('Endpoint list (no secrets)', listOf('WebhookEndpoint')) },
         },
         post: {
           operationId: 'webhookCreate',
           summary: 'Register a webhook endpoint',
           description:
-            'Creates a signed delivery endpoint. events filters by type (empty = all); a whsec_ secret is returned once. Delivery uses Standard Webhooks headers (webhook-id/-timestamp/-signature).',
+            'Creates a signed delivery endpoint. `events` filters by type (empty = all) and is validated against the types contentkit emits — an entry that matches none of them is a 422 rather than an endpoint that never fires. An entry may be a full type, the un-prefixed form (`comment.approved`) or a bare suffix (`published`). A whsec_ secret is returned once. Delivery uses Standard Webhooks headers (webhook-id/-timestamp/-signature).',
           security: secured,
           parameters: [siteParameter],
           requestBody: jsonBody(['url']),
           responses: {
-            201: { description: 'Endpoint created; secret returned once' },
-            422: { description: 'Invalid or private (SSRF-blocked) url' },
+            201: jsonResponse('Endpoint created; secret returned once', ref('CreatedWebhookEndpoint')),
+            422: { description: 'Invalid or private (SSRF-blocked) url, or an unknown event type' },
           },
         },
       },
@@ -2527,13 +3218,18 @@ export function openApi(config) {
         patch: {
           operationId: 'webhookUpdate',
           summary: 'Update or enable/disable a webhook endpoint',
+          description: 'A supplied `events` filter is validated against the emitted types, as on creation.',
           security: secured,
           parameters: [
             siteParameter,
             { name: 'endpoint', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
           requestBody: jsonBody(),
-          responses: { 200: { description: 'Updated' }, 404: { description: 'Not found' } },
+          responses: {
+            200: jsonResponse('Updated', ref('WebhookEndpoint')),
+            404: { description: 'Not found' },
+            422: { description: 'Invalid url or an unknown event type' },
+          },
         },
         delete: {
           operationId: 'webhookDelete',
@@ -2543,7 +3239,7 @@ export function openApi(config) {
             siteParameter,
             { name: 'endpoint', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'Deleted' }, 404: { description: 'Not found' } },
+          responses: { 200: deletedResponse('Deleted'), 404: { description: 'Not found' } },
         },
       },
       '/v1/sites/{site}/webhooks/{endpoint}/rotate': {
@@ -2555,7 +3251,10 @@ export function openApi(config) {
             siteParameter,
             { name: 'endpoint', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
-          responses: { 200: { description: 'New secret returned once' }, 404: { description: 'Not found' } },
+          responses: {
+            200: jsonResponse('New secret returned once', ref('WebhookSecret')),
+            404: { description: 'Not found' },
+          },
         },
       },
       '/v1/webhook-deliveries': {
@@ -2563,7 +3262,24 @@ export function openApi(config) {
           operationId: 'webhookDeliveryList',
           summary: 'List webhook deliveries for observability',
           security: secured,
-          responses: { 200: { description: 'Delivery list' } },
+          parameters: [
+            siteFilterParameter,
+            {
+              name: 'endpoint',
+              in: 'query',
+              required: false,
+              description: 'Restrict the result to one webhook endpoint.',
+              schema: { type: 'string', format: 'uuid' },
+            },
+            {
+              name: 'status',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['pending', 'delivered', 'failed'] },
+            },
+            { name: 'limit', in: 'query', required: false, schema: { type: 'integer', default: 50, maximum: 200 } },
+          ],
+          responses: { 200: jsonResponse('Delivery list', listOf('WebhookDelivery')) },
         },
       },
       '/v1/webhook-deliveries/{delivery}/retry': {
@@ -2572,7 +3288,10 @@ export function openApi(config) {
           summary: 'Manually redeliver a webhook',
           security: secured,
           parameters: [{ name: 'delivery', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
-          responses: { 200: { description: 'Delivery re-queued' }, 404: { description: 'Not found' } },
+          responses: {
+            200: jsonResponse('Delivery re-queued', ref('WebhookDelivery')),
+            404: { description: 'Not found' },
+          },
         },
       },
     },

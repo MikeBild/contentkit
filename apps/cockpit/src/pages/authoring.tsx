@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { ck, type ContentKind, type PublishedList } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
+import { Dialog } from '@/components/ui/dialog'
 import {
   Badge,
   Button,
@@ -22,9 +23,20 @@ import {
   TableState,
   Textarea,
 } from '@/components/ui/primitives'
+import { ContentHtml, useContentScheme } from '@/content/lazy'
+import {
+  AUDIO_JOB_STATUS,
+  PATTERN_CATEGORY,
+  PATTERN_SCOPE,
+  PATTERN_STATUS,
+  type AudioJobStatus,
+} from '@/forms/contracts/enums.generated'
+import { NumberField } from '@/forms/fields'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
+
+const FieldGallery = lazy(() => import('@/forms/gallery').then((module) => ({ default: module.FieldGallery })))
 import { formatDate } from '@/lib/utils'
 
 // ── Published + search ───────────────────────────────────────────────────────
@@ -81,7 +93,12 @@ export function PublishedPage() {
           value={term}
           onChange={(event) => setTerm(event.target.value)}
         />
-        <Select value={kind} onChange={(event) => setKind(event.target.value as ContentKind | '')}>
+        <Select
+          data-testid="published-kind"
+          aria-label="Filter the published snapshot by kind"
+          value={kind}
+          onChange={(event) => setKind(event.target.value as ContentKind | '')}
+        >
           <option value="">All kinds</option>
           {(['page', 'post', 'project', 'deck'] as ContentKind[]).map((value) => (
             <option key={value} value={value}>
@@ -168,11 +185,18 @@ function PublishedDetail({
     queryKey: keys.published.detail(site, target.kind, target.locale, target.slug),
     queryFn: () => ck.published.get(site, target.kind, target.locale, target.slug),
   })
-  const [tab, setTab] = useState<'markdown' | 'semantic' | 'diagnostics' | 'composition'>('markdown')
+  // Rendered first, and first by default: an inspector's question is almost
+  // always "what does this look like", and the answer costs nothing — the
+  // published read API already returns the release's own HTML, which this page
+  // used to throw away. No /render call belongs here; asking ContentKit to
+  // re-render a document it has already rendered could only disagree with it.
+  const [tab, setTab] = useState<'rendered' | 'markdown' | 'semantic' | 'diagnostics' | 'composition'>('rendered')
+  const scheme = useContentScheme()
   const data = document.data as Record<string, unknown> | undefined
 
   return (
     <div
+      data-testid="published-dialog"
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6"
       onClick={(event) => event.target === event.currentTarget && onClose()}
     >
@@ -182,8 +206,14 @@ function PublishedDetail({
             {target.kind} · {target.locale} · {target.slug}
           </CardTitle>
           <div className="mt-2 flex gap-1">
-            {(['markdown', 'semantic', 'diagnostics', 'composition'] as const).map((value) => (
-              <Button key={value} size="sm" variant={tab === value ? 'default' : 'ghost'} onClick={() => setTab(value)}>
+            {(['rendered', 'markdown', 'semantic', 'diagnostics', 'composition'] as const).map((value) => (
+              <Button
+                key={value}
+                data-testid={`published-tab-${value}`}
+                size="sm"
+                variant={tab === value ? 'default' : 'ghost'}
+                onClick={() => setTab(value)}
+              >
                 {value}
               </Button>
             ))}
@@ -196,6 +226,16 @@ function PublishedDetail({
             <p className="text-sm text-chart-5">
               {document.error instanceof Error ? document.error.message : 'Could not load the document'}
             </p>
+          ) : tab === 'rendered' ? (
+            // The release's charts ship as a <picture> with both palettes, so
+            // they follow the operating system while the surrounding surface
+            // follows the console — the one place the two can disagree.
+            <ContentHtml
+              className="scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border p-4"
+              testId="published-rendered"
+              scheme={scheme}
+              html={String(data?.html ?? '')}
+            />
           ) : tab === 'composition' ? (
             <img
               className="w-full rounded-lg border border-border"
@@ -210,7 +250,7 @@ function PublishedDetail({
             </pre>
           )}
           <div className="mt-4 flex justify-end">
-            <Button variant="outline" onClick={onClose}>
+            <Button data-testid="published-close" variant="outline" onClick={onClose}>
               Close
             </Button>
           </div>
@@ -222,17 +262,48 @@ function PublishedDetail({
 
 // ── Compositions ─────────────────────────────────────────────────────────────
 
+const PATTERN_FILTERS = [
+  { key: 'category' as const, label: 'Category', options: PATTERN_CATEGORY },
+  { key: 'scope' as const, label: 'Scope', options: PATTERN_SCOPE },
+  { key: 'status' as const, label: 'Status', options: PATTERN_STATUS },
+]
+
+/** The two free-text filters the registry accepts; neither is a closed set. */
+const PATTERN_TEXT_FILTERS = [
+  { key: 'nodeType' as const, label: 'Node type', placeholder: 'metric, chart, table…' },
+  { key: 'capability' as const, label: 'Capability', placeholder: 'svg, print, zoom…' },
+]
+
+const CANVAS = ['portrait', 'landscape', 'square', 'flow'] as const
+
+type PatternQuery = {
+  category?: string
+  scope?: 'document' | 'node'
+  status?: 'experimental' | 'stable' | 'deprecated'
+  nodeType?: string
+  canvas?: (typeof CANVAS)[number]
+  capability?: string
+}
+
 export function CompositionsPage() {
   const { site } = useSite()
   const can = useCan()
-  const patterns = useQuery({ queryKey: keys.patterns(), queryFn: () => ck.compositions.patterns() })
-  const guides = useQuery({ queryKey: keys.guides, queryFn: () => ck.compositions.guides() })
+  const [filters, setFilters] = useState<PatternQuery>({})
+  const [pattern, setPattern] = useState<string | null>(null)
+  const [guide, setGuide] = useState<string | null>(null)
   const [source, setSource] = useState('# Title\n\nA paragraph.\n')
 
+  const patterns = useQuery({ queryKey: keys.patterns(filters), queryFn: () => ck.compositions.patterns(filters) })
+  const guides = useQuery({ queryKey: keys.guides, queryFn: () => ck.compositions.guides() })
+
   const compile = useMutation({ mutationFn: () => ck.compositions.compile(site, { markdown: source }) })
+  const validate = useMutation({ mutationFn: () => ck.compositions.validate(site, { markdown: source }) })
+  const recommend = useMutation({ mutationFn: () => ck.compositions.recommend(site, { markdown: source }) })
+
   const rows = patterns.data?.patterns ?? []
-  const result = compile.data as Record<string, unknown> | undefined
-  const diagnostics = (result?.diagnostics ?? []) as { severity?: string; message?: string }[]
+  const guideRows = guides.data?.guides ?? []
+  const diagnostics = compile.data?.diagnostics ?? []
+  const compiled = compile.data
 
   return (
     <Page
@@ -250,12 +321,29 @@ export function CompositionsPage() {
           <CardContent>
             <Textarea
               data-testid="composition-source"
+              aria-label="Markdown to compile"
               className="h-64 font-mono text-xs"
               spellCheck={false}
               value={source}
               onChange={(event) => setSource(event.target.value)}
             />
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex justify-end gap-2">
+              <Button
+                data-testid="composition-recommend"
+                variant="outline"
+                onClick={() => recommend.mutate()}
+                disabled={!site || !can('content:write') || recommend.isPending}
+              >
+                {recommend.isPending ? 'Asking…' : 'Recommend'}
+              </Button>
+              <Button
+                data-testid="composition-validate"
+                variant="outline"
+                onClick={() => validate.mutate()}
+                disabled={!site || !can('content:write') || validate.isPending}
+              >
+                {validate.isPending ? 'Checking…' : 'Validate'}
+              </Button>
               <Button
                 data-testid="composition-compile"
                 onClick={() => compile.mutate()}
@@ -264,25 +352,50 @@ export function CompositionsPage() {
                 {compile.isPending ? 'Compiling…' : 'Compile'}
               </Button>
             </div>
-            {compile.error ? (
-              <p className="mt-2 text-sm text-chart-5">
-                {compile.error instanceof Error ? compile.error.message : 'Compile failed'}
-              </p>
+
+            {[
+              { label: 'Compile', state: compile },
+              { label: 'Validate', state: validate },
+              { label: 'Recommend', state: recommend },
+            ]
+              .filter((entry) => entry.state.error)
+              .map((entry) => (
+                <p key={entry.label} data-testid={`composition-error-${entry.label.toLowerCase()}`} className="mt-2 text-sm text-chart-5">
+                  {entry.label}: {entry.state.error instanceof Error ? entry.state.error.message : 'failed'}
+                </p>
+              ))}
+
+            {compiled ? (
+              <dl
+                data-testid="composition-result"
+                className="mt-3 grid gap-x-6 gap-y-1 rounded-lg border border-border p-3 text-xs sm:grid-cols-[9rem_1fr]"
+              >
+                <dt className="text-muted-foreground">Title</dt>
+                <dd>{compiled.semantic.title}</dd>
+                <dt className="text-muted-foreground">Nodes</dt>
+                <dd className="font-mono">
+                  {compiled.semantic.nodes.map((node) => node.type).join(', ') || '—'}
+                </dd>
+                <dt className="text-muted-foreground">Presentation</dt>
+                <dd>
+                  {compiled.rendering.html_presentation} · {compiled.rendering.fidelity}
+                </dd>
+                <dt className="text-muted-foreground">Accessible text</dt>
+                <dd>{compiled.accessible_text}</dd>
+              </dl>
             ) : null}
+
             {diagnostics.length > 0 ? (
-              <ul className="mt-3 space-y-1 text-xs">
+              <ul data-testid="composition-diagnostics" className="mt-3 space-y-1 text-xs">
                 {diagnostics.map((diagnostic, index) => (
-                  <li key={index} className="flex gap-2">
+                  <li key={`${diagnostic.code}-${index}`} className="flex gap-2">
                     <Badge tone={diagnostic.severity === 'error' ? 'danger' : 'warning'}>{diagnostic.severity}</Badge>
-                    <span className="text-muted-foreground">{diagnostic.message}</span>
+                    <span className="text-muted-foreground">
+                      <span className="font-mono">{diagnostic.code}</span> · {diagnostic.message}
+                    </span>
                   </li>
                 ))}
               </ul>
-            ) : null}
-            {result ? (
-              <pre className="scrollbar-thin mt-3 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-                {JSON.stringify(result.composition ?? result, null, 2)}
-              </pre>
             ) : null}
           </CardContent>
         </Card>
@@ -290,9 +403,54 @@ export function CompositionsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Pattern registry</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {guides.data?.guides?.length ?? 0} publishing guides · {rows.length} patterns
-            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {PATTERN_FILTERS.map((filter) => (
+                <Select
+                  key={filter.key}
+                  data-testid={`pattern-filter-${filter.key}`}
+                  aria-label={`Filter patterns by ${filter.label.toLowerCase()}`}
+                  value={filters[filter.key] ?? ''}
+                  onChange={(event) =>
+                    setFilters({ ...filters, [filter.key]: event.target.value || undefined } as PatternQuery)
+                  }
+                >
+                  <option value="">All {filter.label.toLowerCase()}</option>
+                  {filter.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              ))}
+              <Select
+                data-testid="pattern-filter-canvas"
+                aria-label="Filter patterns by canvas"
+                value={filters.canvas ?? ''}
+                onChange={(event) =>
+                  setFilters({ ...filters, canvas: (event.target.value || undefined) as PatternQuery['canvas'] })
+                }
+              >
+                <option value="">All canvases</option>
+                {CANVAS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+              {PATTERN_TEXT_FILTERS.map((filter) => (
+                <Input
+                  key={filter.key}
+                  className="w-40"
+                  data-testid={`pattern-filter-${filter.key}`}
+                  aria-label={filter.label}
+                  placeholder={filter.placeholder}
+                  value={filters[filter.key] ?? ''}
+                  onChange={(event) =>
+                    setFilters({ ...filters, [filter.key]: event.target.value || undefined } as PatternQuery)
+                  }
+                />
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -300,36 +458,203 @@ export function CompositionsPage() {
                 <TR>
                   <TH>Pattern</TH>
                   <TH>Category</TH>
+                  <TH>Scope</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
               <TBody>
                 <TableState
-                  columns={3}
+                  columns={4}
                   isLoading={patterns.isPending}
                   error={patterns.error}
                   isEmpty={rows.length === 0}
                   onRetry={() => patterns.refetch()}
+                  emptyMessage="No pattern matches these filters."
                 >
-                  {rows.map((pattern) => {
-                    const record = pattern as unknown as Record<string, string>
-                    return (
-                      <TR key={record.id}>
-                        <TD className="font-mono text-xs">{record.id}</TD>
-                        <TD className="text-muted-foreground">{record.category}</TD>
-                        <TD>
-                          <Badge tone={record.status === 'stable' ? 'success' : 'warning'}>{record.status}</Badge>
-                        </TD>
-                      </TR>
-                    )
-                  })}
+                  {rows.map((descriptor) => (
+                    <TR key={descriptor.id} data-testid="pattern-row" data-pattern={descriptor.id}>
+                      <TD>
+                        <button
+                          type="button"
+                          data-testid={`pattern-open-${descriptor.id}`}
+                          onClick={() => setPattern(descriptor.id)}
+                          className="font-mono text-xs underline decoration-dotted underline-offset-2 hover:text-foreground"
+                        >
+                          {descriptor.id}
+                        </button>
+                      </TD>
+                      <TD className="text-muted-foreground">{descriptor.category}</TD>
+                      <TD className="text-muted-foreground">{descriptor.scope}</TD>
+                      <TD>
+                        <Badge tone={descriptor.status === 'stable' ? 'success' : 'warning'}>{descriptor.status}</Badge>
+                      </TD>
+                    </TR>
+                  ))}
+                </TableState>
+              </TBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Publishing guides</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              What each authoring construct is for, when to reject it, and which patterns it is compatible with.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Guide</TH>
+                  <TH>Kind</TH>
+                  <TH>Summary</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                <TableState
+                  columns={4}
+                  isLoading={guides.isPending}
+                  error={guides.error}
+                  isEmpty={guideRows.length === 0}
+                  onRetry={() => guides.refetch()}
+                >
+                  {guideRows.map((entry) => (
+                    <TR key={entry.id} data-testid="guide-row" data-guide={entry.id}>
+                      <TD>
+                        <button
+                          type="button"
+                          data-testid={`guide-open-${entry.id}`}
+                          onClick={() => setGuide(entry.id)}
+                          className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                        >
+                          {entry.title}
+                        </button>
+                      </TD>
+                      <TD className="text-muted-foreground">{entry.kind}</TD>
+                      <TD className="max-w-[32rem] text-muted-foreground">{entry.summary}</TD>
+                      <TD>
+                        <Badge tone={entry.status === 'stable' ? 'success' : 'warning'}>{entry.status}</Badge>
+                      </TD>
+                    </TR>
+                  ))}
                 </TableState>
               </TBody>
             </Table>
           </CardContent>
         </Card>
       </div>
+
+      {pattern ? <PatternDetail pattern={pattern} onClose={() => setPattern(null)} /> : null}
+      {guide ? <GuideDetail guide={guide} onClose={() => setGuide(null)} /> : null}
     </Page>
+  )
+}
+
+function Bullets({ label, items }: { label: string; items: readonly string[] | undefined }) {
+  if (!items?.length) return null
+  return (
+    <div>
+      <h4 className="text-xs font-medium text-muted-foreground">{label}</h4>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm">
+        {items.map((entry, index) => (
+          <li key={`${entry}-${index}`}>{entry}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => void }) {
+  const descriptor = useQuery({
+    queryKey: [...keys.patterns(), pattern],
+    queryFn: () => ck.compositions.pattern(pattern),
+  })
+  const data = descriptor.data
+
+  return (
+    <Dialog open size="xl" onClose={onClose} data-testid="pattern-dialog" title={pattern}>
+      {descriptor.isPending ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : descriptor.error ? (
+        <p className="text-sm text-chart-5">
+          {descriptor.error instanceof Error ? descriptor.error.message : 'Could not load the pattern'}
+        </p>
+      ) : data ? (
+        <div className="space-y-4">
+          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
+            <dt className="text-muted-foreground">Category</dt>
+            <dd>{data.category}</dd>
+            <dt className="text-muted-foreground">Scope</dt>
+            <dd>{data.scope}</dd>
+            <dt className="text-muted-foreground">Status</dt>
+            <dd>{data.status}</dd>
+            <dt className="text-muted-foreground">Version</dt>
+            <dd>{data.version}</dd>
+            <dt className="text-muted-foreground">Accepts</dt>
+            <dd>
+              {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} items
+            </dd>
+            <dt className="text-muted-foreground">Outputs</dt>
+            <dd>{data.capabilities.outputs.join(', ')}</dd>
+            <dt className="text-muted-foreground">Question</dt>
+            <dd>{data.narrative.question}</dd>
+            <dt className="text-muted-foreground">Reader takeaway</dt>
+            <dd>{data.narrative.reader_takeaway}</dd>
+          </dl>
+          <Bullets label="Story arc" items={data.narrative.story_arc} />
+          <Bullets label="Fallbacks" items={data.fallbacks} />
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground">Slots</h4>
+            <ul className="mt-1 space-y-0.5 text-sm">
+              {data.slots.map((slot) => (
+                <li key={slot.name}>
+                  <span className="font-mono text-xs">{slot.name}</span> · {slot.accepts.join(', ')} · {slot.min}–
+                  {slot.max}
+                  {slot.required ? ' · required' : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+    </Dialog>
+  )
+}
+
+function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void }) {
+  const detail = useQuery({ queryKey: [...keys.guides, guide], queryFn: () => ck.compositions.guide(guide) })
+  const data = detail.data
+
+  return (
+    <Dialog open size="xl" onClose={onClose} data-testid="guide-dialog" title={data?.title ?? guide}>
+      {detail.isPending ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : detail.error ? (
+        <p className="text-sm text-chart-5">
+          {detail.error instanceof Error ? detail.error.message : 'Could not load the guide'}
+        </p>
+      ) : data ? (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">{data.summary}</p>
+          <Bullets label="Use when" items={data.selection.use_when} />
+          <Bullets label="Reject when" items={data.selection.reject_when} />
+          <Bullets label="Required input" items={data.input_contract.required} />
+          <Bullets label="Optional input" items={data.input_contract.optional} />
+          <Bullets label="Constraints" items={data.input_contract.constraints} />
+          <Bullets label="Guidance" items={data.authoring.guidance} />
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground">Syntax</h4>
+            <pre className="scrollbar-thin mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
+              {data.authoring.syntax}
+            </pre>
+          </div>
+          <Bullets label="Compatible patterns" items={data.compatible_patterns} />
+        </div>
+      ) : null}
+    </Dialog>
   )
 }
 
@@ -343,7 +668,7 @@ export function DecksPage() {
   const [source, setSource] = useState('---\nlayout: deck\ntitle: A deck\n---\n\n# Slide one\n')
   const [job, setJob] = useState<string | null>(null)
 
-  const plan = useMutation({ mutationFn: () => ck.decks.plan(site, { markdown: source }) })
+  const validate = useMutation({ mutationFn: () => ck.decks.validate(site, { markdown: source }) })
   const compile = useMutation({
     mutationFn: () => ck.decks.compile(site, { markdown: source }),
     onSuccess: (result) => {
@@ -362,11 +687,27 @@ export function DecksPage() {
       query.state.data?.status === 'done' || query.state.data?.status === 'failed' ? false : 2000,
   })
 
+  const result = useQuery({
+    queryKey: ['deck-job', site, job, 'result'],
+    queryFn: () => ck.decks.jobResult(site, job as string),
+    enabled: Boolean(site && job) && jobStatus.data?.status === 'done',
+  })
+
+  // Frontmatter is the deck's own source of truth for theme and template, so a
+  // card writes into it rather than into a hidden request field the operator
+  // would have to remember alongside the text they can see.
+  const applyFrontmatter = (key: string, value: string) =>
+    setSource((current) =>
+      new RegExp(`^${key}:.*$`, 'm').test(current)
+        ? current.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: ${value}`)
+        : current.replace(/^---\n/, `---\n${key}: ${value}\n`),
+    )
+
+  const diagnostics = ((validate.data as { diagnostics?: { severity?: string; message?: string }[] } | undefined)
+    ?.diagnostics ?? []) as { severity?: string; message?: string }[]
+
   return (
-    <Page
-      title="Decks"
-      description="Plan, validate and render Slidev decks. Rendering may run asynchronously as a job."
-    >
+    <Page title="Decks" description="Plan, validate and render Slidev decks. Rendering may run asynchronously as a job.">
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -375,6 +716,7 @@ export function DecksPage() {
           <CardContent>
             <Textarea
               data-testid="deck-source"
+              aria-label="Deck Markdown"
               className="h-72 font-mono text-xs"
               spellCheck={false}
               value={source}
@@ -382,12 +724,12 @@ export function DecksPage() {
             />
             <div className="mt-3 flex justify-end gap-2">
               <Button
-                data-testid="deck-plan"
+                data-testid="deck-validate"
                 variant="outline"
-                onClick={() => plan.mutate()}
-                disabled={!site || plan.isPending}
+                onClick={() => validate.mutate()}
+                disabled={!site || validate.isPending}
               >
-                Plan
+                {validate.isPending ? 'Checking…' : 'Validate'}
               </Button>
               <Confirm
                 title="Render this deck?"
@@ -406,16 +748,50 @@ export function DecksPage() {
                 )}
               </Confirm>
             </div>
-            {job ? (
-              <p className="mt-3 text-sm text-muted-foreground">
-                Job {job.slice(0, 8)} · {jobStatus.data?.status ?? 'queued'}
-                {jobStatus.data?.error ? <span className="text-chart-5"> · {jobStatus.data.error}</span> : null}
+
+            {validate.error ? (
+              <p data-testid="deck-validate-error" className="mt-2 text-sm text-chart-5">
+                {validate.error instanceof Error ? validate.error.message : 'Validation failed'}
               </p>
             ) : null}
-            {plan.data ? (
-              <pre className="scrollbar-thin mt-3 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-                {JSON.stringify(plan.data, null, 2)}
-              </pre>
+            {diagnostics.length ? (
+              <ul data-testid="deck-diagnostics" className="mt-3 space-y-1 text-xs">
+                {diagnostics.map((diagnostic, index) => (
+                  <li key={index} className="flex gap-2">
+                    <Badge tone={diagnostic.severity === 'error' ? 'danger' : 'warning'}>{diagnostic.severity}</Badge>
+                    <span className="text-muted-foreground">{diagnostic.message}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : validate.isSuccess ? (
+              <p data-testid="deck-diagnostics-clean" className="mt-3 text-xs text-chart-2">
+                No diagnostics — the deck compiles as written.
+              </p>
+            ) : null}
+
+            {job ? (
+              <div data-testid="deck-job" className="mt-3 flex items-center gap-3 text-sm text-muted-foreground">
+                <span>
+                  Job {job.slice(0, 8)} · {jobStatus.data?.status ?? 'queued'}
+                  {jobStatus.data?.error ? <span className="text-chart-5"> · {jobStatus.data.error}</span> : null}
+                </span>
+                {/*
+                  The result was reachable only by calling the API by hand. A
+                  render nobody can download is a render that did not happen.
+                */}
+                {result.data ? (
+                  <a
+                    data-testid="deck-job-download"
+                    className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                    download={`deck-${job}.json`}
+                    href={URL.createObjectURL(
+                      new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' }),
+                    )}
+                  >
+                    Download result
+                  </a>
+                ) : null}
+              </div>
             ) : null}
           </CardContent>
         </Card>
@@ -423,16 +799,48 @@ export function DecksPage() {
         <Card>
           <CardHeader>
             <CardTitle>Themes and templates</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Choosing one writes it into the deck's frontmatter above — the only place it takes effect.
+            </p>
           </CardHeader>
-          <CardContent>
-            <Label>Themes</Label>
-            <pre className="scrollbar-thin mt-1 max-h-40 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-              {JSON.stringify(themes.data ?? {}, null, 2)}
-            </pre>
-            <Label className="mt-3 block">Templates</Label>
-            <pre className="scrollbar-thin mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-              {JSON.stringify(templates.data ?? {}, null, 2)}
-            </pre>
+          <CardContent className="space-y-4">
+            <div>
+              <Label>Theme</Label>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(themes.data?.themes ?? []).map((name) => (
+                  <Button
+                    key={name}
+                    size="sm"
+                    variant="outline"
+                    data-testid={`deck-theme-${name}`}
+                    onClick={() => applyFrontmatter('theme', name)}
+                  >
+                    {name}
+                    {name === themes.data?.default ? ' · default' : ''}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Template</Label>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(templates.data?.ids ?? []).map((id) => (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant="outline"
+                    data-testid={`deck-template-${id}`}
+                    onClick={() => applyFrontmatter('template', id)}
+                  >
+                    {id}
+                    {id === templates.data?.default ? ' · default' : ''}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {themes.error || templates.error ? (
+              <p className="text-sm text-chart-5">Could not load the deck registry.</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -442,13 +850,20 @@ export function DecksPage() {
 
 // ── Audio ────────────────────────────────────────────────────────────────────
 
+const AUDIO_LIMITS = [50, 100, 250, 500]
+
 export function AudioPage() {
-  const { site } = useSite()
+  const { site, current } = useSite()
   const can = useCan()
+  const [status, setStatus] = useState<AudioJobStatus | ''>('')
+  const [limit, setLimit] = useState(100)
+  const [limitChars, setLimitChars] = useState<number | undefined>(undefined)
+
+  const query = { ...(status ? { status } : {}), limit }
   const jobs = useQuery({
-    queryKey: keys.audio.jobs(site),
-    queryFn: () => ck.content.audio.jobs(site),
-    enabled: !!site,
+    queryKey: [...keys.audio.jobs(site), query],
+    queryFn: () => ck.content.audio.jobs(site, query),
+    enabled: Boolean(site),
   })
 
   if (!site)
@@ -459,7 +874,7 @@ export function AudioPage() {
     )
 
   const rows = jobs.data?.jobs ?? []
-  const budget = jobs.data?.budget
+  const summary = jobs.data?.summary
 
   return (
     <Page
@@ -469,10 +884,16 @@ export function AudioPage() {
         can('release:write') ? (
           <Confirm
             title="Backfill read-aloud audio?"
-            description="Every published item without audio is queued for rendering. This consumes the monthly character budget."
+            description={
+              <>
+                Every published post of <strong>{site}</strong> without audio is queued for rendering. This spends the
+                monthly character budget
+                {limitChars === undefined ? '' : `, capped at ${limitChars.toLocaleString()} characters for this run`}.
+              </>
+            }
             confirmLabel="Start backfill"
             onConfirm={async () => {
-              await ck.content.audio.backfill(site)
+              await ck.content.audio.backfill(site, limitChars === undefined ? {} : { limit_chars: limitChars })
               await jobs.refetch()
             }}
           >
@@ -485,12 +906,68 @@ export function AudioPage() {
         ) : null
       }
     >
-      {budget ? (
-        <p className="mb-3 text-sm text-muted-foreground">
-          {budget.characters_used.toLocaleString()} of {budget.characters_limit.toLocaleString()} characters used this
-          month.
-        </p>
+      {summary ? (
+        <div data-testid="audio-summary" className="mb-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
+          <span>
+            {summary.chars_this_month.toLocaleString()} characters used this month
+            {summary.monthly_char_budget
+              ? ` of ${summary.monthly_char_budget.toLocaleString()} · ${(summary.budget_remaining ?? 0).toLocaleString()} left`
+              : ' · no budget configured'}
+          </span>
+          {AUDIO_JOB_STATUS.map((name) => (
+            <span key={name}>
+              {name}: {summary[name] ?? 0}
+            </span>
+          ))}
+        </div>
       ) : null}
+
+      {can('release:write') ? (
+        <div className="mb-3 max-w-sm">
+          <NumberField
+            data-testid="audio-limit-chars"
+            label="Backfill character cap"
+            integer
+            unit="characters"
+            min={1}
+            allowUnset
+            unsetLabel="Whole budget"
+            help="Stops the run once this many characters have been queued."
+            fallback={`Unset uses the site's configured budget${current?.settings?.audio ? '' : ', which this site has not set'}.`}
+            value={limitChars}
+            onChange={setLimitChars}
+          />
+        </div>
+      ) : null}
+
+      <div className="mb-3 flex flex-wrap gap-2">
+        <Select
+          data-testid="audio-status-filter"
+          aria-label="Filter audio jobs by status"
+          value={status}
+          onChange={(event) => setStatus(event.target.value as AudioJobStatus | '')}
+        >
+          <option value="">All statuses</option>
+          {AUDIO_JOB_STATUS.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </Select>
+        <Select
+          data-testid="audio-limit-filter"
+          aria-label="Number of audio jobs to load"
+          value={String(limit)}
+          onChange={(event) => setLimit(Number(event.target.value))}
+        >
+          {AUDIO_LIMITS.map((value) => (
+            <option key={value} value={value}>
+              Last {value}
+            </option>
+          ))}
+        </Select>
+      </div>
+
       <div className="rounded-xl border border-border bg-surface">
         <Table>
           <THead>
@@ -500,16 +977,17 @@ export function AudioPage() {
               <TH>Characters</TH>
               <TH>Attempts</TH>
               <TH>Created</TH>
+              <TH />
             </TR>
           </THead>
           <TBody>
             <TableState
-              columns={5}
+              columns={6}
               isLoading={jobs.isPending}
               error={jobs.error}
               isEmpty={rows.length === 0}
               onRetry={() => jobs.refetch()}
-              emptyMessage="No audio jobs. Enable settings.audio for this site to start."
+              emptyMessage={status ? `No ${status} jobs.` : 'No audio jobs. Enable settings.audio for this site to start.'}
             >
               {rows.map((job) => (
                 <TR key={job.id} data-testid="audio-job-row" data-job={job.id}>
@@ -518,10 +996,35 @@ export function AudioPage() {
                     <Badge tone={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}>
                       {job.status}
                     </Badge>
+                    {job.error ? <span className="ml-2 text-xs text-chart-5">{job.error}</span> : null}
                   </TD>
-                  <TD className="text-muted-foreground">{job.chars?.toLocaleString() ?? '—'}</TD>
-                  <TD className="text-muted-foreground">{job.attempts}</TD>
-                  <TD className="text-muted-foreground">{formatDate(job.created_at)}</TD>
+                  <TD className="tabular-nums text-muted-foreground">{job.chars?.toLocaleString() ?? '—'}</TD>
+                  <TD className="tabular-nums text-muted-foreground">{job.attempts}</TD>
+                  <TD className="whitespace-nowrap text-muted-foreground">{formatDate(job.created_at)}</TD>
+                  <TD>
+                    {can('release:write') && job.status === 'failed' ? (
+                      <Confirm
+                        title="Retry this job?"
+                        description={
+                          <>
+                            <strong>{job.title || job.slug || job.item_id}</strong> is queued again with its backoff
+                            clock reset. This spends the monthly character budget and ends in a rebuild.
+                          </>
+                        }
+                        confirmLabel="Retry"
+                        onConfirm={async () => {
+                          await ck.content.audio.retry(site, job.id)
+                          await jobs.refetch()
+                        }}
+                      >
+                        {(open) => (
+                          <Button size="sm" variant="outline" data-testid={`audio-retry-${job.id}`} onClick={open}>
+                            Retry
+                          </Button>
+                        )}
+                      </Confirm>
+                    ) : null}
+                  </TD>
                 </TR>
               ))}
             </TableState>
@@ -534,42 +1037,89 @@ export function AudioPage() {
 
 // ── System ───────────────────────────────────────────────────────────────────
 
+function StatusTile({
+  label,
+  value,
+  tone,
+  detail,
+  testId,
+}: {
+  label: string
+  value: string
+  tone: 'success' | 'warning' | 'danger'
+  detail?: ReactNode
+  testId: string
+}) {
+  return (
+    <Card data-testid={testId}>
+      <CardContent className="p-5">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <p className="mt-1 flex items-center gap-2 text-lg font-semibold">
+          <Badge tone={tone}>{value}</Badge>
+        </p>
+        {detail ? <div className="mt-2 text-sm text-muted-foreground">{detail}</div> : null}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SystemPage() {
   const can = useCan()
   const health = useQuery({
     queryKey: [...keys.system, 'health'],
     queryFn: () => ck.system.health(),
     refetchInterval: 15_000,
+    retry: false,
   })
   const ready = useQuery({
     queryKey: [...keys.system, 'ready'],
     queryFn: () => ck.system.ready(),
     refetchInterval: 15_000,
+    retry: false,
   })
+
+  // /ready answers 503 while draining, which the client turns into an error —
+  // so "no data" here is itself the status, not a missing reading.
+  const readiness = ready.data
+  const draining = Boolean(ready.error)
 
   return (
     <Page title="System" description="Liveness, readiness and the two scheduled maintenance actions.">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Health</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="scrollbar-thin max-h-40 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-              {JSON.stringify(health.data ?? health.error ?? {}, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Readiness</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="scrollbar-thin max-h-40 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-              {JSON.stringify(ready.data ?? ready.error ?? {}, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatusTile
+          testId="system-health"
+          label="Liveness"
+          value={health.isPending ? 'checking' : health.error ? 'unreachable' : 'ok'}
+          tone={health.error ? 'danger' : 'success'}
+          detail={health.error instanceof Error ? health.error.message : 'The process answers /health.'}
+        />
+        <StatusTile
+          testId="system-readiness"
+          label="Readiness"
+          value={ready.isPending ? 'checking' : (readiness?.status ?? 'not ready')}
+          tone={draining ? 'danger' : readiness?.status === 'ready' ? 'success' : 'warning'}
+          detail={
+            draining
+              ? ready.error instanceof Error
+                ? ready.error.message
+                : 'Refusing traffic.'
+              : `Version ${readiness?.version ?? '—'}`
+          }
+        />
+        <StatusTile
+          testId="system-builds"
+          label="Release builds in flight"
+          value={String(readiness?.inflight ?? '—')}
+          tone={(readiness?.inflight ?? 0) > 0 ? 'warning' : 'success'}
+          detail="A restart waits for these to finish."
+        />
+        <StatusTile
+          testId="system-decks"
+          label="Deck renders"
+          value={`${readiness?.deck_inflight ?? 0} running`}
+          tone={(readiness?.deck_queued ?? 0) > 0 ? 'warning' : 'success'}
+          detail={`${readiness?.deck_queued ?? 0} queued`}
+        />
       </div>
 
       {can('release:write') ? (
@@ -606,6 +1156,25 @@ export function SystemPage() {
                 </Button>
               )}
             </Confirm>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* The field inventory, rendered once each. Dev build only — it is a
+          drawing board, not an operator surface, and the dynamic import keeps
+          it out of everything the production bundle actually loads. */}
+      {import.meta.env.DEV ? (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Field gallery</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Every form field the console has, with live state. Not shown in a production build.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+              <FieldGallery />
+            </Suspense>
           </CardContent>
         </Card>
       ) : null}

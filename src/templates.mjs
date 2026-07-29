@@ -860,7 +860,9 @@ export function layout(ctx, body, options = {}) {
   // Pages with a copy affordance only: the AI share row's copy-Markdown button
   // and the subscribe rows' copy-feed-URL button share one clipboard module.
   if (options.aiActions) scripts.push(`<script src="${asset('ai-actions.js')}" defer></script>`)
-  if (options.composition) scripts.push(`<script src="${asset('composition.js')}" defer></script>`)
+  // A module, not a classic script: composition.js exports its enhancement so
+  // the console can call it on a subtree, and module scripts defer by default.
+  if (options.composition) scripts.push(`<script src="${asset('composition-init.js')}" type="module"></script>`)
   // Post pages with the feedback widget only: reveals and drives the vote buttons.
   if (options.feedback) scripts.push(`<script src="${asset('feedback.js')}" defer></script>`)
   const analytics = analyticsTags(settings, asset)

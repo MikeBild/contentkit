@@ -6,6 +6,7 @@ import { planDeck } from './decks.mjs'
 import { hashApiKey } from './auth.mjs'
 import { sha256, slugify } from './utils.mjs'
 import { assertDeliverableUrl, decryptSecret, encryptSecret, generateWebhookSecret } from './secrets.mjs'
+import { validateWebhookEvents } from './webhook-events.mjs'
 import {
   createSessionToken,
   hashReaderPassword,
@@ -118,11 +119,28 @@ function stripSearchVector({ search_vector, ...revision }) {
   return revision
 }
 
+// Fields are added, never replaced, so consumers of the bare item row keep what
+// they read today; an item without any revision is returned untouched.
+function withLatestRevision(item, revision) {
+  if (!revision) return item
+  return {
+    ...item,
+    title: revision.title,
+    slug: revision.slug,
+    summary: revision.summary,
+    tags: revision.tags,
+    // What the newest revision is, which is not the same question as whether
+    // the item is live: published_revision_id answers that.
+    latest_revision_status: revision.status,
+    latest_revision_at: revision.created_at,
+  }
+}
+
 // settings.theme.tokens may only name custom properties that site.css actually
 // consumes (plus font_family) — a theme is a token assignment, not a schema, so
 // an unknown key is a typo and fails the write instead of silently doing
 // nothing. Values are one string for both color schemes or { light, dark }.
-const THEME_TOKEN_ALLOWLIST = [
+export const THEME_TOKEN_ALLOWLIST = [
   'background',
   'foreground',
   'muted',
@@ -347,6 +365,32 @@ export function createRepository(config, db, storage) {
     return rows[0] || null
   }
 
+  // The object store has no foreign keys and remove() takes exact keys, so every
+  // deletion has to enumerate what it wrote before the rows that name it are
+  // gone. Batched like the storage-gc sweep; errors propagate, because a delete
+  // that reports success while the bytes stay is worse than a failed delete —
+  // the rows survive it and the next sweep still sees them.
+  async function removeStorageObjects(paths) {
+    const keys = paths.filter(Boolean)
+    if (!keys.length || !storage.remove) return 0
+    for (let index = 0; index < keys.length; index += 100) {
+      await storage.remove(keys.slice(index, index + 100))
+    }
+    return keys.length
+  }
+
+  // What a site would take with it. Read before a delete so the refusal can name
+  // the numbers instead of a bare "not empty", and so the purge answer reports
+  // what it actually destroyed.
+  async function siteInventory(siteId) {
+    const [items, releases, readers] = await Promise.all([
+      db.select('ck_content_items', { site_id: `eq.${siteId}` }),
+      db.select('ck_releases', { site_id: `eq.${siteId}` }),
+      db.select('ck_access_users', { site_id: `eq.${siteId}` }),
+    ])
+    return { content_items: items.length, releases: releases.length, readers: readers.length }
+  }
+
   // Records the event and fans it out to a delivery row per matching enabled
   // endpoint (plus the legacy env endpoint as endpoint_id=null). `exec` is a
   // db-shaped API so callers can pass a transaction and commit the enqueue
@@ -514,7 +558,7 @@ export function createRepository(config, db, storage) {
         site_id: siteId,
         url,
         secret_encrypted: encryptSecret(secret, config.keyPepper),
-        events: Array.isArray(input.events) ? input.events : [],
+        events: validateWebhookEvents(input.events),
         description: input.description || '',
         disabled_at: input.enabled === false ? new Date().toISOString() : null,
       })
@@ -534,7 +578,7 @@ export function createRepository(config, db, storage) {
       const patch = { updated_at: new Date().toISOString() }
       if (input.url !== undefined)
         patch.url = await assertDeliverableUrl(input.url, { allowInsecure: config.webhookAllowPrivateTargets })
-      if (Array.isArray(input.events)) patch.events = input.events
+      if (input.events !== undefined) patch.events = validateWebhookEvents(input.events)
       if (input.description !== undefined) patch.description = String(input.description)
       if (input.enabled === true) {
         patch.disabled_at = null
@@ -683,6 +727,25 @@ export function createRepository(config, db, storage) {
         ? await db.update('ck_sites', { id: `eq.${siteId}` }, allowed)
         : await db.select('ck_sites', { id: `eq.${siteId}`, limit: '1' })
       return rows[0]
+    },
+    siteInventory,
+    // Every row a site owns is reachable through ON DELETE CASCADE, so one row
+    // deletion clears the database. Storage is not part of that graph: the
+    // release objects and uploaded/narrated assets have to go first, or their
+    // bytes stay forever with nothing left that names them.
+    async deleteSite(siteId) {
+      const inventory = await siteInventory(siteId)
+      const releases = await db.select('ck_releases', { site_id: `eq.${siteId}` })
+      const entries = releases.length
+        ? await db.select('ck_release_entries', { release_id: inFilter(releases.map((release) => release.id)) })
+        : []
+      const assets = await db.select('ck_assets', { site_id: `eq.${siteId}` })
+      const objects = await removeStorageObjects([
+        ...entries.map((entry) => entry.storage_path),
+        ...assets.map((asset) => asset.storage_path),
+      ])
+      await db.remove('ck_sites', { id: `eq.${siteId}` })
+      return { site_id: siteId, deleted: true, ...inventory, assets: assets.length, removed_objects: objects }
     },
     async listAccessGroups(siteId) {
       return db.select('ck_access_groups', { site_id: `eq.${siteId}`, order: 'slug.asc' })
@@ -937,8 +1000,7 @@ export function createRepository(config, db, storage) {
     // Title, slug and summary live on the revision, not the item, so the bare
     // item row identifies a document only by its translation_key — unusable as
     // an authoring list. The newest revision of each item is merged in with one
-    // extra query (same two-query-join-in-JS shape as listPublished). Fields are
-    // added, never replaced, so existing consumers keep what they read today.
+    // extra query (same two-query-join-in-JS shape as listPublished).
     async listContent(siteId, query = {}) {
       const items = await db.select('ck_content_items', {
         site_id: `eq.${siteId}`,
@@ -955,21 +1017,20 @@ export function createRepository(config, db, storage) {
         [items.map((item) => item.id)],
       )
       const byItem = new Map(latest.map((revision) => [revision.item_id, revision]))
-      return items.map((item) => {
-        const revision = byItem.get(item.id)
-        if (!revision) return item
-        return {
-          ...item,
-          title: revision.title,
-          slug: revision.slug,
-          summary: revision.summary,
-          tags: revision.tags,
-          // What the newest revision is, which is not the same question as
-          // whether the item is live: published_revision_id answers that.
-          latest_revision_status: revision.status,
-          latest_revision_at: revision.created_at,
-        }
+      return items.map((item) => withLatestRevision(item, byItem.get(item.id)))
+    },
+    // Single-item twin of listContent, in the same merged shape: a detail view
+    // addresses one item by id and must not have to page the whole workspace to
+    // learn its title.
+    async getContentItem(itemId) {
+      const item = await one('ck_content_items', { id: `eq.${itemId}` })
+      if (!item) return null
+      const [revision] = await db.select('ck_content_revisions', {
+        item_id: `eq.${itemId}`,
+        order: 'created_at.desc',
+        limit: '1',
       })
+      return withLatestRevision(item, revision)
     },
     // Headless read API over what is currently published. Two-query join like
     // buildSnapshot; filtering and keyset paging happen in JS at blog scale
@@ -1333,6 +1394,16 @@ export function createRepository(config, db, storage) {
     },
     async getRelease(id) {
       return one('ck_releases', { id: `eq.${id}` })
+    },
+    // Discarding one built release ahead of the retention sweep. Everything that
+    // points at it — entries, access catalog, named preview access — cascades in
+    // the database; only its storage objects need enumerating first, exactly as
+    // the sweep does it.
+    async deleteRelease(siteId, releaseId) {
+      const entries = await db.select('ck_release_entries', { release_id: `eq.${releaseId}` })
+      const objects = await removeStorageObjects(entries.map((entry) => entry.storage_path))
+      await db.remove('ck_releases', { id: `eq.${releaseId}`, site_id: `eq.${siteId}` })
+      return { release_id: releaseId, deleted: true, removed_objects: objects }
     },
     async exchangePreviewInvitation(token) {
       if (!token || !config.previewSecret) return null

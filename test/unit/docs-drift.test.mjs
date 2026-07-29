@@ -8,6 +8,7 @@ import { layouts } from '../../src/markdown.mjs'
 import { openApi } from '../../src/openapi.mjs'
 import { VERSION } from '../../src/version.mjs'
 import { createApp } from '../../src/server.mjs'
+import { cockpitContracts } from '../../scripts/gen-cockpit-contracts.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const canonicalConfig = {
@@ -19,6 +20,14 @@ test('committed OpenAPI documentation matches generated OpenAPI', async () => {
   const expected = `${JSON.stringify(openApi(canonicalConfig), null, 2)}\n`
   const actual = await readFile(join(root, 'docs', 'openapi.json'), 'utf8')
   assert.equal(actual, expected, 'run npm run docs:gen-openapi after changing the HTTP API')
+})
+
+test('committed Cockpit enum contracts match the server’s closed sets', async () => {
+  const actual = await readFile(
+    join(root, 'apps', 'cockpit', 'src', 'forms', 'contracts', 'enums.generated.ts'),
+    'utf8',
+  )
+  assert.equal(actual, cockpitContracts(), 'run npm run docs:gen-openapi after changing a closed set')
 })
 
 test('llms-full documents every OpenAPI path', async () => {

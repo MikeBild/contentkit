@@ -33,6 +33,8 @@ export const keys = {
     detail: (site: string, kind: string, locale: string, slug: string) =>
       ['published', site, kind, locale, slug] as const,
   },
+  /** One entry per finished message and colour scheme — the unit of one render call. */
+  render: (site: string, id: string, scheme: string) => ['render', site, id, scheme] as const,
   releases: (site: string) => ['releases', site] as const,
   stats: (site: string, kind: string, window?: unknown) => ['stats', site, kind, window ?? null] as const,
   access: {
@@ -42,12 +44,14 @@ export const keys = {
   },
   webhooks: {
     list: (site: string) => ['webhooks', site] as const,
-    deliveries: (query?: unknown) => ['webhook-deliveries', query ?? null] as const,
+    deliveries: (siteId: string, query?: unknown) => ['webhook-deliveries', siteId, query ?? null] as const,
   },
+  // These four answer across sites unless narrowed, so the site id is part of
+  // the key. Without it the cache hands a second site the first one's rows.
   moderation: {
-    comments: (query?: unknown) => ['comments', query ?? null] as const,
-    contact: (query?: unknown) => ['contact-submissions', query ?? null] as const,
-    feedback: ['feedback'] as const,
+    comments: (siteId: string, query?: unknown) => ['comments', siteId, query ?? null] as const,
+    contact: (siteId: string, query?: unknown) => ['contact-submissions', siteId, query ?? null] as const,
+    feedback: (siteId: string) => ['feedback', siteId] as const,
   },
   credentials: {
     apiKeys: ['api-keys'] as const,

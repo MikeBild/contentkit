@@ -1,10 +1,14 @@
 import { useChat } from '@ai-sdk/react'
+import { useQuery } from '@tanstack/react-query'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Page } from '@/app/shell'
 import { Badge, Button, Card, CardContent, Textarea } from '@/components/ui/primitives'
-import { getCsrfToken } from '@/api/client'
-import { loadConversation, saveConversation } from '@/lib/conversations'
+import { ApiError, getCsrfToken } from '@/api/client'
+import { ck } from '@/api/ck'
+import { ContentHtml, Draft, useContentScheme } from '@/content/lazy'
+import { clearRenders, loadConversation, loadRender, saveConversation, saveRender } from '@/lib/conversations'
+import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
 import { cn } from '@/lib/utils'
 
@@ -88,9 +92,11 @@ export function AssistantPage() {
         messages.length > 0 ? (
           <Button
             variant="outline"
+            data-testid="assistant-new"
             onClick={() => {
               setMessages([])
               void saveConversation([])
+              void clearRenders()
             }}
           >
             New conversation
@@ -106,8 +112,15 @@ export function AssistantPage() {
             </p>
           ) : null}
 
-          {messages.map((message) => (
-            <Message key={message.id} message={message} />
+          {messages.map((message, index) => (
+            <Message
+              key={message.id}
+              message={message}
+              // Only the last message can still be arriving, and only while the
+              // run is open. Everything above it is final, which is what makes
+              // "one render per finished message" decidable here.
+              streaming={index === messages.length - 1 && (status === 'streaming' || status === 'submitted')}
+            />
           ))}
 
           {error ? <p className="text-sm text-chart-5">{error.message}</p> : null}
@@ -155,23 +168,27 @@ export function AssistantPage() {
   )
 }
 
-function Message({ message }: { message: UIMessage }) {
+function Message({ message, streaming }: { message: UIMessage; streaming: boolean }) {
   const mine = message.role === 'user'
   return (
-    <div data-testid="assistant-message" data-role={message.role} className={cn('flex', mine && 'justify-end')}>
+    <div
+      data-testid="assistant-message"
+      data-id={message.id}
+      data-role={message.role}
+      className={cn('flex', mine && 'justify-end')}
+    >
       <div className={cn('max-w-[85%] space-y-2', mine && 'text-right')}>
         {message.parts.map((part, index) => {
           if (part.type === 'text')
-            return (
+            return mine ? (
               <div
                 key={index}
-                className={cn(
-                  'inline-block whitespace-pre-wrap rounded-xl px-3 py-2 text-sm',
-                  mine ? 'bg-primary text-primary-foreground' : 'bg-muted',
-                )}
+                className="inline-block whitespace-pre-wrap rounded-xl bg-primary px-3 py-2 text-sm text-primary-foreground"
               >
                 {part.text}
               </div>
+            ) : (
+              <AssistantText key={index} id={`${message.id}:${index}`} text={part.text} streaming={streaming} />
             )
 
           if (part.type === 'data-elicitation')
@@ -184,6 +201,73 @@ function Message({ message }: { message: UIMessage }) {
         })}
       </div>
     </div>
+  )
+}
+
+/**
+ * Assistant prose, in its two states.
+ *
+ * While the message is arriving it is a typographic draft: React elements, no
+ * HTML, no ContentKit semantics (see src/content/draft.tsx). Rendering per token
+ * would mean a server round-trip per token, and a half-arrived `:::` block is a
+ * 422 by construction — so nothing is asked of the server until the message is
+ * whole. Then exactly one request runs it through the very pipeline that would
+ * publish it.
+ *
+ * The query key is the unit of that promise: one entry per message part and
+ * colour scheme, never retried, cached across reloads in IndexedDB. Switching
+ * the theme is a new key, because report charts are rasterised server-side and
+ * no stylesheet can recolour an SVG that has already been drawn.
+ */
+function AssistantText({ id, text, streaming }: { id: string; text: string; streaming: boolean }) {
+  const { site } = useSite()
+  const scheme = useContentScheme()
+  const key = `${site}:${id}:${scheme}`
+
+  const rendered = useQuery({
+    queryKey: keys.render(site, id, scheme),
+    queryFn: async () => {
+      const stored = await loadRender(key)
+      if (stored !== null) return stored
+      const result = await ck.render(site, { markdown: text, scheme })
+      await saveRender(key, result.html)
+      return result.html
+    },
+    enabled: Boolean(site) && !streaming && text.trim().length > 0,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    // A rejected fragment is a verdict, not a hiccup: asking again produces the
+    // same 422, and the operator is meant to read it and fix the Markdown.
+    retry: false,
+  })
+
+  if (rendered.data) return <ContentHtml html={rendered.data} scheme={scheme} testId="assistant-rendered" />
+
+  return (
+    <div className="text-left">
+      <Draft markdown={text} />
+      {rendered.error ? <RenderProblem error={rendered.error} /> : null}
+    </div>
+  )
+}
+
+/**
+ * ContentKit's own refusal, shown verbatim. It is the same 422 a release would
+ * raise, so surfacing it here is the point: the draft stays on screen, the rest
+ * of the conversation keeps rendering, and the operator sees why this message
+ * would not publish.
+ */
+function RenderProblem({ error }: { error: unknown }) {
+  const rejected = error instanceof ApiError && error.status === 422
+  return (
+    <p
+      data-testid="assistant-render-problem"
+      data-status={error instanceof ApiError ? error.status : 'unknown'}
+      className="mt-2 rounded-lg border border-chart-3/40 bg-chart-3/10 px-3 py-2 text-xs"
+    >
+      <span className="font-medium">{rejected ? 'Not renderable as published' : 'Rendering failed'}</span>{' '}
+      <span className="text-muted-foreground">{error instanceof Error ? error.message : String(error)}</span>
+    </p>
   )
 }
 
@@ -235,6 +319,7 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
           The secret is shown on a ContentKit page and never passes through the conversation.
         </p>
         <Button
+          data-testid="assistant-elicitation-open"
           className="mt-2"
           size="sm"
           onClick={() => elicitation.url && window.open(elicitation.url, '_blank', 'noopener,noreferrer')}

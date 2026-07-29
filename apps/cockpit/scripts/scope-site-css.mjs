@@ -36,7 +36,11 @@ function scopeSelector(selector) {
   return `${SCOPE} ${trimmed}`
 }
 
-function scope(css) {
+function scope(source) {
+  // Comments come out before anything is split. They explain the source sheet
+  // and style nothing, but a `{`, `}` or `,` inside one reads to the scanner
+  // below as structure and corrupts the rule that follows it.
+  const css = source.replace(/\/\*[\s\S]*?\*\//g, '')
   const out = []
   let index = 0
   let inKeyframes = 0

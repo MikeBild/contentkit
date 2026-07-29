@@ -25,6 +25,13 @@ export default [
     },
   },
   {
+    // composition.js exports its enhancement so the console can call it on a
+    // subtree; composition-init.js is the published page's one-line entry into
+    // it. Both are loaded with <script type="module">.
+    files: ['assets/composition.js', 'assets/composition-init.js'],
+    languageOptions: { sourceType: 'module' },
+  },
+  {
     // apps/ holds the Cockpit's TypeScript/TSX sources and its build output;
     // both are checked by that package's own `npm run type-check`.
     ignores: [

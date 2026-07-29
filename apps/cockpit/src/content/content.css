@@ -1,0 +1,85 @@
+/* The console's content surface.
+   ContentKit's published stylesheet, scoped to `.ck-content` by `npm run gen:css`,
+   plus the KaTeX sheet every published page links. Nothing below restyles content;
+   a second content stylesheet would drift from what the site actually serves. */
+@import './site.scoped.css';
+@import 'katex/dist/katex.min.css';
+
+.ck-content {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+/* The scoped sheet carries the site's `prefers-color-scheme` switch, but the
+   console's theme is a class the operator can force against the OS. Forced dark
+   on a light OS is precisely the mismatch that puts a light rendering on a dark
+   pane, so `data-scheme` — the console's resolved theme — outranks the media
+   query. Both directions are stated: a light surface on a dark OS needs the
+   light values back just as much. */
+.ck-content[data-scheme='light'] {
+  color-scheme: light;
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --border: 214.3 31.8% 91.4%;
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+  --chart-1: 221 83% 53%;
+  --chart-2: 160 84% 39%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 262 83% 58%;
+  --chart-5: 0 72% 51%;
+}
+
+.ck-content[data-scheme='dark'] {
+  color-scheme: dark;
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --border: 217.2 32.6% 17.5%;
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --chart-1: 217 91% 60%;
+  --chart-2: 158 64% 52%;
+  --chart-3: 43 96% 56%;
+  --chart-4: 270 95% 75%;
+  --chart-5: 0 91% 71%;
+}
+
+/* Shiki emits both palettes into one markup: the light colours as declarations,
+   the dark ones as custom properties. Without this the dark surface shows a
+   light code block — the `!important` is Shiki's own documented activation, it
+   has to beat the inline `style` attribute the highlighter writes. */
+.ck-content[data-scheme='dark'] .shiki,
+.ck-content[data-scheme='dark'] .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* A diagram that has not run yet is its own source text; showing it raw would
+   flash Mermaid syntax at the reader. The runtime replaces the content and sets
+   `data-processed`, which is also what keeps a re-render from re-parsing it. */
+.ck-content pre.mermaid:not([data-processed]) {
+  visibility: hidden;
+}
+
+.ck-content pre.mermaid[data-processed] {
+  background: none;
+  padding: 0;
+  text-align: center;
+}
+
+/* A diagram kind the console declines to run, and a fragment the server refused
+   to render, are both reported in place rather than left as a silent gap. */
+.ck-content .ck-diagram-declined {
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 1rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+}

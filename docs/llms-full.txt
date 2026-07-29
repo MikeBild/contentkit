@@ -301,9 +301,11 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 |---|---|---|---|
 | GET | `/v1/sites` | `content:read` | List the sites this credential may read, ordered by name |
 | POST | `/v1/sites` | unrestricted `site:admin` | Create a site, locales and optional hostnames |
-| GET | `/v1/sites/{site}` | `content:read` or `site:admin` | Read site metadata and settings |
-| PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings |
+| GET | `/v1/sites/{site}` | `content:read` or `site:admin` | Read site metadata and settings; answers a strong `ETag` and honours `If-None-Match` |
+| PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings; optional `If-Match` makes the write conditional (412 on a concurrent change) |
+| DELETE | `/v1/sites/{site}` | `site:admin` | Delete a site and everything it owns; 409 with the counts unless `?purge=true` |
 | GET | `/v1/sites/{site}/content` | `content:read` | List content items for a site |
+| GET | `/v1/content/{item}` | `content:read` | Read one content item merged with its newest revision |
 | POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
 | GET | `/v1/content/{item}/revisions` | `content:read` | List immutable revisions for one content item |
 | PUT | `/v1/content/{item}/revisions` | `content:write` | Create another immutable revision for an existing content item |
@@ -331,19 +333,25 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
+| DELETE | `/v1/sites/{site}/releases/{release}` | `release:write` | Delete a built release or preview and its storage objects; the active release is 409 |
 | DELETE | `/v1/content/{item}` | `content:write` | Discard a never-published draft item and its revisions |
 | DELETE | `/v1/content/{item}/published` | `release:write` | Unpublish a content item from the live site |
 | GET | `/v1/content/{item}/audio` | `content:read` | Read-aloud (TTS) job status and audio asset URL for one item |
+| POST | `/v1/content/{item}/audio` | `release:write` | Narrate one published post (`force`, `dry_run`, `limit_chars`); the backfill narrowed to one slug |
 | DELETE | `/v1/content/{item}/audio` | `release:write` | Delete all audio jobs and generated MP3 assets for one item; schedules an auto-rebuild |
 | POST | `/v1/sites/{site}/audio/backfill` | `release:write` | Enqueue read-aloud audio jobs for published posts (`dry_run`, `limit_chars`, `slugs`, `force`) |
 | GET | `/v1/sites/{site}/audio/jobs` | `content:read` | List audio jobs (`status`, `limit`) plus per-status counters and monthly budget summary |
+| POST | `/v1/sites/{site}/audio/jobs/{job}/retry` | `release:write` | Re-queue one failed, skipped or finished audio job; already-queued jobs are 409 |
 | POST | `/v1/publish-due` | `release:write` | Publish scheduled revisions grouped by site |
 | POST | `/v1/maintenance/storage-gc` | `release:write` (unrestricted) | GC old release objects and reap stuck builds |
 | GET | `/v1/comments` | `moderation:write` | List pending/approved/rejected comments, optionally filtered by site/status |
 | PATCH | `/v1/comments/{comment}` | `moderation:write` | Approve or reject a comment; approval can publish a new release |
+| DELETE | `/v1/comments/{comment}` | `moderation:write` | Delete a comment; an approved one also triggers a best-effort republish (`?publish=false` defers it) |
 | GET | `/v1/contact-submissions` | `moderation:write` | List contact submissions, optionally filtered by site |
-| PATCH | `/v1/contact-submissions/{id}` | `moderation:write` | Mark a contact submission as `read` or `closed` |
+| PATCH | `/v1/contact-submissions/{id}` | `moderation:write` | Move a contact submission to `new`, `read` or `closed` |
+| DELETE | `/v1/contact-submissions/{id}` | `moderation:write` | Delete a contact submission including the sender's name and email |
 | GET | `/v1/feedback` | `moderation:write` | Per-post feedback aggregates (`up`/`down` counts), optionally filtered by `site_id`/`post` |
+| DELETE | `/v1/feedback/{item}` | `moderation:write` | Reset one post's feedback counter by deleting its votes |
 | GET | `/v1/api-keys` | `api-key:admin` or `site:admin` | List API-key metadata without hash or secret |
 | POST | `/v1/api-keys` | `api-key:admin` or `site:admin` | Create a scoped API key; raw key is returned once over REST |
 | DELETE | `/v1/api-keys/{id}` | `api-key:admin` or `site:admin` | Revoke an API key |
@@ -357,7 +365,7 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | PATCH | `/v1/sites/{site}/webhooks/{endpoint}` | `site:admin` | Update url/events/description or enable/disable an endpoint |
 | DELETE | `/v1/sites/{site}/webhooks/{endpoint}` | `site:admin` | Delete a webhook endpoint |
 | POST | `/v1/sites/{site}/webhooks/{endpoint}/rotate` | `site:admin` | Rotate the endpoint signing secret; new secret returned once |
-| GET | `/v1/webhook-deliveries` | `site:admin` | List deliveries (status, attempts, last error) for observability |
+| GET | `/v1/webhook-deliveries` | `site:admin` | List deliveries (status, attempts, last error) for observability, optionally filtered by `site_id`/`endpoint`/`status`/`limit` |
 | POST | `/v1/webhook-deliveries/{delivery}/retry` | `site:admin` | Manually re-queue a delivery |
 
 ### Public endpoints
@@ -1323,7 +1331,9 @@ Register endpoints per site with `POST /v1/sites/{site}/webhooks`
 (`site:admin`). Each endpoint has its own `whsec_` signing secret (returned
 once on create and on `/rotate`, stored encrypted at rest) and an optional
 `events` filter (empty = all events; entries match the full type, a bare suffix
-like `contact.submitted`, or `contentkit.<entry>`). Endpoint URLs must be https
+like `contact.submitted`, or `contentkit.<entry>`). Filter entries are validated
+against the nine emitted types below (`src/webhook-events.mjs`), so a typo is a
+422 instead of an endpoint that never fires. Endpoint URLs must be https
 and are SSRF-validated on registration — private, loopback, link-local and
 cloud-metadata targets are rejected. An event fans out to every enabled
 matching endpoint. The optional legacy `CONTENTKIT_WEBHOOK_URL` /
@@ -1670,6 +1680,16 @@ Common failures:
 - 405: known API path with an unsupported method; the `Allow` header lists the
   supported methods (OPTIONS returns 204 with the same header);
 - 409 on `DELETE /v1/content/{item}/published`: the item is not published;
+- 409 on `DELETE /v1/sites/{site}`: the site still owns content, releases or
+  readers; the body names the counts and `?purge=true` deletes all of it;
+- 409 on `DELETE /v1/sites/{site}/releases/{release}`: it is the active
+  release and the live site is served out of its objects; activate another one
+  first;
+- 409 on `POST /v1/content/{item}/audio`: the item is not a published post, or
+  `settings.audio.enabled` is not set; 409 on the job retry: the job is already
+  pending or processing;
+- 412 on `PATCH /v1/sites/{site}`: the `If-Match` ETag no longer matches, so
+  another writer changed the site since it was read;
 - 422 on Markdown upload: invalid frontmatter, slug, locale or YAML;
 - 422 on public writes: invalid captcha, missing fields or invalid email. The
   most common cause is a **half-configured Turnstile**: the server has a global

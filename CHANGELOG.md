@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.6.0 — 2026-07-29
+
+### Added
+
+- `POST /v1/sites/{site}/render` renders arbitrary Markdown through the site's own
+  publishing pipeline and persists nothing. The console needed authored Markdown
+  shown with ContentKit's semantics — directives, charts, math, highlighting —
+  and a second renderer in the browser would have drifted from what is actually
+  published the first time either side changed. `compositions/compile` could not
+  serve it: it demands `content:write` and rejects Markdown that is not a
+  composition.
+- The verbs that made "view, create, edit and delete work everywhere" impossible:
+  `DELETE /v1/sites/{site}` (409 with the counts of what it would destroy;
+  `?purge=true` is the acknowledgement), `GET /v1/content/{item}`,
+  `DELETE /v1/comments/{comment}`, `DELETE /v1/contact-submissions/{id}`,
+  `DELETE /v1/feedback/{item}`, `POST /v1/content/{item}/audio`,
+  `POST /v1/sites/{site}/audio/jobs/{job}/retry`,
+  `DELETE /v1/sites/{site}/releases/{release}` (409 for the active one), and
+  optimistic concurrency on the site row via `ETag` / `If-Match` → 412.
+- Webhook event filters are validated against the nine known event types, so an
+  unknown entry is a 422 on create instead of an endpoint that silently never
+  fires.
+
+### Changed
+
+- ContentKit Cockpit renders content through that endpoint everywhere it shows
+  authored Markdown: the assistant, the content editor preview and the published
+  inspector. While a reply streams, the console shows a typographic draft that
+  deliberately knows no ContentKit semantics; the finished message is rendered
+  once by the server.
+- Every configuration parameter is edited through a typed form. The raw JSON
+  textarea is gone — site settings, content frontmatter, access rules, webhooks,
+  API keys and identity grants all have real controls, and two tests keep it
+  that way.
+- The selected site lives in the URL as `?site=<slug>`. A selection that existed
+  only in React state made every shared link mean something different for the
+  person who received it, and the four cross-site lists could forget to filter
+  by site at all.
+- `assets/composition.js` is callable on a subtree, so the console runs the
+  published site's own enhancement rather than a React reimplementation of it.
+  The published page keeps its behaviour through a one-line module entry.
+
 ## 4.5.7 — 2026-07-29
 
 ### Fixed

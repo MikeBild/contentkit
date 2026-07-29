@@ -178,7 +178,7 @@ export function TableState({
           <div className="flex flex-col items-center gap-2">
             <span className="text-chart-5">{error instanceof Error ? error.message : 'Request failed'}</span>
             {onRetry ? (
-              <Button size="sm" variant="outline" onClick={onRetry}>
+              <Button data-testid="table-retry" size="sm" variant="outline" onClick={onRetry}>
                 Retry
               </Button>
             ) : null}

@@ -182,6 +182,18 @@ async function staticAssets(root) {
   ]) {
     emit(name, await readFile(join(root, `assets/${name}`)), 'application/javascript; charset=utf-8')
   }
+  // The page's entry point into composition.js, which is a module so that the
+  // console can enhance a subtree with the very same code. Every asset is
+  // content-hashed, so the import specifier has to become the URL the browser
+  // can actually fetch — `./composition.js` would 404.
+  emit(
+    'composition-init.js',
+    (await readFile(join(root, 'assets/composition-init.js'), 'utf8')).replace(
+      './composition.js',
+      assets['composition.js'],
+    ),
+    'application/javascript; charset=utf-8',
+  )
   emit(
     'mermaid.min.js',
     await readFile(join(root, 'node_modules/mermaid/dist/mermaid.min.js')),

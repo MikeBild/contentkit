@@ -21,17 +21,27 @@ const proxy = Object.fromEntries(
 export default defineConfig({
   base: '/cockpit/',
   plugins: [react(), tailwind()],
-  server: { port: 4051, proxy },
+  // assets/composition.js and assets/site.css live in the repository root: the
+  // console shares the published site's implementation rather than copying it,
+  // so the dev server has to be allowed to read one level above this app.
+  server: { port: 4051, proxy, fs: { allow: ['..', '../..'] } },
   build: {
     outDir: '../../assets/cockpit',
     emptyOutDir: true,
     target: 'es2022',
     rollupOptions: {
       output: {
-        // Monaco and the chat runtime are the two heavy chunks; splitting them
-        // keeps the first Cockpit paint out of their download path and keeps
-        // the payload's growth legible in the build output.
+        // Splitting the heavy dependencies keeps the first Cockpit paint out of
+        // their download path and keeps the payload's growth legible in the
+        // build output. Mermaid and the Markdown parser matter most: neither is
+        // needed until content is on screen, and Mermaid only when a diagram is.
         manualChunks: (id: string) => {
+          // Mermaid's own diagram implementations stay where Mermaid put them:
+          // it imports each one on demand, and pulling them into this chunk
+          // would download every diagram kind to draw a single flowchart.
+          if (id.includes('node_modules/mermaid/') && !id.includes('/chunks/')) return 'mermaid'
+          if (/node_modules\/(react-markdown|remark-|mdast-|micromark|unist-|unified|vfile|hast-|character-)/.test(id))
+            return 'markdown'
           if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) return 'react'
           if (id.includes('node_modules/@tanstack')) return 'tanstack'
           return undefined

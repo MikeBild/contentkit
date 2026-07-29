@@ -337,6 +337,37 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     }
   }
 
+  // Re-queue one job in place, keeping its speech hash so the unique constraint
+  // (and with it the idempotency of every other enqueue path) stays intact. The
+  // backoff clock is reset too — a retry is an operator saying "the upstream
+  // problem is fixed", not another automatic attempt.
+  async function retryJob({ site, jobId }) {
+    const job = await repo.one('ck_audio_jobs', { id: `eq.${jobId}`, site_id: `eq.${site.id}` })
+    if (!job) return null
+    if (['pending', 'processing'].includes(job.status)) {
+      throw Object.assign(new Error(`job is already ${job.status}`), { statusCode: 409 })
+    }
+    const [row] = await db.update(
+      'ck_audio_jobs',
+      { id: `eq.${job.id}` },
+      {
+        status: 'pending',
+        attempts: 0,
+        error: null,
+        next_attempt_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    )
+    logger.info('audio job retried', { jobId: job.id, itemId: job.item_id, previousStatus: job.status })
+    return {
+      id: job.id,
+      item_id: job.item_id,
+      status: row?.status || 'pending',
+      attempts: row?.attempts ?? 0,
+      previous_status: job.status,
+    }
+  }
+
   async function markSkipped(job, reason) {
     await db.update(
       'ck_audio_jobs',
@@ -469,6 +500,7 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
     status,
     remove,
     listJobs,
+    retryJob,
     tick,
     setPublisher(fn) {
       publishRelease = fn

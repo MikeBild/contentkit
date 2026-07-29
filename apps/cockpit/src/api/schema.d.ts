@@ -242,17 +242,21 @@ export interface paths {
         };
         /**
          * Read site metadata and settings
-         * @description Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object.
+         * @description Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object. The response carries a strong `ETag` over that row; send it back as `If-Match` on the `PATCH` to be told about a concurrent write instead of overwriting it.
          */
         get: operations["siteGet"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a site and everything it owns
+         * @description Irreversible and total. Deleting a site removes its content items and every immutable revision of them, all releases and previews together with their storage objects, every uploaded and narrated asset, readers, reader groups, access rules and sessions, comments, contact submissions, feedback votes, webhook endpoints and their deliveries, audio jobs, domains and locales. Published pages stop being served at once. Audit events survive with their site reference cleared. A site that still owns content, releases or readers answers 409 and names the counts; `purge=true` is the explicit acknowledgement of those numbers and performs the cascade. API keys and identity grants are not deleted — they keep referring to a site id that no longer exists.
+         */
+        delete: operations["siteDelete"];
         options?: never;
         head?: never;
         /**
          * Update site metadata, settings and domains
-         * @description Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.
+         * @description Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean. Optional `If-Match` with the ETag from `GET` makes the update conditional: a site written by someone else in the meantime answers 412 instead of dropping their change.
          */
         patch: operations["siteUpdate"];
         trace?: never;
@@ -494,6 +498,26 @@ export interface paths {
         get: operations["publishingGuideGet"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render a Markdown fragment the way this site publishes it
+         * @description Runs the site's own publishing pipeline over arbitrary Markdown and persists nothing. Frontmatter is optional; a fragment without it is rendered leniently, so a missing summary or an unknown key is a diagnostic rather than a rejection. Unlike the composition endpoints this needs only content:read and accepts Markdown that is not a composition — it exists so a reader, an editor preview or an assistant reply can be shown with the same semantics, charts and syntax highlighting a published page gets. `scheme` decides how report charts are emitted: `auto` keeps the prefers-color-scheme picture a published page needs, `light` or `dark` emit a single image for a surface whose theme is chosen explicitly. The strong ETag makes a preview that re-asks on every keystroke cost a comparison rather than a render.
+         */
+        post: operations["renderMarkdownFragment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -789,7 +813,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read one content item merged with its newest revision
+         * @description The single-item form of the content list, in the same shape: a detail view addresses an item by id and should not have to page the whole workspace to learn its title. The Markdown itself lives on the revisions, not here.
+         */
+        get: operations["contentGet"];
         put?: never;
         post?: never;
         /**
@@ -856,7 +884,11 @@ export interface paths {
          */
         get: operations["contentAudioGet"];
         put?: never;
-        post?: never;
+        /**
+         * Narrate one published post
+         * @description Enqueues a read-aloud (TTS) job for this item alone — the backfill narrowed to one post, so the site's `settings.audio.enabled` gate (409 otherwise), the monthly character budget and the speech-hash idempotency behave exactly as they do for the archive walk. Only published posts can be narrated: another kind, or an unpublished item, is a 409. `force: true` re-renders even when the speech text is unchanged (e.g. after a voice change), `dry_run: true` prices it without enqueuing. Synthesis happens in the background worker; poll `GET /v1/content/{item}/audio` for the outcome.
+         */
+        post: operations["contentAudioCreate"];
         /**
          * Delete read-aloud audio for a content item
          * @description Removes every audio job for the item and every generated MP3 those jobs referenced (storage object and asset row), then schedules a debounced auto-rebuild — unless `settings.audio.auto_rebuild` is `false` — so the player and blogcast entry disappear from the live site. Returns `{item_id, deleted_jobs, deleted_assets, rebuild_scheduled}`. Re-enable narration afterwards with the backfill endpoint.
@@ -881,6 +913,26 @@ export interface paths {
         get: operations["audioJobList"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/audio/jobs/{job}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-queue one failed or finished audio job
+         * @description Resets the job to `pending` with a cleared error and a zeroed attempt counter, keeping its speech hash so every other enqueue path stays idempotent. A job that is already `pending` or `processing` answers 409 — the worker holds it. Retrying a `done` job re-renders it; the existing MP3 stays referenced until the new one is stored, so a live player never 404s.
+         */
+        post: operations["audioJobRetry"];
         delete?: never;
         options?: never;
         head?: never;
@@ -963,6 +1015,26 @@ export interface paths {
          */
         post: operations["releaseCreate"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/releases/{release}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a built release or preview ahead of the retention sweep
+         * @description Removes the release row and its storage objects, and with it every row that pointed at the release: its file entries, its reader-access catalog and any named preview access, whose links stop working immediately. The published content itself is untouched — a release is a rendered snapshot, not the source. The site’s active release answers 409: the live site is served out of its objects, so activate another release first. Deleting a release that is still inside the rollback window simply removes that rollback target.
+         */
+        delete: operations["releaseDelete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1103,7 +1175,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a comment for good
+         * @description Removes the row; rejecting instead keeps it for the record. An approved comment is rendered into the published pages, so deleting one also builds and activates a release without it — best-effort, exactly like approval: a failed build leaves the comment deleted and reports `republish_error`. `publish=false` skips that build when many comments are deleted in a row; the next release removes them all.
+         */
+        delete: operations["commentDelete"];
         options?: never;
         head?: never;
         /** Approve or reject a comment */
@@ -1137,10 +1213,17 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a contact submission
+         * @description Removes the message, the name and the email address the sender left. Closing keeps the record instead; this is the erasure path, and it is irreversible.
+         */
+        delete: operations["contactSubmissionDelete"];
         options?: never;
         head?: never;
-        /** Mark a contact submission read or closed */
+        /**
+         * Move a contact submission between new, read and closed
+         * @description Triage is not one-way: `new` is accepted as well, so a submission marked read or closed by mistake goes back to the inbox.
+         */
         patch: operations["contactSubmissionUpdate"];
         trace?: never;
     };
@@ -1153,12 +1236,32 @@ export interface paths {
         };
         /**
          * Per-post feedback aggregates (up/down counts)
-         * @description Optional query filters: site_id, post (content item id). Sorted by total votes, descending.
+         * @description Sorted by total votes, descending.
          */
         get: operations["feedbackList"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/feedback/{item}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Reset the feedback counter of one post
+         * @description Deletes every up/down vote stored for the content item, which sets its counter back to zero. Votes are anonymous rows with no moderation state, so there is nothing to keep — this is for a brigaded post or one that was rewritten past the point where its old score describes it. Published pages never render the totals, so no rebuild follows.
+         */
+        delete: operations["feedbackReset"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1316,7 +1419,7 @@ export interface paths {
         put?: never;
         /**
          * Register a webhook endpoint
-         * @description Creates a signed delivery endpoint. events filters by type (empty = all); a whsec_ secret is returned once. Delivery uses Standard Webhooks headers (webhook-id/-timestamp/-signature).
+         * @description Creates a signed delivery endpoint. `events` filters by type (empty = all) and is validated against the types contentkit emits — an entry that matches none of them is a 422 rather than an endpoint that never fires. An entry may be a full type, the un-prefixed form (`comment.approved`) or a bare suffix (`published`). A whsec_ secret is returned once. Delivery uses Standard Webhooks headers (webhook-id/-timestamp/-signature).
          */
         post: operations["webhookCreate"];
         delete?: never;
@@ -1339,7 +1442,10 @@ export interface paths {
         delete: operations["webhookDelete"];
         options?: never;
         head?: never;
-        /** Update or enable/disable a webhook endpoint */
+        /**
+         * Update or enable/disable a webhook endpoint
+         * @description A supplied `events` filter is validated against the emitted types, as on creation.
+         */
         patch: operations["webhookUpdate"];
         trace?: never;
     };
@@ -1954,6 +2060,208 @@ export interface components {
             user_ids: string[];
             rebuild_required?: boolean;
         };
+        /** @description Answered with 200 while ready and 503 while draining or initializing — the body is the same. */
+        ReadinessReport: {
+            /** @enum {string} */
+            status: "ready" | "draining" | "initializing";
+            version: string;
+            /** @description Release builds currently running. */
+            inflight: number;
+            deck_inflight?: number;
+            deck_queued?: number;
+        };
+        DeckThemeList: {
+            themes: string[];
+            default: string;
+        };
+        DeckTemplateList: {
+            schema_version: string;
+            /** @description Narrative slots, required roles, defaults and visual contract, keyed by template id. */
+            templates: {
+                [key: string]: unknown;
+            };
+            ids: string[];
+            default: string;
+            registry_sha256: string;
+        };
+        /** @description A group plus the membership the PUT installed. The list replaces, it never merges. */
+        AccessGroupMembers: components["schemas"]["AccessGroup"] & {
+            user_ids: string[];
+        };
+        Comment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            /** Format: uuid */
+            content_item_id: string;
+            author_name: string;
+            author_email?: string | null;
+            body: string;
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected";
+            /** Format: date-time */
+            moderated_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ContactSubmission: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            name: string;
+            email: string;
+            /** @description The message itself. There is no `message` field. */
+            body: string;
+            /** @enum {string} */
+            status: "new" | "read" | "closed";
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description Anonymous up/down votes summed per post. There are no individual vote records to read. */
+        FeedbackAggregate: {
+            /** Format: uuid */
+            content_item_id: string;
+            /** Format: uuid */
+            site_id: string;
+            up: number;
+            down: number;
+        };
+        /** @description A subscription without its signing secret. Enablement is `disabled_at`: a timestamp means paused, null means live. */
+        WebhookEndpoint: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            /** Format: uri */
+            url: string;
+            /** @description Event filter. Empty means every event. */
+            events: string[];
+            description: string;
+            /** Format: date-time */
+            disabled_at?: string | null;
+            consecutive_failures?: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at?: string | null;
+        };
+        CreatedWebhookEndpoint: components["schemas"]["WebhookEndpoint"] & {
+            /** @description The signing secret, in this response and never again. A later GET omits it. */
+            secret: string;
+        };
+        /** @description The rotated signing secret. It is returned once here and is unreadable afterwards. */
+        WebhookSecret: {
+            /** Format: uuid */
+            id: string;
+            secret: string;
+        };
+        /** @description One attempt ledger row. The event name is `type`; there is no `event` field. */
+        WebhookDelivery: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            endpoint_id?: string | null;
+            /** Format: uuid */
+            site_id: string;
+            /** Format: uuid */
+            event_id: string;
+            type: string;
+            payload?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            status: "pending" | "delivered" | "failed";
+            attempts: number;
+            /** Format: date-time */
+            next_attempt_at?: string | null;
+            last_error?: string | null;
+            response_status?: number | null;
+            /** Format: date-time */
+            delivered_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A built, immutable snapshot. Only `kind: release` is activatable; a preview never is. */
+        Release: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            /** @enum {string} */
+            kind: "release" | "preview";
+            /** @enum {string} */
+            status: "building" | "preview" | "ready" | "active" | "superseded" | "failed";
+            reason: string;
+            revision_ids: string[];
+            storage_prefix?: string | null;
+            file_count: number;
+            error?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            activated_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description What a build or an activation answers. It is not a release row. */
+        ReleaseBuildResult: {
+            /** Format: uuid */
+            release_id: string;
+            file_count?: number;
+            active: boolean;
+        };
+        CreatedApiKey: components["schemas"]["ApiKeySummary"] & {
+            /** @description The raw key, in this response only. ContentKit stores a hash and cannot show it again. */
+            key: string;
+        };
+        /** @description One grant exists per provider/issuer/subject, revoked rows included. `id` names the row to edit or restore. */
+        IdentityGrantConflict: {
+            /** @enum {string} */
+            error: "identity_grant_exists";
+            /** Format: uuid */
+            id?: string | null;
+            hint?: string;
+        };
+        RevokedResource: {
+            revoked: boolean;
+            /** Format: uuid */
+            id: string;
+        };
+        AudioJob: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            item_id: string;
+            slug?: string | null;
+            title?: string | null;
+            /** @enum {string} */
+            status: "pending" | "processing" | "done" | "failed" | "skipped";
+            attempts: number;
+            chars?: number | null;
+            error?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at?: string | null;
+        };
+        /** @description The page of jobs plus a `summary`; the budget lives in the summary, not beside it. */
+        AudioJobList: {
+            jobs: components["schemas"]["AudioJob"][];
+            summary: {
+                pending?: number;
+                processing?: number;
+                done?: number;
+                failed?: number;
+                skipped?: number;
+                chars_this_month: number;
+                monthly_char_budget: number | null;
+                budget_remaining: number | null;
+            } & {
+                [key: string]: unknown;
+            };
+        };
         ReportSeriesSetting: {
             /** @description Stable series ID used in frontmatter and `/{locale}/reports/{id}/`. */
             id: string;
@@ -1997,6 +2305,31 @@ export interface components {
             settings: components["schemas"]["SiteSettings"];
         } & {
             [key: string]: unknown;
+        };
+        /** @description A content item merged with its newest revision. Title, slug, summary and tags live on the revision, so an unmerged item row identifies a document only by its translation_key. */
+        ContentItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            /** @enum {string} */
+            kind: "page" | "post" | "project" | "deck";
+            locale: string;
+            translation_key: string;
+            /** Format: uuid */
+            published_revision_id?: string | null;
+            title?: string | null;
+            slug?: string | null;
+            summary?: string | null;
+            tags?: string[] | null;
+            /** @enum {string|null} */
+            latest_revision_status?: "draft" | "scheduled" | "published" | "archived" | null;
+            /** Format: date-time */
+            latest_revision_at?: string | null;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
         };
         PublishedEntry: {
             /** Format: uuid */
@@ -2561,7 +2894,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "text/plain": "ok";
+                };
             };
         };
     };
@@ -2579,14 +2914,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReadinessReport"];
+                };
             };
-            /** @description Draining */
+            /** @description Draining or still initializing */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReadinessReport"];
+                };
             };
         };
     };
@@ -2826,7 +3165,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Site"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -2850,7 +3191,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Site"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             /** @description A site-restricted administrator cannot create a global site */
@@ -2865,7 +3208,10 @@ export interface operations {
     siteGet: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The ETag of a previously read site row. */
+                "If-None-Match"?: string;
+            };
             path: {
                 site: string;
             };
@@ -2876,11 +3222,20 @@ export interface operations {
             /** @description Site */
             200: {
                 headers: {
+                    /** @description Strong validator over the site row. */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Site"];
                 };
+            };
+            /** @description The site row is unchanged */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -2893,10 +3248,71 @@ export interface operations {
             };
         };
     };
+    siteDelete: {
+        parameters: {
+            query?: {
+                /** @description Must be `true` to delete a site that still owns content, releases or readers. */
+                purge?: boolean;
+            };
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Site and everything it owned deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        site_id: string;
+                        deleted: boolean;
+                        content_items: number;
+                        releases: number;
+                        readers: number;
+                        assets?: number;
+                        /** @description Storage objects deleted. */
+                        removed_objects: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Site not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The site is not empty and purge was not requested; the body carries the counts */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        content_items: number;
+                        releases: number;
+                        readers: number;
+                    };
+                };
+            };
+        };
+    };
     siteUpdate: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The ETag the caller read. `*` matches any existing site. */
+                "If-Match"?: string;
+            };
             path: {
                 site: string;
             };
@@ -2911,6 +3327,8 @@ export interface operations {
             /** @description Updated */
             200: {
                 headers: {
+                    /** @description Strong validator over the updated site row. */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2919,6 +3337,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            /** @description If-Match did not match: the site changed since it was read */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     accessUserList: {
@@ -2937,7 +3364,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessUser"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -2963,7 +3392,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessUser"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -2986,7 +3417,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3020,7 +3455,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessUser"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3050,7 +3487,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        revoked: number;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3072,7 +3513,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessGroup"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3098,7 +3541,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessGroup"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3121,7 +3566,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3130,7 +3579,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -3155,7 +3606,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessGroup"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3182,7 +3635,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessGroupMembers"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3204,7 +3659,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessRule"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3230,7 +3687,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessRule"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3253,7 +3712,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                        rebuild_required?: boolean;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3280,7 +3744,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessRule"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -3306,30 +3772,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        id: string;
-                        /** Format: uuid */
-                        site_id: string;
-                        /** @enum {string} */
-                        kind: "page" | "post" | "project" | "deck";
-                        locale: string;
-                        translation_key: string;
-                        /** Format: uuid */
-                        published_revision_id?: string | null;
-                        title?: string | null;
-                        slug?: string | null;
-                        summary?: string | null;
-                        tags?: string[] | null;
-                        /** @enum {string|null} */
-                        latest_revision_status?: "draft" | "scheduled" | "published" | "archived" | null;
-                        /** Format: date-time */
-                        latest_revision_at?: string | null;
-                        /** Format: date-time */
-                        created_at?: string;
-                        /** Format: date-time */
-                        updated_at?: string;
-                    }[];
+                    "application/json": components["schemas"]["ContentItem"][];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -3484,6 +3927,77 @@ export interface operations {
             };
         };
     };
+    renderMarkdownFragment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    markdown: string;
+                    /** @description Defaults to the site's default locale. */
+                    locale?: string;
+                    /**
+                     * @default auto
+                     * @enum {string}
+                     */
+                    scheme?: "auto" | "light" | "dark";
+                };
+            };
+        };
+        responses: {
+            /** @description Rendered fragment with its semantic tree and diagnostics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Sanitized HTML, safe to insert as-is. */
+                        html: string;
+                        semantic?: components["schemas"]["SemanticDocument"] | null;
+                        narrative?: components["schemas"]["NarrativePlan"] | null;
+                        composition?: {
+                            [key: string]: unknown;
+                        } | null;
+                        diagnostics: components["schemas"]["CompositionDiagnostic"][];
+                        accessible_text?: string | null;
+                        /** @description The caller must run a Mermaid runtime for the diagrams to appear. */
+                        has_mermaid: boolean;
+                        chart_count: number;
+                    };
+                };
+            };
+            /** @description The fragment is unchanged for this theme and scheme */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Markdown exceeds 256 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Markdown could not be rendered */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     compositionRecommend: {
         parameters: {
             query?: never;
@@ -3599,7 +4113,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeckThemeList"];
+                };
             };
             /** @description Strong ETag matched */
             304: {
@@ -3624,7 +4140,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeckTemplateList"];
+                };
             };
             /** @description Strong ETag matched */
             304: {
@@ -4073,6 +4591,37 @@ export interface operations {
             };
         };
     };
+    contentGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Content item merged with its newest revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentItem"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Content item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     contentDeleteDraft: {
         parameters: {
             query?: never;
@@ -4219,6 +4768,70 @@ export interface operations {
             };
         };
     };
+    contentAudioCreate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @default false */
+                    force?: boolean;
+                    /** @default false */
+                    dry_run?: boolean;
+                    limit_chars?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Job enqueued (or the dry-run estimate) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        dry_run: boolean;
+                        jobs: {
+                            /** Format: uuid */
+                            item_id: string;
+                            /** Format: uuid */
+                            revision_id: string;
+                            title?: string | null;
+                            chars: number;
+                        }[];
+                        total_chars: number;
+                        estimated_usd: number;
+                        /** @description Already narrated or without speech text. */
+                        skipped: number;
+                        /** @description Absent on a dry run. */
+                        enqueued?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Content item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a published post, or audio is not enabled for this site */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     contentAudioDelete: {
         parameters: {
             query?: never;
@@ -4269,7 +4882,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AudioJobList"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4282,6 +4897,55 @@ export interface operations {
             };
             /** @description Invalid status filter */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    audioJobRetry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                job: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job re-queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        item_id: string;
+                        /** @enum {string} */
+                        status: "pending";
+                        attempts: number;
+                        /** @enum {string} */
+                        previous_status: "done" | "failed" | "skipped";
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Site or audio job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The job is already pending or processing */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4424,7 +5088,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Release"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4450,10 +5116,56 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReleaseBuildResult"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    releaseDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                release: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Release deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        release_id: string;
+                        deleted: boolean;
+                        removed_objects: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Site or release not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The release is active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     releaseActivate: {
@@ -4473,7 +5185,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReleaseBuildResult"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4595,7 +5309,11 @@ export interface operations {
     };
     commentList: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Restrict the result to one site. Omitted, the result covers every site this credential may reach. */
+                site_id?: string;
+                status?: "pending" | "approved" | "rejected";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4607,10 +5325,55 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Comment"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    commentDelete: {
+        parameters: {
+            query?: {
+                /** @description Set to `false` to leave the live site to the next release. */
+                publish?: boolean;
+            };
+            header?: never;
+            path: {
+                comment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Comment deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        deleted: boolean;
+                        /** @description The republish result, null when nothing was rebuilt. */
+                        release?: {
+                            [key: string]: unknown;
+                        } | null;
+                        republish_error?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Comment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     commentModerate: {
@@ -4633,7 +5396,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Comment"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4641,7 +5406,10 @@ export interface operations {
     };
     contactSubmissionList: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Restrict the result to one site. Omitted, the result covers every site this credential may reach. */
+                site_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4653,10 +5421,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ContactSubmission"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    contactSubmissionDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Submission deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Contact submission not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     contactSubmissionUpdate: {
@@ -4670,7 +5475,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @enum {string} */
+                    status: "new" | "read" | "closed";
+                };
             };
         };
         responses: {
@@ -4679,15 +5487,36 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ContactSubmission"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            /** @description Contact submission not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description status must be new, read or closed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     feedbackList: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Restrict the result to one site. Omitted, the result covers every site this credential may reach. */
+                site_id?: string;
+                /** @description Restrict the result to one content item. */
+                post?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4699,10 +5528,47 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FeedbackAggregate"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    feedbackReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Votes deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        content_item_id: string;
+                        deleted_votes: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Content item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     apiKeyList: {
@@ -4747,7 +5613,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CreatedApiKey"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4769,7 +5637,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RevokedResource"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4827,7 +5697,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IdentityGrantSummary"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4836,7 +5708,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IdentityGrantConflict"];
+                };
             };
             /** @description Invalid provider, role/product_scopes conflict or unsupported scope */
             422: {
@@ -4863,7 +5737,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RevokedResource"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4896,7 +5772,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IdentityGrantSummary"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4911,7 +5789,12 @@ export interface operations {
     };
     auditEventList: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Site slug or id. Undocumented until now, so every client filtered client-side instead. */
+                site?: string;
+                action?: string;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5039,7 +5922,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpoint"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -5065,11 +5950,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CreatedWebhookEndpoint"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description Invalid or private (SSRF-blocked) url */
+            /** @description Invalid or private (SSRF-blocked) url, or an unknown event type */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5095,7 +5982,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -5129,12 +6020,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpoint"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid url or an unknown event type */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5159,7 +6059,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WebhookSecret"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -5174,7 +6076,14 @@ export interface operations {
     };
     webhookDeliveryList: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Restrict the result to one site. Omitted, the result covers every site this credential may reach. */
+                site_id?: string;
+                /** @description Restrict the result to one webhook endpoint. */
+                endpoint?: string;
+                status?: "pending" | "delivered" | "failed";
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5186,7 +6095,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WebhookDelivery"][];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -5208,7 +6119,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WebhookDelivery"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];

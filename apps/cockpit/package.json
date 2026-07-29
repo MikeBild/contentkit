@@ -2,7 +2,7 @@
   "name": "contentkit-cockpit",
   "private": true,
   "type": "module",
-  "description": "ContentKit Cockpit \u2014 the first-party operator console, served by ContentKit itself under /cockpit/",
+  "description": "ContentKit Cockpit — the first-party operator console, served by ContentKit itself under /cockpit/",
   "scripts": {
     "dev": "vite",
     "build": "npm run gen:css && tsc --noEmit && vite build",
@@ -18,11 +18,16 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "idb": "^8.0.3",
+    "katex": "^0.18.1",
     "lucide-react": "^0.577.0",
+    "mermaid": "^11.12.2",
     "openapi-fetch": "^0.17.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tailwind-merge": "^3.5.0"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.5.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { buildSite } from './site-builder.mjs'
+import { WEBHOOK_EVENT } from './webhook-events.mjs'
 import { sha256 } from './utils.mjs'
 
 export function normalizePreviewSlug(value) {
@@ -50,7 +51,7 @@ async function contentTransitionEvents(db, snapshot, retireItemIds, releaseId) {
     const item = itemsById.get(revision.item_id)
     if (!item || item.published_revision_id === revision.id) continue
     events.push({
-      type: 'contentkit.content.published',
+      type: WEBHOOK_EVENT.contentPublished,
       resourceKind: 'content',
       resourceId: item.id,
       summary: 'Content published',
@@ -77,7 +78,7 @@ async function contentTransitionEvents(db, snapshot, retireItemIds, releaseId) {
     for (const item of retiring) {
       const revision = revisionsById.get(item.published_revision_id)
       events.push({
-        type: 'contentkit.content.unpublished',
+        type: WEBHOOK_EVENT.contentUnpublished,
         resourceKind: 'content',
         resourceId: item.id,
         summary: 'Content unpublished',
@@ -182,14 +183,14 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       )
       if (kind === 'release') {
         const events = await contentTransitionEvents(db, snapshot, retireItemIds, releaseId)
-        const published = events.filter((event) => event.type === 'contentkit.content.published')
+        const published = events.filter((event) => event.type === WEBHOOK_EVENT.contentPublished)
         const publishedCount = published.length
-        const unpublishedCount = events.filter((event) => event.type === 'contentkit.content.unpublished').length
+        const unpublishedCount = events.filter((event) => event.type === WEBHOOK_EVENT.contentUnpublished).length
         const builtDecks = new Map(decks.map((deck) => [deck.item_id, deck]))
         for (const event of published.filter((entry) => entry.data.kind === 'deck')) {
           const deck = builtDecks.get(event.resourceId)
           events.push({
-            type: 'contentkit.deck.published',
+            type: WEBHOOK_EVENT.deckPublished,
             resourceKind: 'deck',
             resourceId: event.resourceId,
             summary: 'Slide deck published',
@@ -203,7 +204,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           })
         }
         events.push({
-          type: 'contentkit.release.published',
+          type: WEBHOOK_EVENT.releasePublished,
           resourceKind: 'release',
           resourceId: releaseId,
           summary: 'Site release published',
@@ -335,11 +336,11 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         )
         .catch(() => {})
       await repo
-        .createOutbox(siteId, 'contentkit.release.failed', 'release', releaseId, 'Site release failed')
+        .createOutbox(siteId, WEBHOOK_EVENT.releaseFailed, 'release', releaseId, 'Site release failed')
         .catch(() => {})
       if (deckCount) {
         await repo
-          .createOutbox(siteId, 'contentkit.deck.release_failed', 'release', releaseId, 'Slide deck release failed')
+          .createOutbox(siteId, WEBHOOK_EVENT.deckReleaseFailed, 'release', releaseId, 'Slide deck release failed')
           .catch(() => {})
         await db
           .insert(
@@ -394,7 +395,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         await tx.rpc('ck_activate_release', { p_release_id: releaseId, p_revision_ids: [] })
         await repo.enqueueContentEvents(tx, site, [
           {
-            type: 'contentkit.release.published',
+            type: WEBHOOK_EVENT.releasePublished,
             resourceKind: 'release',
             resourceId: releaseId,
             summary: 'Site release published',

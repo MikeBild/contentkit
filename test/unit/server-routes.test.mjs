@@ -1833,11 +1833,11 @@ test('GET /v1/sites/{site}/audio/jobs requires content:read and forwards status/
   })
 })
 
-test('OPTIONS advertises GET, DELETE on item audio and GET on the jobs listing', async () => {
+test('OPTIONS advertises the item audio verbs and GET on the jobs listing', async () => {
   await withApp({}, async (request) => {
     const item = await request('/v1/content/item-1/audio', { method: 'OPTIONS' })
     assert.equal(item.status, 204)
-    assert.equal(item.headers.get('allow'), 'GET, DELETE, OPTIONS')
+    assert.equal(item.headers.get('allow'), 'GET, POST, DELETE, OPTIONS')
     const jobs = await request('/v1/sites/my-site/audio/jobs', { method: 'OPTIONS' })
     assert.equal(jobs.status, 204)
     assert.equal(jobs.headers.get('allow'), 'GET, OPTIONS')

@@ -7,6 +7,7 @@ import { clientIp, contentCsp, deckContentCsp, verifyTurnstile } from './securit
 import { openApi } from './openapi.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { renderFragment } from './render-fragment.mjs'
+import { WEBHOOK_EVENT } from './webhook-events.mjs'
 import { compileCompositionMarkdown, reResolveComposition } from './composition-output.mjs'
 import { getPattern, patternRegistry, patternRegistryHash, recommendPatterns } from './composition-registry.mjs'
 import { getPublishingGuide, publishingGuideRegistry, publishingGuideRegistryHash } from './publishing-guides.mjs'
@@ -117,6 +118,13 @@ const RELEASE_CONTENT_TYPES = [
 
 export function releaseContentType(releasePath) {
   return RELEASE_CONTENT_TYPES.find(([suffix]) => releasePath.endsWith(suffix))?.[1]
+}
+
+// Strong validator over the stored site row — the exact object PATCH replaces
+// wholesale. A settings editor reads it with the row, sends it back as If-Match
+// and learns that someone else wrote in between instead of overwriting them.
+export function siteEtag(site) {
+  return `"${sha256(JSON.stringify(site))}"`
 }
 
 const PREVIEW_PASSTHROUGH = /^\/(?:media\/|public\/|_contentkit\/|v1\/)/
@@ -233,7 +241,7 @@ export const API_ROUTES = [
   { pattern: /^\/_contentkit\/(session|navigation\.json|search-index\.json)$/, methods: ['GET'] },
   { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/v1\/sites$/, methods: ['GET', 'POST'] },
-  { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
+  { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/render$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
@@ -249,12 +257,13 @@ export const API_ROUTES = [
   },
   { pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/search$/, methods: ['GET'] },
-  { pattern: /^\/v1\/content\/[^/]+$/, methods: ['DELETE'] },
+  { pattern: /^\/v1\/content\/[^/]+$/, methods: ['GET', 'DELETE'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/v1\/content\/[^/]+\/published$/, methods: ['DELETE'] },
-  { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET', 'DELETE'] },
+  { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET', 'POST', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/backfill$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/jobs$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/audio\/jobs\/[^/]+\/retry$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/(users|groups|rules)$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/(users|groups|rules)\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/users\/[^/]+\/revoke-sessions$/, methods: ['POST'] },
@@ -266,6 +275,7 @@ export const API_ROUTES = [
       /^\/v1\/sites\/[^/]+\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions|mcp)$/,
     methods: ['GET'],
   },
+  { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
   { pattern: /^\/v1\/publish-due$/, methods: ['POST'] },
   { pattern: /^\/v1\/maintenance\/storage-gc$/, methods: ['POST'] },
@@ -282,10 +292,11 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/webhook-deliveries$/, methods: ['GET'] },
   { pattern: /^\/v1\/webhook-deliveries\/[^/]+\/retry$/, methods: ['POST'] },
   { pattern: /^\/v1\/comments$/, methods: ['GET'] },
-  { pattern: /^\/v1\/comments\/[^/]+$/, methods: ['PATCH'] },
+  { pattern: /^\/v1\/comments\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/contact-submissions$/, methods: ['GET'] },
-  { pattern: /^\/v1\/contact-submissions\/[^/]+$/, methods: ['PATCH'] },
+  { pattern: /^\/v1\/contact-submissions\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/feedback$/, methods: ['GET'] },
+  { pattern: /^\/v1\/feedback\/[^/]+$/, methods: ['DELETE'] },
 ]
 
 // Builds the single request handler from the app's composed dependencies.
@@ -400,6 +411,13 @@ export function createRequestHandler(ctx) {
 
   async function bodyFor(req) {
     return readBody(req, config.maxBodyBytes)
+  }
+
+  // For POSTs whose options are all optional: an empty body is the request "do
+  // it with the defaults", not a malformed JSON document.
+  async function optionalJsonBody(req) {
+    const raw = await bodyFor(req)
+    return raw.length ? parseJson(raw) || {} : {}
   }
 
   const csrfSecret = csrfSecretFor(config)
@@ -676,7 +694,7 @@ export function createRequestHandler(ctx) {
         })
         await repo.enqueueEvent(tx, {
           site,
-          type: 'contentkit.comment.submitted',
+          type: WEBHOOK_EVENT.commentSubmitted,
           resourceKind: 'comment',
           resourceId: row.id,
           summary: 'New comment awaits moderation',
@@ -755,7 +773,7 @@ export function createRequestHandler(ctx) {
         })
         await repo.enqueueEvent(tx, {
           site,
-          type: 'contentkit.contact.submitted',
+          type: WEBHOOK_EVENT.contactSubmitted,
           resourceKind: 'contact',
           resourceId: row.id,
           summary: 'New contact request',
@@ -1107,7 +1125,7 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 201, await repo.createSite(parseJson(await bodyFor(req))))
     }
     const siteMatch = path.match(/^\/v1\/sites\/([^/]+)$/)
-    if (siteMatch && ['GET', 'PATCH'].includes(req.method)) {
+    if (siteMatch && ['GET', 'PATCH', 'DELETE'].includes(req.method)) {
       const site = await repo.getSite(siteMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (req.method === 'GET') {
@@ -1115,10 +1133,60 @@ export function createRequestHandler(ctx) {
         // key must first read the whole object. Without this route that read is
         // impossible over HTTP and every partial update silently drops the rest.
         if (!(await requireAnyScope(req, res, ['content:read', 'site:admin'], site.id))) return
-        return sendJson(res, 200, site)
+        const etag = siteEtag(site)
+        if (req.headers['if-none-match'] === etag) return send(res, 304, '', { etag })
+        return sendJson(res, 200, site, { etag })
+      }
+      if (req.method === 'DELETE') {
+        const principal = await requireScope(req, res, 'site:admin', site.id)
+        if (!principal) return
+        const inventory = await repo.siteInventory(site.id)
+        const owned = inventory.content_items + inventory.releases + inventory.readers
+        // Deleting a site deletes everything it owns, and nothing in that graph
+        // is recoverable. A non-empty site therefore refuses once and names what
+        // would go, so `purge=true` is a decision about known numbers rather
+        // than a flag someone appends to make the 409 stop.
+        if (owned && url.searchParams.get('purge') !== 'true') {
+          return sendJson(res, 409, {
+            error: `site owns ${inventory.content_items} content item(s), ${inventory.releases} release(s) and ${inventory.readers} reader(s); repeat with ?purge=true to delete the site and all of it`,
+            ...inventory,
+          })
+        }
+        const result = await repo.deleteSite(site.id)
+        // No siteId on the record: the row it would reference is gone, and the
+        // audit trail has to survive the thing it describes.
+        await audit.record({
+          actorType: principal.oauth ? 'oauth' : 'api_key',
+          actorId: principal.id,
+          action: 'site.delete',
+          resourceType: 'site',
+          resourceId: site.id,
+          result: 'success',
+          transport: 'http',
+          // `items` rather than `content_items`: the audit sanitizer drops every
+          // key that looks like it could carry content, and a silently missing
+          // count is worse than a shorter name.
+          metadata: {
+            slug: site.slug,
+            items: inventory.content_items,
+            releases: inventory.releases,
+            readers: inventory.readers,
+            removed_objects: result.removed_objects,
+          },
+        })
+        return sendJson(res, 200, result)
       }
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
-      return sendJson(res, 200, await repo.updateSite(site.id, parseJson(await bodyFor(req))))
+      // Lost-update protection for an editor that read the settings object,
+      // changed one key and sends the whole thing back: a concurrent write in
+      // between would otherwise be silently overwritten. Only enforced when the
+      // client opts in by sending the ETag it read.
+      const expected = req.headers['if-match']
+      if (expected && expected !== '*' && expected !== siteEtag(site)) {
+        return sendJson(res, 412, { error: 'the site changed since it was read; re-read it and retry' })
+      }
+      const updated = await repo.updateSite(site.id, parseJson(await bodyFor(req)))
+      return sendJson(res, 200, updated, { etag: siteEtag(updated) })
     }
     const statsMatch = path.match(
       /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions|mcp)$/,
@@ -1594,14 +1662,18 @@ export function createRequestHandler(ctx) {
       const { markdown, assets } = await markdownRequest(req)
       return sendJson(res, 201, await repo.ingest(items[0].site_id, markdown, assets, items[0].id))
     }
-    // Discarding a draft that was never published. Deliberately refuses once an
-    // item has a published revision: unpublishing is a release operation with
-    // its own endpoint, and conflating the two would let a single DELETE remove
-    // live content and its whole history at once.
     const contentItemMatch = path.match(/^\/v1\/content\/([^/]+)$/)
-    if (contentItemMatch && req.method === 'DELETE') {
+    if (contentItemMatch && ['GET', 'DELETE'].includes(req.method)) {
       const items = await db.select('ck_content_items', { id: `eq.${contentItemMatch[1]}`, limit: '1' })
       if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
+      if (req.method === 'GET') {
+        if (!(await requireScope(req, res, 'content:read', items[0].site_id))) return
+        return sendJson(res, 200, await repo.getContentItem(items[0].id))
+      }
+      // Discarding a draft that was never published. Deliberately refuses once an
+      // item has a published revision: unpublishing is a release operation with
+      // its own endpoint, and conflating the two would let a single DELETE remove
+      // live content and its whole history at once.
       if (!(await requireScope(req, res, 'content:write', items[0].site_id))) return
       if (items[0].published_revision_id)
         return sendJson(res, 409, { error: 'published content cannot be deleted; unpublish it first' })
@@ -1633,12 +1705,39 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 200, { item_id: items[0].id, unpublished: true, release: result })
     }
     const audioStatusMatch = path.match(/^\/v1\/content\/([^/]+)\/audio$/)
-    if (audioStatusMatch && ['GET', 'DELETE'].includes(req.method)) {
+    if (audioStatusMatch && ['GET', 'POST', 'DELETE'].includes(req.method)) {
       const items = await db.select('ck_content_items', { id: `eq.${audioStatusMatch[1]}`, limit: '1' })
       if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
       if (req.method === 'GET') {
         if (!(await requireScope(req, res, 'content:read', items[0].site_id))) return
         return sendJson(res, 200, await audio.status(items[0].id))
+      }
+      if (req.method === 'POST') {
+        // Narrating one post is the backfill narrowed to that post's slug, not a
+        // second enqueue path: the audio-enabled gate, the monthly budget and the
+        // speech-hash idempotency must behave identically either way.
+        if (!(await requireScope(req, res, 'release:write', items[0].site_id))) return
+        if (items[0].kind !== 'post') return sendJson(res, 409, { error: 'read-aloud audio exists only for posts' })
+        if (!items[0].published_revision_id)
+          return sendJson(res, 409, { error: 'item is not published; publish it before narrating it' })
+        const [revision] = await db.select('ck_content_revisions', {
+          id: `eq.${items[0].published_revision_id}`,
+          limit: '1',
+        })
+        if (!revision) return sendJson(res, 409, { error: 'the published revision no longer exists' })
+        const input = await optionalJsonBody(req)
+        const site = await repo.getSite(items[0].site_id)
+        return sendJson(
+          res,
+          202,
+          await audio.backfill({
+            site,
+            slugs: [revision.slug],
+            dryRun: input.dry_run === true,
+            force: input.force === true,
+            limitChars: input.limit_chars,
+          }),
+        )
       }
       // DELETE removes jobs and generated MP3 assets and schedules a rebuild —
       // it changes the live site, so it takes the publishing scope.
@@ -1660,6 +1759,16 @@ export function createRequestHandler(ctx) {
           limit: url.searchParams.get('limit') || undefined,
         }),
       )
+    }
+    const audioRetryMatch = path.match(/^\/v1\/sites\/([^/]+)\/audio\/jobs\/([^/]+)\/retry$/)
+    if (audioRetryMatch && req.method === 'POST') {
+      const site = await repo.getSite(audioRetryMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      // Retrying spends TTS budget and ends in a rebuild, exactly like the
+      // backfill that created the job.
+      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      const retried = await audio.retryJob({ site, jobId: audioRetryMatch[2] })
+      return retried ? sendJson(res, 200, retried) : sendJson(res, 404, { error: 'audio job not found' })
     }
     const audioBackfillMatch = path.match(/^\/v1\/sites\/([^/]+)\/audio\/backfill$/)
     if (audioBackfillMatch && req.method === 'POST') {
@@ -1719,6 +1828,21 @@ export function createRequestHandler(ctx) {
       })
       metrics.build(Date.now() - started)
       return sendJson(res, 201, result)
+    }
+    const releaseItemMatch = path.match(/^\/v1\/sites\/([^/]+)\/releases\/([^/]+)$/)
+    if (releaseItemMatch && req.method === 'DELETE') {
+      const site = await repo.getSite(releaseItemMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      const release = await repo.getRelease(releaseItemMatch[2])
+      if (!release || release.site_id !== site.id) return sendJson(res, 404, { error: 'release not found' })
+      // The live site is served straight out of this release's objects, so
+      // deleting it would take the site down. Rolling forward or back to another
+      // release is the operation that makes this one deletable.
+      if (release.id === site.active_release_id || release.status === 'active') {
+        return sendJson(res, 409, { error: 'the active release cannot be deleted; activate another release first' })
+      }
+      return sendJson(res, 200, await repo.deleteRelease(site.id, release.id))
     }
     const activateMatch = path.match(/^\/v1\/sites\/([^/]+)\/releases\/([^/]+)\/activate$/)
     if (activateMatch && req.method === 'POST') {
@@ -2143,10 +2267,37 @@ export function createRequestHandler(ctx) {
       )
     }
     const commentMatch = path.match(/^\/v1\/comments\/([^/]+)$/)
-    if (commentMatch && req.method === 'PATCH') {
+    if (commentMatch && ['PATCH', 'DELETE'].includes(req.method)) {
       const existing = await db.select('ck_comments', { id: `eq.${commentMatch[1]}`, limit: '1' })
       if (!existing[0]) return sendJson(res, 404, { error: 'comment not found' })
       if (!(await requireScope(req, res, 'moderation:write', existing[0].site_id))) return
+      if (req.method === 'DELETE') {
+        await db.remove('ck_comments', { id: `eq.${existing[0].id}` })
+        // An approved comment is baked into the published pages, so removing the
+        // row is only half the deletion — the same best-effort republish that
+        // approval uses takes it off the live site. `?publish=false` defers that
+        // to the next release for a caller deleting many at once.
+        let published = null
+        let publishError = null
+        if (existing[0].status === 'approved' && url.searchParams.get('publish') !== 'false') {
+          try {
+            published = await releases.publish({
+              siteId: existing[0].site_id,
+              revisionIds: [],
+              reason: 'comment deleted',
+            })
+          } catch (error) {
+            publishError = String(error.message || error)
+            logger.error('comment deletion republish failed', { commentId: existing[0].id, error: publishError })
+          }
+        }
+        return sendJson(res, 200, {
+          id: existing[0].id,
+          deleted: true,
+          release: published,
+          ...(publishError ? { republish_error: publishError } : {}),
+        })
+      }
       const input = parseJson(await bodyFor(req))
       if (!['approved', 'rejected'].includes(input.status))
         return sendJson(res, 422, { error: 'status must be approved or rejected' })
@@ -2161,7 +2312,7 @@ export function createRequestHandler(ctx) {
         const approvedSite = (await repo.getSite(record.site_id)) || { id: record.site_id, name: null }
         await repo.enqueueEvent(db, {
           site: approvedSite,
-          type: 'contentkit.comment.approved',
+          type: WEBHOOK_EVENT.commentApproved,
           resourceKind: 'comment',
           resourceId: record.id,
           summary: 'Comment approved',
@@ -2208,13 +2359,19 @@ export function createRequestHandler(ctx) {
       )
     }
     const contactMatch = path.match(/^\/v1\/contact-submissions\/([^/]+)$/)
-    if (contactMatch && req.method === 'PATCH') {
+    if (contactMatch && ['PATCH', 'DELETE'].includes(req.method)) {
       const existing = await db.select('ck_contact_submissions', { id: `eq.${contactMatch[1]}`, limit: '1' })
       if (!existing[0]) return sendJson(res, 404, { error: 'contact submission not found' })
       if (!(await requireScope(req, res, 'moderation:write', existing[0].site_id))) return
+      if (req.method === 'DELETE') {
+        await db.remove('ck_contact_submissions', { id: `eq.${existing[0].id}` })
+        return sendJson(res, 200, { id: existing[0].id, deleted: true })
+      }
       const input = parseJson(await bodyFor(req))
-      if (!['read', 'closed'].includes(input.status))
-        return sendJson(res, 422, { error: 'status must be read or closed' })
+      // `new` is part of the set because triage is not one-way: a submission
+      // marked read by mistake has to be returnable to the inbox.
+      if (!['new', 'read', 'closed'].includes(input.status))
+        return sendJson(res, 422, { error: 'status must be new, read or closed' })
       const rows = await db.update('ck_contact_submissions', { id: `eq.${contactMatch[1]}` }, { status: input.status })
       return sendJson(res, 200, rows[0])
     }
@@ -2251,6 +2408,20 @@ export function createRequestHandler(ctx) {
         200,
         [...byPost.values()].sort((a, b) => b.up + b.down - (a.up + a.down)),
       )
+    }
+    // Resetting the counter of one post. Votes are anonymous rows with no
+    // moderation state, so there is nothing to review — either they stand or
+    // they are dropped (e.g. after a brigading incident, or when a post is
+    // rewritten and its old score no longer describes it). The published pages
+    // never render the totals, so no rebuild follows.
+    const feedbackResetMatch = path.match(/^\/v1\/feedback\/([^/]+)$/)
+    if (feedbackResetMatch && req.method === 'DELETE') {
+      const items = await db.select('ck_content_items', { id: `eq.${feedbackResetMatch[1]}`, limit: '1' })
+      if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
+      if (!(await requireScope(req, res, 'moderation:write', items[0].site_id))) return
+      const votes = await db.select('ck_post_feedback', { content_item_id: `eq.${items[0].id}` })
+      if (votes.length) await db.remove('ck_post_feedback', { content_item_id: `eq.${items[0].id}` })
+      return sendJson(res, 200, { content_item_id: items[0].id, deleted_votes: votes.length })
     }
 
     // Unmatched method on a known API path: answer with OPTIONS/405 + Allow

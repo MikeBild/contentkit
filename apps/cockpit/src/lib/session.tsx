@@ -62,7 +62,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
     return (
       <Splash>
         <p className="text-chart-5">{query.error instanceof Error ? query.error.message : 'Sign-in failed'}</p>
-        <Button variant="outline" onClick={() => query.refetch()}>
+        <Button data-testid="session-retry" variant="outline" onClick={() => query.refetch()}>
           Try again
         </Button>
       </Splash>

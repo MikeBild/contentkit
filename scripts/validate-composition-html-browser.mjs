@@ -200,7 +200,13 @@ for (const pattern of informationPatterns) {
       waitUntil: 'domcontentloaded',
     },
   )
-  await page.addScriptTag({ content: compositionJs })
+  // composition.js exports its enhancement rather than running on load, so the
+  // injected module has to invoke it — the published page does the same through
+  // assets/composition-init.js.
+  await page.addScriptTag({ content: `${compositionJs}\nenhanceComposition()`, type: 'module' })
+  // Module scripts evaluate off the append, so the assertions below have to wait
+  // for the marker class the enhancement sets before they read the DOM.
+  await page.waitForFunction(() => document.documentElement.classList.contains('ck-composition-enhanced'))
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const enhancedIssues = []
   const category = pattern.category

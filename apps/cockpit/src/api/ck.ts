@@ -3,6 +3,27 @@ import type { components, operations } from './schema'
 
 type Schema<T extends keyof components['schemas']> = components['schemas'][T]
 type Query<T extends keyof operations> = operations[T] extends { parameters: { query?: infer Q } } ? Q : never
+/**
+ * Four lists answer across every site the credential reaches, and `site_id` is
+ * the only thing that narrows them. Taking the site as a separate, required
+ * argument and removing it from the caller's query object is what makes
+ * "forgot the site" a type error instead of a page that quietly mixes two.
+ */
+type SiteScoped<T extends keyof operations> = Omit<NonNullable<Query<T>>, 'site_id'>
+type Json<T extends keyof operations> = operations[T] extends { requestBody?: { content: { 'application/json': infer B } } }
+  ? B
+  : never
+type Result<T extends keyof operations> = operations[T] extends {
+  responses: { 200: { content: { 'application/json': infer R } } }
+}
+  ? R
+  : never
+/** The same, for the operations that answer 201. */
+type Created<T extends keyof operations> = operations[T] extends {
+  responses: { 201: { content: { 'application/json': infer R } } }
+}
+  ? R
+  : never
 
 export type Site = Schema<'Site'>
 export type SitePatch = Schema<'SitePatch'>
@@ -17,23 +38,24 @@ export type AccessRule = Schema<'AccessRule'>
 export type CompositionCompileResult = Schema<'CompositionCompileResult'>
 export type PatternDescriptor = Schema<'PatternDescriptor'>
 export type PublishingGuide = Schema<'PublishingGuide'>
+export type RenderInput = Json<'renderMarkdownFragment'>
+export type RenderResult = Result<'renderMarkdownFragment'>
 
 export type ContentKind = 'page' | 'post' | 'project' | 'deck'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hand-maintained response shapes.
+// Response shapes.
 //
-// A number of operations describe their responses in prose only, so the
-// generated type for them is `undefined`. Their runtime shape comes from
-// src/repository.mjs and is written out here. Every `unwrapAs` call below marks
-// one such gap — when an operation gains a schema in src/openapi.mjs, drop the
-// interface and switch the call back to `unwrap`.
+// Every alias below resolves through the OpenAPI document, so a field the
+// server stops sending stops compiling here. The remaining hand-written
+// interfaces are the operations whose response the spec still describes in
+// prose only; each `unwrapAs` call is one such gap, and the guessing they
+// require is exactly what shipped `endpoint.active`, `delivery.event` and
+// `created.api_key` — three names the server has never used.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Mirrors the generated `contentList` item; kept as a name pages can pass around. */
-export type ContentItem = NonNullable<
-  operations['contentList']['responses'][200]['content']['application/json']
->[number]
+/** The list and the detail route answer the same schema; pages pass this around. */
+export type ContentItem = Schema<'ContentItem'>
 
 export interface Revision {
   id: string
@@ -51,95 +73,37 @@ export interface Revision {
   created_at: string
 }
 
-export interface Release {
-  id: string
-  site_id: string
-  kind: 'release' | 'preview'
-  status: 'building' | 'preview' | 'ready' | 'active' | 'superseded' | 'failed'
-  reason: string | null
-  revision_ids: string[]
-  file_count: number | null
-  error: string | null
-  completed_at: string | null
-  activated_at: string | null
-  created_at: string
-}
+export type Release = Schema<'Release'>
+/** What a build or an activation answers — a receipt, not a release row. */
+export type ReleaseBuildResult = Schema<'ReleaseBuildResult'>
+export type Preview = Created<'previewCreate'>
 
 export type ApiKey = Schema<'ApiKeySummary'>
-
 /** The raw key exists exactly once, in this response. It is never readable again. */
-export interface CreatedApiKey extends ApiKey {
-  api_key: string
-}
+export type CreatedApiKey = Schema<'CreatedApiKey'>
 
 export type IdentityGrant = Schema<'IdentityGrantSummary'>
+export type IdentityProvider = Schema<'AuthProvider'>
+/** The 409 body of a duplicate grant: it names the row to edit or restore. */
+export type IdentityGrantConflict = Schema<'IdentityGrantConflict'>
 
-export interface Comment {
-  id: string
-  site_id: string
-  content_item_id: string
-  author_name: string | null
-  body: string
-  status: 'pending' | 'approved' | 'rejected'
-  created_at: string
-}
+export type Comment = Schema<'Comment'>
+export type ContactSubmission = Schema<'ContactSubmission'>
+export type FeedbackAggregate = Schema<'FeedbackAggregate'>
 
-export interface ContactSubmission {
-  id: string
-  site_id: string
-  name: string
-  email: string
-  /** The column is `body`; there is no `message`. */
-  body: string
-  status: 'new' | 'read' | 'closed'
-  created_at: string
-}
-
-export interface FeedbackAggregate {
-  content_item_id: string
-  site_id: string
-  up: number
-  down: number
-}
-
-export interface WebhookEndpoint {
-  id: string
-  site_id: string
-  url: string
-  events: string[]
-  active: boolean
-  created_at: string
-}
-
-export interface WebhookDelivery {
-  id: string
-  endpoint_id: string
-  event: string
-  status: 'pending' | 'delivered' | 'failed'
-  attempts: number
-  response_status: number | null
-  created_at: string
-}
+export type WebhookEndpoint = Schema<'WebhookEndpoint'>
+export type CreatedWebhookEndpoint = Schema<'CreatedWebhookEndpoint'>
+export type WebhookSecret = Schema<'WebhookSecret'>
+export type WebhookDelivery = Schema<'WebhookDelivery'>
 
 export type AuditEvent = Schema<'AuditEvent'>
 
-export interface AudioJob {
-  id: string
-  item_id: string
-  slug: string | null
-  title: string | null
-  status: string
-  attempts: number
-  chars: number | null
-  error: string | null
-  created_at: string
-  updated_at: string
-}
+export type AudioJob = Schema<'AudioJob'>
+export type AudioJobs = Schema<'AudioJobList'>
 
-export interface AudioJobs {
-  jobs: AudioJob[]
-  budget?: { characters_used: number; characters_limit: number }
-}
+export type ReadinessReport = Schema<'ReadinessReport'>
+export type DeckThemeList = Schema<'DeckThemeList'>
+export type DeckTemplateList = Schema<'DeckTemplateList'>
 
 export interface DeckJob {
   id: string
@@ -147,17 +111,68 @@ export interface DeckJob {
   error: string | null
 }
 
-export interface OperatorSession {
-  subject: string
-  email: string | null
-  display_name: string | null
-  provider_id: string | null
-  role: 'admin' | 'author' | 'reader'
-  product_scopes: string[]
-  site_ids: string[]
-  csrf_token: string
-  expires_at?: string
-  absolute_expires_at?: string
+export type OperatorSession = Result<'describeCockpitSession'>
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request shapes.
+//
+// The spec types these bodies as a bare `{type: object}` — the server reads
+// them field by field rather than against a schema — so they are named here.
+// A page that misspells `group_slugs` for `groups` gets a 422 it cannot act on;
+// naming them turns that into a compile error.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ReaderInput {
+  username?: string
+  password?: string
+  display_name?: string
+  active?: boolean
+  /** Group *slugs*, not ids — the server resolves them per site. */
+  groups?: string[]
+}
+
+export interface GroupInput {
+  /** Immutable after creation: only `name` is patchable. */
+  slug?: string
+  name?: string
+}
+
+export interface RuleInput {
+  match?: 'exact' | 'prefix'
+  path?: string
+  /** Group slugs. */
+  groups?: string[]
+  /** Reader ids. */
+  users?: string[]
+}
+
+export interface WebhookInput {
+  url?: string
+  /** Empty means every event. */
+  events?: string[]
+  description?: string
+  enabled?: boolean
+}
+
+export interface GrantInput {
+  provider_id?: string
+  issuer?: string
+  subject?: string
+  email?: string
+  display_name?: string
+  /** Mutually exclusive with `product_scopes`; the server expands it once. */
+  role?: 'reader' | 'author' | 'admin'
+  product_scopes?: string[]
+  site_ids?: string[]
+  /** The only way to clear `revoked_at`. A PATCH without it matches live grants only. */
+  restore?: boolean
+}
+
+export interface PreviewInput {
+  slug: string
+  revision_ids?: string[]
+  expires_in?: number
+  reason?: string
 }
 
 const STATS_KINDS = [
@@ -197,21 +212,29 @@ const markdown = { 'content-type': 'text/markdown' }
 export const ck = {
   identity: {
     /** 401 here is the Cockpit's cue to redirect into the sign-in funnel. */
-    session: () => unwrapAs<OperatorSession>(api.GET('/v1/identity/session', {})),
+    session: () => unwrap(api.GET('/v1/identity/session', {})),
     logout: () => unwrapAs<void>(api.POST('/v1/identity/logout', {})),
     loginUrl: (returnTo: string) => `/v1/identity/cockpit-login?return_to=${encodeURIComponent(returnTo)}`,
   },
 
   sites: {
     /** Every site this credential may read. `site_ids: []` on a grant means all of them. */
-    list: () => unwrapAs<Site[]>(api.GET('/v1/sites', {})),
+    list: () => unwrap(api.GET('/v1/sites', {})),
     get: (site: string) => unwrap(api.GET('/v1/sites/{site}', { params: { path: { site } } })),
     create: (input: { name: string; base_url: string; default_locale: string; slug?: string }) =>
-      unwrapAs<Site>(api.POST('/v1/sites', { body: body(input) })),
+      unwrap(api.POST('/v1/sites', { body: body(input) })),
     // PATCH replaces `settings` wholesale — read, merge, then send the whole
     // object back. Sending a partial subtree silently drops the rest.
     update: (site: string, patch: SitePatch) =>
-      unwrapAs<Site>(api.PATCH('/v1/sites/{site}', { params: { path: { site } }, body: patch })),
+      unwrap(api.PATCH('/v1/sites/{site}', { params: { path: { site } }, body: patch })),
+    /**
+     * Deletes the site and everything it owns. A site that still holds content,
+     * releases or readers answers 409 with the counts until `purge` is passed —
+     * that refusal is the confirmation step, so never call this with purge on
+     * the first attempt.
+     */
+    remove: (site: string, purge = false) =>
+      unwrap(api.DELETE('/v1/sites/{site}', { params: { path: { site }, query: { purge } } })),
   },
 
   content: {
@@ -227,6 +250,7 @@ export const ck = {
           headers: markdown,
         }),
       ),
+    get: (item: string) => unwrap(api.GET('/v1/content/{item}', { params: { path: { item } } })),
     revisions: (item: string) =>
       unwrapAs<Revision[]>(api.GET('/v1/content/{item}/revisions', { params: { path: { item } } })),
     addRevision: (item: string, source: string) =>
@@ -244,20 +268,28 @@ export const ck = {
       unwrapAs<{ item_id: string; deleted: boolean }>(api.DELETE('/v1/content/{item}', { params: { path: { item } } })),
     audio: {
       get: (item: string) => unwrapAs<unknown>(api.GET('/v1/content/{item}/audio', { params: { path: { item } } })),
+      /** Narrates one published post: the backfill narrowed to that post's slug. */
+      create: (item: string, input: { force?: boolean; dry_run?: boolean; limit_chars?: number } = {}) =>
+        unwrap(api.POST('/v1/content/{item}/audio', { params: { path: { item } }, body: input })),
       remove: (item: string) =>
         unwrapAs<void>(api.DELETE('/v1/content/{item}/audio', { params: { path: { item } } })),
-      jobs: (site: string) =>
-        unwrapAs<AudioJobs>(api.GET('/v1/sites/{site}/audio/jobs', { params: { path: { site } } })),
-      backfill: (site: string) =>
-        unwrapAs<unknown>(api.POST('/v1/sites/{site}/audio/backfill', { params: { path: { site } }, body: body({}) })),
+      jobs: (site: string, query?: Query<'audioJobList'>) =>
+        unwrap(api.GET('/v1/sites/{site}/audio/jobs', { params: { path: { site }, query } })),
+      backfill: (site: string, input: { limit_chars?: number; dry_run?: boolean; force?: boolean } = {}) =>
+        unwrapAs<unknown>(api.POST('/v1/sites/{site}/audio/backfill', { params: { path: { site } }, body: body(input) })),
+      /** Re-queues one job. A job the worker already holds answers 409. */
+      retry: (site: string, job: string) =>
+        unwrap(
+          api.POST('/v1/sites/{site}/audio/jobs/{job}/retry', { params: { path: { site, job } }, body: body({}) }),
+        ),
     },
   },
 
   published: {
     list: (site: string, query?: Query<'publishedList'>) =>
-      unwrapAs<PublishedList>(api.GET('/v1/sites/{site}/published', { params: { path: { site }, query } })),
+      unwrap(api.GET('/v1/sites/{site}/published', { params: { path: { site }, query } })),
     get: (site: string, kind: ContentKind, locale: string, slug: string) =>
-      unwrapAs<PublishedDocument>(
+      unwrap(
         api.GET('/v1/sites/{site}/published/{kind}/{locale}/{slug}', {
           params: { path: { site, kind, locale, slug } },
         }),
@@ -266,6 +298,14 @@ export const ck = {
       `/v1/sites/${site}/published/${kind}/${locale}/${slug}/composition.${format}`,
   },
 
+  /**
+   * The console's only Markdown renderer. Nothing is persisted, and the result
+   * is what a release of this site would produce — same directives, same charts,
+   * same syntax highlighting, same sanitize allowlist.
+   */
+  render: (site: string, input: RenderInput) =>
+    unwrap(api.POST('/v1/sites/{site}/render', { params: { path: { site } }, body: input })),
+
   search: (site: string, query: Query<'siteSearch'>) =>
     unwrapAs<unknown>(api.GET('/v1/sites/{site}/search', { params: { path: { site }, query } })),
 
@@ -273,10 +313,10 @@ export const ck = {
     patterns: (query?: Query<'compositionPatternList'>) =>
       unwrapAs<{ patterns: PatternDescriptor[] }>(api.GET('/v1/composition-patterns', { params: { query } })),
     pattern: (pattern: string) =>
-      unwrapAs<PatternDescriptor>(api.GET('/v1/composition-patterns/{pattern}', { params: { path: { pattern } } })),
+      unwrap(api.GET('/v1/composition-patterns/{pattern}', { params: { path: { pattern } } })),
     guides: () => unwrapAs<{ guides: PublishingGuide[] }>(api.GET('/v1/publishing-guides', {})),
     guide: (guide: string) =>
-      unwrapAs<PublishingGuide>(api.GET('/v1/publishing-guides/{guide}', { params: { path: { guide } } })),
+      unwrap(api.GET('/v1/publishing-guides/{guide}', { params: { path: { guide } } })),
     recommend: (site: string, input: unknown) =>
       unwrapAs<unknown>(
         api.POST('/v1/sites/{site}/compositions/recommend', { params: { path: { site } }, body: body(input) }),
@@ -286,14 +326,12 @@ export const ck = {
         api.POST('/v1/sites/{site}/compositions/validate', { params: { path: { site } }, body: body(input) }),
       ),
     compile: (site: string, input: unknown) =>
-      unwrapAs<CompositionCompileResult>(
-        api.POST('/v1/sites/{site}/compositions/compile', { params: { path: { site } }, body: body(input) }),
-      ),
+      unwrap(api.POST('/v1/sites/{site}/compositions/compile', { params: { path: { site } }, body: body(input) })),
   },
 
   decks: {
-    themes: () => unwrapAs<unknown>(api.GET('/v1/deck-themes', {})),
-    templates: () => unwrapAs<unknown>(api.GET('/v1/deck-templates', {})),
+    themes: () => unwrap(api.GET('/v1/deck-themes', {})),
+    templates: () => unwrap(api.GET('/v1/deck-templates', {})),
     plan: (site: string, input: unknown) =>
       unwrapAs<unknown>(api.POST('/v1/sites/{site}/decks/plan', { params: { path: { site } }, body: body(input) })),
     validate: (site: string, input: unknown) =>
@@ -308,130 +346,144 @@ export const ck = {
   },
 
   releases: {
-    list: (site: string) =>
-      unwrapAs<Release[]>(api.GET('/v1/sites/{site}/releases', { params: { path: { site } } })),
+    list: (site: string) => unwrap(api.GET('/v1/sites/{site}/releases', { params: { path: { site } } })),
     create: (site: string, input: { reason?: string } = {}) =>
-      unwrapAs<Release>(api.POST('/v1/sites/{site}/releases', { params: { path: { site } }, body: body(input) })),
-    /** Rollback and roll-forward are the same call: activate any built release. */
+      unwrap(api.POST('/v1/sites/{site}/releases', { params: { path: { site } }, body: body(input) })),
+    /**
+     * Rollback and roll-forward are the same call. Only a `kind: 'release'`
+     * build is activatable: a preview is rendered behind an invitation and the
+     * server answers 404 for it.
+     */
     activate: (site: string, release: string) =>
-      unwrapAs<Release>(
+      unwrap(
         api.POST('/v1/sites/{site}/releases/{release}/activate', {
           params: { path: { site, release } },
           body: body({}),
         }),
       ),
-    preview: (site: string, input: unknown) =>
-      unwrapAs<{ release_id: string; preview_url: string; invitation_url: string; expires_in: number }>(
-        api.POST('/v1/sites/{site}/previews', { params: { path: { site } }, body: body(input) }),
-      ),
+    /** Only a release the site is not serving; the active one answers 409. */
+    remove: (site: string, release: string) =>
+      unwrap(api.DELETE('/v1/sites/{site}/releases/{release}', { params: { path: { site, release } } })),
+    /** Builds a preview release and returns its two URLs; the invitation is secret. */
+    preview: (site: string, input: PreviewInput) =>
+      unwrap(api.POST('/v1/sites/{site}/previews', { params: { path: { site } }, body: body(input) })),
     publishDue: () => unwrapAs<unknown>(api.POST('/v1/publish-due', { body: body({}) })),
     storageGc: () => unwrapAs<unknown>(api.POST('/v1/maintenance/storage-gc', { body: body({}) })),
   },
 
   access: {
-    users: (site: string) =>
-      unwrapAs<AccessUser[]>(api.GET('/v1/sites/{site}/access/users', { params: { path: { site } } })),
-    createUser: (site: string, input: unknown) =>
-      unwrapAs<AccessUser>(api.POST('/v1/sites/{site}/access/users', { params: { path: { site } }, body: body(input) })),
-    updateUser: (site: string, user: string, input: unknown) =>
-      unwrapAs<AccessUser>(
-        api.PATCH('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } }, body: body(input) }),
-      ),
+    users: (site: string) => unwrap(api.GET('/v1/sites/{site}/access/users', { params: { path: { site } } })),
+    createUser: (site: string, input: ReaderInput) =>
+      unwrap(api.POST('/v1/sites/{site}/access/users', { params: { path: { site } }, body: body(input) })),
+    /** A password change or a deactivation revokes every session of that reader. */
+    updateUser: (site: string, user: string, input: ReaderInput) =>
+      unwrap(api.PATCH('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } }, body: body(input) })),
     deleteUser: (site: string, user: string) =>
-      unwrapAs<void>(api.DELETE('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } } })),
+      unwrap(api.DELETE('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } } })),
     revokeSessions: (site: string, user: string) =>
-      unwrapAs<unknown>(
+      unwrap(
         api.POST('/v1/sites/{site}/access/users/{user}/revoke-sessions', {
           params: { path: { site, user } },
           body: body({}),
         }),
       ),
-    groups: (site: string) =>
-      unwrapAs<AccessGroup[]>(api.GET('/v1/sites/{site}/access/groups', { params: { path: { site } } })),
-    createGroup: (site: string, input: unknown) =>
-      unwrapAs<AccessGroup>(
-        api.POST('/v1/sites/{site}/access/groups', { params: { path: { site } }, body: body(input) }),
-      ),
-    updateGroup: (site: string, group: string, input: unknown) =>
-      unwrapAs<AccessGroup>(
+    groups: (site: string) => unwrap(api.GET('/v1/sites/{site}/access/groups', { params: { path: { site } } })),
+    createGroup: (site: string, input: GroupInput) =>
+      unwrap(api.POST('/v1/sites/{site}/access/groups', { params: { path: { site } }, body: body(input) })),
+    updateGroup: (site: string, group: string, input: GroupInput) =>
+      unwrap(
         api.PATCH('/v1/sites/{site}/access/groups/{group}', { params: { path: { site, group } }, body: body(input) }),
       ),
+    /** 409 while any rule still names the group's slug. */
     deleteGroup: (site: string, group: string) =>
-      unwrapAs<void>(api.DELETE('/v1/sites/{site}/access/groups/{group}', { params: { path: { site, group } } })),
+      unwrap(api.DELETE('/v1/sites/{site}/access/groups/{group}', { params: { path: { site, group } } })),
     /** PUT replaces the whole membership list. */
-    setGroupMembers: (site: string, group: string, input: unknown) =>
-      unwrapAs<unknown>(
+    setGroupMembers: (site: string, group: string, userIds: readonly string[]) =>
+      unwrap(
         api.PUT('/v1/sites/{site}/access/groups/{group}/members', {
           params: { path: { site, group } },
-          body: body(input),
+          body: body({ user_ids: userIds }),
         }),
       ),
-    rules: (site: string) =>
-      unwrapAs<AccessRule[]>(api.GET('/v1/sites/{site}/access/rules', { params: { path: { site } } })),
-    createRule: (site: string, input: unknown) =>
-      unwrapAs<AccessRule>(api.POST('/v1/sites/{site}/access/rules', { params: { path: { site } }, body: body(input) })),
-    updateRule: (site: string, rule: string, input: unknown) =>
-      unwrapAs<AccessRule>(
-        api.PATCH('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } }, body: body(input) }),
-      ),
+    rules: (site: string) => unwrap(api.GET('/v1/sites/{site}/access/rules', { params: { path: { site } } })),
+    createRule: (site: string, input: RuleInput) =>
+      unwrap(api.POST('/v1/sites/{site}/access/rules', { params: { path: { site } }, body: body(input) })),
+    /**
+     * PATCH merges each key separately, so a body carrying only `groups` keeps
+     * the stored `users` — which reads as "the users I cleared came back".
+     * Callers send both audience keys every time.
+     */
+    updateRule: (site: string, rule: string, input: RuleInput) =>
+      unwrap(api.PATCH('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } }, body: body(input) })),
     deleteRule: (site: string, rule: string) =>
-      unwrapAs<void>(api.DELETE('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } } })),
+      unwrap(api.DELETE('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } } })),
   },
 
   webhooks: {
-    list: (site: string) =>
-      unwrapAs<WebhookEndpoint[]>(api.GET('/v1/sites/{site}/webhooks', { params: { path: { site } } })),
-    create: (site: string, input: unknown) =>
-      unwrapAs<WebhookEndpoint>(api.POST('/v1/sites/{site}/webhooks', { params: { path: { site } }, body: body(input) })),
-    update: (site: string, endpoint: string, input: unknown) =>
-      unwrapAs<WebhookEndpoint>(
+    list: (site: string) => unwrap(api.GET('/v1/sites/{site}/webhooks', { params: { path: { site } } })),
+    /** The response carries the signing secret. It is the only time it exists. */
+    create: (site: string, input: WebhookInput) =>
+      unwrap(api.POST('/v1/sites/{site}/webhooks', { params: { path: { site } }, body: body(input) })),
+    update: (site: string, endpoint: string, input: WebhookInput) =>
+      unwrap(
         api.PATCH('/v1/sites/{site}/webhooks/{endpoint}', {
           params: { path: { site, endpoint } },
           body: body(input),
         }),
       ),
     remove: (site: string, endpoint: string) =>
-      unwrapAs<void>(api.DELETE('/v1/sites/{site}/webhooks/{endpoint}', { params: { path: { site, endpoint } } })),
-    /** The new signing secret is handed over out-of-band, never in the response. */
+      unwrap(api.DELETE('/v1/sites/{site}/webhooks/{endpoint}', { params: { path: { site, endpoint } } })),
+    /**
+     * Answers with the replacement secret, once. Dropping that response is not
+     * a safe default — it leaves an endpoint signing with a secret nobody holds.
+     */
     rotate: (site: string, endpoint: string) =>
-      unwrapAs<unknown>(
+      unwrap(
         api.POST('/v1/sites/{site}/webhooks/{endpoint}/rotate', {
           params: { path: { site, endpoint } },
           body: body({}),
         }),
       ),
-    deliveries: (query?: Query<'webhookDeliveryList'>) =>
-      unwrapAs<WebhookDelivery[]>(api.GET('/v1/webhook-deliveries', { params: { query } })),
+    deliveries: (siteId: string, query?: SiteScoped<'webhookDeliveryList'>) =>
+      unwrap(api.GET('/v1/webhook-deliveries', { params: { query: { ...query, site_id: siteId } } })),
     retry: (delivery: string) =>
-      unwrapAs<unknown>(
-        api.POST('/v1/webhook-deliveries/{delivery}/retry', { params: { path: { delivery } }, body: body({}) }),
-      ),
+      unwrap(api.POST('/v1/webhook-deliveries/{delivery}/retry', { params: { path: { delivery } }, body: body({}) })),
   },
 
   moderation: {
-    comments: (query?: Query<'commentList'>) => unwrapAs<Comment[]>(api.GET('/v1/comments', { params: { query } })),
+    comments: (siteId: string, query?: SiteScoped<'commentList'>) =>
+      unwrap(api.GET('/v1/comments', { params: { query: { ...query, site_id: siteId } } })),
     moderate: (comment: string, status: 'approved' | 'rejected') =>
-      unwrapAs<Comment>(api.PATCH('/v1/comments/{comment}', { params: { path: { comment } }, body: body({ status }) })),
-    contact: (query?: Query<'contactSubmissionList'>) =>
-      unwrapAs<ContactSubmission[]>(api.GET('/v1/contact-submissions', { params: { query } })),
-    updateContact: (id: string, status: 'read' | 'closed') =>
-      unwrapAs<ContactSubmission>(
-        api.PATCH('/v1/contact-submissions/{id}', { params: { path: { id } }, body: body({ status }) }),
-      ),
-    feedback: () => unwrapAs<FeedbackAggregate[]>(api.GET('/v1/feedback', {})),
+      unwrap(api.PATCH('/v1/comments/{comment}', { params: { path: { comment } }, body: body({ status }) })),
+    /** An approved comment is on the live site, so this rebuilds unless publish is false. */
+    deleteComment: (comment: string, publish = true) =>
+      unwrap(api.DELETE('/v1/comments/{comment}', { params: { path: { comment }, query: { publish } } })),
+    contact: (siteId: string, query?: SiteScoped<'contactSubmissionList'>) =>
+      unwrap(api.GET('/v1/contact-submissions', { params: { query: { ...query, site_id: siteId } } })),
+    /** `new` is part of the set: triage has to be reversible. */
+    updateContact: (id: string, status: 'new' | 'read' | 'closed') =>
+      unwrap(api.PATCH('/v1/contact-submissions/{id}', { params: { path: { id } }, body: body({ status }) })),
+    /** Erases the sender's name, email and message; closing keeps the record. */
+    deleteContact: (id: string) => unwrap(api.DELETE('/v1/contact-submissions/{id}', { params: { path: { id } } })),
+    feedback: (siteId: string, query?: SiteScoped<'feedbackList'>) =>
+      unwrap(api.GET('/v1/feedback', { params: { query: { ...query, site_id: siteId } } })),
+    /** Resets one post's counter by deleting its anonymous votes. */
+    resetFeedback: (item: string) => unwrap(api.DELETE('/v1/feedback/{item}', { params: { path: { item } } })),
   },
 
   credentials: {
     apiKeys: async () => (await unwrap(api.GET('/v1/api-keys', {}))).api_keys,
     /** The response carries the only copy of the raw key. Show it once, then forget it. */
     createApiKey: (input: { name: string; scopes: string[]; site_ids?: string[]; expires_at?: string }) =>
-      unwrapAs<CreatedApiKey>(api.POST('/v1/api-keys', { body: body(input) })),
-    revokeApiKey: (id: string) => unwrapAs<void>(api.DELETE('/v1/api-keys/{id}', { params: { path: { id } } })),
+      unwrap(api.POST('/v1/api-keys', { body: body(input) })),
+    revokeApiKey: (id: string) => unwrap(api.DELETE('/v1/api-keys/{id}', { params: { path: { id } } })),
     grants: async () => (await unwrap(api.GET('/v1/identity-grants', {}))).identities,
-    createGrant: (input: unknown) => unwrapAs<IdentityGrant>(api.POST('/v1/identity-grants', { body: body(input) })),
-    updateGrant: (id: string, input: unknown) =>
-      unwrapAs<IdentityGrant>(api.PATCH('/v1/identity-grants/{id}', { params: { path: { id } }, body: body(input) })),
-    revokeGrant: (id: string) => unwrapAs<void>(api.DELETE('/v1/identity-grants/{id}', { params: { path: { id } } })),
+    createGrant: (input: GrantInput) => unwrap(api.POST('/v1/identity-grants', { body: body(input) })),
+    updateGrant: (id: string, input: GrantInput) =>
+      unwrap(api.PATCH('/v1/identity-grants/{id}', { params: { path: { id } }, body: body(input) })),
+    revokeGrant: (id: string) => unwrap(api.DELETE('/v1/identity-grants/{id}', { params: { path: { id } } })),
+    /** The configured providers a grant can name; only `oidc` ones can carry one. */
+    providers: async () => (await unwrap(api.GET('/v1/identity/providers', {}))).providers,
   },
 
   audit: async (query?: Query<'auditEventList'>) =>
@@ -448,7 +500,9 @@ export const ck = {
     ),
 
   system: {
-    health: () => unwrapAs<unknown>(api.GET('/health', {})),
-    ready: () => unwrapAs<unknown>(api.GET('/ready', {})),
+    /** Answers `ok` as text/plain, not JSON. */
+    health: () => unwrap(api.GET('/health', {})),
+    /** A 503 body is the same report; the client middleware turns it into an error. */
+    ready: () => unwrap(api.GET('/ready', {})),
   },
 }

@@ -1,4 +1,4 @@
-import { Link, Outlet, useRouterState } from '@tanstack/react-router'
+import { Outlet, useRouterState } from '@tanstack/react-router'
 import {
   Activity,
   BookOpen,
@@ -19,6 +19,7 @@ import {
   Webhook,
 } from 'lucide-react'
 import { ck } from '@/api/ck'
+import { AppLink } from '@/components/app-link'
 import { Button, Select } from '@/components/ui/primitives'
 import { useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
@@ -69,7 +70,7 @@ export function Shell() {
           {visible.map(({ to, label, icon: Icon }) => {
             const active = to === '/' ? pathname === '/' : pathname.startsWith(to)
             return (
-              <Link
+              <AppLink
                 key={to}
                 to={to}
                 data-testid={`nav-${to === '/' ? 'overview' : to.slice(1)}`}
@@ -80,7 +81,7 @@ export function Shell() {
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 {label}
-              </Link>
+              </AppLink>
             )
           })}
         </nav>
