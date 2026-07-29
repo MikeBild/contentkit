@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.3.4 — 2026-07-29
+
+### Fixed
+
+- `POST /v1/api-keys` no longer returns `key_hash`. The listing endpoints
+  already stripped the stored verifier; creation returned the whole inserted
+  row, so every caller received the peppered hash alongside the raw key. The
+  one-time raw key remains the only secret a caller ever sees.
+- Credential logging now identifies the key that was actually presented.
+  Authentication accepts `Authorization: Bearer` and `x-api-key`, but the
+  `unauthorized` and `insufficient scope` warnings fingerprinted the
+  Authorization header alone — an `x-api-key` caller was logged as
+  `key: "none"`, leaving no way to attribute a 403 without correlating
+  `ck_api_keys.last_used_at` by timestamp. Both paths share one extractor,
+  which also strips the `Bearer` prefix before hashing, so a single key yields
+  a single fingerprint regardless of the header that carried it.
+
 ## 4.3.3 — 2026-07-24
 
 ### Fixed
