@@ -132,12 +132,19 @@ async function withApp(run) {
     // with the connection's authority and every request would look like the API host.
     const request = (path, host) =>
       new Promise((resolve, reject) => {
-        const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET', headers: { host } }, (res) => {
-          let body = ''
-          res.setEncoding('utf8')
-          res.on('data', (chunk) => (body += chunk))
-          res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }))
-        })
+        // agent: false — one connection per request. The global agent keeps
+        // sockets alive between them, and on a loaded runner the server closes
+        // an idle one first, so the next request fails with ECONNRESET after
+        // the keep-alive timeout rather than for any reason this test is about.
+        const req = httpRequest(
+          { host: '127.0.0.1', port, path, method: 'GET', headers: { host }, agent: false },
+          (res) => {
+            let body = ''
+            res.setEncoding('utf8')
+            res.on('data', (chunk) => (body += chunk))
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }))
+          },
+        )
         req.on('error', reject)
         req.end()
       })
