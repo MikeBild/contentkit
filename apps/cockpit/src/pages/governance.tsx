@@ -49,10 +49,19 @@ export function AccessPage() {
   const client = useQueryClient()
 
   const users = useQuery({ queryKey: keys.access.users(site), queryFn: () => ck.access.users(site), enabled: !!site })
-  const groups = useQuery({ queryKey: keys.access.groups(site), queryFn: () => ck.access.groups(site), enabled: !!site })
+  const groups = useQuery({
+    queryKey: keys.access.groups(site),
+    queryFn: () => ck.access.groups(site),
+    enabled: !!site,
+  })
   const rules = useQuery({ queryKey: keys.access.rules(site), queryFn: () => ck.access.rules(site), enabled: !!site })
 
-  if (!site) return <Page title="Reader access"><NoSite /></Page>
+  if (!site)
+    return (
+      <Page title="Reader access">
+        <NoSite />
+      </Page>
+    )
 
   const userRows = users.data ?? []
   const groupRows = groups.data ?? []
@@ -89,7 +98,7 @@ export function AccessPage() {
                   emptyMessage="No readers. The site is public unless a rule says otherwise."
                 >
                   {userRows.map((user) => (
-                    <TR key={user.id}>
+                    <TR key={user.id} data-testid="access-user-row" data-user={user.id}>
                       <TD className="font-medium">{user.username}</TD>
                       <TD className="text-muted-foreground">{user.display_name}</TD>
                       <TD>{user.active ? <Badge tone="success">active</Badge> : <Badge>disabled</Badge>}</TD>
@@ -162,7 +171,7 @@ export function AccessPage() {
                     onRetry={() => groups.refetch()}
                   >
                     {groupRows.map((group) => (
-                      <TR key={group.id}>
+                      <TR key={group.id} data-testid="access-group-row" data-group={group.id}>
                         <TD className="font-mono text-xs">{group.slug}</TD>
                         <TD>{group.name}</TD>
                       </TR>
@@ -196,7 +205,7 @@ export function AccessPage() {
                     emptyMessage="No rules — everything published is public."
                   >
                     {ruleRows.map((rule) => (
-                      <TR key={rule.id}>
+                      <TR key={rule.id} data-testid="access-rule-row" data-rule={rule.id}>
                         <TD>
                           <Badge tone="info">{rule.match}</Badge>
                         </TD>
@@ -222,10 +231,19 @@ export function AccessPage() {
 export function WebhooksPage() {
   const { site } = useSite()
   const client = useQueryClient()
-  const endpoints = useQuery({ queryKey: keys.webhooks.list(site), queryFn: () => ck.webhooks.list(site), enabled: !!site })
+  const endpoints = useQuery({
+    queryKey: keys.webhooks.list(site),
+    queryFn: () => ck.webhooks.list(site),
+    enabled: !!site,
+  })
   const deliveries = useQuery({ queryKey: keys.webhooks.deliveries(), queryFn: () => ck.webhooks.deliveries() })
 
-  if (!site) return <Page title="Webhooks"><NoSite /></Page>
+  if (!site)
+    return (
+      <Page title="Webhooks">
+        <NoSite />
+      </Page>
+    )
 
   const endpointRows = endpoints.data ?? []
   const deliveryRows = deliveries.data ?? []
@@ -256,7 +274,7 @@ export function WebhooksPage() {
                   onRetry={() => endpoints.refetch()}
                 >
                   {endpointRows.map((endpoint) => (
-                    <TR key={endpoint.id}>
+                    <TR key={endpoint.id} data-testid="webhook-row" data-endpoint={endpoint.id}>
                       <TD className="max-w-[24rem] truncate font-mono text-xs">{endpoint.url}</TD>
                       <TD className="text-muted-foreground">{endpoint.events?.join(', ')}</TD>
                       <TD>{endpoint.active ? <Badge tone="success">active</Badge> : <Badge>paused</Badge>}</TD>
@@ -323,10 +341,18 @@ export function WebhooksPage() {
                   onRetry={() => deliveries.refetch()}
                 >
                   {deliveryRows.map((delivery) => (
-                    <TR key={delivery.id}>
+                    <TR key={delivery.id} data-testid="webhook-delivery-row" data-delivery={delivery.id}>
                       <TD className="font-mono text-xs">{delivery.event}</TD>
                       <TD>
-                        <Badge tone={delivery.status === 'delivered' ? 'success' : delivery.status === 'failed' ? 'danger' : 'warning'}>
+                        <Badge
+                          tone={
+                            delivery.status === 'delivered'
+                              ? 'success'
+                              : delivery.status === 'failed'
+                                ? 'danger'
+                                : 'warning'
+                          }
+                        >
                           {delivery.status}
                         </Badge>
                       </TD>
@@ -399,13 +425,21 @@ export function ModerationPage() {
                   emptyMessage="Nothing waiting for moderation."
                 >
                   {commentRows.map((comment) => (
-                    <TR key={comment.id}>
+                    <TR key={comment.id} data-testid="comment-row" data-comment={comment.id}>
                       <TD>{comment.author_name || 'anonymous'}</TD>
                       <TD className="max-w-[28rem] truncate" title={comment.body}>
                         {comment.body}
                       </TD>
                       <TD>
-                        <Badge tone={comment.status === 'approved' ? 'success' : comment.status === 'rejected' ? 'danger' : 'warning'}>
+                        <Badge
+                          tone={
+                            comment.status === 'approved'
+                              ? 'success'
+                              : comment.status === 'rejected'
+                                ? 'danger'
+                                : 'warning'
+                          }
+                        >
                           {comment.status}
                         </Badge>
                       </TD>
@@ -467,7 +501,7 @@ export function ModerationPage() {
                     onRetry={() => contact.refetch()}
                   >
                     {contactRows.map((submission) => (
-                      <TR key={submission.id}>
+                      <TR key={submission.id} data-testid="contact-row" data-submission={submission.id}>
                         <TD>{submission.email || submission.name || 'anonymous'}</TD>
                         <TD className="max-w-[16rem] truncate" title={submission.message}>
                           {submission.message}
@@ -480,7 +514,10 @@ export function ModerationPage() {
                             size="sm"
                             variant="outline"
                             onClick={async () => {
-                              await ck.moderation.updateContact(submission.id, submission.status === 'new' ? 'read' : 'closed')
+                              await ck.moderation.updateContact(
+                                submission.id,
+                                submission.status === 'new' ? 'read' : 'closed',
+                              )
                               await client.invalidateQueries({ queryKey: keys.moderation.contact() })
                             }}
                           >
@@ -517,7 +554,7 @@ export function ModerationPage() {
                     onRetry={() => feedback.refetch()}
                   >
                     {feedbackRows.map((row) => (
-                      <TR key={row.content_item_id}>
+                      <TR key={row.content_item_id} data-testid="feedback-row">
                         <TD className="font-mono text-xs">{row.content_item_id.slice(0, 12)}</TD>
                         <TD className="text-chart-2">{row.up}</TD>
                         <TD className="text-chart-5">{row.down}</TD>
@@ -580,12 +617,10 @@ export function CredentialsPage() {
                   onRetry={() => apiKeys.refetch()}
                 >
                   {keyRows.map((key: ApiKey) => (
-                    <TR key={key.id}>
+                    <TR key={key.id} data-testid="api-key-row" data-key={key.id}>
                       <TD className="font-medium">{key.name}</TD>
                       <TD className="font-mono text-xs text-muted-foreground">{key.key_prefix}</TD>
-                      <TD className="max-w-[22rem] truncate text-xs text-muted-foreground">
-                        {key.scopes?.join(', ')}
-                      </TD>
+                      <TD className="max-w-[22rem] truncate text-xs text-muted-foreground">{key.scopes?.join(', ')}</TD>
                       <TD className="text-muted-foreground">{formatDate(key.last_used_at)}</TD>
                       <TD>
                         {can('api-key:admin') && !key.revoked_at ? (
@@ -627,8 +662,8 @@ export function CredentialsPage() {
             <CardHeader>
               <CardTitle>Identity grants</CardTitle>
               <p className="text-sm text-muted-foreground">
-                The stored product-scope ceiling is the only truth. Shrinking it takes effect on the very next
-                request, without reissuing anything.
+                The stored product-scope ceiling is the only truth. Shrinking it takes effect on the very next request,
+                without reissuing anything.
               </p>
             </CardHeader>
             <CardContent className="p-0">
@@ -651,7 +686,7 @@ export function CredentialsPage() {
                     onRetry={() => grants.refetch()}
                   >
                     {grantRows.map((grant) => (
-                      <TR key={grant.id}>
+                      <TR key={grant.id} data-testid="grant-row" data-grant={grant.id}>
                         <TD className="font-medium">{grant.email || grant.subject}</TD>
                         <TD className="text-muted-foreground">{grant.provider_id}</TD>
                         <TD>
@@ -668,8 +703,8 @@ export function CredentialsPage() {
                               title="Revoke this grant?"
                               description={
                                 <>
-                                  <strong>{grant.email || grant.subject}</strong> loses access at once, including
-                                  every OAuth token and browser session issued from this grant.
+                                  <strong>{grant.email || grant.subject}</strong> loses access at once, including every
+                                  OAuth token and browser session issued from this grant.
                                 </>
                               }
                               confirmLabel="Revoke"
@@ -718,7 +753,7 @@ function CreateApiKey({ onCreated }: { onCreated: (created: CreatedApiKey) => vo
 
   if (!isOpen)
     return (
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button data-testid="api-key-new" size="sm" variant="outline" onClick={() => setOpen(true)}>
         New key
       </Button>
     )
@@ -743,9 +778,7 @@ function CreateApiKey({ onCreated }: { onCreated: (created: CreatedApiKey) => vo
                     type="checkbox"
                     checked={scopes.includes(scope)}
                     onChange={(event) =>
-                      setScopes(
-                        event.target.checked ? [...scopes, scope] : scopes.filter((value) => value !== scope),
-                      )
+                      setScopes(event.target.checked ? [...scopes, scope] : scopes.filter((value) => value !== scope))
                     }
                   />
                   {scope}
@@ -762,7 +795,11 @@ function CreateApiKey({ onCreated }: { onCreated: (created: CreatedApiKey) => vo
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => create.mutate()} disabled={!name || scopes.length === 0 || create.isPending}>
+            <Button
+              data-testid="api-key-create-submit"
+              onClick={() => create.mutate()}
+              disabled={!name || scopes.length === 0 || create.isPending}
+            >
               Create key
             </Button>
           </div>
@@ -784,7 +821,10 @@ function RevealedKey({ created, onDismiss }: { created: CreatedApiKey; onDismiss
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
-          <code className="block break-all rounded-lg border border-border bg-muted p-3 font-mono text-xs">
+          <code
+            data-testid="api-key-secret"
+            className="block break-all rounded-lg border border-border bg-muted p-3 font-mono text-xs"
+          >
             {created.api_key}
           </code>
           <div className="flex justify-end gap-2">
@@ -840,7 +880,7 @@ export function AuditPage() {
               onRetry={() => events.refetch()}
             >
               {rows.map((event) => (
-                <TR key={event.id}>
+                <TR key={event.id} data-testid="audit-row">
                   <TD className="whitespace-nowrap text-muted-foreground">{formatDate(event.created_at)}</TD>
                   <TD className="text-muted-foreground">{event.actor_type}</TD>
                   <TD className="font-mono text-xs">{event.action}</TD>

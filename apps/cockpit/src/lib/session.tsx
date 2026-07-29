@@ -51,7 +51,9 @@ export function SessionGate({ children }: { children: ReactNode }) {
     return (
       <Splash>
         <p className="text-muted-foreground">Sign in to continue.</p>
-        <Button onClick={() => window.location.assign(ck.identity.loginUrl(returnTo))}>Sign in</Button>
+        <Button data-testid="sign-in" onClick={() => window.location.assign(ck.identity.loginUrl(returnTo))}>
+          Sign in
+        </Button>
       </Splash>
     )
   }
@@ -72,7 +74,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
 
 function Splash({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4">
+    <div data-testid="session-splash" className="flex h-full flex-col items-center justify-center gap-4">
       <div className="text-sm font-semibold tracking-[0.2em] text-muted-foreground">CONTENTKIT COCKPIT</div>
       {children}
     </div>

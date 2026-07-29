@@ -134,12 +134,7 @@ export function TR({ className, ...props }: ComponentProps<'tr'>) {
 }
 
 export function TH({ className, ...props }: ComponentProps<'th'>) {
-  return (
-    <th
-      className={cn('px-3 py-2 text-left text-xs font-medium text-muted-foreground', className)}
-      {...props}
-    />
-  )
+  return <th className={cn('px-3 py-2 text-left text-xs font-medium text-muted-foreground', className)} {...props} />
 }
 
 export function TD({ className, ...props }: ComponentProps<'td'>) {

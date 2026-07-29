@@ -53,6 +53,7 @@ export function Confirm({
           role="dialog"
           aria-modal="true"
           aria-label={title}
+          data-testid="confirm-dialog"
           onClick={(event) => {
             if (event.target === event.currentTarget && !isBusy) setOpen(false)
           }}
@@ -60,12 +61,23 @@ export function Confirm({
           <div className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl">
             <h2 className="text-sm font-semibold">{title}</h2>
             <div className="mt-2 text-sm text-muted-foreground">{description}</div>
-            {error ? <p className="mt-3 text-sm text-chart-5">{error}</p> : null}
+            {error ? (
+              <p data-testid="confirm-error" className="mt-3 text-sm text-chart-5">
+                {error}
+              </p>
+            ) : null}
             <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" size="sm" disabled={isBusy} onClick={() => setOpen(false)}>
+              <Button
+                data-testid="confirm-cancel"
+                variant="outline"
+                size="sm"
+                disabled={isBusy}
+                onClick={() => setOpen(false)}
+              >
                 Cancel
               </Button>
               <Button
+                data-testid="confirm-accept"
                 variant={destructive ? 'destructive' : 'default'}
                 size="sm"
                 disabled={isBusy}

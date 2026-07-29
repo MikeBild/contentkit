@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.5 — 2026-07-29
+
+### Changed
+
+- Every interactive and identifying element in ContentKit Cockpit carries a
+  `data-testid`, and rows additionally carry their record id. Browser
+  automation had to select by coordinates, visible text or the accessibility
+  tree, all of which break on any layout or wording change.
+
 ## 4.5.4 — 2026-07-29
 
 ### Changed

@@ -3,16 +3,7 @@ import { useEffect, useState } from 'react'
 import { ck } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Input,
-  Label,
-  Textarea,
-} from '@/components/ui/primitives'
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Textarea } from '@/components/ui/primitives'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
@@ -72,12 +63,13 @@ export function SitesPage() {
             <CardHeader>
               <CardTitle>Settings</CardTitle>
               <p className="text-sm text-muted-foreground">
-                PATCH replaces this subtree wholesale, so the console sends the whole object back — editing a
-                fragment would silently drop the rest.
+                PATCH replaces this subtree wholesale, so the console sends the whole object back — editing a fragment
+                would silently drop the rest.
               </p>
             </CardHeader>
             <CardContent>
               <Textarea
+                data-testid="site-settings"
                 className="h-[28rem] font-mono text-xs"
                 spellCheck={false}
                 value={settings}
@@ -103,15 +95,19 @@ export function SitesPage() {
                     title="Replace the site settings?"
                     description={
                       <>
-                        The entire <code>settings</code> object of <strong>{site}</strong> is replaced by what is in
-                        the editor. Presentation changes take effect on the next release.
+                        The entire <code>settings</code> object of <strong>{site}</strong> is replaced by what is in the
+                        editor. Presentation changes take effect on the next release.
                       </>
                     }
                     confirmLabel="Save settings"
                     onConfirm={() => save.mutateAsync()}
                   >
                     {(open) => (
-                      <Button onClick={open} disabled={Boolean(invalid) || save.isPending}>
+                      <Button
+                        data-testid="site-settings-save"
+                        onClick={open}
+                        disabled={Boolean(invalid) || save.isPending}
+                      >
                         Save settings
                       </Button>
                     )}
@@ -150,7 +146,7 @@ function CreateSite({ onCreated }: { onCreated: (slug: string) => void }) {
 
   if (!isOpen)
     return (
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button data-testid="site-new" variant="outline" onClick={() => setOpen(true)}>
         New site
       </Button>
     )
@@ -164,7 +160,11 @@ function CreateSite({ onCreated }: { onCreated: (slug: string) => void }) {
         {(['name', 'base_url', 'default_locale'] as const).map((field) => (
           <div key={field}>
             <Label>{field.replace('_', ' ')}</Label>
-            <Input value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />
+            <Input
+              data-testid={`site-new-${field}`}
+              value={form[field]}
+              onChange={(event) => setForm({ ...form, [field]: event.target.value })}
+            />
           </div>
         ))}
         {create.error ? (
@@ -176,7 +176,11 @@ function CreateSite({ onCreated }: { onCreated: (slug: string) => void }) {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={() => create.mutate()} disabled={create.isPending || !form.name || !form.base_url}>
+          <Button
+            data-testid="site-create-submit"
+            onClick={() => create.mutate()}
+            disabled={create.isPending || !form.name || !form.base_url}
+          >
             Create
           </Button>
         </div>

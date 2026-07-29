@@ -47,7 +47,12 @@ export function PublishedPage() {
     enabled: Boolean(site) && term.length > 1,
   })
 
-  if (!site) return <Page title="Published"><NoSite /></Page>
+  if (!site)
+    return (
+      <Page title="Published">
+        <NoSite />
+      </Page>
+    )
 
   const entries = ((list.data as PublishedList | undefined)?.items ?? []) as {
     kind: ContentKind
@@ -71,6 +76,7 @@ export function PublishedPage() {
       <div className="mb-3 flex gap-2">
         <Input
           className="max-w-md"
+          data-testid="published-search"
           placeholder="Search the published snapshot…"
           value={term}
           onChange={(event) => setTerm(event.target.value)}
@@ -107,7 +113,11 @@ export function PublishedPage() {
               emptyMessage={searching ? 'No matches.' : 'Nothing published yet — build and activate a release.'}
             >
               {(searching ? hits : entries).map((entry) => (
-                <TR key={`${entry.kind}/${entry.locale}/${entry.slug}`}>
+                <TR
+                  key={`${entry.kind}/${entry.locale}/${entry.slug}`}
+                  data-testid="published-row"
+                  data-slug={entry.slug}
+                >
                   <TD className="max-w-[22rem] truncate font-medium">{entry.title || entry.slug}</TD>
                   <TD className="text-muted-foreground">{entry.kind}</TD>
                   <TD className="text-muted-foreground">{entry.locale}</TD>
@@ -127,6 +137,7 @@ export function PublishedPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      data-testid="published-inspect"
                       onClick={() => setSelected({ kind: entry.kind, locale: entry.locale, slug: entry.slug })}
                     >
                       Inspect
@@ -238,13 +249,18 @@ export function CompositionsPage() {
           </CardHeader>
           <CardContent>
             <Textarea
+              data-testid="composition-source"
               className="h-64 font-mono text-xs"
               spellCheck={false}
               value={source}
               onChange={(event) => setSource(event.target.value)}
             />
             <div className="mt-3 flex justify-end">
-              <Button onClick={() => compile.mutate()} disabled={!site || !can('content:write') || compile.isPending}>
+              <Button
+                data-testid="composition-compile"
+                onClick={() => compile.mutate()}
+                disabled={!site || !can('content:write') || compile.isPending}
+              >
                 {compile.isPending ? 'Compiling…' : 'Compile'}
               </Button>
             </div>
@@ -332,7 +348,8 @@ export function DecksPage() {
     mutationFn: () => ck.decks.compile(site, { markdown: source }),
     onSuccess: (result) => {
       // 202 answers with a job id; 200 answers with the deck itself.
-      const id = (result as { job_id?: string; job?: { id?: string } })?.job_id ?? (result as { job?: { id?: string } })?.job?.id
+      const id =
+        (result as { job_id?: string; job?: { id?: string } })?.job_id ?? (result as { job?: { id?: string } })?.job?.id
       setJob(id ?? null)
     },
   })
@@ -341,11 +358,15 @@ export function DecksPage() {
     queryKey: ['deck-job', site, job],
     queryFn: () => ck.decks.job(site, job as string),
     enabled: Boolean(site && job),
-    refetchInterval: (query) => (query.state.data?.status === 'done' || query.state.data?.status === 'failed' ? false : 2000),
+    refetchInterval: (query) =>
+      query.state.data?.status === 'done' || query.state.data?.status === 'failed' ? false : 2000,
   })
 
   return (
-    <Page title="Decks" description="Plan, validate and render Slidev decks. Rendering may run asynchronously as a job.">
+    <Page
+      title="Decks"
+      description="Plan, validate and render Slidev decks. Rendering may run asynchronously as a job."
+    >
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -353,13 +374,19 @@ export function DecksPage() {
           </CardHeader>
           <CardContent>
             <Textarea
+              data-testid="deck-source"
               className="h-72 font-mono text-xs"
               spellCheck={false}
               value={source}
               onChange={(event) => setSource(event.target.value)}
             />
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => plan.mutate()} disabled={!site || plan.isPending}>
+              <Button
+                data-testid="deck-plan"
+                variant="outline"
+                onClick={() => plan.mutate()}
+                disabled={!site || plan.isPending}
+              >
                 Plan
               </Button>
               <Confirm
@@ -369,7 +396,11 @@ export function DecksPage() {
                 onConfirm={() => compile.mutateAsync()}
               >
                 {(open) => (
-                  <Button onClick={open} disabled={!site || !can('deck:render') || compile.isPending}>
+                  <Button
+                    data-testid="deck-render"
+                    onClick={open}
+                    disabled={!site || !can('deck:render') || compile.isPending}
+                  >
                     Render
                   </Button>
                 )}
@@ -414,9 +445,18 @@ export function DecksPage() {
 export function AudioPage() {
   const { site } = useSite()
   const can = useCan()
-  const jobs = useQuery({ queryKey: keys.audio.jobs(site), queryFn: () => ck.content.audio.jobs(site), enabled: !!site })
+  const jobs = useQuery({
+    queryKey: keys.audio.jobs(site),
+    queryFn: () => ck.content.audio.jobs(site),
+    enabled: !!site,
+  })
 
-  if (!site) return <Page title="Audio"><NoSite /></Page>
+  if (!site)
+    return (
+      <Page title="Audio">
+        <NoSite />
+      </Page>
+    )
 
   const rows = jobs.data?.jobs ?? []
   const budget = jobs.data?.budget
@@ -436,7 +476,11 @@ export function AudioPage() {
               await jobs.refetch()
             }}
           >
-            {(open) => <Button onClick={open}>Backfill</Button>}
+            {(open) => (
+              <Button data-testid="audio-backfill" onClick={open}>
+                Backfill
+              </Button>
+            )}
           </Confirm>
         ) : null
       }
@@ -468,7 +512,7 @@ export function AudioPage() {
               emptyMessage="No audio jobs. Enable settings.audio for this site to start."
             >
               {rows.map((job) => (
-                <TR key={job.id}>
+                <TR key={job.id} data-testid="audio-job-row" data-job={job.id}>
                   <TD className="font-mono text-xs">{job.content_item_id.slice(0, 12)}</TD>
                   <TD>
                     <Badge tone={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}>
@@ -494,8 +538,16 @@ export function AudioPage() {
 
 export function SystemPage() {
   const can = useCan()
-  const health = useQuery({ queryKey: [...keys.system, 'health'], queryFn: () => ck.system.health(), refetchInterval: 15_000 })
-  const ready = useQuery({ queryKey: [...keys.system, 'ready'], queryFn: () => ck.system.ready(), refetchInterval: 15_000 })
+  const health = useQuery({
+    queryKey: [...keys.system, 'health'],
+    queryFn: () => ck.system.health(),
+    refetchInterval: 15_000,
+  })
+  const ready = useQuery({
+    queryKey: [...keys.system, 'ready'],
+    queryFn: () => ck.system.ready(),
+    refetchInterval: 15_000,
+  })
 
   return (
     <Page title="System" description="Liveness, readiness and the two scheduled maintenance actions.">
@@ -538,7 +590,7 @@ export function SystemPage() {
               onConfirm={() => ck.releases.publishDue()}
             >
               {(open) => (
-                <Button variant="outline" onClick={open}>
+                <Button data-testid="maintenance-publish-due" variant="outline" onClick={open}>
                   Publish due
                 </Button>
               )}
@@ -551,7 +603,7 @@ export function SystemPage() {
               onConfirm={() => ck.releases.storageGc()}
             >
               {(open) => (
-                <Button variant="outline" onClick={open}>
+                <Button data-testid="maintenance-storage-gc" variant="outline" onClick={open}>
                   Storage GC
                 </Button>
               )}

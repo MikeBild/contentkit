@@ -42,7 +42,12 @@ export function ReleasesPage() {
     onSuccess: invalidate,
   })
 
-  if (!site) return <Page title="Releases"><NoSite /></Page>
+  if (!site)
+    return (
+      <Page title="Releases">
+        <NoSite />
+      </Page>
+    )
 
   const rows = releases.data ?? []
   const active = rows.find((release) => release.status === 'active')
@@ -56,6 +61,7 @@ export function ReleasesPage() {
           <>
             <Input
               className="w-56"
+              data-testid="release-reason"
               placeholder="Reason (optional)"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
@@ -72,7 +78,7 @@ export function ReleasesPage() {
               onConfirm={() => build.mutateAsync()}
             >
               {(open) => (
-                <Button onClick={open} disabled={build.isPending}>
+                <Button data-testid="release-build" onClick={open} disabled={build.isPending}>
                   {build.isPending ? 'Building…' : 'New release'}
                 </Button>
               )}
@@ -117,7 +123,7 @@ export function ReleasesPage() {
               emptyMessage="No releases yet. Build one to publish this site."
             >
               {rows.map((release) => (
-                <TR key={release.id}>
+                <TR key={release.id} data-testid="release-row" data-release={release.id}>
                   <TD>
                     <Badge tone={TONE[release.status]}>{release.status}</Badge>
                   </TD>
@@ -142,7 +148,7 @@ export function ReleasesPage() {
                         onConfirm={() => activate.mutateAsync(release.id)}
                       >
                         {(open) => (
-                          <Button size="sm" variant="outline" onClick={open}>
+                          <Button data-testid="release-activate" size="sm" variant="outline" onClick={open}>
                             Activate
                           </Button>
                         )}

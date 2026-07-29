@@ -113,7 +113,7 @@ function StatCard({
   const lead = shown[0] ?? metrics[0]
 
   return (
-    <Card>
+    <Card data-testid="stat-card" data-kind={kind}>
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span className="capitalize">{kind}</span>

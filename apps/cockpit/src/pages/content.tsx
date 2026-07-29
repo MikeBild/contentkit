@@ -55,7 +55,12 @@ export function ContentPage() {
     enabled: Boolean(site),
   })
 
-  if (!site) return <Page title="Content"><NoSite /></Page>
+  if (!site)
+    return (
+      <Page title="Content">
+        <NoSite />
+      </Page>
+    )
 
   const rows = items.data ?? []
 
@@ -63,12 +68,14 @@ export function ContentPage() {
     <Page
       title="Content"
       description="Revisions are immutable. Creating or editing writes a new draft revision; nothing reaches the live site until a release is built and activated."
-      actions={
-        can('content:write') ? <NewContent site={site} onCreated={() => items.refetch()} /> : null
-      }
+      actions={can('content:write') ? <NewContent site={site} onCreated={() => items.refetch()} /> : null}
     >
       <div className="mb-3 flex gap-2">
-        <Select value={kind} onChange={(event) => setKind(event.target.value as ContentKind | '')}>
+        <Select
+          data-testid="content-kind-filter"
+          value={kind}
+          onChange={(event) => setKind(event.target.value as ContentKind | '')}
+        >
           <option value="">All kinds</option>
           {KINDS.map((value) => (
             <option key={value} value={value}>
@@ -78,6 +85,7 @@ export function ContentPage() {
         </Select>
         <Input
           className="w-40"
+          data-testid="content-locale-filter"
           placeholder="locale"
           value={locale}
           onChange={(event) => setLocale(event.target.value.trim())}
@@ -107,17 +115,13 @@ export function ContentPage() {
               emptyMessage="No content items match this filter."
             >
               {rows.map((item) => (
-                <TR key={item.id}>
+                <TR key={item.id} data-testid="content-row" data-item={item.id}>
                   <TD className="max-w-[22rem] truncate font-medium">{item.title || item.translation_key}</TD>
                   <TD className="text-muted-foreground">{item.kind}</TD>
                   <TD className="text-muted-foreground">{item.locale}</TD>
                   <TD className="text-muted-foreground">{item.slug || '—'}</TD>
                   <TD className="space-x-1 whitespace-nowrap">
-                    {item.published_revision_id ? (
-                      <Badge tone="success">published</Badge>
-                    ) : (
-                      <Badge>draft only</Badge>
-                    )}
+                    {item.published_revision_id ? <Badge tone="success">published</Badge> : <Badge>draft only</Badge>}
                     {/* A published item whose newest revision is still a draft
                         has unreleased work — the single most useful thing to
                         see in an authoring list. */}
@@ -127,7 +131,12 @@ export function ContentPage() {
                   </TD>
                   <TD className="text-muted-foreground">{formatDate(item.updated_at)}</TD>
                   <TD className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setSelected(item)}>
+                    <Button
+                      data-testid="content-revisions"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelected(item)}
+                    >
                       Revisions
                     </Button>
                     {can('content:write') && !item.published_revision_id ? (
@@ -136,8 +145,7 @@ export function ContentPage() {
                         description={
                           <>
                             <strong>{item.title || item.translation_key}</strong> and every one of its revisions are
-                            removed. It was never published, so nothing on the live site changes. This cannot be
-                            undone.
+                            removed. It was never published, so nothing on the live site changes. This cannot be undone.
                           </>
                         }
                         confirmLabel="Discard draft"
@@ -148,7 +156,7 @@ export function ContentPage() {
                         }}
                       >
                         {(open) => (
-                          <Button size="sm" variant="ghost" onClick={open}>
+                          <Button data-testid="content-discard" size="sm" variant="ghost" onClick={open}>
                             Discard
                           </Button>
                         )}
@@ -171,7 +179,7 @@ export function ContentPage() {
                         }}
                       >
                         {(open) => (
-                          <Button size="sm" variant="ghost" onClick={open}>
+                          <Button data-testid="content-unpublish" size="sm" variant="ghost" onClick={open}>
                             Unpublish
                           </Button>
                         )}
@@ -201,7 +209,12 @@ function NewContent({ site, onCreated }: { site: string; onCreated: () => void }
     },
   })
 
-  if (!isOpen) return <Button onClick={() => setOpen(true)}>New content</Button>
+  if (!isOpen)
+    return (
+      <Button data-testid="content-new" onClick={() => setOpen(true)}>
+        New content
+      </Button>
+    )
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6">
@@ -214,6 +227,7 @@ function NewContent({ site, onCreated }: { site: string; onCreated: () => void }
         </CardHeader>
         <CardContent>
           <Textarea
+            data-testid="content-markdown"
             className="h-[26rem] font-mono text-xs"
             value={source}
             onChange={(event) => setSource(event.target.value)}
@@ -228,7 +242,7 @@ function NewContent({ site, onCreated }: { site: string; onCreated: () => void }
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => create.mutate()} disabled={create.isPending}>
+            <Button data-testid="content-create-submit" onClick={() => create.mutate()} disabled={create.isPending}>
               {create.isPending ? 'Saving…' : 'Create draft'}
             </Button>
           </div>
@@ -246,7 +260,10 @@ function Revisions({ item, onClose }: { item: ContentItem; onClose: () => void }
   const rows = revisions.data ?? []
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6" onClick={(event) => event.target === event.currentTarget && onClose()}>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6"
+      onClick={(event) => event.target === event.currentTarget && onClose()}
+    >
       <Card className="w-full max-w-3xl">
         <CardHeader>
           <CardTitle>{item.title || item.translation_key}</CardTitle>
@@ -281,9 +298,7 @@ function Revisions({ item, onClose }: { item: ContentItem; onClose: () => void }
                     <TD className="text-muted-foreground">{revision.slug}</TD>
                     <TD className="text-muted-foreground">{formatDate(revision.created_at)}</TD>
                     <TD className="text-muted-foreground">{formatDate(revision.published_at)}</TD>
-                    <TD className="font-mono text-xs text-muted-foreground">
-                      {revision.source_sha256?.slice(0, 12)}
-                    </TD>
+                    <TD className="font-mono text-xs text-muted-foreground">{revision.source_sha256?.slice(0, 12)}</TD>
                   </TR>
                 ))}
               </TableState>

@@ -114,6 +114,7 @@ export function AssistantPage() {
           }}
         >
           <Textarea
+            data-testid="assistant-input"
             className="h-20 flex-1 resize-none"
             placeholder={site ? `Working on ${site}…` : 'Choose a site in the sidebar first'}
             value={input}
@@ -130,11 +131,11 @@ export function AssistantPage() {
             }}
           />
           {status === 'streaming' || status === 'submitted' ? (
-            <Button type="button" variant="outline" onClick={() => stop()}>
+            <Button data-testid="assistant-stop" type="button" variant="outline" onClick={() => stop()}>
               Stop
             </Button>
           ) : (
-            <Button type="submit" disabled={!site || !input.trim()}>
+            <Button data-testid="assistant-send" type="submit" disabled={!site || !input.trim()}>
               Send
             </Button>
           )}
@@ -147,7 +148,7 @@ export function AssistantPage() {
 function Message({ message }: { message: UIMessage }) {
   const mine = message.role === 'user'
   return (
-    <div className={cn('flex', mine && 'justify-end')}>
+    <div data-testid="assistant-message" data-role={message.role} className={cn('flex', mine && 'justify-end')}>
       <div className={cn('max-w-[85%] space-y-2', mine && 'text-right')}>
         {message.parts.map((part, index) => {
           if (part.type === 'text')
@@ -233,7 +234,10 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
     )
 
   return (
-    <div className="rounded-xl border border-chart-3/40 bg-chart-3/10 p-3 text-left text-sm">
+    <div
+      data-testid="elicitation-card"
+      className="rounded-xl border border-chart-3/40 bg-chart-3/10 p-3 text-left text-sm"
+    >
       <p className="font-medium">Your confirmation is required</p>
       <p className="mt-1 text-muted-foreground">{elicitation.message}</p>
       {failed ? <p className="mt-2 text-xs text-chart-5">{failed}</p> : null}
@@ -243,10 +247,10 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
         </p>
       ) : (
         <div className="mt-3 flex gap-2">
-          <Button size="sm" onClick={() => respond('accept')}>
+          <Button data-testid="elicitation-approve" size="sm" onClick={() => respond('accept')}>
             Approve
           </Button>
-          <Button size="sm" variant="outline" onClick={() => respond('decline')}>
+          <Button data-testid="elicitation-decline" size="sm" variant="outline" onClick={() => respond('decline')}>
             Decline
           </Button>
         </div>
