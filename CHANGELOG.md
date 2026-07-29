@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.6.3 — 2026-07-29
+
+### Fixed
+
+- Content authoring was broken outright: creating and editing both answered
+  `422 frontmatter title is required`. The console's HTTP client
+  JSON-stringified every body it was given, so Markdown left as a quoted string
+  with no frontmatter fence — the endpoint saw exactly what it complained about.
+- Dialogs stole focus on every keystroke, because the focus effect listed the
+  close handler among its dependencies and every caller passes a fresh one.
+- Deck rendering did nothing: the console never asked for the asynchronous form,
+  so the server returned the compiled deck and the page had nowhere to put it.
+- The theme toggle never re-rendered already-rendered content, because the theme
+  was per-hook state and only the shell's copy changed.
+- `content.delete_draft` wrote an audit row the check constraint rejects, and
+  operator sessions were recorded as `api_key` actors.
+- The liveness probe answers plain text on purpose; the console parsed it as
+  JSON and reported the service unreachable.
+
+### Changed
+
+- A release now refuses a tag whose commit has no green CI run. The three
+  releases before this one were each cut from a red commit and each reached
+  production within half an hour, because the release workflow triggers on the
+  tag alone and runs a strict subset of CI. A tag is not evidence.
+- CI builds and type-checks the console. It had none, which left type-checking
+  the generated client as the only mechanism that would notice a handler and its
+  specification disagreeing — and it never ran. Its first run found two real
+  defects.
+
 ## 4.6.2 — 2026-07-29
 
 ### Fixed
