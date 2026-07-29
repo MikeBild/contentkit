@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.2 — 2026-07-29
+
+### Fixed
+
+- The Cockpit's overview reported "No data in this window" for every metric on
+  a site with years of releases and content. Its parser had been written from
+  a guess rather than from the schema and looked for `series[0].buckets`, which
+  neither stats shape has: ProductStats puts numeric metrics directly on each
+  bucket alongside a flat `totals` object, and UsageStats nests `UsageMetric`
+  records under `buckets[].metrics` with an array of `totals`. Both are now
+  read as documented, and a `value_state` of `missing` stays a gap in the chart
+  instead of being flattened into a zero.
+
 ## 4.5.1 — 2026-07-29
 
 ### Fixed

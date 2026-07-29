@@ -8,25 +8,64 @@ import { useSite } from '@/lib/site'
 const WINDOW = { bucket: 'day', tz: 'UTC' } as const
 
 interface Point {
-  label: string
+  ts: string
+  /** null is a real answer: the evidence is missing, which is not zero. */
   value: number | null
 }
 
+interface Metric {
+  name: string
+  total: number | null
+  kind?: string
+  points: Point[]
+}
+
 /**
- * UsageStats metrics carry an explicit `value_state`. "missing" means the
- * evidence was never collected — it is emphatically not zero, and drawing it
- * as zero would invent a fact. Missing points break the line instead.
+ * The two stats shapes differ enough that guessing between them produces an
+ * empty console against a busy site — which is exactly what happened.
+ *
+ * ProductStats: `{buckets: [{ts, <metric>: number}], totals: {<metric>: number}}`
+ * UsageStats:   `{buckets: [{ts, metrics: {<name>: UsageMetric}}], totals: [{metrics}]}`
+ *
+ * A UsageMetric carries `value_state`, and `missing` means the evidence was
+ * never collected. It is emphatically not zero, so it stays null all the way
+ * into the chart rather than being flattened into a plausible-looking 0.
  */
-function toSeries(payload: unknown): Point[] {
-  const stats = payload as { series?: { buckets?: unknown[] }[]; metrics?: unknown[] } | undefined
-  const first = stats?.series?.[0] as { buckets?: Record<string, unknown>[] } | undefined
-  const buckets = first?.buckets ?? (stats?.metrics as Record<string, unknown>[] | undefined) ?? []
-  return buckets.slice(-30).map((bucket) => {
-    const label = String(bucket.bucket ?? bucket.at ?? bucket.start ?? '')
-    const missing = bucket.value_state === 'missing'
-    const raw = bucket.value ?? bucket.count
-    return { label, value: missing || raw === null || raw === undefined ? null : Number(raw) }
-  })
+function readProductStats(payload: unknown): Metric[] {
+  const stats = payload as { buckets?: Record<string, unknown>[]; totals?: Record<string, number> }
+  const totals = stats?.totals ?? {}
+  const buckets = stats?.buckets ?? []
+  return Object.keys(totals).map((name) => ({
+    name,
+    total: Number(totals[name] ?? 0),
+    points: buckets.map((bucket) => ({
+      ts: String(bucket.ts ?? ''),
+      value: typeof bucket[name] === 'number' ? (bucket[name] as number) : null,
+    })),
+  }))
+}
+
+function readUsageStats(payload: unknown): Metric[] {
+  const stats = payload as {
+    buckets?: { ts?: string; metrics?: Record<string, { value: number | null; value_state: string }> }[]
+    totals?: { metrics?: Record<string, { value: number | null; value_state: string; value_kind?: string }> }[]
+  }
+  // Without group_by there is exactly one totals row; with it, the first is the
+  // headline and the console does not pretend to chart the breakdown.
+  const totals = stats?.totals?.[0]?.metrics ?? {}
+  const buckets = stats?.buckets ?? []
+  return Object.entries(totals).map(([name, metric]) => ({
+    name,
+    total: metric.value_state === 'missing' ? null : (metric.value ?? null),
+    kind: metric.value_kind,
+    points: buckets.map((bucket) => {
+      const point = bucket.metrics?.[name]
+      return {
+        ts: String(bucket.ts ?? ''),
+        value: !point || point.value_state === 'missing' ? null : point.value,
+      }
+    }),
+  }))
 }
 
 export function OverviewPage() {
@@ -36,13 +75,19 @@ export function OverviewPage() {
       queryKey: keys.stats(site, kind, WINDOW),
       queryFn: () => ck.stats(site, kind, WINDOW),
       enabled: Boolean(site),
-      // A 403 here means the operator lacks stats:read; the tile says so
-      // rather than the whole page failing.
+      // A 403 means this operator lacks stats:read; the tile says so instead of
+      // the whole page failing.
       retry: false,
     })),
   })
 
-  if (!site) return <Page title="Overview"><NoSite /></Page>
+  if (!site) {
+    return (
+      <Page title="Overview">
+        <NoSite />
+      </Page>
+    )
+  }
 
   return (
     <Page title="Overview" description={`Daily UTC aggregates for ${site}, last 30 buckets.`}>
@@ -62,10 +107,10 @@ function StatCard({
   kind: StatsKind
   result?: { data?: unknown; error?: unknown; isPending?: boolean }
 }) {
-  const series = result?.data ? toSeries(result.data) : []
-  const known = series.filter((point): point is { label: string; value: number } => point.value !== null)
-  const total = known.reduce((sum, point) => sum + point.value, 0)
   const usage = usageStatsKinds.includes(kind)
+  const metrics = result?.data ? (usage ? readUsageStats(result.data) : readProductStats(result.data)) : []
+  const shown = metrics.filter((metric) => metric.total !== null && metric.total !== 0).slice(0, 4)
+  const lead = shown[0] ?? metrics[0]
 
   return (
     <Card>
@@ -82,12 +127,23 @@ function StatCard({
           <p className="text-sm text-muted-foreground">
             {result.error instanceof Error ? result.error.message : 'Unavailable'}
           </p>
-        ) : known.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No data in this window.</p>
+        ) : shown.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {usage ? 'No usage telemetry in this window.' : 'Nothing recorded in this window.'}
+          </p>
         ) : (
           <>
-            <div className="text-2xl font-semibold tabular-nums">{total.toLocaleString()}</div>
-            <Sparkline points={series} />
+            {lead ? <Sparkline points={lead.points} /> : null}
+            <dl className="mt-3 space-y-1">
+              {shown.map((metric) => (
+                <div key={metric.name} className="flex items-baseline justify-between gap-3">
+                  <dt className="truncate text-xs text-muted-foreground" title={metric.name}>
+                    {metric.name.replace(/_/g, ' ')}
+                  </dt>
+                  <dd className="shrink-0 text-sm font-semibold tabular-nums">{format(metric)}</dd>
+                </div>
+              ))}
+            </dl>
           </>
         )}
       </CardContent>
@@ -95,9 +151,17 @@ function StatCard({
   )
 }
 
+function format(metric: Metric) {
+  if (metric.total === null) return '—'
+  if (metric.kind === 'duration') return `${Math.round(metric.total)} ms`
+  if (metric.kind === 'ratio' || metric.kind === 'percentage') return `${(metric.total * 100).toFixed(1)} %`
+  if (metric.kind === 'data-size') return `${(metric.total / 1024).toFixed(1)} kB`
+  return metric.total.toLocaleString()
+}
+
 /**
- * Deliberately an inline SVG rather than a charting dependency: one series,
- * thirty points, and a hard requirement that gaps stay gaps.
+ * An inline SVG rather than a charting dependency: one series, thirty points,
+ * and a hard requirement that a gap stays a gap.
  */
 function Sparkline({ points }: { points: Point[] }) {
   const values = points.map((point) => point.value).filter((value): value is number => value !== null)
@@ -107,7 +171,8 @@ function Sparkline({ points }: { points: Point[] }) {
   const span = max - min || 1
   const step = 100 / Math.max(points.length - 1, 1)
 
-  // Consecutive known points form a segment; a missing point ends it.
+  // Consecutive known points form a segment; a missing point ends it, so the
+  // line breaks instead of inventing a value across the gap.
   const segments: string[] = []
   let current: string[] = []
   points.forEach((point, index) => {
@@ -121,7 +186,7 @@ function Sparkline({ points }: { points: Point[] }) {
   if (current.length > 1) segments.push(current.join(' '))
 
   return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="mt-3 h-10 w-full" aria-hidden="true">
+    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="h-10 w-full" aria-hidden="true">
       {segments.map((segment, index) => (
         <polyline
           key={index}
