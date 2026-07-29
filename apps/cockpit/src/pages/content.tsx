@@ -124,6 +124,30 @@ export function ContentPage() {
                     <Button size="sm" variant="outline" onClick={() => setSelected(item)}>
                       Revisions
                     </Button>
+                    {can('content:write') && !item.published_revision_id ? (
+                      <Confirm
+                        title="Discard this draft?"
+                        description={
+                          <>
+                            <strong>{item.title || item.translation_key}</strong> and every one of its revisions are
+                            removed. It was never published, so nothing on the live site changes. This cannot be
+                            undone.
+                          </>
+                        }
+                        confirmLabel="Discard draft"
+                        destructive
+                        onConfirm={async () => {
+                          await ck.content.deleteDraft(item.id)
+                          await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
+                        }}
+                      >
+                        {(open) => (
+                          <Button size="sm" variant="ghost" onClick={open}>
+                            Discard
+                          </Button>
+                        )}
+                      </Confirm>
+                    ) : null}
                     {can('release:write') && item.published_revision_id ? (
                       <Confirm
                         title="Remove from the live site?"

@@ -47,7 +47,7 @@ const NAV = [
 
 export function Shell() {
   const session = useSession()
-  const { site, setSite, allowed } = useSite()
+  const { site, setSite, sites, isLoading, error } = useSite()
   const { resolved, setTheme } = useTheme()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
@@ -62,7 +62,7 @@ export function Shell() {
         </div>
 
         <div className="px-3 pb-3">
-          <SiteSwitcher site={site} setSite={setSite} allowed={allowed} />
+          <SiteSwitcher site={site} setSite={setSite} sites={sites} isLoading={isLoading} error={error} />
         </div>
 
         <nav className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-2">
@@ -122,36 +122,33 @@ export function Shell() {
 function SiteSwitcher({
   site,
   setSite,
-  allowed,
+  sites,
+  isLoading,
+  error,
 }: {
   site: string
   setSite: (site: string) => void
-  allowed: string[]
+  sites: { id: string; slug: string; name: string }[]
+  isLoading: boolean
+  error: unknown
 }) {
-  // A grant limited to specific sites gets a closed list; an unrestricted
-  // operator types the slug, because listing every site is not an endpoint the
-  // API offers.
-  if (allowed.length > 0) {
+  if (isLoading) return <div className="px-1 text-xs text-muted-foreground">Loading sites…</div>
+  if (error)
     return (
-      <Select className="w-full" value={site} onChange={(event) => setSite(event.target.value)}>
-        {allowed.map((id) => (
-          <option key={id} value={id}>
-            {id}
-          </option>
-        ))}
-      </Select>
+      <div className="px-1 text-xs text-chart-5">
+        {error instanceof Error ? error.message : 'Sites could not be loaded'}
+      </div>
     )
-  }
+  if (sites.length === 0)
+    return <div className="px-1 text-xs text-muted-foreground">No sites yet — create one under Sites.</div>
   return (
-    <input
-      className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-accent"
-      placeholder="site slug…"
-      defaultValue={site}
-      onBlur={(event) => setSite(event.target.value.trim())}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') setSite((event.target as HTMLInputElement).value.trim())
-      }}
-    />
+    <Select className="w-full" value={site} onChange={(event) => setSite(event.target.value)}>
+      {sites.map((candidate) => (
+        <option key={candidate.id} value={candidate.slug}>
+          {candidate.name}
+        </option>
+      ))}
+    </Select>
   )
 }
 

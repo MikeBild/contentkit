@@ -1195,6 +1195,14 @@ export function openApi(config) {
         },
       },
       '/v1/sites': {
+        get: {
+          operationId: 'siteList',
+          summary: 'List the sites this credential may read',
+          description:
+            'Ordered by name. A credential restricted to specific sites sees only those; an unrestricted one sees every site. Without this a caller cannot discover which sites exist and can only address a slug it already knows.',
+          security: secured,
+          responses: { 200: { description: 'Sites visible to this credential' } },
+        },
         post: {
           operationId: 'siteCreate',
           summary: 'Create a site (unrestricted site administrator)',
@@ -1829,6 +1837,21 @@ export function openApi(config) {
             200: { description: 'Ranked results with `<mark>` headlines' },
             404: { description: 'Site not found' },
             422: { description: 'Missing/overlong q, invalid kind or limit' },
+          },
+        },
+      },
+      '/v1/content/{item}': {
+        delete: {
+          operationId: 'contentDeleteDraft',
+          summary: 'Discard a draft content item and all of its revisions',
+          description:
+            'Only for items that were never published. An item with a published revision returns 409: unpublishing is a release operation with its own endpoint, and conflating the two would let one call remove live content together with its whole history.',
+          security: secured,
+          parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: { description: 'Draft discarded' },
+            404: { description: 'Content item not found' },
+            409: { description: 'The item is published; unpublish it first' },
           },
         },
       },

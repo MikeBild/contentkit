@@ -231,7 +231,7 @@ export const API_ROUTES = [
   { pattern: /^\/_contentkit\/logout$/, methods: ['POST'] },
   { pattern: /^\/_contentkit\/(session|navigation\.json|search-index\.json)$/, methods: ['GET'] },
   { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET'], apiHostOnly: true },
-  { pattern: /^\/v1\/sites$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
@@ -247,6 +247,7 @@ export const API_ROUTES = [
   },
   { pattern: /^\/v1\/sites\/[^/]+\/published\/[^/]+\/[^/]+\/[^/]+$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/search$/, methods: ['GET'] },
+  { pattern: /^\/v1\/content\/[^/]+$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/content\/[^/]+\/revisions$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/v1\/content\/[^/]+\/published$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/content\/[^/]+\/audio$/, methods: ['GET', 'DELETE'] },
@@ -1080,6 +1081,21 @@ export function createRequestHandler(ctx) {
       return publicSubmission(req, res, url, ip)
     }
 
+    // Without this a client that is not restricted to specific sites has no way
+    // to learn which sites exist — `site_ids: []` means "all of them", not "none"
+    // — so it can only address a site whose slug it already knows. The MCP
+    // surface has always been able to list them; this is the same query and the
+    // same per-site authorize() filter, over REST.
+    if (req.method === 'GET' && path === '/v1/sites') {
+      const principal = await requireScope(req, res, 'content:read')
+      if (!principal) return
+      const rows = await db.select('ck_sites', { order: 'name.asc' })
+      return sendJson(
+        res,
+        200,
+        rows.filter((site) => auth.authorize(principal, 'content:read', site.id)),
+      )
+    }
     if (req.method === 'POST' && path === '/v1/sites') {
       const principal = await requireScope(req, res, 'site:admin')
       if (!principal) return
@@ -1545,6 +1561,29 @@ export function createRequestHandler(ctx) {
       if (!(await requireScope(req, res, 'content:write', items[0].site_id))) return
       const { markdown, assets } = await markdownRequest(req)
       return sendJson(res, 201, await repo.ingest(items[0].site_id, markdown, assets, items[0].id))
+    }
+    // Discarding a draft that was never published. Deliberately refuses once an
+    // item has a published revision: unpublishing is a release operation with
+    // its own endpoint, and conflating the two would let a single DELETE remove
+    // live content and its whole history at once.
+    const contentItemMatch = path.match(/^\/v1\/content\/([^/]+)$/)
+    if (contentItemMatch && req.method === 'DELETE') {
+      const items = await db.select('ck_content_items', { id: `eq.${contentItemMatch[1]}`, limit: '1' })
+      if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
+      if (!(await requireScope(req, res, 'content:write', items[0].site_id))) return
+      if (items[0].published_revision_id)
+        return sendJson(res, 409, { error: 'published content cannot be deleted; unpublish it first' })
+      await db.remove('ck_content_items', { id: `eq.${items[0].id}` })
+      await audit.record({
+        actorType: 'api_key',
+        actorId: String(items[0].site_id),
+        action: 'content.delete_draft',
+        resourceType: 'content',
+        resourceId: items[0].id,
+        result: 'success',
+        transport: 'rest',
+      })
+      return sendJson(res, 200, { item_id: items[0].id, deleted: true })
     }
     const publishedMatch = path.match(/^\/v1\/content\/([^/]+)\/published$/)
     if (publishedMatch && req.method === 'DELETE') {

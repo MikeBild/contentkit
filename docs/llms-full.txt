@@ -299,6 +299,7 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 
 | Method | Path | Scope | Function |
 |---|---|---|---|
+| GET | `/v1/sites` | `content:read` | List the sites this credential may read, ordered by name |
 | POST | `/v1/sites` | unrestricted `site:admin` | Create a site, locales and optional hostnames |
 | GET | `/v1/sites/{site}` | `content:read` or `site:admin` | Read site metadata and settings |
 | PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings |
@@ -329,6 +330,7 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
+| DELETE | `/v1/content/{item}` | `content:write` | Discard a never-published draft item and its revisions |
 | DELETE | `/v1/content/{item}/published` | `release:write` | Unpublish a content item from the live site |
 | GET | `/v1/content/{item}/audio` | `content:read` | Read-aloud (TTS) job status and audio asset URL for one item |
 | DELETE | `/v1/content/{item}/audio` | `release:write` | Delete all audio jobs and generated MP3 assets for one item; schedules an auto-rebuild |

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.0 — 2026-07-29
+
+### Added
+
+- `GET /v1/sites` lists the sites a credential may read, ordered by name.
+  Without it a caller could only address a site whose slug it already knew:
+  `site_ids: []` on a grant means "every site", not "none", so an unrestricted
+  administrator had no way to discover what exists. The MCP surface has always
+  been able to list them; this is the same query and the same per-site
+  `authorize()` filter, over HTTP.
+- `DELETE /v1/content/{item}` discards a draft item and all of its revisions.
+  It refuses with 409 once the item has a published revision — unpublishing is
+  a release operation with its own endpoint, and conflating the two would let a
+  single call remove live content together with its whole history. This closes
+  the last capability that existed on MCP but not over HTTP.
+
+### Fixed
+
+- ContentKit Cockpit showed "choose a site" on every page for an unrestricted
+  administrator. The site switcher derived its list from the grant's
+  `site_ids`, which is empty precisely when the operator may reach everything,
+  so the most common credential produced an empty console. It now lists what
+  `GET /v1/sites` reports and preselects the first, remembering a deliberate
+  choice across reloads.
+
 ## 4.4.2 — 2026-07-29
 
 ### Fixed

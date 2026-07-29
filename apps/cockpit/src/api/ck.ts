@@ -241,6 +241,8 @@ export const ck = {
   },
 
   sites: {
+    /** Every site this credential may read. `site_ids: []` on a grant means all of them. */
+    list: () => unwrapAs<Site[]>(api.GET('/v1/sites', {})),
     get: (site: string) => unwrap(api.GET('/v1/sites/{site}', { params: { path: { site } } })),
     create: (input: { name: string; base_url: string; default_locale: string; slug?: string }) =>
       unwrapAs<Site>(api.POST('/v1/sites', { body: body(input) })),
@@ -274,6 +276,9 @@ export const ck = {
       ),
     unpublish: (item: string) =>
       unwrapAs<void>(api.DELETE('/v1/content/{item}/published', { params: { path: { item } } })),
+    /** Discards a never-published draft. A published item answers 409. */
+    deleteDraft: (item: string) =>
+      unwrapAs<{ item_id: string; deleted: boolean }>(api.DELETE('/v1/content/{item}', { params: { path: { item } } })),
     audio: {
       get: (item: string) => unwrapAs<unknown>(api.GET('/v1/content/{item}/audio', { params: { path: { item } } })),
       remove: (item: string) =>

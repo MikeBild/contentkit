@@ -219,7 +219,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List the sites this credential may read
+         * @description Ordered by name. A credential restricted to specific sites sees only those; an unrestricted one sees every site. Without this a caller cannot discover which sites exist and can only address a slug it already knows.
+         */
+        get: operations["siteList"];
         put?: never;
         /** Create a site (unrestricted site administrator) */
         post: operations["siteCreate"];
@@ -770,6 +774,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/content/{item}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Discard a draft content item and all of its revisions
+         * @description Only for items that were never published. An item with a published revision returns 409: unpublishing is a release operation with its own endpoint, and conflating the two would let one call remove live content together with its whole history.
+         */
+        delete: operations["contentDeleteDraft"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2729,6 +2753,26 @@ export interface operations {
             };
         };
     };
+    siteList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sites visible to this credential */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     siteCreate: {
         parameters: {
             query?: never;
@@ -3935,6 +3979,42 @@ export interface operations {
             };
             /** @description Missing/overlong q, invalid kind or limit */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    contentDeleteDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft discarded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Content item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The item is published; unpublish it first */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
