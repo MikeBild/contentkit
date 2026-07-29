@@ -69,7 +69,7 @@ export function FieldGallery() {
     number: 30 as number | undefined,
     dimension: '0.75rem',
     when: undefined as string | undefined,
-    url: 'https://mikebild.dev',
+    url: 'https://example.com',
     asset: '/assets/logo.svg',
     template: 'https://example.com/feed/{slug}.xml',
     color: '#0f172a',

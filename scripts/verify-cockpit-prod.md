@@ -1,6 +1,10 @@
 # Production verification — ContentKit Cockpit
 
-Target: **https://contentkit-api.mikebild.dev/cockpit/**
+> Set `CONTENTKIT_DEPLOY_URL` to the deployment under test before you start, e.g.
+> `export CONTENTKIT_DEPLOY_URL=https://contentkit-api.example.com`. This file is
+> tracked in the OSS repository and therefore names no deployment of its own.
+
+Target: **$CONTENTKIT_DEPLOY_URL/cockpit/**
 Run this **after** the v4.6.0 deploy, never before — every selector below only exists in the new bundle.
 
 This is an executable checklist. Work top to bottom. Every step has **Do**, **Expect** and **Fail if**.
@@ -18,8 +22,8 @@ outcome is written out literally.
 
 | Thing | Value |
 |---|---|
-| Console | `https://contentkit-api.mikebild.dev/cockpit/` |
-| API host | `https://contentkit-api.mikebild.dev` (same process, same origin) |
+| Console | `$CONTENTKIT_DEPLOY_URL/cockpit/` |
+| API host | `$CONTENTKIT_DEPLOY_URL` (same process, same origin) |
 | Browser | Chrome or Edge. The DOM snippets below use `document.styleSheets` and `getComputedStyle`, both same-origin. |
 | Operator scopes | `site:admin`, `content:read`, `content:write`, `release:write`, `release:preview`, `access:admin`, `webhook:admin`, `moderation:write`, `api-key:admin`, `audit:read`, `deck:render` |
 | Shell access (Appendix A only) | `ssh root@46.101.236.142`, unit `contentkit`, port 4050 |
@@ -33,8 +37,8 @@ all of the above before reporting anything as broken.
 Everything except §23.9 runs against a **scratch site you create in §3**, slug `cockpit-verify`.
 It has no hostname mapping, so nothing you do there can reach a visitor.
 
-**Never run §3–§22 against `mikebild`.** That site serves www.mikebild.dev. In particular
-`ck-site-delete-purge` on `mikebild` would destroy the production website irrecoverably.
+**Never run §3–§22 against `<your production site>`.** That site serves the site it publishes. In particular
+`ck-site-delete-purge` on `<your production site>` would destroy the production website irrecoverably.
 
 Before any destructive step, read the site slug out of the page:
 
@@ -63,11 +67,11 @@ which requests fire, not only about what is on screen.
 
 ### 0.4 Version gate
 
-1. `curl -s https://contentkit-api.mikebild.dev/ready`
+1. `curl -s $CONTENTKIT_DEPLOY_URL/ready`
    **Expect** `200` and a version field reading `4.6.0` (or newer).
    **Fail if** the version is `4.3.3` or lower — the deploy did not land; stop and re-dispatch the deploy
    workflow. Everything below would fail for the wrong reason.
-2. `curl -sI https://contentkit-api.mikebild.dev/cockpit/ | head -3`
+2. `curl -sI $CONTENTKIT_DEPLOY_URL/cockpit/ | head -3`
    **Expect** `200` and `content-type: text/html`.
    **Fail if** `503` with a body mentioning the console is not built — the binary shipped without
    `assets/cockpit`.
@@ -76,7 +80,7 @@ which requests fire, not only about what is on screen.
 
 ## 1. Sign-in
 
-1. Open `https://contentkit-api.mikebild.dev/cockpit/`.
+1. Open `$CONTENTKIT_DEPLOY_URL/cockpit/`.
    **Expect** either the console shell, or a page with a single button `sign-in`.
    **Fail if** a blank white page with a console error. That is a bundle/runtime failure — capture the
    error text; see Appendix A.9.
@@ -624,7 +628,7 @@ The item must be `kind: post` and the site's `settings.comments.enabled` must no
 by default).
 
 ```bash
-curl -s -X POST https://contentkit-api.mikebild.dev/public/v1/posts/ITEM/comments \
+curl -s -X POST $CONTENTKIT_DEPLOY_URL/public/v1/posts/ITEM/comments \
   -H 'content-type: application/json' \
   -d '{"site_id":"cockpit-verify","name":"Verifier","email":"verify@example.invalid","message":"A comment from the production verification run."}'
 ```
@@ -668,7 +672,7 @@ Same page. Row testid `ck-contact-row`, id in `data-submission`.
 ### 14.1 Create (as a visitor)
 
 ```bash
-curl -s -X POST https://contentkit-api.mikebild.dev/public/v1/contact \
+curl -s -X POST $CONTENTKIT_DEPLOY_URL/public/v1/contact \
   -H 'content-type: application/json' \
   -d '{"site_id":"cockpit-verify","name":"Verifier","email":"verify@example.invalid","message":"Contact request from the production verification run."}'
 ```
@@ -705,9 +709,9 @@ post**, not per vote).
 Requires `settings.feedback.enabled === true` — you set that in §3.3.3.
 
 ```bash
-curl -s -X POST https://contentkit-api.mikebild.dev/public/v1/posts/ITEM/feedback \
+curl -s -X POST $CONTENTKIT_DEPLOY_URL/public/v1/posts/ITEM/feedback \
   -H 'content-type: application/json' -d '{"site_id":"cockpit-verify","vote":"up"}'
-curl -s -X POST https://contentkit-api.mikebild.dev/public/v1/posts/ITEM/feedback \
+curl -s -X POST $CONTENTKIT_DEPLOY_URL/public/v1/posts/ITEM/feedback \
   -H 'content-type: application/json' -d '{"site_id":"cockpit-verify","vote":"down"}'
 ```
 
@@ -751,11 +755,11 @@ Page: `nav-credentials`. Row testid `ck-api-key-row`, id in the row.
 
    ```bash
    curl -s -o /dev/null -w '%{http_code}\n' -H "authorization: Bearer THEKEY" \
-     https://contentkit-api.mikebild.dev/v1/sites/cockpit-verify/content
+     $CONTENTKIT_DEPLOY_URL/v1/sites/cockpit-verify/content
    # expect 200
    curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "authorization: Bearer THEKEY" \
      -H 'content-type: application/json' -d '{"reason":"nope"}' \
-     https://contentkit-api.mikebild.dev/v1/sites/cockpit-verify/releases
+     $CONTENTKIT_DEPLOY_URL/v1/sites/cockpit-verify/releases
    # expect 403 insufficient_scope
    ```
 
@@ -1183,7 +1187,7 @@ Open the item → `content-tab-live`.
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -H "authorization: Bearer PROBE_KEY" \
-  https://contentkit-api.mikebild.dev/v1/sites/cockpit-verify/published/post/en/verification-post
+  $CONTENTKIT_DEPLOY_URL/v1/sites/cockpit-verify/published/post/en/verification-post
 # expect 404
 ```
 
@@ -1229,7 +1233,7 @@ pages after a re-render" failure mode; go straight to Appendix A.7.
 
 ```bash
 curl -s -H "authorization: Bearer PROBE_KEY" \
-  https://contentkit-api.mikebild.dev/v1/sites/cockpit-verify/published/post/en/verification-post \
+  $CONTENTKIT_DEPLOY_URL/v1/sites/cockpit-verify/published/post/en/verification-post \
   | head -c 400
 ```
 
@@ -1244,13 +1248,13 @@ Also confirm the release object itself is being served — request the same docu
 
 ### 23.9 The real site (optional, production-affecting)
 
-Only if the change under test must be confirmed on **www.mikebild.dev**, and only with explicit
-intent. Switch the console's site to `mikebild`, build a release with a reason naming this run, and
+Only if the change under test must be confirmed on **the site it publishes**, and only with explicit
+intent. Switch the console's site to `<your production site>`, build a release with a reason naming this run, and
 then:
 
 ```bash
-curl -s https://www.mikebild.dev/de/ | head -c 400
-curl -sI https://www.mikebild.dev/de/ | grep -i '^etag\|^last-modified'
+curl -s https://the site it publishes/de/ | head -c 400
+curl -sI https://the site it publishes/de/ | grep -i '^etag\|^last-modified'
 ```
 
 **Expect** `200` German HTML reflecting the new build.
@@ -1260,8 +1264,8 @@ state. `/en/` is a legitimate `404`; the site is German-only.
 Also confirm the host split still holds:
 
 ```bash
-curl -s https://contentkit-api.mikebild.dev/llms.txt | head -3   # ContentKit's own docs
-curl -s https://www.mikebild.dev/llms.txt        | head -3       # the site's own file
+curl -s $CONTENTKIT_DEPLOY_URL/llms.txt | head -3   # ContentKit's own docs
+curl -s https://the site it publishes/llms.txt        | head -3       # the site's own file
 ```
 
 **Fail if** both return the same body — a site domain row is covering the API host, which would serve
@@ -1364,7 +1368,7 @@ curl -s http://127.0.0.1:4050/metrics | grep -E 'contentkit_(requests_total|buil
 | A.6 | **Moderation succeeds but the live site does not change** (§13.3, §13.4) | `jq -c 'select(.msg=="comment approval republish failed" or .msg=="comment deletion republish failed")'` → the moderation write committed and the republish did not. The comment is correct in the database and stale on the site; a manual release build (§6.2) repairs it. |
 | A.7 | **Pages serve empty after a release** (§23.7, §23.8) | This has happened before and was a storage/disk problem, not a renderer one. In order: `df -h /` on the droplet (95 % full has caused it); then `jq -c 'select(.msg=="request" and .path=="/:published-path" and .status==200)'` and compare the response sizes; then `jq -c 'select(.msg=="storage ready" or .msg=="request failed")'` around the build's timestamp. Also try `POST /v1/maintenance/storage-gc` from `nav-system` → `maintenance-storage-gc`. |
 | A.8 | **Audio jobs fail or never start** (§18) | `jq -c 'select(.msg=="audio job failed")'` → `jobId`, `attempts`, `terminal`, `error`. `jq -c 'select(.msg=="audio budget exhausted")'` means the site's configured budget stopped it — a settings outcome, not a defect. `jq -c 'select(.msg=="audio poll failed")'` means the worker itself is down. `audio jobs enqueued` confirms the enqueue side worked. |
-| A.9 | **Blank console / chunk fails to load / Mermaid declines** (§1, §21.5) | Nothing server-side will show this; it is a browser-side failure. Capture the DevTools console error and the failing request from the Network tab. A `Content Security Policy` violation mentioning `unsafe-eval` on a diagram is **expected** for diagram kinds outside the runnable set (`flowchart`, `graph`, `sequenceDiagram`, `stateDiagram`, `erDiagram`, `classDiagram`) — those are declined on purpose. A CSP violation on the *bundle* is a deploy problem. Confirm the asset is being served: `curl -sI https://contentkit-api.mikebild.dev/cockpit/assets/<name>.js`. |
+| A.9 | **Blank console / chunk fails to load / Mermaid declines** (§1, §21.5) | Nothing server-side will show this; it is a browser-side failure. Capture the DevTools console error and the failing request from the Network tab. A `Content Security Policy` violation mentioning `unsafe-eval` on a diagram is **expected** for diagram kinds outside the runnable set (`flowchart`, `graph`, `sequenceDiagram`, `stateDiagram`, `erDiagram`, `classDiagram`) — those are declined on purpose. A CSP violation on the *bundle* is a deploy problem. Confirm the asset is being served: `curl -sI $CONTENTKIT_DEPLOY_URL/cockpit/assets/<name>.js`. |
 | A.10 | **Renders are slow or fire too often** (§21.4) | `jq -c 'select(.msg=="request" and .path=="/v1/sites/:site/render") \| {ts,status,ms,request_id}'`. The count in a one-minute window should match the number of finished assistant messages. Repeated `200`s with identical `ms` for the same content mean the LRU (256 entries, keyed on markdown+scheme+theme+version) is being missed — most likely the client is varying the payload. A `413` means the fragment exceeded 256 KiB; a `422` is a genuine refusal and belongs on screen. |
 | A.11 | **The whole surface 404s on the wrong host** (§23.9) | `jq -c 'select(.msg=="request" and .status==404)' \| head` and compare `path` against what you requested. `/llms.txt`, `/openapi.json` and `/metrics` exist **only** on the API host by design. If site paths are answering on the API hostname, a `ck_site_domains` row is covering it — that is a serious misconfiguration; do not resolve it from the console. |
 | A.12 | **A page crashed with a shape error** (§2.2) | The server is fine; the console guessed a response shape. Capture the exact browser error and the operation, and check the response body against `docs/openapi.json`. Every response the console reads must be derived from the spec — a mismatch is a code defect, and the fix belongs in `src/openapi.mjs` first. |
