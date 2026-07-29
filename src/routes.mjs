@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { keyFingerprint } from './auth.mjs'
+import { credentialFromHeaders, keyFingerprint } from './auth.mjs'
 import { canonicalRequestPath, cleanPath, escapeHtml, hmac256, safeEqual, sha256 } from './utils.mjs'
 import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
 import { clientIp, contentCsp, deckContentCsp, verifyTurnstile } from './security.mjs'
@@ -573,12 +573,12 @@ export function createRequestHandler(ctx) {
     if (siteId) markUsageContext(req, { siteId })
     const principal = await auth.authenticate(req.headers)
     if (!principal) {
-      logger.warn('unauthorized', { scope, siteId, key: keyFingerprint(req.headers.authorization) })
+      logger.warn('unauthorized', { scope, siteId, key: keyFingerprint(credentialFromHeaders(req.headers)) })
       sendJson(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' })
       return null
     }
     if (!auth.authorize(principal, scope, siteId)) {
-      logger.warn('insufficient scope', { scope, siteId, key: keyFingerprint(req.headers.authorization) })
+      logger.warn('insufficient scope', { scope, siteId, key: keyFingerprint(credentialFromHeaders(req.headers)) })
       sendJson(res, 403, { error: 'insufficient_scope', scope, ...(siteId ? { site: siteId } : {}) })
       return null
     }
@@ -593,7 +593,11 @@ export function createRequestHandler(ctx) {
     if (siteId) markUsageContext(req, { siteId })
     const principal = await auth.authenticate(req.headers)
     if (!principal) {
-      logger.warn('unauthorized', { scope: scopes.join('|'), siteId, key: keyFingerprint(req.headers.authorization) })
+      logger.warn('unauthorized', {
+        scope: scopes.join('|'),
+        siteId,
+        key: keyFingerprint(credentialFromHeaders(req.headers)),
+      })
       sendJson(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' })
       return null
     }
@@ -601,7 +605,7 @@ export function createRequestHandler(ctx) {
       logger.warn('insufficient scope', {
         scope: scopes.join('|'),
         siteId,
-        key: keyFingerprint(req.headers.authorization),
+        key: keyFingerprint(credentialFromHeaders(req.headers)),
       })
       sendJson(res, 403, { error: 'insufficient_scope', scope: scopes, ...(siteId ? { site: siteId } : {}) })
       return null

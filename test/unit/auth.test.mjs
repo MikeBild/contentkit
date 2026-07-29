@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createAuth, hashApiKey } from '../../src/auth.mjs'
+import { createAuth, credentialFromHeaders, hashApiKey, keyFingerprint } from '../../src/auth.mjs'
 
 test('authenticates hashed keys and enforces scopes and sites', async () => {
   const raw = 'ck_test'
@@ -97,4 +97,17 @@ test('an active OAuth token immediately respects a live scope-ceiling downgrade 
   )
   const principal = await auth.authenticate({ authorization: 'Bearer cko_example' })
   assert.deepEqual(principal.scopes, ['content:read', 'stats:read'])
+})
+
+test('credential extraction covers both transports and strips the Bearer prefix', () => {
+  assert.equal(credentialFromHeaders({ authorization: 'Bearer ck_secret' }), 'ck_secret')
+  assert.equal(credentialFromHeaders({ 'x-api-key': 'ck_secret' }), 'ck_secret')
+  assert.equal(credentialFromHeaders({}), null)
+  // An x-api-key caller used to log as `none`, hiding which key failed.
+  assert.notEqual(keyFingerprint(credentialFromHeaders({ 'x-api-key': 'ck_secret' })), 'none')
+  // One key must yield one fingerprint, whichever header carried it.
+  assert.equal(
+    keyFingerprint(credentialFromHeaders({ authorization: 'Bearer ck_secret' })),
+    keyFingerprint(credentialFromHeaders({ 'x-api-key': 'ck_secret' })),
+  )
 })

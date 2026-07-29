@@ -1191,7 +1191,10 @@ export function createRepository(config, db, storage) {
         site_ids: input.site_ids || [],
         expires_at: input.expires_at || null,
       })
-      return { ...record, key: raw }
+      // The stored hash is a verifier, never a response field: listing strips it
+      // and creation must not hand it out either. Callers get the raw key once.
+      const { key_hash: _hash, ...safe } = record
+      return { ...safe, key: raw }
     },
     async buildSnapshot(siteId, overlayRevisionIds = [], retireItemIds = []) {
       const site = await this.getSite(siteId)

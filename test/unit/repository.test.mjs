@@ -898,3 +898,21 @@ test('access grants reject malformed reader IDs before querying PostgreSQL', asy
     (error) => error.statusCode === 422 && error.message === 'users must contain UUIDs',
   )
 })
+
+test('creating an API key returns the raw secret but never the stored hash', async () => {
+  const repo = createRepository(
+    { keyPepper: 'test-pepper' },
+    {
+      async insert(table, row) {
+        assert.equal(table, 'ck_api_keys')
+        return [{ id: 'key-1', created_at: '2026-07-29T00:00:00Z', revoked_at: null, ...row }]
+      },
+    },
+    {},
+  )
+  const created = await repo.createApiKey({ name: 'site-admin', scopes: ['site:admin'], site_ids: [] })
+  assert.equal(created.name, 'site-admin')
+  assert.ok(created.key.startsWith('ck_'))
+  assert.equal(created.key_prefix, created.key.slice(0, 11))
+  assert.ok(!('key_hash' in created))
+})

@@ -1,6 +1,18 @@
 import { hmac256, safeEqual, sha256 } from './utils.mjs'
 import { effectiveProductScopes, oauthTiersForCeiling } from './oauth/policy.mjs'
 
+// A credential arrives either as `Authorization: Bearer <key>` or as `x-api-key`.
+// Both authentication and logging must read it the same way: fingerprinting the
+// raw Authorization header alone logged `none` for every x-api-key caller and
+// hashed "Bearer <key>" rather than the key, so the two transports produced
+// different fingerprints for one key.
+export function credentialFromHeaders(headers) {
+  if (typeof headers === 'string') return headers.match(/^Bearer\s+(.+)$/i)?.[1] || headers
+  const read = (name) => headers?.get?.(name) ?? headers?.[name] ?? headers?.[name.toLowerCase()]
+  const authorization = read('authorization') || ''
+  return authorization.match(/^Bearer\s+(.+)$/i)?.[1] || read('x-api-key') || null
+}
+
 export function keyFingerprint(key) {
   return key ? sha256(key).slice(0, 12) : 'none'
 }
@@ -12,10 +24,7 @@ export function hashApiKey(key, pepper) {
 export function createAuth(config, db) {
   return {
     async authenticate(headers) {
-      const read = (name) => headers?.get?.(name) ?? headers?.[name] ?? headers?.[name.toLowerCase()]
-      const authorization = typeof headers === 'string' ? headers : read('authorization') || ''
-      const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]
-      const key = bearer || (typeof headers === 'string' ? headers : read('x-api-key'))
+      const key = credentialFromHeaders(headers)
       if (!key) return null
 
       if (String(key).startsWith('cko_') && config.oauthSecret && db.query) {
