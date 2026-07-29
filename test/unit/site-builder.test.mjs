@@ -1554,3 +1554,38 @@ Revenue is above the January baseline.`
   assert.match(twin, /\| Jan \| 42 \|/)
   assert.match(result.files.get('en/llms-full.txt').body.toString(), /:::chart\{type="line"/)
 })
+
+test('the portfolio preset keeps its empty blog, archive and projects indexes, because its nav links them', async () => {
+  const result = await build({ revisions: [] })
+  for (const file of ['en/blog/index.html', 'en/archive/index.html', 'en/projects/index.html']) {
+    assert.ok(result.files.has(file), `${file} must exist for the portfolio preset`)
+  }
+})
+
+test('a non-portfolio preset publishes no empty blog, archive or projects index', async () => {
+  // The footer already refuses to advertise these on an empty non-portfolio
+  // site; emitting and sitemapping them anyway handed search engines empty
+  // portfolio pages on product and wiki sites.
+  const result = await build({
+    site: { ...site, settings: { presentation: { preset: 'product' } } },
+    revisions: [],
+  })
+  for (const file of ['en/blog/index.html', 'en/archive/index.html', 'en/projects/index.html']) {
+    assert.ok(!result.files.has(file), `${file} must not be published on an empty product site`)
+  }
+  const sitemap = result.files.get('sitemap.xml')
+  for (const path of ['/en/blog/', '/en/archive/', '/en/projects/']) {
+    assert.ok(!String(sitemap).includes(path), `${path} must stay out of the sitemap`)
+  }
+  assert.ok(!String(result.files.get('en/llms.txt')).includes('/en/archive/'))
+})
+
+test('a non-portfolio preset regains the indexes as soon as it holds that content', async () => {
+  const result = await build({
+    site: { ...site, settings: { presentation: { preset: 'product' } } },
+    revisions: [post({ slug: 'a', title: 'A' }), project({ slug: 'p', title: 'P' })],
+  })
+  for (const file of ['en/blog/index.html', 'en/archive/index.html', 'en/projects/index.html']) {
+    assert.ok(result.files.has(file), `${file} must exist once the content exists`)
+  }
+})

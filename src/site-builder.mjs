@@ -335,7 +335,10 @@ function llmsTxt(site, locale, { t, posts, projects, pages, decks }, locales) {
       'Human- and LLM-readable brand, narrative and acceptance contract',
     ),
     llmsLink('Design tokens', absolute(site, '/design-tokens.json'), 'Typed Design Tokens Community Group JSON'),
-    llmsLink(t.archive, absolute(site, `/${locale}/archive/`)),
+    // The archive index only exists where the blog indexes are emitted.
+    ...(posts.length || (site.settings?.presentation?.preset || 'portfolio') === 'portfolio'
+      ? [llmsLink(t.archive, absolute(site, `/${locale}/archive/`))]
+      : []),
     llmsLink(t.allTags, absolute(site, `/${locale}/tags/`)),
     llmsLink(t.llmsFullContent, absolute(site, `/${locale}/llms-full.txt`)),
     ...locales
@@ -790,64 +793,79 @@ export async function buildSite({
       }
     }
 
+    // The portfolio preset advertises /blog/, /archive/ and /projects/ in its
+    // header nav unconditionally, so those pages must exist there even while
+    // empty. Every other preset links them only once they hold something (see
+    // siteFooter: "an empty wiki's footer must not advertise /blog/, /archive/
+    // or /tags/") — yet the builder published and sitemapped them anyway, so a
+    // product or wiki site shipped empty portfolio pages for search engines to
+    // index. Emit them only where they are reachable or non-empty.
+    const portfolioPreset = (site.settings?.presentation?.preset || 'portfolio') === 'portfolio'
+    const emitBlogIndexes = portfolioPreset || posts.length > 0
+    const emitProjectIndex = portfolioPreset || projects.length > 0
+
     // The blog is a feed (capped, with topic chips), the projects listing is a
     // plain grid — so only the latter still uses listingBody(), which also serves
     // the tag pages unchanged.
     const blogPath = `/${locale}/blog/`
-    files.set(
-      `${locale}/blog/index.html`,
-      text(
-        layout(
-          { ...base, title: t.blog, description: t.blog, canonical: absolute(site, blogPath), currentPath: blogPath },
-          blogBody(base),
-          // The subscribe row's copy button needs the shared clipboard module.
-          { aiActions: site.settings?.blog?.subscribe_row !== false },
+    if (emitBlogIndexes) {
+      files.set(
+        `${locale}/blog/index.html`,
+        text(
+          layout(
+            { ...base, title: t.blog, description: t.blog, canonical: absolute(site, blogPath), currentPath: blogPath },
+            blogBody(base),
+            // The subscribe row's copy button needs the shared clipboard module.
+            { aiActions: site.settings?.blog?.subscribe_row !== false },
+          ),
         ),
-      ),
-    )
-    sitemapItems.push({
-      canonical: absolute(site, blogPath),
-      translations: staticAlternates((l) => `/${l}/blog/`),
-      updated_at: lastUpdated(posts),
-    })
+      )
+      sitemapItems.push({
+        canonical: absolute(site, blogPath),
+        translations: staticAlternates((l) => `/${l}/blog/`),
+        updated_at: lastUpdated(posts),
+      })
+      files.set(
+        `${locale}/archive/index.html`,
+        text(
+          layout(
+            {
+              ...base,
+              title: t.archive,
+              description: t.archive,
+              canonical: absolute(site, `/${locale}/archive/`),
+              currentPath: `/${locale}/archive/`,
+            },
+            archiveBody(base),
+            { archive: true },
+          ),
+        ),
+      )
+    }
 
     const projectsPath = `/${locale}/projects/`
-    files.set(
-      `${locale}/projects/index.html`,
-      text(
-        layout(
-          {
-            ...base,
-            title: t.projects,
-            description: t.projects,
-            canonical: absolute(site, projectsPath),
-            currentPath: projectsPath,
-          },
-          listingBody(t.projects, projects),
+    if (emitProjectIndex) {
+      files.set(
+        `${locale}/projects/index.html`,
+        text(
+          layout(
+            {
+              ...base,
+              title: t.projects,
+              description: t.projects,
+              canonical: absolute(site, projectsPath),
+              currentPath: projectsPath,
+            },
+            listingBody(t.projects, projects),
+          ),
         ),
-      ),
-    )
-    sitemapItems.push({
-      canonical: absolute(site, projectsPath),
-      translations: staticAlternates((l) => `/${l}/projects/`),
-      updated_at: lastUpdated(projects),
-    })
-    files.set(
-      `${locale}/archive/index.html`,
-      text(
-        layout(
-          {
-            ...base,
-            title: t.archive,
-            description: t.archive,
-            canonical: absolute(site, `/${locale}/archive/`),
-            currentPath: `/${locale}/archive/`,
-          },
-          archiveBody(base),
-          { archive: true },
-        ),
-      ),
-    )
+      )
+      sitemapItems.push({
+        canonical: absolute(site, projectsPath),
+        translations: staticAlternates((l) => `/${l}/projects/`),
+        updated_at: lastUpdated(projects),
+      })
+    }
     files.set(
       `${locale}/search/index.html`,
       text(
