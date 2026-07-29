@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.7 — 2026-07-29
+
+### Fixed
+
+- Every authoring-assistant turn that called a tool died with "the messages do
+  not match the ModelMessage[] schema" — after the tool had already run and its
+  effect had already happened. A tool result becomes a model message, where
+  only JSON values are valid, and `pg` returns `timestamptz` columns as Date
+  instances, so almost every tool that returns a row produced an invalid
+  message. Results are now normalised on the way out, which is what the MCP
+  transport has always done implicitly by serializing them.
+
 ## 4.5.6 — 2026-07-29
 
 ### Fixed

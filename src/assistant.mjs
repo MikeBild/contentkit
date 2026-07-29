@@ -85,6 +85,20 @@ export function createElicitations() {
   }
 }
 
+/**
+ * Tool results become a model message, and only JSON values are valid there.
+ * Postgres hands `timestamptz` columns back as Date instances through `pg`, so
+ * any tool returning a row — which is most of them — would otherwise fail the
+ * entire turn with "the messages do not match the ModelMessage[] schema",
+ * after the tool had already run and its effect had already happened.
+ *
+ * The MCP transport never hits this because it serializes results on the way
+ * out. This is the same normalisation, made explicit.
+ */
+export function jsonSafe(value) {
+  return value === undefined ? null : JSON.parse(JSON.stringify(value))
+}
+
 export function createAssistant(config, deps) {
   if (!config.anthropicApiKey) return null
 
@@ -114,7 +128,7 @@ export function createAssistant(config, deps) {
             try {
               const result = await candidate.execute(deps, principal, parsed, context)
               await record(candidate, principal, parsed, result, started, 'success')
-              return result
+              return jsonSafe(result)
             } catch (error) {
               await record(candidate, principal, parsed, null, started, 'error')
               // Surfaced to the model as a tool failure rather than killing the

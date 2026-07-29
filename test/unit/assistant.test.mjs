@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { createAssistant, createElicitations } from '../../src/assistant.mjs'
+import { createAssistant, createElicitations, jsonSafe } from '../../src/assistant.mjs'
 import { visibleTools } from '../../src/mcp/tools.mjs'
 
 const config = {
@@ -112,5 +112,31 @@ describe('the elicitation bridge', () => {
       /interrupted/,
     )
     assert.equal(asked, false, 'an aborted turn must not show the operator a card')
+  })
+})
+
+// A tool result becomes a model message, and only JSON values are valid there.
+// Postgres returns timestamptz as Date through `pg`, so almost every tool that
+// returns a row used to fail the whole turn — after the tool had already run
+// and its effect had already happened.
+describe('tool results are normalised before they reach the model', () => {
+  test('Date instances become ISO strings instead of failing the turn', () => {
+    const at = new Date('2026-07-29T11:46:59.000Z')
+    const safe = jsonSafe({ sites: [{ id: 's1', created_at: at, settings: { nested: { at } } }] })
+    assert.equal(safe.sites[0].created_at, '2026-07-29T11:46:59.000Z')
+    assert.equal(safe.sites[0].settings.nested.at, '2026-07-29T11:46:59.000Z')
+    assert.deepEqual(JSON.parse(JSON.stringify(safe)), safe, 'the result must be a plain JSON value')
+  })
+
+  test('a tool that returns nothing yields null, never undefined', () => {
+    // `undefined` is not a JSON value either, and the SDK rejects it the same way.
+    assert.equal(jsonSafe(undefined), null)
+    assert.equal(jsonSafe(null), null)
+  })
+
+  test('ordinary values pass through unchanged', () => {
+    for (const value of [{ a: 1, b: [true, 'x', null] }, [], 'text', 0, false]) {
+      assert.deepEqual(jsonSafe(value), value)
+    }
   })
 })
