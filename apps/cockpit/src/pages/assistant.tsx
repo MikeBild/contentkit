@@ -3,6 +3,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Page } from '@/app/shell'
 import { Badge, Button, Card, CardContent, Textarea } from '@/components/ui/primitives'
+import { getCsrfToken } from '@/api/client'
 import { loadConversation, saveConversation } from '@/lib/conversations'
 import { useSite } from '@/lib/site'
 import { cn } from '@/lib/utils'
@@ -30,8 +31,17 @@ export function AssistantPage() {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
+  // The AI SDK drives this POST itself, so it never passes through the API
+  // client that attaches the CSRF header — without this every turn is rejected
+  // with 403 before it reaches the model.
   const transport = useMemo(
-    () => new DefaultChatTransport({ api: '/v1/assistant/messages', body: () => ({ site }) }),
+    () =>
+      new DefaultChatTransport({
+        api: '/v1/assistant/messages',
+        credentials: 'same-origin',
+        headers: () => ({ 'x-contentkit-csrf': getCsrfToken() }),
+        body: () => ({ site }),
+      }),
     [site],
   )
 
@@ -205,7 +215,8 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
         credentials: 'same-origin',
         headers: {
           'content-type': 'application/json',
-          'x-contentkit-csrf': document.cookie.match(/contentkit_csrf=([^;]+)/)?.[1] ?? '',
+          // The cookie is HttpOnly, so the value comes from the session, not document.cookie.
+          'x-contentkit-csrf': getCsrfToken(),
         },
         body: JSON.stringify(action === 'accept' ? { action, content: { confirmed: true } } : { action }),
       })

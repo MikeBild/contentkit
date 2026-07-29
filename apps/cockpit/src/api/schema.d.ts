@@ -1860,6 +1860,62 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description An API key without its stored verifier. The raw key exists only in the creation response. */
+        ApiKeySummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            key_prefix: string;
+            scopes: string[];
+            site_ids?: string[];
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            /** Format: date-time */
+            last_used_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description An identity grant without the source credential material. */
+        IdentityGrantSummary: {
+            /** Format: uuid */
+            id: string;
+            provider_id: string;
+            issuer?: string | null;
+            subject: string;
+            email?: string | null;
+            display_name?: string | null;
+            role?: string | null;
+            grant_source?: string | null;
+            product_scopes: string[];
+            site_ids?: string[];
+            /** Format: date-time */
+            revoked_at?: string | null;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string | null;
+        };
+        /** @description A redacted audit record. Metadata never carries credentials, content or email addresses. */
+        AuditEvent: {
+            /** Format: uuid */
+            id: string;
+            actor_type: string;
+            actor_id?: string | null;
+            action: string;
+            resource_type?: string | null;
+            resource_id?: string | null;
+            /** Format: uuid */
+            site_id?: string | null;
+            result: string;
+            transport?: string | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+        };
         Error: {
             error: string;
             request_id?: string;
@@ -4658,12 +4714,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description API-key metadata */
+            /** @description API keys visible to this credential, wrapped in an `api_keys` array */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        api_keys: components["schemas"]["ApiKeySummary"][];
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4734,12 +4794,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Pre-provisioned exact OIDC subject grants */
+            /** @description Identity grants, wrapped in an `identities` array */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        identities: components["schemas"]["IdentityGrantSummary"][];
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -4854,12 +4918,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Audit events */
+            /** @description Audit events, wrapped in an `events` array */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        events: components["schemas"]["AuditEvent"][];
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];

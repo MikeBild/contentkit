@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.6 — 2026-07-29
+
+### Fixed
+
+- The authoring assistant answered 403 to every message. The chat stream is
+  driven by the AI SDK's own transport, which never passes through the API
+  client that attaches the CSRF header, so the gate rejected each turn before
+  it reached the model. The approval card had the same defect and tried to read
+  the token from `document.cookie` — impossible, because that cookie is
+  HttpOnly by design. Both now take the token from the session.
+- The Credentials and Audit pages crashed outright with "c.map is not a
+  function". `GET /v1/api-keys`, `GET /v1/identity-grants` and
+  `GET /v1/audit-events` answer with an `api_keys` / `identities` / `events`
+  envelope rather than a bare array; the console had assumed arrays because
+  those responses were documented in prose only.
+- Audio jobs showed an empty title, an empty character count and an empty
+  duration: the fields are `item_id`, `chars` and `attempts`, and there is no
+  duration. Contact submissions showed an empty message column — the column is
+  `body`.
+
+### Added
+
+- Response schemas for `GET /v1/api-keys`, `GET /v1/identity-grants` and
+  `GET /v1/audit-events`, so the generated client derives these shapes instead
+  of a consumer having to guess them. Guessing is what produced the two
+  crashes above.
+
 ## 4.5.5 — 2026-07-29
 
 ### Changed

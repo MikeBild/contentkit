@@ -503,8 +503,8 @@ export function ModerationPage() {
                     {contactRows.map((submission) => (
                       <TR key={submission.id} data-testid="contact-row" data-submission={submission.id}>
                         <TD>{submission.email || submission.name || 'anonymous'}</TD>
-                        <TD className="max-w-[16rem] truncate" title={submission.message}>
-                          {submission.message}
+                        <TD className="max-w-[16rem] truncate" title={submission.body}>
+                          {submission.body}
                         </TD>
                         <TD>
                           <Badge tone={submission.status === 'closed' ? 'neutral' : 'info'}>{submission.status}</Badge>

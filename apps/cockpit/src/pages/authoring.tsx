@@ -495,10 +495,10 @@ export function AudioPage() {
         <Table>
           <THead>
             <TR>
-              <TH>Item</TH>
+              <TH>Title</TH>
               <TH>Status</TH>
               <TH>Characters</TH>
-              <TH>Duration</TH>
+              <TH>Attempts</TH>
               <TH>Created</TH>
             </TR>
           </THead>
@@ -513,16 +513,14 @@ export function AudioPage() {
             >
               {rows.map((job) => (
                 <TR key={job.id} data-testid="audio-job-row" data-job={job.id}>
-                  <TD className="font-mono text-xs">{job.content_item_id.slice(0, 12)}</TD>
+                  <TD className="max-w-[18rem] truncate">{job.title || job.slug || job.item_id.slice(0, 12)}</TD>
                   <TD>
                     <Badge tone={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}>
                       {job.status}
                     </Badge>
                   </TD>
-                  <TD className="text-muted-foreground">{job.characters?.toLocaleString() ?? '—'}</TD>
-                  <TD className="text-muted-foreground">
-                    {job.duration_seconds ? `${Math.round(job.duration_seconds)}s` : '—'}
-                  </TD>
+                  <TD className="text-muted-foreground">{job.chars?.toLocaleString() ?? '—'}</TD>
+                  <TD className="text-muted-foreground">{job.attempts}</TD>
                   <TD className="text-muted-foreground">{formatDate(job.created_at)}</TD>
                 </TR>
               ))}

@@ -142,6 +142,60 @@ export function openApi(config) {
         },
       },
       schemas: {
+        ApiKeySummary: {
+          type: 'object',
+          description: 'An API key without its stored verifier. The raw key exists only in the creation response.',
+          required: ['id', 'name', 'key_prefix', 'scopes', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            key_prefix: { type: 'string' },
+            scopes: { type: 'array', items: { type: 'string' } },
+            site_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            expires_at: { type: ['string', 'null'], format: 'date-time' },
+            revoked_at: { type: ['string', 'null'], format: 'date-time' },
+            last_used_at: { type: ['string', 'null'], format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        IdentityGrantSummary: {
+          type: 'object',
+          description: 'An identity grant without the source credential material.',
+          required: ['id', 'provider_id', 'subject', 'product_scopes'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            provider_id: { type: 'string' },
+            issuer: { type: ['string', 'null'] },
+            subject: { type: 'string' },
+            email: { type: ['string', 'null'] },
+            display_name: { type: ['string', 'null'] },
+            role: { type: ['string', 'null'] },
+            grant_source: { type: ['string', 'null'] },
+            product_scopes: { type: 'array', items: { type: 'string' } },
+            site_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            revoked_at: { type: ['string', 'null'], format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+        AuditEvent: {
+          type: 'object',
+          description: 'A redacted audit record. Metadata never carries credentials, content or email addresses.',
+          required: ['id', 'actor_type', 'action', 'result', 'created_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            actor_type: { type: 'string' },
+            actor_id: { type: ['string', 'null'] },
+            action: { type: 'string' },
+            resource_type: { type: ['string', 'null'] },
+            resource_id: { type: ['string', 'null'] },
+            site_id: { type: ['string', 'null'], format: 'uuid' },
+            result: { type: 'string' },
+            transport: { type: ['string', 'null'] },
+            metadata: { type: ['object', 'null'], additionalProperties: true },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
         Error: {
           type: 'object',
           required: ['error'],
@@ -2211,7 +2265,20 @@ export function openApi(config) {
           operationId: 'apiKeyList',
           summary: 'List API keys without hashes or secrets',
           security: secured,
-          responses: { 200: { description: 'API-key metadata' } },
+          responses: {
+            200: {
+              description: 'API keys visible to this credential, wrapped in an `api_keys` array',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['api_keys'],
+                    properties: { api_keys: { type: 'array', items: { $ref: '#/components/schemas/ApiKeySummary' } } },
+                  },
+                },
+              },
+            },
+          },
         },
         post: {
           operationId: 'apiKeyCreate',
@@ -2241,7 +2308,22 @@ export function openApi(config) {
             { name: 'provider_id', in: 'query', required: false, schema: { type: 'string' } },
             { name: 'subject', in: 'query', required: false, schema: { type: 'string' } },
           ],
-          responses: { 200: { description: 'Pre-provisioned exact OIDC subject grants' } },
+          responses: {
+            200: {
+              description: 'Identity grants, wrapped in an `identities` array',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['identities'],
+                    properties: {
+                      identities: { type: 'array', items: { $ref: '#/components/schemas/IdentityGrantSummary' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         post: {
           operationId: 'identityGrantCreate',
@@ -2286,7 +2368,21 @@ export function openApi(config) {
           description:
             'Optional site, action and limit filters. Audit metadata excludes credentials, content, Markdown, request bodies and email addresses.',
           security: secured,
-          responses: { 200: { description: 'Audit events' }, 404: { description: 'Site not found' } },
+          responses: {
+            200: {
+              description: 'Audit events, wrapped in an `events` array',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['events'],
+                    properties: { events: { type: 'array', items: { $ref: '#/components/schemas/AuditEvent' } } },
+                  },
+                },
+              },
+            },
+            404: { description: 'Site not found' },
+          },
         },
       },
       '/v1/assistant/messages': {

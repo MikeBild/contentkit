@@ -32,6 +32,16 @@ export function setCsrfToken(token: string) {
   csrfToken = token
 }
 
+/**
+ * For the requests that cannot go through this client — the assistant's chat
+ * stream is driven by the AI SDK's own transport — the token has to be readable
+ * so those callers can attach the header themselves. It cannot be recovered
+ * from `document.cookie`: the CSRF cookie is HttpOnly by design.
+ */
+export function getCsrfToken() {
+  return csrfToken
+}
+
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 const csrf: Middleware = {

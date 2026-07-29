@@ -65,36 +65,14 @@ export interface Release {
   created_at: string
 }
 
-export interface ApiKey {
-  id: string
-  name: string
-  key_prefix: string
-  scopes: string[]
-  site_ids: string[]
-  expires_at: string | null
-  revoked_at: string | null
-  last_used_at: string | null
-  created_at: string
-}
+export type ApiKey = Schema<'ApiKeySummary'>
 
 /** The raw key exists exactly once, in this response. It is never readable again. */
 export interface CreatedApiKey extends ApiKey {
   api_key: string
 }
 
-export interface IdentityGrant {
-  id: string
-  provider_id: string
-  issuer: string | null
-  subject: string
-  email: string | null
-  display_name: string | null
-  role: 'admin' | 'author' | 'reader'
-  product_scopes: string[]
-  site_ids: string[]
-  revoked_at: string | null
-  created_at: string
-}
+export type IdentityGrant = Schema<'IdentityGrantSummary'>
 
 export interface Comment {
   id: string
@@ -109,9 +87,10 @@ export interface Comment {
 export interface ContactSubmission {
   id: string
   site_id: string
-  name: string | null
-  email: string | null
-  message: string
+  name: string
+  email: string
+  /** The column is `body`; there is no `message`. */
+  body: string
   status: 'new' | 'read' | 'closed'
   created_at: string
 }
@@ -142,26 +121,19 @@ export interface WebhookDelivery {
   created_at: string
 }
 
-export interface AuditEvent {
-  id: string
-  actor_type: string
-  actor_id: string | null
-  action: string
-  resource_type: string | null
-  resource_id: string | null
-  result: string
-  transport: string | null
-  metadata: Record<string, unknown> | null
-  created_at: string
-}
+export type AuditEvent = Schema<'AuditEvent'>
 
 export interface AudioJob {
   id: string
-  content_item_id: string
+  item_id: string
+  slug: string | null
+  title: string | null
   status: string
-  characters: number | null
-  duration_seconds: number | null
+  attempts: number
+  chars: number | null
+  error: string | null
   created_at: string
+  updated_at: string
 }
 
 export interface AudioJobs {
@@ -450,19 +422,20 @@ export const ck = {
   },
 
   credentials: {
-    apiKeys: () => unwrapAs<ApiKey[]>(api.GET('/v1/api-keys', {})),
+    apiKeys: async () => (await unwrap(api.GET('/v1/api-keys', {}))).api_keys,
     /** The response carries the only copy of the raw key. Show it once, then forget it. */
     createApiKey: (input: { name: string; scopes: string[]; site_ids?: string[]; expires_at?: string }) =>
       unwrapAs<CreatedApiKey>(api.POST('/v1/api-keys', { body: body(input) })),
     revokeApiKey: (id: string) => unwrapAs<void>(api.DELETE('/v1/api-keys/{id}', { params: { path: { id } } })),
-    grants: () => unwrapAs<IdentityGrant[]>(api.GET('/v1/identity-grants', {})),
+    grants: async () => (await unwrap(api.GET('/v1/identity-grants', {}))).identities,
     createGrant: (input: unknown) => unwrapAs<IdentityGrant>(api.POST('/v1/identity-grants', { body: body(input) })),
     updateGrant: (id: string, input: unknown) =>
       unwrapAs<IdentityGrant>(api.PATCH('/v1/identity-grants/{id}', { params: { path: { id } }, body: body(input) })),
     revokeGrant: (id: string) => unwrapAs<void>(api.DELETE('/v1/identity-grants/{id}', { params: { path: { id } } })),
   },
 
-  audit: (query?: Query<'auditEventList'>) => unwrapAs<AuditEvent[]>(api.GET('/v1/audit-events', { params: { query } })),
+  audit: async (query?: Query<'auditEventList'>) =>
+    (await unwrap(api.GET('/v1/audit-events', { params: { query } }))).events,
 
   // Ten kinds, one shape of call. The three usage kinds answer with UsageStats,
   // whose metrics carry an explicit value_state — "missing" is not zero, and a
