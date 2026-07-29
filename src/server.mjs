@@ -22,6 +22,7 @@ import { createUsageTelemetry } from './usage.mjs'
 import { createAudit } from './audit.mjs'
 import { createOAuthMount } from './oauth/server.mjs'
 import { createAssistant } from './assistant.mjs'
+import { warmRenderer } from './render-fragment.mjs'
 import { createMcpMount } from './mcp/server.mjs'
 import { createSecretHandoffs } from './secret-handoffs.mjs'
 import { nodeWebHandler } from './web-bridge.mjs'
@@ -101,6 +102,9 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       deckJobs,
       secretHandoffs,
     })
+  // Cold rendering pays for Shiki grammars and ECharts init once. Paying it at
+  // boot rather than on a reader's first request keeps that request fast.
+  void warmRenderer()
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()

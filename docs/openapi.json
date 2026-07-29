@@ -3975,6 +3975,151 @@
         }
       }
     },
+    "/v1/sites/{site}/render": {
+      "post": {
+        "operationId": "renderMarkdownFragment",
+        "summary": "Render a Markdown fragment the way this site publishes it",
+        "description": "Runs the site's own publishing pipeline over arbitrary Markdown and persists nothing. Frontmatter is optional; a fragment without it is rendered leniently, so a missing summary or an unknown key is a diagnostic rather than a rejection. Unlike the composition endpoints this needs only content:read and accepts Markdown that is not a composition — it exists so a reader, an editor preview or an assistant reply can be shown with the same semantics, charts and syntax highlighting a published page gets. `scheme` decides how report charts are emitted: `auto` keeps the prefers-color-scheme picture a published page needs, `light` or `dark` emit a single image for a surface whose theme is chosen explicitly. The strong ETag makes a preview that re-asks on every keystroke cost a comparison rather than a render.",
+        "security": [
+          {
+            "oauth2": []
+          },
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "markdown"
+                ],
+                "properties": {
+                  "markdown": {
+                    "type": "string",
+                    "maxLength": 262144
+                  },
+                  "locale": {
+                    "type": "string",
+                    "description": "Defaults to the site's default locale."
+                  },
+                  "scheme": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "light",
+                      "dark"
+                    ],
+                    "default": "auto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rendered fragment with its semantic tree and diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "html",
+                    "diagnostics",
+                    "has_mermaid",
+                    "chart_count"
+                  ],
+                  "properties": {
+                    "html": {
+                      "type": "string",
+                      "description": "Sanitized HTML, safe to insert as-is."
+                    },
+                    "semantic": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/SemanticDocument"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "narrative": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/NarrativePlan"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "composition": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "diagnostics": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CompositionDiagnostic"
+                      }
+                    },
+                    "accessible_text": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "has_mermaid": {
+                      "type": "boolean",
+                      "description": "The caller must run a Mermaid runtime for the diagrams to appear."
+                    },
+                    "chart_count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The fragment is unchanged for this theme and scheme"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "description": "Markdown exceeds 256 KiB"
+          },
+          "422": {
+            "description": "The Markdown could not be rendered"
+          }
+        }
+      }
+    },
     "/v1/sites/{site}/compositions/recommend": {
       "post": {
         "operationId": "compositionRecommend",

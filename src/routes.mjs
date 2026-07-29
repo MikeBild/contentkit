@@ -6,6 +6,7 @@ import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } f
 import { clientIp, contentCsp, deckContentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
 import { renderMarkdown } from './markdown.mjs'
+import { renderFragment } from './render-fragment.mjs'
 import { compileCompositionMarkdown, reResolveComposition } from './composition-output.mjs'
 import { getPattern, patternRegistry, patternRegistryHash, recommendPatterns } from './composition-registry.mjs'
 import { getPublishingGuide, publishingGuideRegistry, publishingGuideRegistryHash } from './publishing-guides.mjs'
@@ -234,6 +235,7 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/render$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/decks\/(plan|validate|compile)$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/deck-jobs\/[^/]+$/, methods: ['GET'] },
@@ -1344,6 +1346,36 @@ export function createRequestHandler(ctx) {
           })
         }
         throw error
+      }
+    }
+    // Render a Markdown fragment the way this site publishes it, without
+    // persisting anything. `compositions/compile` cannot serve this: it demands
+    // content:write and rejects markdown that is not a composition, while a
+    // reader inspecting a document — or an assistant reply — is neither.
+    const renderMatch = path.match(/^\/v1\/sites\/([^/]+)\/render$/)
+    if (renderMatch && req.method === 'POST') {
+      const site = await repo.getSite(renderMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'content:read', site.id))) return
+      const input = parseJson(await bodyFor(req)) || {}
+      if (typeof input.markdown !== 'string') return sendJson(res, 422, { error: 'markdown must be a string' })
+      const scheme = ['auto', 'light', 'dark'].includes(input.scheme) ? input.scheme : 'auto'
+      try {
+        const fragment = await renderFragment({
+          markdown: input.markdown,
+          site,
+          locale: input.locale,
+          scheme,
+          version: config.version,
+        })
+        // Strong ETag: the same markdown under the same theme and scheme always
+        // renders identically, so a preview that re-asks on every keystroke
+        // costs one comparison rather than one render.
+        if (req.headers['if-none-match'] === fragment.etag) return send(res, 304, '', { etag: fragment.etag })
+        const { etag, ...body } = fragment
+        return sendJson(res, 200, body, { etag, 'cache-control': 'private,no-store' })
+      } catch (error) {
+        return sendJson(res, error.statusCode || 422, { error: String(error.message || error) })
       }
     }
     const compositionActionMatch = path.match(/^\/v1\/sites\/([^/]+)\/compositions\/(recommend|validate|compile)$/)

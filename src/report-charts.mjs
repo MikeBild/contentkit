@@ -251,11 +251,34 @@ export function renderReportChartSvg(
 
 const dataUri = (svg) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
+/**
+ * `scheme: 'auto'` keeps the `<picture>` with prefers-color-scheme sources that
+ * a published page needs, because there the OS decides. A console does not work
+ * that way: its theme is a class the operator can set against the OS, so forced
+ * dark on a light system would render light charts onto a dark surface. Asking
+ * for one explicit scheme emits a single `<img>` in that scheme instead.
+ */
+function materializeFixedScheme(rendered, { settings, locale, emit, scheme }) {
+  const chartById = new Map(rendered.charts.map((chart) => [String(chart.id), chart]))
+  const html = rendered.html.replace(
+    /<div class="report-chart-visual" data-report-chart="(\d+)"><\/div>/g,
+    (placeholder, id) => {
+      const chart = chartById.get(id)
+      if (!chart) return placeholder
+      const rendering = renderReportChartSvg(chart, { settings, scheme, locale })
+      const url = emit ? emit(rendering.svg, { chart, scheme }) : dataUri(rendering.svg)
+      return `<img class="report-chart-image" src="${escapeHtml(url)}" alt="${escapeHtml(chart.description)}" width="${rendering.width}" height="${rendering.height}" loading="lazy" decoding="async">`
+    },
+  )
+  return { ...rendered, html }
+}
+
 export function materializeReportCharts(
   rendered,
-  { settings = {}, locale = rendered.meta?.locale || 'en', emit } = {},
+  { settings = {}, locale = rendered.meta?.locale || 'en', emit, scheme = 'auto' } = {},
 ) {
   if (!rendered.charts?.length) return rendered
+  if (scheme !== 'auto') return materializeFixedScheme(rendered, { settings, locale, emit, scheme })
   const chartById = new Map(rendered.charts.map((chart) => [String(chart.id), chart]))
   const html = rendered.html.replace(
     /<div class="report-chart-visual" data-report-chart="(\d+)"><\/div>/g,

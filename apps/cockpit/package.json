@@ -2,13 +2,14 @@
   "name": "contentkit-cockpit",
   "private": true,
   "type": "module",
-  "description": "ContentKit Cockpit — the first-party operator console, served by ContentKit itself under /cockpit/",
+  "description": "ContentKit Cockpit \u2014 the first-party operator console, served by ContentKit itself under /cockpit/",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run gen:css && tsc --noEmit && vite build",
     "preview": "vite preview",
     "gen:api": "openapi-typescript ../../docs/openapi.json -o src/api/schema.d.ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "gen:css": "node scripts/scope-site-css.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.44",

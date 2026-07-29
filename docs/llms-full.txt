@@ -313,6 +313,7 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | GET | `/v1/composition-patterns/{pattern}` | public | Read one machine- and human-readable Pattern Package |
 | GET | `/v1/publishing-guides` | public | List/filter semantic report, diagram and code story-selection guides |
 | GET | `/v1/publishing-guides/{guide}` | public | Read one guide with question, story arc, evidence contract, rejection rules and examples |
+| POST | `/v1/sites/{site}/render` | `content:read` | Render a Markdown fragment the way this site publishes it, persisting nothing |
 | POST | `/v1/sites/{site}/compositions/recommend` | `content:write` | Rank compatible patterns with scores, reasons and rejections |
 | POST | `/v1/sites/{site}/compositions/validate` | `content:write` | Validate semantics and resolve a requested pattern or safe fallback |
 | POST | `/v1/sites/{site}/compositions/compile` | `content:write` | Headlessly compile models, responsive HTML, SVG and/or PNG |
