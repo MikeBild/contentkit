@@ -1,8 +1,7 @@
-import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { credentialFromHeaders, keyFingerprint } from './auth.mjs'
-import { canonicalRequestPath, cleanPath, escapeHtml, hmac256, safeEqual, sha256 } from './utils.mjs'
+import { canonicalRequestPath, cleanPath, escapeHtml, sha256 } from './utils.mjs'
 import { parseByteRange, parseJson, parseMultipart, readBody, send, sendJson } from './http.mjs'
 import { clientIp, contentCsp, deckContentCsp, verifyTurnstile } from './security.mjs'
 import { openApi } from './openapi.mjs'
@@ -43,6 +42,8 @@ import {
   validReturnTo,
 } from './access.mjs'
 import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant, roleForProductScopes } from './oauth/policy.mjs'
+import { csrfSecretFor, csrfSetCookie, signCsrf, verifyCsrf } from './csrf.mjs'
+import { serveCockpit } from './cockpit.mjs'
 
 export const SERVICE = {
   name: 'contentkit',
@@ -270,6 +271,8 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/identity-grants$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/identity-grants\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/audit-events$/, methods: ['GET'] },
+  { pattern: /^\/v1\/assistant\/messages$/, methods: ['POST'], apiHostOnly: true },
+  { pattern: /^\/v1\/assistant\/elicitations\/[^/]+$/, methods: ['POST'], apiHostOnly: true },
   { pattern: /^\/v1\/sites\/[^/]+\/webhooks$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/webhooks\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/webhooks\/[^/]+\/rotate$/, methods: ['POST'] },
@@ -302,6 +305,7 @@ export function createRequestHandler(ctx) {
     deckJobs,
     usage,
     mcp,
+    assistant,
   } = ctx
   const audit = ctx.audit || { async record() {} }
   const loginLimiter = ctx.loginLimiter || limiter
@@ -395,24 +399,15 @@ export function createRequestHandler(ctx) {
     return readBody(req, config.maxBodyBytes)
   }
 
+  const csrfSecret = csrfSecretFor(config)
   const secureCookies = (site) => String(site?.base_url || '').startsWith('https://')
-  const csrfCookieName = (site) => (secureCookies(site) ? '__Host-contentkit_csrf' : 'contentkit_csrf')
-  const signedCsrf = () => {
-    const token = randomBytes(24).toString('base64url')
-    return `${token}.${hmac256(config.sessionSecret || config.previewSecret || 'development', token)}`
-  }
-  const validCsrf = (req, value, site) => {
-    const cookie = parseCookies(req.headers.cookie || '')[csrfCookieName(site)] || ''
-    const [token, signature] = cookie.split('.')
-    return Boolean(
-      token &&
-      signature &&
-      safeEqual(cookie, value) &&
-      safeEqual(signature, hmac256(config.sessionSecret || config.previewSecret || 'development', token)),
-    )
-  }
-  const csrfCookie = (value, site) =>
-    `${csrfCookieName(site)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax${secureCookies(site) ? '; Secure' : ''}`
+  const signedCsrf = () => signCsrf(csrfSecret)
+  const validCsrf = (req, value, site) =>
+    verifyCsrf(req.headers.cookie, value, { secure: secureCookies(site), secret: csrfSecret })
+  const csrfCookie = (value, site) => csrfSetCookie(value, { secure: secureCookies(site) })
+
+  // The operator dashboard is scoped by the API origin, not by any one site.
+  const operatorSecure = String(config.publicUrl || '').startsWith('https://')
   const parseInput = async (req) => {
     const body = await bodyFor(req)
     if ((req.headers['content-type'] || '').includes('application/json')) return parseJson(body)
@@ -569,9 +564,26 @@ export function createRequestHandler(ctx) {
     return { markdown: raw.toString('utf8'), assets: [] }
   }
 
+  // A cookie rides along on cross-site requests, an Authorization header does
+  // not. Only the cookie-authenticated dashboard therefore needs CSRF, and
+  // gating it here — where every secured route resolves its principal — means a
+  // new route cannot forget it. Header credentials stay untouched, so no
+  // existing API client breaks.
+  const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE']
+  function operatorCsrfRejected(req, res, principal) {
+    if (principal?.via !== 'operator_session') return false
+    if (!MUTATING_METHODS.includes(req.method)) return false
+    const submitted = req.headers['x-contentkit-csrf'] || ''
+    if (verifyCsrf(req.headers.cookie, submitted, { secure: operatorSecure, secret: csrfSecret })) return false
+    logger.warn('operator csrf rejected', { method: req.method, path: canonicalRequestPath(req.url) })
+    sendJson(res, 403, { error: 'invalid_csrf_token' })
+    return true
+  }
+
   async function requireScope(req, res, scope, siteId = null) {
     if (siteId) markUsageContext(req, { siteId })
     const principal = await auth.authenticate(req.headers)
+    if (operatorCsrfRejected(req, res, principal)) return null
     if (!principal) {
       logger.warn('unauthorized', { scope, siteId, key: keyFingerprint(credentialFromHeaders(req.headers)) })
       sendJson(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' })
@@ -592,6 +604,7 @@ export function createRequestHandler(ctx) {
   async function requireAnyScope(req, res, scopes, siteId = null) {
     if (siteId) markUsageContext(req, { siteId })
     const principal = await auth.authenticate(req.headers)
+    if (operatorCsrfRejected(req, res, principal)) return null
     if (!principal) {
       logger.warn('unauthorized', {
         scope: scopes.join('|'),
@@ -977,6 +990,48 @@ export function createRequestHandler(ctx) {
         }),
         { 'content-type': 'text/plain; version=0.0.4' },
       )
+    // ContentKit Cockpit. Same origin as the API it drives, which is the whole
+    // point: no CORS to open, no BFF to run and no credential in the browser —
+    // the operator session cookie is simply already there.
+    if (apiHost && serveCockpit(req, res, path)) return true
+    // The authoring assistant. It goes through requireScope like every other
+    // route, so it inherits the operator session, the scope check and the CSRF
+    // gate rather than growing a second way in.
+    if (apiHost && path === '/v1/assistant/messages') {
+      if (req.method === 'OPTIONS')
+        return assistant ? send(res, 204, '', { allow: 'POST, OPTIONS' }) : sendJson(res, 404, { error: 'not_found' })
+      if (req.method !== 'POST') return send(res, 405, '', { allow: 'POST, OPTIONS' })
+      if (!assistant) return sendJson(res, 404, { error: 'assistant_not_enabled' })
+      const principal = await requireScope(req, res, 'content:read')
+      if (!principal) return true
+      const input = parseJson(await bodyFor(req)) || {}
+      const controller = new AbortController()
+      // A closed connection must kill the turn: an orphaned run could otherwise
+      // sit waiting on an approval nobody will ever see.
+      req.on('close', () => controller.abort())
+      const response = assistant.stream(principal, input, controller.signal)
+      res.writeHead(response.status, Object.fromEntries(response.headers))
+      for await (const chunk of response.body) res.write(chunk)
+      res.end()
+      return true
+    }
+    const elicitation = apiHost && path.match(/^\/v1\/assistant\/elicitations\/([^/]+)$/)
+    if (elicitation && req.method === 'POST') {
+      if (!assistant) return sendJson(res, 404, { error: 'assistant_not_enabled' })
+      const principal = await requireScope(req, res, 'content:read')
+      if (!principal) return true
+      const decision = parseJson(await bodyFor(req)) || {}
+      if (!['accept', 'decline', 'cancel'].includes(decision.action))
+        return sendJson(res, 422, { error: 'action must be accept, decline or cancel' })
+      // A decision that matches no waiting elicitation is gone — timed out or
+      // its turn was abandoned. Reporting that as 409 keeps the console from
+      // telling the operator they approved something that never happened.
+      const accepted = assistant.resolveElicitation(elicitation[1], {
+        action: decision.action,
+        content: decision.action === 'accept' ? decision.content || {} : undefined,
+      })
+      return accepted ? sendJson(res, 200, { resolved: true }) : sendJson(res, 409, { error: 'elicitation_expired' })
+    }
     if (apiHost && req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
     if (apiHost && req.method === 'GET' && path === '/llms.txt')
       return send(res, 200, documentation(config, 'llms.txt'), { 'content-type': 'text/plain; charset=utf-8' })

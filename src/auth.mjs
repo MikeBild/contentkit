@@ -1,5 +1,11 @@
 import { hmac256, safeEqual, sha256 } from './utils.mjs'
-import { effectiveProductScopes, oauthTiersForCeiling } from './oauth/policy.mjs'
+import { effectiveProductScopes, oauthTiersForCeiling, PRODUCT_SCOPES } from './oauth/policy.mjs'
+import { loadOperatorSession, operatorCookieToken } from './oauth/operator-session.mjs'
+
+function headerValue(headers, name) {
+  if (typeof headers === 'string') return null
+  return headers?.get?.(name) ?? headers?.[name] ?? headers?.[name.toLowerCase()] ?? null
+}
 
 // A credential arrives either as `Authorization: Bearer <key>` or as `x-api-key`.
 // Both authentication and logging must read it the same way: fingerprinting the
@@ -22,10 +28,42 @@ export function hashApiKey(key, pepper) {
 }
 
 export function createAuth(config, db) {
+  async function operatorPrincipal(headers) {
+    const token = operatorCookieToken(headerValue(headers, 'cookie'), config)
+    if (!token) return null
+    const session = await loadOperatorSession(db, config, token)
+    if (!session) return null
+    const ceiling = session.product_scopes || []
+    return {
+      id: `operator:${session.grant_id}`,
+      credential_id: `operator-session:${session.id}`,
+      name: session.display_name || session.email || 'Operator',
+      // No consent step stands between the human and their grant here, so the
+      // session carries the grant's whole live ceiling. Routing it through the
+      // tier round-trip keeps one definition of "what a ceiling yields" shared
+      // with the OAuth token path instead of a second, drifting filter.
+      scopes: ceiling.includes('*')
+        ? [...PRODUCT_SCOPES]
+        : effectiveProductScopes(oauthTiersForCeiling(ceiling), ceiling),
+      site_ids: session.grant_site_ids || [],
+      grant_id: session.grant_id,
+      operator_session_id: session.id,
+      subject: session.subject,
+      email: session.email,
+      via: 'operator_session',
+      oauth: false,
+      bootstrap: false,
+    }
+  }
+
   return {
     async authenticate(headers) {
       const key = credentialFromHeaders(headers)
-      if (!key) return null
+      // A browser never holds a key: the Cockpit authenticates with the same
+      // HttpOnly operator-session cookie the consent funnel already issues. It
+      // is checked only when no explicit credential was sent, so a request that
+      // carries a key keeps being judged by that key alone.
+      if (!key) return await operatorPrincipal(headers)
 
       if (String(key).startsWith('cko_') && config.oauthSecret && db.query) {
         const rows = await db.query(

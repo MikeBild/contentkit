@@ -1,6 +1,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { parseCookies } from '../access.mjs'
+import { validReturnTo } from '../access.mjs'
+import { csrfSecretFor, csrfSetCookie, signCsrf } from '../csrf.mjs'
 import { decryptSecret, encryptSecret } from '../secrets.mjs'
+import {
+  loadOperatorSession,
+  OPERATOR_ABSOLUTE_MS,
+  OPERATOR_IDLE_MS,
+  operatorCookieName,
+  operatorCookieToken,
+} from './operator-session.mjs'
 import { hmac256, safeEqual, sha256 } from '../utils.mjs'
 import { defaultProductScopes, MCP_OAUTH_SCOPES, oauthTiersForCeiling, roleForProductScopes } from './policy.mjs'
 import { finishOidcLogin, startOidcLogin, verifyOidcIdentityToken } from './oidc.mjs'
@@ -8,8 +16,6 @@ import { authHtmlResponse, renderApiKeyLogin, renderConsentPage, renderErrorPage
 
 const DCR_MAX_PER_MINUTE = 30
 const FORM_MAX_BYTES = 64 * 1024
-const OPERATOR_IDLE_MS = 8 * 60 * 60 * 1000
-const OPERATOR_ABSOLUTE_MS = 24 * 60 * 60 * 1000
 const AUTHORIZATION_RESPONSE_REPLAY_MS = 60 * 1000
 
 class OAuthError extends Error {
@@ -27,7 +33,13 @@ const SIGN_IN_RETRY_PATH = '/v1/identity/login/start'
 const GRANT_DENIED_MESSAGE = 'Your account is not authorized for ContentKit. Contact the operator.'
 const STATE_PROBLEM_MESSAGE = 'This sign-in attempt expired or was already used. Please sign in again.'
 const GENERIC_SIGN_IN_MESSAGE = 'Sign-in could not be completed. Please sign in again.'
-const BROWSER_LOGIN_GET_PATHS = ['/v1/oauth/authorize', '/v1/identity/login/start', '/v1/identity/login/callback']
+const BROWSER_LOGIN_GET_PATHS = [
+  '/v1/oauth/authorize',
+  '/v1/identity/login/start',
+  '/v1/identity/login/callback',
+  '/v1/identity/cockpit-login',
+]
+const COCKPIT_PATH = '/cockpit/'
 
 function wantsJson(request) {
   const accept = request.headers.get('accept') || ''
@@ -127,14 +139,11 @@ function validPkceVerifier(value) {
 
 function operatorCookie(config, token, maxAge = Math.floor(OPERATOR_IDLE_MS / 1000)) {
   const secure = new URL(config.publicUrl).protocol === 'https:'
-  const name = secure ? '__Host-contentkit_operator' : 'contentkit_operator'
-  return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
+  return `${operatorCookieName(config)}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
 }
 
 function cookieToken(request, config) {
-  const secure = new URL(config.publicUrl).protocol === 'https:'
-  const cookies = parseCookies(request.headers.get('cookie') || '')
-  return cookies[secure ? '__Host-contentkit_operator' : 'contentkit_operator'] || ''
+  return operatorCookieToken(request.headers.get('cookie'), config)
 }
 
 function loginProviders(config) {
@@ -264,27 +273,7 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
   }
 
   async function loadOperator(request) {
-    const token = cookieToken(request, config)
-    if (!token) return null
-    const rows = await db.query(
-      `SELECT s.*, g.provider_id, g.issuer, g.subject, g.email, g.display_name,
-              g.product_scopes, g.site_ids AS grant_site_ids
-         FROM ck_operator_sessions s
-         JOIN ck_oauth_identity_grants g ON g.id = s.grant_id
-        WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND g.revoked_at IS NULL
-          AND s.expires_at > now() AND s.absolute_expires_at > now()
-        LIMIT 1`,
-      [tokenHash(config, token)],
-    )
-    const session = rows[0]
-    if (!session) return null
-    await db.update(
-      'ck_operator_sessions',
-      { id: `eq.${session.id}` },
-      { last_used_at: new Date().toISOString(), expires_at: new Date(Date.now() + OPERATOR_IDLE_MS).toISOString() },
-      { returning: false },
-    )
-    return session
+    return loadOperatorSession(db, config, cookieToken(request, config))
   }
 
   async function createOperatorSession(grantId) {
@@ -531,7 +520,6 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
         401,
       )
     const grant = await upsertApiKeyGrant(principal)
-    const attached = await attachGrant(state, grant)
     const session = await createOperatorSession(grant.id)
     await audit.record({
       actorType: 'api_key',
@@ -541,8 +529,54 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       resourceId: grant.id,
       result: 'success',
       transport: 'oauth',
+      metadata: { purpose: state.purpose || 'oauth' },
     })
+    if (state.purpose === 'cockpit') return finishCockpitLogin(state, grant, session)
+    const attached = await attachGrant(state, grant)
     return consentResponse(attached, grant, session.row, rawState, session.token)
+  }
+
+  // The Cockpit is first-party and same-origin: it wants the operator session
+  // cookie, not a token. Registering it as an OAuth client to mint a code it
+  // would throw away would add a consent screen for the operator's own console
+  // and leave unused authorization codes behind, so it gets its own entry into
+  // the very same OIDC funnel instead.
+  async function startCockpitLogin(request, url) {
+    const returnTo = validReturnTo(url.searchParams.get('return_to'), COCKPIT_PATH)
+    // An operator who still holds a live session never needs to see a chooser.
+    if (await loadOperator(request)) return cockpitRedirect(returnTo)
+    const rawState = randomToken('ckls_')
+    await db.insert('ck_oauth_login_states', {
+      state_hash: tokenHash(config, rawState),
+      purpose: 'cockpit',
+      return_to: returnTo,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    })
+    return loginResponse(rawState)
+  }
+
+  function cockpitRedirect(returnTo, setCookie) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: returnTo,
+        'cache-control': 'no-store',
+        ...(setCookie ? { 'set-cookie': operatorCookie(config, setCookie) } : {}),
+      },
+    })
+  }
+
+  // Consuming the state here is what makes the callback single-use: the OAuth
+  // path defers consumption to the consent decision, but a Cockpit sign-in
+  // has no decision step to defer to.
+  async function finishCockpitLogin(state, grant, session) {
+    await db.update(
+      'ck_oauth_login_states',
+      { id: `eq.${state.id}`, consumed_at: 'is.null' },
+      { grant_id: grant.id, authenticated_at: new Date().toISOString(), consumed_at: new Date().toISOString() },
+      { returning: false },
+    )
+    return cockpitRedirect(validReturnTo(state.return_to, COCKPIT_PATH), session.token)
   }
 
   async function startLogin(url) {
@@ -572,6 +606,10 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       })
     await db.insert('ck_oauth_login_states', {
       state_hash: tokenHash(config, freshState),
+      // A cockpit state carries none of these; the purpose travels with the
+      // fresh state so the callback knows which exit to take.
+      purpose: state.purpose || 'oauth',
+      return_to: state.return_to || null,
       client_id: state.client_id,
       redirect_uri: state.redirect_uri,
       requested_scopes: state.requested_scopes,
@@ -661,7 +699,6 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       )
     }
     const currentGrant = { ...grant, email: identity.email ?? grant.email ?? null }
-    const attached = await attachGrant(state, currentGrant)
     const session = await createOperatorSession(grant.id)
     await audit.record({
       actorType: 'operator',
@@ -671,9 +708,43 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       resourceId: grant.id,
       result: 'success',
       transport: 'oauth',
-      metadata: { provider_id: provider.id },
+      metadata: { provider_id: provider.id, purpose: state.purpose || 'oauth' },
     })
+    if (state.purpose === 'cockpit') return finishCockpitLogin(state, currentGrant, session)
+    const attached = await attachGrant(state, currentGrant)
     return consentResponse(attached, currentGrant, session.row, rawState, session.token)
+  }
+
+  // What the Cockpit bootstraps from: who am I, what may I do, and the CSRF
+  // token every mutation has to echo back. 401 is the SPA's cue to redirect
+  // into the sign-in funnel.
+  async function describeSession(request) {
+    const operator = await loadOperator(request)
+    if (!operator) return json({ error: 'unauthorized' }, 401)
+    const ceiling = operator.product_scopes || []
+    const csrfToken = signCsrf(csrfSecretFor(config))
+    return new Response(
+      JSON.stringify({
+        subject: operator.subject,
+        email: operator.email,
+        display_name: operator.display_name,
+        provider_id: operator.provider_id,
+        role: roleForProductScopes(ceiling),
+        product_scopes: ceiling,
+        site_ids: operator.grant_site_ids || [],
+        csrf_token: csrfToken,
+        expires_at: operator.expires_at,
+        absolute_expires_at: operator.absolute_expires_at,
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+          'set-cookie': csrfSetCookie(csrfToken, { secure: new URL(config.publicUrl).protocol === 'https:' }),
+        },
+      },
+    )
   }
 
   async function logout(request) {
@@ -1151,6 +1222,9 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
       if (request.method === 'POST' && url.pathname === '/v1/oauth/authorize/decision') return await decide(request)
       if (request.method === 'POST' && url.pathname === '/v1/oauth/token') return await token(request)
       if (request.method === 'POST' && url.pathname === '/v1/oauth/revoke') return await revoke(request)
+      if (request.method === 'GET' && url.pathname === '/v1/identity/cockpit-login')
+        return await startCockpitLogin(request, url)
+      if (request.method === 'GET' && url.pathname === '/v1/identity/session') return await describeSession(request)
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/start') return await startLogin(url)
       if (request.method === 'POST' && url.pathname === '/v1/identity/login/start') return await apiKeyLogin(request)
       if (request.method === 'GET' && url.pathname === '/v1/identity/login/callback')

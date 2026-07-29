@@ -11,6 +11,7 @@ cleanup() {
 trap cleanup EXIT
 
 node scripts/gen-embedded-migrations.mjs
+bash scripts/build-cockpit.sh
 NODE_BINARY="${CONTENTKIT_NODE_BINARY:-$(command -v node)}"
 if [[ ! -x "$NODE_BINARY" ]]; then
   echo "CONTENTKIT_NODE_BINARY must point to an executable Node.js binary" >&2

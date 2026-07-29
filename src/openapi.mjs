@@ -1099,27 +1099,59 @@ export function openApi(config) {
       },
     },
     paths: {
-      '/': { get: { summary: 'Service descriptor', responses: { 200: { description: 'Service descriptor' } } } },
-      '/health': { get: { summary: 'Liveness', responses: { 200: { description: 'OK' } } } },
-      '/ready': {
-        get: { summary: 'Readiness', responses: { 200: { description: 'Ready' }, 503: { description: 'Draining' } } },
+      '/': {
+        get: {
+          operationId: 'serviceDescriptor',
+          summary: 'Service descriptor',
+          responses: { 200: { description: 'Service descriptor' } },
+        },
       },
-      '/metrics': { get: { summary: 'Prometheus metrics', responses: { 200: { description: 'Metrics' } } } },
+      '/health': {
+        get: { operationId: 'healthCheck', summary: 'Liveness', responses: { 200: { description: 'OK' } } },
+      },
+      '/ready': {
+        get: {
+          operationId: 'readinessCheck',
+          summary: 'Readiness',
+          responses: { 200: { description: 'Ready' }, 503: { description: 'Draining' } },
+        },
+      },
+      '/metrics': {
+        get: {
+          operationId: 'prometheusMetrics',
+          summary: 'Prometheus metrics',
+          responses: { 200: { description: 'Metrics' } },
+        },
+      },
       '/openapi.json': {
-        get: { summary: 'OpenAPI 3.1 specification', responses: { 200: { description: 'OpenAPI specification' } } },
+        get: {
+          operationId: 'openApiDocument',
+          summary: 'OpenAPI 3.1 specification',
+          responses: { 200: { description: 'OpenAPI specification' } },
+        },
       },
       '/llms.txt': {
-        get: { summary: 'LLM documentation index', responses: { 200: { description: 'LLM documentation index' } } },
+        get: {
+          operationId: 'llmsIndex',
+          summary: 'LLM documentation index',
+          responses: { 200: { description: 'LLM documentation index' } },
+        },
       },
       '/llms-full.txt': {
-        get: { summary: 'Full LLM documentation', responses: { 200: { description: 'Full LLM documentation' } } },
+        get: {
+          operationId: 'llmsFull',
+          summary: 'Full LLM documentation',
+          responses: { 200: { description: 'Full LLM documentation' } },
+        },
       },
       '/_contentkit/login': {
         get: {
+          operationId: 'readerLoginForm',
           summary: 'Show the site reader login form',
           responses: { 200: { description: 'HTML login form with CSRF token' } },
         },
         post: {
+          operationId: 'readerLogin',
           summary: 'Create a reader session',
           description:
             'Site-host form endpoint. Accepts username, password, csrf and a same-origin return_to path; sets the HttpOnly reader-session cookie and redirects with 303.',
@@ -1132,22 +1164,29 @@ export function openApi(config) {
         },
       },
       '/_contentkit/logout': {
-        post: { summary: 'Revoke the current reader session', responses: { 303: { description: 'Signed out' } } },
+        post: {
+          operationId: 'readerLogout',
+          summary: 'Revoke the current reader session',
+          responses: { 303: { description: 'Signed out' } },
+        },
       },
       '/_contentkit/session': {
         get: {
+          operationId: 'readerSession',
           summary: 'Describe the current site reader session',
           responses: { 200: { description: 'Reader and group projection' }, 401: { description: 'Not signed in' } },
         },
       },
       '/_contentkit/navigation.json': {
         get: {
+          operationId: 'readerNavigation',
           summary: 'Navigation entries visible to the current reader',
           responses: { 200: { description: 'Authorized release navigation' }, 401: { description: 'Not signed in' } },
         },
       },
       '/_contentkit/search-index.json': {
         get: {
+          operationId: 'readerSearchIndex',
           summary: 'Protected search entries visible to the current reader',
           responses: {
             200: { description: 'Authorized release search records' },
@@ -1157,6 +1196,7 @@ export function openApi(config) {
       },
       '/v1/sites': {
         post: {
+          operationId: 'siteCreate',
           summary: 'Create a site (unrestricted site administrator)',
           security: secured,
           requestBody: jsonBody(['name', 'base_url', 'default_locale']),
@@ -1168,6 +1208,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}': {
         get: {
+          operationId: 'siteGet',
           summary: 'Read site metadata and settings',
           description:
             'Read the site row before a partial update: `PATCH` replaces `settings` wholesale, so send back the full object.',
@@ -1182,6 +1223,7 @@ export function openApi(config) {
           },
         },
         patch: {
+          operationId: 'siteUpdate',
           summary: 'Update site metadata, settings and domains',
           description:
             'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean.',
@@ -1201,12 +1243,14 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/users': {
         get: {
+          operationId: 'accessUserList',
           summary: 'List site reader accounts',
           security: secured,
           parameters: [siteParameter],
           responses: { 200: { description: 'Users without password hashes' } },
         },
         post: {
+          operationId: 'accessUserCreate',
           summary: 'Create a site reader account',
           security: secured,
           parameters: [siteParameter],
@@ -1216,6 +1260,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/users/{user}': {
         patch: {
+          operationId: 'accessUserUpdate',
           summary: 'Update a reader, password, active state or groups',
           security: secured,
           parameters: [
@@ -1226,6 +1271,7 @@ export function openApi(config) {
           responses: { 200: { description: 'Updated' }, 404: { description: 'Reader not found' } },
         },
         delete: {
+          operationId: 'accessUserDelete',
           summary: 'Delete a reader and its sessions',
           security: secured,
           parameters: [
@@ -1237,6 +1283,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/users/{user}/revoke-sessions': {
         post: {
+          operationId: 'accessUserRevokeSessions',
           summary: 'Revoke every session for one reader',
           security: secured,
           parameters: [
@@ -1248,12 +1295,14 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/groups': {
         get: {
+          operationId: 'accessGroupList',
           summary: 'List reader groups',
           security: secured,
           parameters: [siteParameter],
           responses: { 200: { description: 'Groups' } },
         },
         post: {
+          operationId: 'accessGroupCreate',
           summary: 'Create a reader group',
           security: secured,
           parameters: [siteParameter],
@@ -1263,6 +1312,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/groups/{group}': {
         patch: {
+          operationId: 'accessGroupUpdate',
           summary: 'Rename a reader group',
           security: secured,
           parameters: [
@@ -1273,6 +1323,7 @@ export function openApi(config) {
           responses: { 200: { description: 'Updated' } },
         },
         delete: {
+          operationId: 'accessGroupDelete',
           summary: 'Delete an unreferenced reader group',
           security: secured,
           parameters: [
@@ -1284,6 +1335,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/groups/{group}/members': {
         put: {
+          operationId: 'accessGroupMembersReplace',
           summary: 'Replace a reader group membership list',
           security: secured,
           parameters: [
@@ -1296,12 +1348,14 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/rules': {
         get: {
+          operationId: 'accessRuleList',
           summary: 'List draft access rules',
           security: secured,
           parameters: [siteParameter],
           responses: { 200: { description: 'Rules' } },
         },
         post: {
+          operationId: 'accessRuleCreate',
           summary: 'Create a draft exact or prefix access rule',
           description: 'The rule becomes live atomically with the next preview/release build.',
           security: secured,
@@ -1312,6 +1366,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/access/rules/{rule}': {
         patch: {
+          operationId: 'accessRuleUpdate',
           summary: 'Update a draft access rule',
           security: secured,
           parameters: [
@@ -1322,6 +1377,7 @@ export function openApi(config) {
           responses: { 200: { description: 'Updated; rebuild_required is true' } },
         },
         delete: {
+          operationId: 'accessRuleDelete',
           summary: 'Delete a draft access rule',
           security: secured,
           parameters: [
@@ -1333,12 +1389,14 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/content': {
         get: {
+          operationId: 'contentList',
           summary: 'List content',
           security: secured,
           parameters: [siteParameter],
           responses: { 200: { description: 'Content list' } },
         },
         post: {
+          operationId: 'contentCreate',
           summary: 'Create content and its first draft revision',
           description:
             "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` and may select a configured series with `reportSeries`. `reportSeries` is invalid on non-report compositions; a preview or release rejects IDs absent from `settings.presentation.report_series`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.",
@@ -1350,6 +1408,7 @@ export function openApi(config) {
       },
       '/v1/composition-patterns': {
         get: {
+          operationId: 'compositionPatternList',
           summary: 'List the declarative visual-composition Pattern Registry',
           description:
             'Public machine-readable registry for humans and external AI agents. Filter by category, scope, semantic node type, canvas or stability status. The ETag is the canonical registry SHA-256.',
@@ -1375,6 +1434,7 @@ export function openApi(config) {
       },
       '/v1/composition-patterns/{pattern}': {
         get: {
+          operationId: 'compositionPatternGet',
           summary: 'Read one complete declarative Pattern Package',
           parameters: [{ name: 'pattern', in: 'path', required: true, schema: { type: 'string' } }],
           responses: {
@@ -1388,6 +1448,7 @@ export function openApi(config) {
       },
       '/v1/publishing-guides': {
         get: {
+          operationId: 'publishingGuideList',
           summary: 'List semantic and narrative guidance for reports, diagrams, and code explanations',
           description:
             'Machine-readable selection guidance for authors and AI agents. Each guide states the question it answers, its story arc, required evidence, rejection conditions, compatible information patterns, and examples.',
@@ -1400,6 +1461,7 @@ export function openApi(config) {
       },
       '/v1/publishing-guides/{guide}': {
         get: {
+          operationId: 'publishingGuideGet',
           summary: 'Read one semantic publishing guide',
           parameters: [{ name: 'guide', in: 'path', required: true, schema: { type: 'string' } }],
           responses: {
@@ -1413,6 +1475,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/compositions/recommend': {
         post: {
+          operationId: 'compositionRecommend',
           summary: 'Rank eligible patterns deterministically',
           security: secured,
           parameters: [siteParameter],
@@ -1428,6 +1491,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/compositions/validate': {
         post: {
+          operationId: 'compositionValidate',
           summary: 'Validate an external agent pattern choice',
           security: secured,
           parameters: [siteParameter],
@@ -1443,6 +1507,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/compositions/compile': {
         post: {
+          operationId: 'compositionCompile',
           summary: 'Compile composition Markdown without persistence',
           description:
             'Returns versioned Semantic, Narrative, Composition, Layout Tree and Render Tree models plus selected HTML, print HTML, SVG or Base64 PNG outputs. Rendering is deterministic and uses no network resources.',
@@ -1465,6 +1530,7 @@ export function openApi(config) {
       },
       '/v1/deck-themes': {
         get: {
+          operationId: 'deckThemeList',
           summary: 'List controlled slide-deck themes',
           responses: {
             200: { description: 'Theme identifiers and the default theme' },
@@ -1474,6 +1540,7 @@ export function openApi(config) {
       },
       '/v1/deck-templates': {
         get: {
+          operationId: 'deckTemplateList',
           summary: 'List controlled slide-deck narrative templates',
           description:
             'Returns machine-readable narrative slots, required roles, defaults and visual contracts for every reusable deck template.',
@@ -1485,6 +1552,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/decks/plan': {
         post: {
+          operationId: 'deckPlan',
           summary: 'Derive a deterministic semantic DeckPlan',
           description:
             'Builds a source-addressed information architecture, narrative and slide plan without an LLM or network access.',
@@ -1510,6 +1578,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/decks/validate': {
         post: {
+          operationId: 'deckValidate',
           summary: 'Validate a deterministic semantic DeckPlan',
           security: secured,
           parameters: [siteParameter],
@@ -1533,6 +1602,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/decks/compile': {
         post: {
+          operationId: 'deckCompile',
           summary: 'Compile a DeckPlan to self-contained Slidev HTML with SVG and PNG components',
           description:
             'Requires content:write and deck:render. Semantic regions use ContentKit pattern recommendation, validation and deterministic SVG/PNG compilation before the bounded trusted-source Slidev build. Set async=true for a short-lived, process-local job; published deck artifacts remain durable releases.',
@@ -1569,6 +1639,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/deck-jobs/{job}': {
         get: {
+          operationId: 'deckJobGet',
           summary: 'Read short-lived async deck job status',
           description:
             'Requires content:write and deck:render for the job site. Job metadata contains no source Markdown.',
@@ -1585,6 +1656,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/deck-jobs/{job}/result': {
         get: {
+          operationId: 'deckJobResult',
           summary: 'Read a completed async deck result',
           description: 'Returns the same compile result and strong ETag as synchronous compilation.',
           security: secured,
@@ -1602,6 +1674,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/published': {
         get: {
+          operationId: 'publishedList',
           summary: 'List published content as JSON (read API)',
           description:
             'Headless read access to everything currently published. Entries carry the item identity, the published revision fields, top-level `report_series` (null for legacy/unassigned content), and the revision `metadata` verbatim — the full frontmatter contract including author-owned `extra` fields. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.',
@@ -1651,6 +1724,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/published/{kind}/{locale}/{slug}': {
         get: {
+          operationId: 'publishedGet',
           summary: 'Read one published document as JSON (read API)',
           description:
             'The list entry shape plus immutable `markdown`, on-demand `html`, Semantic AST, Narrative Plan, resolved Composition, diagnostics, accessible text and representation links. Deck entries additionally expose their deterministic `deck_plan`, slide count and durable released HTML URL. The strong ETag includes source, service, theme and Pattern Registry versions.',
@@ -1678,6 +1752,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.svg': {
         get: {
+          operationId: 'publishedCompositionSvg',
           summary: 'Render a published composition as standalone SVG',
           security: secured,
           parameters: [
@@ -1699,6 +1774,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/published/{kind}/{locale}/{slug}/composition.png': {
         get: {
+          operationId: 'publishedCompositionPng',
           summary: 'Render a published composition as PNG',
           security: secured,
           parameters: [
@@ -1720,6 +1796,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/search': {
         get: {
+          operationId: 'siteSearch',
           summary: 'Full-text search over published content (read API)',
           description:
             'PostgreSQL full-text search across everything currently published: title, summary and tags weigh highest, body text lowest; drafts and archived revisions are invisible by construction. Results carry a relevance `rank` and a `headline` snippet with `<mark>` highlights. Locale-aware stemming (de → german, en → english, otherwise simple) — without `locale` the query is stemmed with `simple` against locale-stemmed vectors, so cross-locale search is best-effort while a locale-scoped query matches exactly. Responses are uncached (no ETag): they depend on the query text, not on a stored artifact. Published sites keep their static client-side search; this route is an API-host feature for headless consumers.',
@@ -1757,12 +1834,14 @@ export function openApi(config) {
       },
       '/v1/content/{item}/revisions': {
         get: {
+          operationId: 'contentRevisionList',
           summary: 'List immutable revisions',
           security: secured,
           parameters: [{ name: 'item', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           responses: { 200: { description: 'Revision list' } },
         },
         put: {
+          operationId: 'contentRevisionCreate',
           summary: 'Create another immutable revision',
           description:
             'Accepts the same controlled-layout, semantic-composition, semantic-deck, report-cadence, report-series, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.',
@@ -1774,6 +1853,7 @@ export function openApi(config) {
       },
       '/v1/content/{item}/published': {
         delete: {
+          operationId: 'contentUnpublish',
           summary: 'Unpublish a content item from the live site',
           description:
             'Builds and activates a release without the item: its published revision is archived, published_revision_id is cleared and the item drops out of future snapshots. Reversible by publishing one of its revisions again.',
@@ -1787,6 +1867,7 @@ export function openApi(config) {
       },
       '/v1/content/{item}/audio': {
         get: {
+          operationId: 'contentAudioGet',
           summary: 'Read-aloud audio status for a content item',
           description:
             'Returns the newest read-aloud (TTS) job for the item — status pending/processing/done/failed/skipped, or `none` when no job exists — plus the stable `/media/<asset-id>/<filename>` URL and duration once the MP3 is done.',
@@ -1798,6 +1879,7 @@ export function openApi(config) {
           },
         },
         delete: {
+          operationId: 'contentAudioDelete',
           summary: 'Delete read-aloud audio for a content item',
           description:
             'Removes every audio job for the item and every generated MP3 those jobs referenced (storage object and asset row), then schedules a debounced auto-rebuild — unless `settings.audio.auto_rebuild` is `false` — so the player and blogcast entry disappear from the live site. Returns `{item_id, deleted_jobs, deleted_assets, rebuild_scheduled}`. Re-enable narration afterwards with the backfill endpoint.',
@@ -1811,6 +1893,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/audio/jobs': {
         get: {
+          operationId: 'audioJobList',
           summary: 'List read-aloud audio jobs with a monthly budget summary',
           description:
             'Newest-first list of the site’s TTS jobs (id, item_id, slug, title, status, attempts, chars, error, timestamps) plus a `summary` with per-status counters, `chars_this_month` (characters of all non-skipped jobs created in the current UTC calendar month), `monthly_char_budget` from `settings.audio` and `budget_remaining`. An invalid `status` value is a 422.',
@@ -1841,6 +1924,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/audio/backfill': {
         post: {
+          operationId: 'audioBackfill',
           summary: 'Enqueue read-aloud audio jobs for published posts',
           description:
             'Walks the published posts newest-first and enqueues a TTS job for every post whose extracted speech text has no job yet, until the character budget is spent (`limit_chars`, falling back to `settings.audio.monthly_char_budget`, else unlimited). `dry_run: true` returns the selected posts, their character total and a cost estimate without enqueuing anything. An optional `slugs` array narrows the backfill to specific posts. `force: true` re-renders even when the speech text is unchanged (e.g. after a voice change) by resetting the existing job. Requires `settings.audio.enabled` (409 otherwise). Site audio settings: `settings.audio = { enabled, provider, voice, monthly_char_budget, auto_rebuild, blogcast_link, blogcast_image, blogcast_category }` (the deprecated `podcast_*` spellings are still read as fallbacks).',
@@ -1855,6 +1939,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/previews': {
         post: {
+          operationId: 'previewCreate',
           summary: 'Build a named, time-limited preview',
           description:
             'Builds an immutable preview and replaces any prior preview with the same slug. The response separates the one-time secret invitation URL from the memorable session-protected preview URL. Opening the invitation atomically consumes it, creates a path-scoped HttpOnly session and redirects to the preview URL.',
@@ -1911,6 +1996,7 @@ export function openApi(config) {
       },
       '/preview-invitations/{token}': {
         get: {
+          operationId: 'previewInvitationRedeem',
           summary: 'Exchange a one-time preview invitation',
           description:
             'Consumes the invitation, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.',
@@ -1938,12 +2024,14 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/releases': {
         get: {
+          operationId: 'releaseList',
           summary: 'List releases newest first',
           security: secured,
           parameters: [siteParameter],
           responses: { 200: { description: 'Release list' } },
         },
         post: {
+          operationId: 'releaseCreate',
           summary: 'Build and atomically activate a release',
           description:
             'Overlays revision_ids on the currently published set and removes retire_item_ids from it; items in neither keep their published revision. Retired items get published_revision_id cleared and their live revision archived.',
@@ -1955,6 +2043,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/releases/{release}/activate': {
         post: {
+          operationId: 'releaseActivate',
           summary: 'Activate a prior release',
           security: secured,
           parameters: [
@@ -1966,6 +2055,7 @@ export function openApi(config) {
       },
       '/v1/publish-due': {
         post: {
+          operationId: 'publishDue',
           summary: 'Publish scheduled revisions grouped by site',
           security: secured,
           responses: { 200: { description: 'Publish results' } },
@@ -1973,6 +2063,7 @@ export function openApi(config) {
       },
       '/v1/maintenance/storage-gc': {
         post: {
+          operationId: 'maintenanceStorageGc',
           summary: 'Garbage-collect old release objects and reap stuck builds',
           description:
             'Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by live named preview access; reaps builds stuck in building. Requires an unrestricted release:write key.',
@@ -1981,13 +2072,22 @@ export function openApi(config) {
         },
       },
       '/public/v1/contact': {
-        post: { summary: 'Submit a contact request', responses: { 201: { description: 'Accepted' } } },
+        post: {
+          operationId: 'publicContactSubmit',
+          summary: 'Submit a contact request',
+          responses: { 201: { description: 'Accepted' } },
+        },
       },
       '/public/v1/posts/{post}/comments': {
-        post: { summary: 'Submit a guest comment for moderation', responses: { 201: { description: 'Accepted' } } },
+        post: {
+          operationId: 'publicCommentSubmit',
+          summary: 'Submit a guest comment for moderation',
+          responses: { 201: { description: 'Accepted' } },
+        },
       },
       '/public/v1/posts/{post}/feedback': {
         post: {
+          operationId: 'publicFeedbackSubmit',
           summary: 'Submit a one-click post feedback vote (up or down)',
           description:
             'Anonymous by design: the body carries only site_id and vote, no reader data is stored. Requires settings.feedback.enabled: true on the site; guarded by the honeypot and per-IP rate limit instead of a captcha.',
@@ -2000,6 +2100,7 @@ export function openApi(config) {
       },
       '/v1/comments': {
         get: {
+          operationId: 'commentList',
           summary: 'List the moderation queue',
           security: secured,
           responses: { 200: { description: 'Comment list' } },
@@ -2007,6 +2108,7 @@ export function openApi(config) {
       },
       '/v1/comments/{comment}': {
         patch: {
+          operationId: 'commentModerate',
           summary: 'Approve or reject a comment',
           security: secured,
           parameters: [{ name: 'comment', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
@@ -2016,6 +2118,7 @@ export function openApi(config) {
       },
       '/v1/contact-submissions': {
         get: {
+          operationId: 'contactSubmissionList',
           summary: 'List contact submissions',
           security: secured,
           responses: { 200: { description: 'Submission list' } },
@@ -2023,6 +2126,7 @@ export function openApi(config) {
       },
       '/v1/contact-submissions/{id}': {
         patch: {
+          operationId: 'contactSubmissionUpdate',
           summary: 'Mark a contact submission read or closed',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
@@ -2032,6 +2136,7 @@ export function openApi(config) {
       },
       '/v1/feedback': {
         get: {
+          operationId: 'feedbackList',
           summary: 'Per-post feedback aggregates (up/down counts)',
           description: 'Optional query filters: site_id, post (content item id). Sorted by total votes, descending.',
           security: secured,
@@ -2040,11 +2145,13 @@ export function openApi(config) {
       },
       '/v1/api-keys': {
         get: {
+          operationId: 'apiKeyList',
           summary: 'List API keys without hashes or secrets',
           security: secured,
           responses: { 200: { description: 'API-key metadata' } },
         },
         post: {
+          operationId: 'apiKeyCreate',
           summary: 'Create a scoped API key',
           security: secured,
           requestBody: jsonBody(['name', 'scopes']),
@@ -2053,6 +2160,7 @@ export function openApi(config) {
       },
       '/v1/api-keys/{id}': {
         delete: {
+          operationId: 'apiKeyRevoke',
           summary: 'Revoke an API key',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
@@ -2061,6 +2169,7 @@ export function openApi(config) {
       },
       '/v1/identity-grants': {
         get: {
+          operationId: 'identityGrantList',
           summary: 'List OAuth identity grants',
           description:
             'Optional exact-match filters: provider_id, subject. Each grant carries its product_scopes ceiling (the only stored truth), the denormalized display role and grant_source (admin, seed, signup or api-key).',
@@ -2072,6 +2181,7 @@ export function openApi(config) {
           responses: { 200: { description: 'Pre-provisioned exact OIDC subject grants' } },
         },
         post: {
+          operationId: 'identityGrantCreate',
           summary: 'Pre-provision an OAuth identity grant',
           description:
             'provider_id and issuer must exactly match a configured external identity provider. A grant binds the immutable provider subject to a product-scope ceiling and optional sites. Exactly one of role or product_scopes is required: a named role (reader, author, admin) is a shorthand the server expands into the scope ceiling once; the stored truth is always product_scopes. source may only carry the value seed (seeder marking); everything else is stamped admin.',
@@ -2089,6 +2199,7 @@ export function openApi(config) {
       },
       '/v1/identity-grants/{id}': {
         patch: {
+          operationId: 'identityGrantUpdate',
           summary: 'Update an OAuth identity grant ceiling',
           description:
             'Accepts email, display_name, site_ids and exactly one of role or product_scopes (role expands to a complete scope replacement). restore:true is the only way to clear revoked_at on a revoked grant; a PATCH without restore matches non-revoked grants only. A PATCH without source:"seed" stamps grant_source=admin, taking the row over from the seeder.',
@@ -2098,6 +2209,7 @@ export function openApi(config) {
           responses: { 200: { description: 'Updated' }, 404: { description: 'Not found' } },
         },
         delete: {
+          operationId: 'identityGrantRevoke',
           summary: 'Revoke an OAuth identity grant and active sessions/access/refresh tokens',
           security: secured,
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
@@ -2106,6 +2218,7 @@ export function openApi(config) {
       },
       '/v1/audit-events': {
         get: {
+          operationId: 'auditEventList',
           summary: 'Read redacted append-only audit events',
           description:
             'Optional site, action and limit filters. Audit metadata excludes credentials, content, Markdown, request bodies and email addresses.',
@@ -2113,14 +2226,74 @@ export function openApi(config) {
           responses: { 200: { description: 'Audit events' }, 404: { description: 'Site not found' } },
         },
       },
+      '/v1/assistant/messages': {
+        post: {
+          operationId: 'assistantMessages',
+          summary: 'Stream one authoring-assistant turn',
+          description:
+            "Present only when CONTENTKIT_ANTHROPIC_API_KEY is configured; otherwise every method answers 404. Streams an AI SDK UI message stream. The assistant calls ContentKit's own MCP tools, filtered by the caller's scopes, so it can never exceed what the credential already permits. Publication, activation, deletion and credential changes emit a `data-elicitation` part and block until a human answers at /v1/assistant/elicitations/{elicitation}; decline, expiry or a dropped connection makes no change.",
+          security: secured,
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['messages'],
+                  properties: {
+                    messages: { type: 'array', items: { type: 'object' }, description: 'UI messages so far.' },
+                    site: { type: 'string', description: 'Site slug or UUID the operator is working on.' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'UI message stream', content: { 'text/event-stream': {} } },
+            404: { description: 'The assistant is not enabled on this deployment' },
+          },
+        },
+      },
+      '/v1/assistant/elicitations/{elicitation}': {
+        post: {
+          operationId: 'assistantElicitationDecide',
+          summary: 'Record the human decision on a pending confirmation',
+          description:
+            "The operator's answer to an approval card. Only `accept` with `content.confirmed = true` lets the waiting tool call proceed; `decline` and `cancel` leave the system unchanged. A decision that matches no waiting elicitation returns 409 — it expired or its turn was abandoned — and must never be reported as success.",
+          security: secured,
+          parameters: [{ name: 'elicitation', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['action'],
+                  properties: {
+                    action: { type: 'string', enum: ['accept', 'decline', 'cancel'] },
+                    content: { type: 'object', description: 'Answers to the requested schema when accepting.' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Decision recorded' },
+            409: { description: 'No such pending elicitation' },
+            422: { description: 'Unknown action' },
+          },
+        },
+      },
       '/v1/sites/{site}/webhooks': {
         get: {
+          operationId: 'webhookList',
           summary: 'List webhook endpoints',
           security: secured,
           parameters: [siteParameter],
           responses: { 200: { description: 'Endpoint list (no secrets)' } },
         },
         post: {
+          operationId: 'webhookCreate',
           summary: 'Register a webhook endpoint',
           description:
             'Creates a signed delivery endpoint. events filters by type (empty = all); a whsec_ secret is returned once. Delivery uses Standard Webhooks headers (webhook-id/-timestamp/-signature).',
@@ -2135,6 +2308,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/webhooks/{endpoint}': {
         patch: {
+          operationId: 'webhookUpdate',
           summary: 'Update or enable/disable a webhook endpoint',
           security: secured,
           parameters: [
@@ -2145,6 +2319,7 @@ export function openApi(config) {
           responses: { 200: { description: 'Updated' }, 404: { description: 'Not found' } },
         },
         delete: {
+          operationId: 'webhookDelete',
           summary: 'Delete a webhook endpoint',
           security: secured,
           parameters: [
@@ -2156,6 +2331,7 @@ export function openApi(config) {
       },
       '/v1/sites/{site}/webhooks/{endpoint}/rotate': {
         post: {
+          operationId: 'webhookRotateSecret',
           summary: 'Rotate a webhook endpoint signing secret',
           security: secured,
           parameters: [
@@ -2167,6 +2343,7 @@ export function openApi(config) {
       },
       '/v1/webhook-deliveries': {
         get: {
+          operationId: 'webhookDeliveryList',
           summary: 'List webhook deliveries for observability',
           security: secured,
           responses: { 200: { description: 'Delivery list' } },
@@ -2174,6 +2351,7 @@ export function openApi(config) {
       },
       '/v1/webhook-deliveries/{delivery}/retry': {
         post: {
+          operationId: 'webhookDeliveryRetry',
           summary: 'Manually redeliver a webhook',
           security: secured,
           parameters: [{ name: 'delivery', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
@@ -2198,6 +2376,7 @@ export function openApi(config) {
   for (const [kind, description] of Object.entries(stats)) {
     spec.paths[`/v1/sites/{site}/stats/${kind}`] = {
       get: {
+        operationId: `stats${kind[0].toUpperCase()}${kind.slice(1)}`,
         summary: `Read site ${kind} statistics`,
         description: `Bounded UTC aggregates for ${description}. Requires stats:read or the backwards-compatible content:read scope and never returns content, identities, credentials, payloads, raw URLs, query strings, network identifiers or row identifiers. Defaults to the previous 24 hours in hourly buckets.${['http', 'compositions', 'mcp'].includes(kind) ? ' Usage telemetry is opt-in. Organic traffic is the default; synthetic and internal traffic remain explicitly filterable. Ratio metrics carry numerator and denominator, unavailable evidence is missing rather than zero, and full-window unique actors/sessions are recomputed exactly.' : ''}`,
         security: secured,

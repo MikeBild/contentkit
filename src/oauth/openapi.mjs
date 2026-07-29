@@ -30,6 +30,8 @@ export const MCP_AUTH_OPERATIONS = [
   'get /v1/identity/login/start',
   'post /v1/identity/login/start',
   'get /v1/identity/login/callback',
+  'get /v1/identity/cockpit-login',
+  'get /v1/identity/session',
   'post /v1/identity/logout',
 ]
 
@@ -214,6 +216,64 @@ export function registerMcpAuthOpenApi(spec) {
         tags: tag,
         summary: 'Complete an OIDC login adapter',
         responses: { 200: { description: 'Consent HTML', content: html }, 302: { description: 'Redirect' }, ...errors },
+      },
+    },
+    '/v1/identity/cockpit-login': {
+      get: {
+        operationId: 'startCockpitLogin',
+        tags: tag,
+        summary: 'Sign in to ContentKit Cockpit',
+        description:
+          'Browser entry point for the first-party operator console. Runs the same OIDC (or API-key) funnel as an MCP client but issues only the HttpOnly operator-session cookie — no authorization code, no consent screen, no registered client. Redirects to `return_to` when it is a same-origin path, otherwise to /cockpit/. An operator who already holds a live session is redirected straight through.',
+        parameters: [
+          {
+            name: 'return_to',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Same-origin path to return to after sign-in. Anything else falls back to /cockpit/.',
+          },
+        ],
+        responses: {
+          200: { description: 'Provider chooser HTML', content: html },
+          302: { description: 'Provider redirect, or return_to once the session exists' },
+          ...errors,
+        },
+      },
+    },
+    '/v1/identity/session': {
+      get: {
+        operationId: 'describeCockpitSession',
+        tags: tag,
+        summary: 'Describe the current operator session',
+        description:
+          'What ContentKit Cockpit bootstraps from: the signed-in identity, the live product-scope ceiling that decides which parts of the console exist, and a CSRF token. The token is also set as an HttpOnly cookie; every cookie-authenticated mutation must echo it in `X-Contentkit-Csrf`.',
+        responses: {
+          200: {
+            description: 'Operator identity, scope ceiling and CSRF token',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['subject', 'role', 'product_scopes', 'site_ids', 'csrf_token'],
+                  properties: {
+                    subject: { type: 'string' },
+                    email: { type: ['string', 'null'] },
+                    display_name: { type: ['string', 'null'] },
+                    provider_id: { type: ['string', 'null'] },
+                    role: { type: 'string', enum: ['admin', 'author', 'reader'] },
+                    product_scopes: { type: 'array', items: { type: 'string' } },
+                    site_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                    csrf_token: { type: 'string' },
+                    expires_at: { type: 'string', format: 'date-time' },
+                    absolute_expires_at: { type: 'string', format: 'date-time' },
+                  },
+                },
+              },
+            },
+          },
+          401: { description: 'No operator session; start one at /v1/identity/cockpit-login' },
+        },
       },
     },
     '/v1/identity/logout': {

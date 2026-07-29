@@ -11,6 +11,7 @@ import {
   routeName,
   validateNarrativePlan,
 } from '../../src/routes.mjs'
+import { signCsrf } from '../../src/csrf.mjs'
 import { clientIp } from '../../src/security.mjs'
 import { StorageError } from '../../src/storage.mjs'
 import { contentkitFontFamily } from '../../src/typography.mjs'
@@ -2627,6 +2628,79 @@ describe('site presentation and theme settings', () => {
         assert.match((await response.json()).error, /settings\.presentation\.report_series/)
       }
       assert.equal(updates.length, 1, 'invalid series settings must not reach the database')
+    })
+  })
+})
+
+// A cookie is attached by the browser on cross-site requests; an Authorization
+// header is not. The gate therefore has to bite for cookie-authenticated
+// operators and stay invisible to every existing key-based client.
+const operatorAuth = () => ({
+  async authenticate(headers) {
+    const cookie = headers.get?.('cookie') ?? headers.cookie ?? ''
+    if (headers.get?.('x-api-key') === 'valid' || headers['x-api-key'] === 'valid')
+      return { id: 'key', scopes: [], site_ids: [] }
+    return cookie.includes('contentkit_operator=')
+      ? { id: 'operator:grant', scopes: [], site_ids: [], via: 'operator_session' }
+      : null
+  },
+  authorize(principal, scope) {
+    return Boolean(principal) && (principal.scopes.includes('*') || principal.scopes.includes(scope))
+  },
+})
+
+describe('operator CSRF gate', () => {
+  const csrf = signCsrf('development')
+  const session = 'contentkit_operator=ckos_example'
+
+  const withOperator = (run) => withApp({ auth: operatorAuth(), config: { publicUrl: 'http://127.0.0.1' } }, run)
+
+  test('a cookie-authenticated mutation without a CSRF token is rejected', async () => {
+    await withOperator(async (request) => {
+      const response = await request('/v1/api-keys', { method: 'POST', headers: { cookie: session } })
+      assert.equal(response.status, 403)
+      assert.equal((await response.json()).error, 'invalid_csrf_token')
+    })
+  })
+
+  test('a mismatched or unsigned CSRF token is rejected', async () => {
+    await withOperator(async (request) => {
+      for (const [cookie, header] of [
+        [`${session}; contentkit_csrf=${csrf}`, signCsrf('development')],
+        [`${session}; contentkit_csrf=forged.signature`, 'forged.signature'],
+        [session, csrf],
+      ]) {
+        const response = await request('/v1/api-keys', {
+          method: 'POST',
+          headers: { cookie, 'x-contentkit-csrf': header },
+        })
+        assert.equal((await response.json()).error, 'invalid_csrf_token')
+      }
+    })
+  })
+
+  test('a matching CSRF token passes the gate and reaches the scope check', async () => {
+    await withOperator(async (request) => {
+      const response = await request('/v1/api-keys', {
+        method: 'POST',
+        headers: { cookie: `${session}; contentkit_csrf=${csrf}`, 'x-contentkit-csrf': csrf },
+      })
+      assert.equal(response.status, 403)
+      assert.equal((await response.json()).error, 'insufficient_scope')
+    })
+  })
+
+  test('reads never require a CSRF token', async () => {
+    await withOperator(async (request) => {
+      const response = await request('/v1/api-keys', { headers: { cookie: session } })
+      assert.equal((await response.json()).error, 'insufficient_scope')
+    })
+  })
+
+  test('header credentials are never subject to the gate', async () => {
+    await withOperator(async (request) => {
+      const response = await request('/v1/api-keys', { method: 'POST', headers: { 'x-api-key': 'valid' } })
+      assert.equal((await response.json()).error, 'insufficient_scope')
     })
   })
 })

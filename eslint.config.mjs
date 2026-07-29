@@ -25,6 +25,17 @@ export default [
     },
   },
   {
-    ignores: ['node_modules/', 'dist/', '.contentkit-local/', 'docs/', 'bin/', 'src/db/migrations/embedded.mjs'],
+    // apps/ holds the Cockpit's TypeScript/TSX sources and its build output;
+    // both are checked by that package's own `npm run type-check`.
+    ignores: [
+      'node_modules/',
+      'dist/',
+      '.contentkit-local/',
+      'docs/',
+      'bin/',
+      'apps/',
+      'assets/cockpit/',
+      'src/db/migrations/embedded.mjs',
+    ],
   },
 ]

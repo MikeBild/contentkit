@@ -21,6 +21,7 @@ import { createTraceContext } from './trace-context.mjs'
 import { createUsageTelemetry } from './usage.mjs'
 import { createAudit } from './audit.mjs'
 import { createOAuthMount } from './oauth/server.mjs'
+import { createAssistant } from './assistant.mjs'
 import { createMcpMount } from './mcp/server.mjs'
 import { createSecretHandoffs } from './secret-handoffs.mjs'
 import { nodeWebHandler } from './web-bridge.mjs'
@@ -83,6 +84,23 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       deckJobs,
       secretHandoffs,
     })
+  // Credential = enabled: without CONTENTKIT_ANTHROPIC_API_KEY this is null and
+  // the assistant routes answer 404, so the console hides the tab entirely.
+  const assistant =
+    dependencies.assistant ??
+    createAssistant(config, {
+      config,
+      db,
+      repo,
+      releases,
+      auth,
+      audit,
+      logger,
+      usage: mcpUsage,
+      deckRenderer,
+      deckJobs,
+      secretHandoffs,
+    })
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()
@@ -108,6 +126,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     usage,
     audit,
     mcp,
+    assistant,
   })
 
   const mcpHandler = nodeWebHandler(mcp, { maxBodyBytes: config.maxBodyBytes, publicUrl: config.publicUrl })

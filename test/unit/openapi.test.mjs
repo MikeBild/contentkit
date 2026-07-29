@@ -25,6 +25,25 @@ test('every operation documents at least one response', () => {
   }
 })
 
+// Generated clients name their methods after `operationId`. Leaving one out
+// makes the generator fall back to a path-derived name that silently changes
+// whenever the path does, so the whole surface has to stay named.
+test('every operation carries a unique operationId', () => {
+  const spec = openApi(config)
+  const seen = new Map()
+  for (const [path, operations] of Object.entries(spec.paths)) {
+    for (const method of Object.keys(operations).filter((key) => HTTP_METHODS.includes(key))) {
+      const { operationId } = operations[method]
+      assert.ok(operationId, `${method.toUpperCase()} ${path} has no operationId`)
+      assert.ok(
+        !seen.has(operationId),
+        `operationId ${operationId} is used by both ${seen.get(operationId)} and ${method.toUpperCase()} ${path}`,
+      )
+      seen.set(operationId, `${method.toUpperCase()} ${path}`)
+    }
+  }
+})
+
 test('every documented API path and method is actually routable', () => {
   const spec = openApi(config)
   for (const [path, operations] of Object.entries(spec.paths)) {

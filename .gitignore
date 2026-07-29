@@ -14,3 +14,7 @@ payload.tgz
 # Reproducible visual-review output. Regenerate with `npm run review:patterns`.
 examples/pattern-gallery/
 examples/composition-patterns.json
+
+# Reproducible build output. Regenerate with `bash scripts/build-cockpit.sh`.
+assets/cockpit/
+apps/*/node_modules/

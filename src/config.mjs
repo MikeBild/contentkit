@@ -139,6 +139,11 @@ export function loadConfig() {
       min: 10 * 1000,
       max: 15 * 60 * 1000,
     }),
+    // Credential = enabled. Without a key the Cockpit's authoring assistant
+    // does not exist: its routes answer 404 and the console hides the tab. One
+    // env var per feature, no separate on/off switch to drift out of step.
+    anthropicApiKey: process.env.CONTENTKIT_ANTHROPIC_API_KEY || '',
+    assistantModel: process.env.CONTENTKIT_ASSISTANT_MODEL || 'claude-sonnet-5',
     oauthSecret: process.env.CONTENTKIT_OAUTH_SECRET || '',
     oauthProviders: configuredOauthProviders,
     oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring', 'mcp:admin']),
