@@ -245,7 +245,7 @@ function AssistantText({ id, text, streaming }: { id: string; text: string; stre
 
   return (
     <div className="text-left">
-      <Draft markdown={text} />
+      <Draft markdown={text} unrendered={Boolean(rendered.error)} />
       {rendered.error ? <RenderProblem error={rendered.error} /> : null}
     </div>
   )

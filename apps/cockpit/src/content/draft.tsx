@@ -44,9 +44,26 @@ const components: Components = {
     ),
 }
 
-export function Draft({ markdown, testId = 'assistant-draft' }: { markdown: string; testId?: string }) {
+export function Draft({
+  markdown,
+  testId = 'assistant-draft',
+  unrendered = false,
+}: {
+  markdown: string
+  testId?: string
+  /**
+   * The draft is still on screen after the message finished, because the server
+   * refused to render it. Promising that it will be rendered "when the message
+   * is finished" would then be a statement the console knows to be false — the
+   * diagnostic below the message already says why.
+   */
+  unrendered?: boolean
+}) {
   return (
-    <div data-testid={testId} className="space-y-2 text-sm leading-relaxed [&_li]:ml-4 [&_ol]:list-decimal [&_ul]:list-disc">
+    <div
+      data-testid={testId}
+      className="space-y-2 text-sm leading-relaxed [&_li]:ml-4 [&_ol]:list-decimal [&_ul]:list-disc"
+    >
       {segments(markdown).map((segment, index) =>
         segment.kind === 'markdown' ? (
           <Markdown key={index} remarkPlugins={[remarkGfm]} components={components}>
@@ -59,7 +76,9 @@ export function Draft({ markdown, testId = 'assistant-draft' }: { markdown: stri
             data-label={segment.label}
             className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground"
           >
-            {segment.label} — rendered when the message is finished.
+            {unrendered
+              ? `${segment.label} — not shown: this message could not be rendered as published.`
+              : `${segment.label} — rendered when the message is finished.`}
           </p>
         ),
       )}

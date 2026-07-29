@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.6.1 — 2026-07-29
+
+### Fixed
+
+- When a reply could not be rendered as published, the console's placeholders
+  still read "rendered when the message is finished" — a promise it already knew
+  to be false. They now say the message could not be rendered, and the
+  diagnostic below it says why.
+- The assistant was told which semantic directives to use but not what they
+  require, so it wrote a `:::metric` without a label and the whole reply became
+  unrenderable. The required attributes are now part of its instructions.
+
 ## 4.6.0 — 2026-07-29
 
 ### Added
