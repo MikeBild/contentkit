@@ -168,15 +168,21 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       path === '/v1/identity/sessions' ||
       path === '/v1/identity/logout' ||
       /^\/v1\/(?:oauth|identity\/login)\//.test(path)
+    // The Cockpit's own sign-in and session are served by the OAuth mount but
+    // are not MCP: gating them on mcpEnabled would make disabling MCP silently
+    // lock every operator out of the console.
+    const cockpitAuthPath = path === '/v1/identity/cockpit-login' || path === '/v1/identity/session'
     const handoffPath = /^\/oauth\/secret\//.test(path)
     const dispatched =
       config.mcpEnabled && onApiHost && path === '/mcp'
         ? mcpHandler(req, res)
-        : config.mcpEnabled && onApiHost && oauthPath
+        : onApiHost && cockpitAuthPath
           ? oauthHandler(req, res)
-          : config.mcpEnabled && onApiHost && handoffPath
-            ? handoffHandler(req, res)
-            : handle(req, res)
+          : config.mcpEnabled && onApiHost && oauthPath
+            ? oauthHandler(req, res)
+            : config.mcpEnabled && onApiHost && handoffPath
+              ? handoffHandler(req, res)
+              : handle(req, res)
     dispatched.catch((error) => {
       // A committed response cannot be rewritten, and the client already got
       // its real status (e.g. the gateway's 503) — report that instead of

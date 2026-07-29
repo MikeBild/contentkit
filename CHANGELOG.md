@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.4.1 — 2026-07-29
+
+### Fixed
+
+- `GET /v1/identity/cockpit-login` and `GET /v1/identity/session` answered 404
+  in a running server. Both are served by the OAuth mount, but `createApp`
+  dispatches to that mount from an explicit path allowlist and neither route
+  was in it, so they fell through to the main handler. The console could be
+  loaded but never signed into. Both are now dispatched, and independently of
+  `CONTENTKIT_MCP_ENABLED`: the Cockpit is not MCP, and gating its sign-in on
+  that flag would lock every operator out of the console when MCP is turned
+  off. The regression test drives the assembled app rather than the mount,
+  which is the gap that let this reach production.
+
 ## 4.4.0 — 2026-07-29
 
 ### Added

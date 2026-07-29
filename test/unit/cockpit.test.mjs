@@ -111,3 +111,84 @@ describe('ContentKit Cockpit static serving', () => {
     assert.match(response.body, /not built/)
   })
 })
+
+// Regression: the Cockpit's sign-in and session are served by the OAuth mount,
+// but src/server.mjs dispatches to that mount from an explicit allowlist. Both
+// routes were absent from it, so they answered 404 in production while the
+// mount itself was perfectly correct — which is exactly why this test drives
+// the assembled app instead of the mount.
+describe('Cockpit auth routes are reachable through the assembled app', () => {
+  async function withApp(config, run) {
+    const { createApp } = await import('../../src/server.mjs')
+    const app = createApp(
+      {
+        publicUrl: 'http://127.0.0.1',
+        version: 'test',
+        trustProxy: false,
+        maxBodyBytes: 1024,
+        oauthSecret: 'secret',
+        oauthProviders: [{ protocol: 'api_key', id: 'api-key', label: 'ContentKit API key' }],
+        ...config,
+      },
+      {
+        logger: { info() {}, warn() {}, error() {}, debug() {} },
+        database: {
+          db: {
+            async query() {
+              return []
+            },
+            async select() {
+              return []
+            },
+            async insert() {
+              return [{}]
+            },
+            async update() {
+              return [{}]
+            },
+          },
+          async close() {},
+        },
+        storage: {},
+        repo: {},
+        releases: { inflight: () => 0 },
+        auth: {
+          async authenticate() {
+            return null
+          },
+          authorize: () => false,
+        },
+        outbox: { start() {}, stop() {} },
+      },
+    )
+    await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve))
+    try {
+      await run((path, init) => fetch(`http://127.0.0.1:${app.server.address().port}${path}`, init))
+    } finally {
+      app.limiter.stop()
+      app.loginLimiter.stop()
+      app.deckJobs.stop()
+      await new Promise((resolve) => app.server.close(resolve))
+    }
+  }
+
+  test('sign-in renders and the session reports "not signed in", never 404', async () => {
+    await withApp({}, async (request) => {
+      const login = await request('/v1/identity/cockpit-login?return_to=/cockpit/', { redirect: 'manual' })
+      assert.notEqual(login.status, 404, 'the sign-in funnel must be dispatched to the OAuth mount')
+      assert.ok([200, 302].includes(login.status), `unexpected status ${login.status}`)
+
+      const session = await request('/v1/identity/session')
+      // 401 is the console's cue to sign in; 404 would make it show an error.
+      assert.equal(session.status, 401)
+    })
+  })
+
+  test('turning MCP off must not lock operators out of their own console', async () => {
+    await withApp({ mcpEnabled: false }, async (request) => {
+      const login = await request('/v1/identity/cockpit-login', { redirect: 'manual' })
+      assert.notEqual(login.status, 404)
+      assert.equal((await request('/v1/identity/session')).status, 401)
+    })
+  })
+})
