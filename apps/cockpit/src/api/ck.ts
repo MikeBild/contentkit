@@ -501,7 +501,10 @@ export const ck = {
 
   system: {
     /** Answers `ok` as text/plain, not JSON. */
-    health: () => unwrap(api.GET('/health', {})),
+    // openapi-fetch parses as JSON regardless of the declared content type, and
+    // liveness answers `ok` as plain text on purpose: the probe has to succeed
+    // on a process too degraded to serialize anything.
+    health: () => unwrap(api.GET('/health', { parseAs: 'text' })),
     /** A 503 body is the same report; the client middleware turns it into an error. */
     ready: () => unwrap(api.GET('/ready', {})),
   },
