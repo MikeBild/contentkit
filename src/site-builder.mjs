@@ -899,11 +899,17 @@ export async function buildSite({
       ),
     )
     sitemapItems.push(
-      {
-        canonical: absolute(site, `/${locale}/archive/`),
-        translations: staticAlternates((l) => `/${l}/archive/`),
-        updated_at: lastUpdated(posts),
-      },
+      // The archive page is written with the blog indexes; listing it here
+      // unconditionally would advertise a 404 wherever those are withheld.
+      ...(emitBlogIndexes
+        ? [
+            {
+              canonical: absolute(site, `/${locale}/archive/`),
+              translations: staticAlternates((l) => `/${l}/archive/`),
+              updated_at: lastUpdated(posts),
+            },
+          ]
+        : []),
       { canonical: absolute(site, `/${locale}/contact/`), translations: staticAlternates((l) => `/${l}/contact/`) },
     )
     const searchIndexItems = publicLocal.filter((item) => !item.noindex)

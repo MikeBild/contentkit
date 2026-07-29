@@ -1573,11 +1573,12 @@ test('a non-portfolio preset publishes no empty blog, archive or projects index'
   for (const file of ['en/blog/index.html', 'en/archive/index.html', 'en/projects/index.html']) {
     assert.ok(!result.files.has(file), `${file} must not be published on an empty product site`)
   }
-  const sitemap = result.files.get('sitemap.xml')
+  const sitemap = result.files.get('sitemap.xml').body.toString()
+  assert.match(sitemap, /\/en\/datenstand\/|<urlset/, 'sitemap must actually have been built')
   for (const path of ['/en/blog/', '/en/archive/', '/en/projects/']) {
-    assert.ok(!String(sitemap).includes(path), `${path} must stay out of the sitemap`)
+    assert.ok(!sitemap.includes(path), `${path} must stay out of the sitemap`)
   }
-  assert.ok(!String(result.files.get('en/llms.txt')).includes('/en/archive/'))
+  assert.ok(!result.files.get('en/llms.txt').body.toString().includes('/en/archive/'))
 })
 
 test('a non-portfolio preset regains the indexes as soon as it holds that content', async () => {
