@@ -48,8 +48,17 @@ function withFrontmatter(markdown, locale) {
   return markdown.slice(0, open) + missing.join('\n') + '\n' + markdown.slice(open)
 }
 
-export function renderFragmentEtag({ markdown, scheme, themeHash, version }) {
-  return `"${sha256(markdown)}:${version}:${themeHash}:${scheme}"`
+/**
+ * Every input `renderFragment` actually varies on, and nothing else.
+ *
+ * `locale` belongs here even though it is easy to forget: it reaches
+ * `renderMarkdown` (it is injected into the frontmatter) and `materializeReportCharts`,
+ * so the same Markdown renders differently under `de` and `en`. Leaving it out
+ * made the two renders share a validator, and the console previewing one body
+ * under a second locale got a 304 and the first locale's HTML back.
+ */
+export function renderFragmentEtag({ markdown, scheme, themeHash, locale = '', version }) {
+  return `"${sha256(markdown)}:${version}:${themeHash}:${scheme}:${locale}"`
 }
 
 /**
@@ -84,7 +93,7 @@ export async function renderFragment({ markdown, site = {}, locale, scheme = 'au
     accessible_text: rendered.accessibleText ?? rendered.accessible_text ?? null,
     has_mermaid: /class="mermaid"|data-mermaid/.test(withCharts.html),
     chart_count: rendered.charts?.length ?? 0,
-    etag: renderFragmentEtag({ markdown: source, scheme, themeHash, version }),
+    etag: renderFragmentEtag({ markdown: source, scheme, themeHash, locale: resolvedLocale, version }),
   })
 }
 

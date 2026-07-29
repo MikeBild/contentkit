@@ -143,7 +143,12 @@ export interface ParsedDocument {
   raw: string
 }
 
-const FENCE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
+// The newline before the closing fence is optional so that an *empty* block —
+// `---\n---\n`, which the server accepts and which this parser used to report as
+// "never closed" — matches with an empty capture. Everything else is unchanged:
+// the capture is still lazy, so a `---` inside a value is only treated as the
+// terminator when what follows it is a line end.
+const FENCE = /^---\r?\n([\s\S]*?)(?:\r?\n)?---(?:\r?\n|$)/
 
 export class FrontmatterError extends Error {}
 
@@ -267,6 +272,21 @@ export function detect(frontmatter: Record<string, unknown>): FrontmatterUI {
   // ignores rather than rejects, so it is carried instead of edited — the form
   // would otherwise delete a key nobody asked it to touch.
   const strayDeck = kind !== 'deck' && 'deck' in source ? { deck: source.deck } : {}
+  // The same asymmetry the other way round. `toWire` refuses to emit
+  // `composition`/`reportCadence`/`reportSeries` unless the layout resolves to
+  // `composition`, because the combination is a 422 — but they are owned keys,
+  // so without this they were neither emitted nor carried, and merely *opening*
+  // a `layout: standard` document that has a `composition:` block produced
+  // roundtrip drift and an unexplained refusal to save a legal file.
+  const layout = text(source.layout)
+  const composed = layout === 'composition' || layout === 'report'
+  const strayComposition = composed
+    ? {}
+    : Object.fromEntries(
+        (['composition', 'reportCadence', 'reportSeries'] as const)
+          .filter((key) => key in source)
+          .map((key) => [key, source[key]]),
+      )
 
   return {
     title: text(source.title),
@@ -334,7 +354,11 @@ export function detect(frontmatter: Record<string, unknown>): FrontmatterUI {
     access: list(source.access),
 
     extra: isObject(source.extra) ? source.extra : {},
-    carried: { ...Object.fromEntries(Object.entries(source).filter(([key]) => !OWNED_KEYS.has(key))), ...strayDeck },
+    carried: {
+      ...Object.fromEntries(Object.entries(source).filter(([key]) => !OWNED_KEYS.has(key))),
+      ...strayDeck,
+      ...strayComposition,
+    },
     aliases,
   }
 }
@@ -459,6 +483,19 @@ export function emit(ui: FrontmatterUI, body: string): string {
   return `---\n${stringifyYaml(data, { lineWidth: 0 })}---\n\n${trimmed}\n`
 }
 
+export interface RoundtripDrift {
+  /** Keys whose meaning changed. Empty when the form understands the file. */
+  keys: string[]
+  /**
+   * Set only when the re-emitted document could not be read back at all, and
+   * carries the parser's own words. That case is a fault in this module rather
+   * than a property of the author's file, so it must not be reported as "every
+   * key drifted" — the previous behaviour discarded the one precise message the
+   * console had and replaced it with a list that explained nothing.
+   */
+  reason?: string
+}
+
 /**
  * The roundtrip guard.
  *
@@ -468,13 +505,16 @@ export function emit(ui: FrontmatterUI, body: string): string {
  * rewrites it. The answer names the keys, because "cannot save" without them is
  * indistinguishable from a broken console.
  */
-export function roundtripDrift(frontmatter: Record<string, unknown>, body: string): string[] {
+export function roundtripDrift(frontmatter: Record<string, unknown>, body: string): RoundtripDrift {
   let reparsed: Record<string, unknown>
   try {
     reparsed = parseDocument(emit(detect(frontmatter), body)).frontmatter
-  } catch {
-    return Object.keys(frontmatter)
+  } catch (failure) {
+    return {
+      keys: Object.keys(frontmatter),
+      reason: failure instanceof Error ? failure.message : String(failure),
+    }
   }
   const keys = new Set([...Object.keys(frontmatter), ...Object.keys(reparsed)])
-  return [...keys].filter((key) => JSON.stringify(frontmatter[key]) !== JSON.stringify(reparsed[key]))
+  return { keys: [...keys].filter((key) => JSON.stringify(frontmatter[key]) !== JSON.stringify(reparsed[key])) }
 }

@@ -19,7 +19,11 @@ test('no production domain references in tracked files', () => {
     })
   } catch (err) {
     // git grep exits 1 with empty stdout when there are no matches — success.
-    if (err.status === 1 && !err.stdout) return
+    // `!err.stderr` matters as much as the status: a git that failed for an
+    // unrelated reason (not a repository, a bad pathspec) also exits 1 with
+    // nothing on stdout, and treating that as "clean" would make this guard
+    // report a pass in exactly the situation where it checked nothing.
+    if (err.status === 1 && !err.stdout && !err.stderr) return
     throw err
   }
   assert.equal(hits, '', `production domain reference(s) found:\n${hits}`)

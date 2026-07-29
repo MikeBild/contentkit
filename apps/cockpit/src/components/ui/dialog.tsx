@@ -51,6 +51,14 @@ const FOCUSABLE =
  */
 function useModalBehaviour(open: boolean, onClose: () => void, panel: React.RefObject<HTMLDivElement | null>) {
   const opener = useRef<Element | null>(null)
+  // The close handler is read through a ref rather than listed as a dependency.
+  // Callers routinely pass a fresh arrow on every render, and this effect is not
+  // idempotent: re-running it restores focus to the opener and then moves it to
+  // the panel's first control. In a dialog holding a controlled input that fires
+  // once per keystroke, so the caret leaves the field after the first character
+  // — and a Space typed into a name then activates the close button instead.
+  const close = useRef(onClose)
+  close.current = onClose
 
   useEffect(() => {
     if (!open) return
@@ -61,7 +69,7 @@ function useModalBehaviour(open: boolean, onClose: () => void, panel: React.RefO
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        onClose()
+        close.current()
         return
       }
       if (event.key !== 'Tab' || !panel.current) return
@@ -82,7 +90,7 @@ function useModalBehaviour(open: boolean, onClose: () => void, panel: React.RefO
       document.removeEventListener('keydown', onKeyDown, true)
       if (restore instanceof HTMLElement && document.contains(restore)) restore.focus()
     }
-  }, [open, onClose, panel])
+  }, [open, panel])
 }
 
 interface OverlayProps {

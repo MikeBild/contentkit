@@ -30,6 +30,42 @@ test('committed Cockpit enum contracts match the server’s closed sets', async 
   assert.equal(actual, cockpitContracts(), 'run npm run docs:gen-openapi after changing a closed set')
 })
 
+/**
+ * The Cockpit's generated API types are the only mechanism in the repository
+ * that notices a handler and its spec disagreeing — 24k lines of TypeScript are
+ * checked against them, and nothing else compares a documented response shape to
+ * a real one. But `gen:api` is in neither `build` nor any test, so the file only
+ * ever updated when a human remembered to type it, and stale types are still
+ * *valid* types: `tsc --noEmit` stays green while the console is typed against a
+ * spec that no longer exists.
+ *
+ * This asserts the operation set rather than the bytes, because regenerating
+ * needs `openapi-typescript` — a Cockpit devDependency this job does not install.
+ * The byte-exact check lives in the `cockpit` CI job, which does. Between them,
+ * an added, removed or renamed operation cannot ship unnoticed.
+ */
+test('the Cockpit’s generated API types cover exactly the documented operations', async () => {
+  const spec = openApi(canonicalConfig)
+  const documented = new Set(
+    Object.values(spec.paths).flatMap((item) =>
+      Object.values(item)
+        .map((operation) => operation?.operationId)
+        .filter(Boolean),
+    ),
+  )
+  const types = await readFile(join(root, 'apps', 'cockpit', 'src', 'api', 'schema.d.ts'), 'utf8')
+  const generated = new Set([...types.matchAll(/operations\["([^"]+)"\]/g)].map((match) => match[1]))
+
+  const missing = [...documented].filter((id) => !generated.has(id))
+  const stale = [...generated].filter((id) => !documented.has(id))
+  assert.deepEqual(missing, [], 'run npm --prefix apps/cockpit run gen:api after adding an operation')
+  assert.deepEqual(stale, [], 'run npm --prefix apps/cockpit run gen:api after removing or renaming an operation')
+
+  for (const path of Object.keys(spec.paths)) {
+    assert.ok(types.includes(`"${path}"`), `${path} is missing from the Cockpit's generated API types`)
+  }
+})
+
 test('llms-full documents every OpenAPI path', async () => {
   const llms = await readFile(join(root, 'docs', 'llms-full.txt'), 'utf8')
   const paths = Object.keys(openApi(canonicalConfig).paths)

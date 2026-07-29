@@ -7,6 +7,17 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+  # apps/cockpit is deliberately not an npm workspace (see
+  # scripts/build-cockpit.sh), so the root entry above never sees its lockfile.
+  # It went unpatched long enough to accumulate four high-severity advisories in
+  # the toolchain that builds the console.
+  - package-ecosystem: npm
+    directory: /apps/cockpit
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:

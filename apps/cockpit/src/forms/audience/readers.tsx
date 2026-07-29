@@ -360,6 +360,14 @@ export function ReadersCard({ site }: { site: string }) {
 
       {editing ? (
         <ReaderDialog
+          // A different target is a different dialog. Without the key React
+          // reuses the instance when the operator opens "edit" while the create
+          // dialog is still showing its one-time password: the draft, the
+          // generated password and the issued-password panel all carry over, and
+          // the edit form opens pre-filled with the wrong reader and a disabled
+          // Save. The state is seeded from `reader` once, so remounting is the
+          // only thing that re-seeds it.
+          key={editing.reader?.id ?? 'new'}
           site={site}
           reader={editing.reader}
           groups={groups.data ?? []}

@@ -2,6 +2,7 @@ import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { AUDIT_ACTOR_TYPES, AUDIT_RESULTS, AUDIT_TRANSPORTS } from '../../src/audit.mjs'
 import { createApp } from '../../src/server.mjs'
 import { createRepository } from '../../src/repository.mjs'
 import { createAudioWorker } from '../../src/audio.mjs'
@@ -304,6 +305,160 @@ describe('GET /v1/content/{item}', () => {
         const response = await request('/v1/content/missing')
         assert.equal(response.status, 404)
         assert.match((await response.json()).error, /content item not found/)
+      },
+    )
+  })
+})
+
+describe('DELETE /v1/content/{item}', () => {
+  // Discarding a draft is the console's only destructive content verb, and it
+  // had no route-level test at all — which is how it came to write an audit row
+  // the database rejects (`transport: 'rest'`) and to name the *site* as the
+  // actor. Both failures are silent: the delete succeeds, the trail does not.
+  const draftApp = (item, sink) => ({
+    db: {
+      async select(table) {
+        return table === 'ck_content_items' ? [item] : []
+      },
+      async remove(table, filter) {
+        sink.removed.push({ table, filter })
+      },
+      async insert(table, row) {
+        if (table === 'ck_audit_events') sink.audits.push(row)
+        return [row]
+      },
+    },
+  })
+
+  test('discards the draft and records who did it, against the site, over http', async () => {
+    const sink = { removed: [], audits: [] }
+    await withApp(draftApp({ id: 'item-1', site_id: 'site-1', published_revision_id: null }, sink), async (request) => {
+      const response = await request('/v1/content/item-1', { method: 'DELETE' })
+      assert.equal(response.status, 200)
+      assert.deepEqual(await response.json(), { item_id: 'item-1', deleted: true })
+      assert.equal(sink.removed.length, 1)
+      assert.equal(sink.removed[0].table, 'ck_content_items')
+
+      assert.equal(sink.audits.length, 1, 'a destructive verb must leave exactly one trail')
+      const [row] = sink.audits
+      assert.equal(row.action, 'content.delete_draft')
+      assert.equal(row.resource_id, 'item-1')
+      // The three columns the check constraints close over. `transport: 'rest'`
+      // is not in the enum, so the insert used to fail and be swallowed.
+      assert.ok(AUDIT_TRANSPORTS.includes(row.transport), `transport ${row.transport} is not an accepted value`)
+      assert.ok(AUDIT_ACTOR_TYPES.includes(row.actor_type), `actor_type ${row.actor_type} is not an accepted value`)
+      assert.ok(AUDIT_RESULTS.includes(row.result), `result ${row.result} is not an accepted value`)
+      // Answerable questions: who deleted it, and which site was it in.
+      assert.equal(row.actor_id, 'key', 'the actor is the principal, never the site')
+      assert.equal(row.site_id, 'site-1', 'the row is indexed by site; without it the delete is unfindable')
+    })
+  })
+
+  test('a published item is refused, and nothing is removed', async () => {
+    const sink = { removed: [], audits: [] }
+    await withApp(
+      draftApp({ id: 'item-1', site_id: 'site-1', published_revision_id: 'rev-live' }, sink),
+      async (request) => {
+        const response = await request('/v1/content/item-1', { method: 'DELETE' })
+        assert.equal(response.status, 409)
+        assert.match((await response.json()).error, /unpublish it first/)
+        assert.deepEqual(sink.removed, [], 'a refusal must not delete anything')
+        assert.deepEqual(sink.audits, [], 'a refusal is not a deletion to record')
+      },
+    )
+  })
+})
+
+describe('POST /v1/sites/{site}/render', () => {
+  // The endpoint the assistant and every editor preview run on. It had no test:
+  // not the 404, not the 422, not the conditional request, and not the fact
+  // that `etag` is a header rather than a field of the body.
+  const site = { ...SITE, default_locale: 'en' }
+
+  test('renders a fragment, answers an ETag header and keeps it out of the body', async () => {
+    await withApp(
+      {
+        repo: {
+          async getSite() {
+            return site
+          },
+        },
+      },
+      async (request) => {
+        const response = await request('/v1/sites/my-site/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ markdown: 'Hello **world**.' }),
+        })
+        assert.equal(response.status, 200)
+        const etag = response.headers.get('etag')
+        assert.ok(etag, 'a conditional request needs a validator')
+        const body = await response.json()
+        assert.match(body.html, /<strong>world<\/strong>/)
+        assert.equal(body.etag, undefined, 'the validator travels as a header, not as payload')
+
+        const conditional = await request('/v1/sites/my-site/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'if-none-match': etag },
+          body: JSON.stringify({ markdown: 'Hello **world**.' }),
+        })
+        assert.equal(conditional.status, 304)
+      },
+    )
+  })
+
+  test('two locales of one fragment get two validators', async () => {
+    await withApp(
+      {
+        repo: {
+          async getSite() {
+            return site
+          },
+        },
+      },
+      async (request) => {
+        const render = (locale) =>
+          request('/v1/sites/my-site/render', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ markdown: '# Titel\n\nEin Absatz.\n', locale }),
+          })
+        const en = await render('en')
+        const de = await render('de')
+        assert.equal((await de.json()).semantic.locale, 'de')
+        assert.notEqual(
+          en.headers.get('etag'),
+          de.headers.get('etag'),
+          'two renders that differ must not share a validator, or the 304 serves the wrong one',
+        )
+      },
+    )
+  })
+
+  test('an unknown site is a 404 and non-string markdown is a 422', async () => {
+    await withApp(
+      {
+        repo: {
+          async getSite(slug) {
+            return slug === 'my-site' ? site : null
+          },
+        },
+      },
+      async (request) => {
+        const missing = await request('/v1/sites/nope/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ markdown: '# x' }),
+        })
+        assert.equal(missing.status, 404)
+
+        const invalid = await request('/v1/sites/my-site/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ markdown: { not: 'a string' } }),
+        })
+        assert.equal(invalid.status, 422)
+        assert.match((await invalid.json()).error, /markdown must be a string/)
       },
     )
   })

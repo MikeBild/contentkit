@@ -1,4 +1,4 @@
-import createClient, { type Middleware } from 'openapi-fetch'
+import createClient, { type BodySerializer, type Middleware } from 'openapi-fetch'
 import type { paths } from './schema'
 
 // Same origin, always: the Cockpit is served by ContentKit itself, so there is
@@ -74,7 +74,24 @@ const raise: Middleware = {
   },
 }
 
-export const api = createClient<paths>({ credentials: 'same-origin' })
+/**
+ * Markdown goes on the wire as Markdown.
+ *
+ * openapi-fetch's default serializer JSON-stringifies every body that is not
+ * FormData or form-urlencoded — it never looks at a declared `text/*` type. The
+ * two operations that send a raw document (`POST /v1/sites/{site}/content` and
+ * `PUT /v1/content/{item}/revisions`) would therefore arrive quoted, with their
+ * newlines escaped, and the server would read a single line with no frontmatter
+ * fence: `422 frontmatter title is required` on every save the console makes.
+ *
+ * A string is already a valid `BodyInit`, so it is sent verbatim. Nothing else
+ * changes: no request body in the spec is a bare JSON string, so passing objects
+ * on to `JSON.stringify` keeps every other call identical.
+ */
+const serializeBody: BodySerializer<unknown> = (payload) =>
+  typeof payload === 'string' ? payload : JSON.stringify(payload)
+
+export const api = createClient<paths>({ credentials: 'same-origin', bodySerializer: serializeBody })
 api.use(csrf)
 api.use(raise)
 

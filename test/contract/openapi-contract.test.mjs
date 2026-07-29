@@ -42,11 +42,22 @@ test('preview contract separates one-time invitation access from the memorable U
   assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[303])
 })
 
-test('every documented access operation has a routable method', () => {
+// Everything the main dispatcher owns, not only the two path families this used
+// to filter to. `/v1/sites/{site}/render`, both assistant paths and the CRUD
+// verbs added in 4.6 were all documented and none was checked against
+// API_ROUTES — which is a hand-maintained second description of handle()'s if
+// chain, so nothing else keeps the two in step.
+//
+// The OAuth and identity families are excluded because they are not in that
+// chain: createOAuthMount() answers them before the fallback ever runs, and
+// listing them in API_ROUTES would be the mistake, not the fix.
+const SUB_ROUTER = /^\/(?:$|\.well-known\/|v1\/oauth\/|v1\/identity\/)/
+
+test('every documented operation has a routable method', () => {
   const normalize = (path) => path.replaceAll(/\{[^}]+\}/g, '[^/]+').replaceAll('.', '\\.')
-  for (const [path, item] of Object.entries(spec.paths).filter(
-    ([path]) => path.includes('_contentkit') || path.includes('/access/'),
-  )) {
+  const checked = Object.entries(spec.paths).filter(([path]) => !SUB_ROUTER.test(path))
+  assert.ok(checked.length > 60, `expected most of the spec to be checked, got ${checked.length}`)
+  for (const [path, item] of checked) {
     for (const method of Object.keys(item)) {
       const route = API_ROUTES.find((candidate) => candidate.pattern.test(path.replaceAll(/\{[^}]+\}/g, 'value')))
       assert.ok(route, `${method.toUpperCase()} ${path} is not routable (${normalize(path)})`)

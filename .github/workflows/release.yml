@@ -8,7 +8,44 @@ permissions:
   contents: read
 
 jobs:
+  # A tag is not evidence. v4.6.0, v4.6.1 and v4.6.2 were all cut from commits
+  # whose CI run had failed, all three shipped, and the deploy scheduler put them
+  # in production within half an hour — because release.yml triggers on the tag
+  # alone and runs a strict subset of CI. This job is the missing link: the
+  # commit the tag points at must have a green CI run of its own.
+  ci-green:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: CI concluded successfully for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # CI may still be running when the tag is pushed, so poll rather than
+          # read once. Anything other than a completed success — failure,
+          # cancellation, or no run at all — stops the release.
+          for attempt in $(seq 1 40); do
+            status=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "none none")
+            echo "attempt $attempt: $status"
+            case "$status" in
+              "completed success") exit 0 ;;
+              "completed "*) echo "::error::CI for $SHA concluded '$status'; refusing to release it" ; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::No successful CI run for $SHA after 20 minutes; refusing to release it"
+          exit 1
+
   build:
+    needs: ci-green
     strategy:
       fail-fast: false
       matrix:
@@ -20,6 +57,7 @@ jobs:
           - os: ubuntu-24.04-arm
             asset: contentkit-linux-arm64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -34,8 +72,15 @@ jobs:
         run: test "${TAG#v}" = "$(node -p "require('./package.json').version")"
       - run: npm run lint
       - run: npm test
+      # Previously absent here, so a release ran a strict subset of the gates
+      # every pull request has to pass. `test:integration` still is not run: it
+      # needs a Postgres service container, which the macOS leg of this matrix
+      # cannot provide — `ci-green` above is what covers it.
+      - run: npm run test:contract
+      - run: npm run test:smoke
       - run: npm run check:embedded-drift
       - run: npm run check:docs-drift
+      - run: npm audit --audit-level=high
       - run: npm run build:binary
       - run: mv dist/contentkit "${{ matrix.asset }}"
       - uses: actions/upload-artifact@v7
@@ -47,6 +92,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:

@@ -660,19 +660,47 @@ function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void })
 
 // ── Decks ────────────────────────────────────────────────────────────────────
 
+const DECK_PLACEHOLDER = [
+  '---',
+  'kind: deck',
+  'layout: deck',
+  'title: A deck',
+  'locale: en',
+  'slug: a-deck',
+  '---',
+  '',
+  '# Slide one',
+  '',
+  'The opening claim.',
+  '',
+  '---',
+  '',
+  '# Slide two',
+  '',
+  'What follows from it.',
+  '',
+].join('\n')
+
 export function DecksPage() {
   const { site } = useSite()
   const can = useCan()
   const themes = useQuery({ queryKey: keys.deckThemes, queryFn: () => ck.decks.themes() })
   const templates = useQuery({ queryKey: keys.deckTemplates, queryFn: () => ck.decks.templates() })
-  const [source, setSource] = useState('---\nlayout: deck\ntitle: A deck\n---\n\n# Slide one\n')
+  // The placeholder has to be a deck the server actually accepts, or the page
+  // teaches its first lesson wrong: planning demands `kind: deck` (a `layout`
+  // alone is refused), and frontmatter validation demands a title, a locale and
+  // a slug before it looks at anything deck-specific.
+  const [source, setSource] = useState(DECK_PLACEHOLDER)
   const [job, setJob] = useState<string | null>(null)
 
   const validate = useMutation({ mutationFn: () => ck.decks.validate(site, { markdown: source }) })
   const compile = useMutation({
-    mutationFn: () => ck.decks.compile(site, { markdown: source }),
+    // Always asynchronous. A synchronous compile answers 200 with the deck
+    // itself, which this page has nowhere to put — the operator confirmed a
+    // render and then watched nothing happen. `async` answers 202 with a job id,
+    // which is what the status line and the download link below are built on.
+    mutationFn: () => ck.decks.compile(site, { markdown: source, async: true }),
     onSuccess: (result) => {
-      // 202 answers with a job id; 200 answers with the deck itself.
       const id =
         (result as { job_id?: string; job?: { id?: string } })?.job_id ?? (result as { job?: { id?: string } })?.job?.id
       setJob(id ?? null)

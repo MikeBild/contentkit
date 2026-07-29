@@ -100,3 +100,8 @@ const rules = (scoped.match(/\{/g) || []).length
 console.log(`wrote src/content/site.scoped.css (${rules} rules, ${Math.round(scoped.length / 1024)} kB)`)
 if (/(^|\n)\s*:root\s*\{/.test(scoped)) throw new Error(':root survived scoping — tokens would leak')
 if (/(^|\n)\s*(html|body)\s*\{/.test(scoped)) throw new Error('a page-level rule survived scoping')
+// Emptiness passes every leak check above, and the build would succeed and ship
+// a console whose rendered content has no styling at all. The published sheet
+// carries hundreds of rules; a number near zero means this scanner lost the
+// file, not that assets/site.css shrank.
+if (rules < 100) throw new Error(`only ${rules} rules survived scoping — assets/site.css was not read`)

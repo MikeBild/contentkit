@@ -1,19 +1,18 @@
 /**
- * Carrying unknown keys through a whole-object write.
+ * Putting a whole-object write back together.
  *
  * `PATCH /v1/sites/{site}` replaces `settings` in full and lets unknown keys
  * through untouched. Both halves of that sentence matter: a form that sends only
  * what it renders deletes everything else, and a form that refuses to send
  * anything it does not understand can never save at all. So the form takes the
  * whole received object apart into "mine" and "carried", edits the first, and
- * puts them back together.
+ * puts them back together here.
+ *
+ * Only the reassembly lives here. Splitting the object is `omitPaths` in
+ * forms/site/contract.ts, which works on exact leaf paths rather than top-level
+ * keys — a second, top-level-only splitter used to sit alongside `mergeDeep`
+ * with no caller, which is one description of the split too many.
  */
-
-/** Keys of `source` that no path in `owned` claims. */
-export function carriedKeys(source: Record<string, unknown>, owned: readonly string[]): Record<string, unknown> {
-  const top = new Set(owned.map((path) => path.split('.')[0]!))
-  return Object.fromEntries(Object.entries(source).filter(([key]) => !top.has(key)))
-}
 
 /**
  * A deep merge that treats arrays as values.
@@ -32,23 +31,9 @@ export function mergeDeep<T extends Record<string, unknown>>(carried: T, owned: 
       continue
     }
     const existing = result[key]
-    result[key] =
-      isPlainObject(existing) && isPlainObject(value) ? mergeDeep(existing, value) : value
+    result[key] = isPlainObject(existing) && isPlainObject(value) ? mergeDeep(existing, value) : value
   }
   return result as T
-}
-
-/** Drops `undefined` values recursively — they are keys the wire must not carry. */
-export function pruneUndefined<T>(value: T): T {
-  if (Array.isArray(value)) return value.map(pruneUndefined) as T
-  if (isPlainObject(value)) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, entry]) => entry !== undefined)
-        .map(([key, entry]) => [key, pruneUndefined(entry)]),
-    ) as T
-  }
-  return value
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

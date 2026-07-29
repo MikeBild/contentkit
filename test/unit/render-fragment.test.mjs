@@ -63,7 +63,10 @@ describe('renderFragment', () => {
     ].join('\n')
 
     const dark = await renderFragment({ markdown: chart, scheme: 'dark', version: 't' })
-    if (dark.chart_count === 0) return // no chart pipeline in this build; nothing to assert
+    // Asserted, not guarded around: a build that stops materialising charts is
+    // the very regression the rest of this test exists to catch, so skipping on
+    // chart_count === 0 would turn that failure into a pass.
+    assert.equal(dark.chart_count, 1, 'the chart pipeline must have produced the chart this test inspects')
     assert.doesNotMatch(dark.html, /prefers-color-scheme/, 'an explicit scheme must not defer to the OS')
     assert.match(dark.html, /<img[^>]+report-chart-image/)
 
@@ -86,6 +89,19 @@ describe('renderFragment', () => {
     assert.notEqual(etag, renderFragmentEtag({ ...base, themeHash: 'bbb' }))
     // A release changes the renderer, so a cached fragment must not survive it.
     assert.notEqual(etag, renderFragmentEtag({ ...base, version: '2' }))
+    assert.notEqual(etag, renderFragmentEtag({ ...base, locale: 'de' }))
+  })
+
+  test('two locales of one fragment do not share an ETag', async () => {
+    // Not a restatement of the line above: this runs the real renderer, so it
+    // fails if the validator and the render ever disagree about what varies.
+    // The route answers 304 on a matching if-none-match, so a shared ETag hands
+    // the caller the other locale's render — the body genuinely differs.
+    const markdown = '# Titel\n\nEin Absatz.\n'
+    const de = await renderFragment({ markdown, locale: 'de', version: 't' })
+    const en = await renderFragment({ markdown, locale: 'en', version: 't' })
+    assert.notEqual(de.semantic.locale, en.semantic.locale, 'the two renders must differ, or this proves nothing')
+    assert.notEqual(de.etag, en.etag)
   })
 
   test('identical input renders once and is served from cache', async () => {

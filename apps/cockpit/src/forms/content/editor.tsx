@@ -89,7 +89,7 @@ export function ContentEditor({
   // question is whether this form understands the author's file, and a form that
   // does not must refuse to be the thing that rewrites it.
   const drift = useMemo(
-    () => (parsed.failure ? [] : roundtripDrift(parsed.frontmatter, parsed.body)),
+    () => (parsed.failure ? { keys: [] } : roundtripDrift(parsed.frontmatter, parsed.body)),
     [parsed.frontmatter, parsed.body, parsed.failure],
   )
 
@@ -122,7 +122,7 @@ export function ContentEditor({
 
   const document = emit(form.values.fm, form.values.body)
   const layout = effectiveLayout(form.values.fm, preset)
-  const blocked = drift.length > 0 || Boolean(parsed.failure)
+  const blocked = drift.keys.length > 0 || Boolean(parsed.failure)
   const guard = useUnsavedGuard({
     when: form.dirty,
     onSave: blocked ? undefined : () => form.save(),
@@ -197,10 +197,11 @@ export function ContentEditor({
         </Banner>
       ) : null}
 
-      {drift.length ? (
+      {drift.keys.length ? (
         <Banner tone="error" testId="ck-content-drift">
-          This form does not read {drift.map((key) => `“${key}”`).join(', ')} the way it is written, so saving would
-          rewrite it. Editing is disabled for this document rather than changing an author's file silently.
+          This form does not read {drift.keys.map((key) => `“${key}”`).join(', ')} the way it is written, so
+          saving would rewrite it. Editing is disabled for this document rather than changing an author's file silently.
+          {drift.reason ? ` (${drift.reason})` : ''}
         </Banner>
       ) : null}
 

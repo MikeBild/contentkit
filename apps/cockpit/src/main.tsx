@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { queryClient } from '@/lib/query'
 import { router } from '@/router'
-import { SessionGate } from '@/lib/session'
+import { SessionGate } from '@/components/session-gate'
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>

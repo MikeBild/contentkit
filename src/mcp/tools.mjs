@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js'
 import { compileCompositionMarkdown } from '../composition-output.mjs'
 import { recommendPatterns } from '../composition-registry.mjs'
+import { auditActor } from '../audit.mjs'
 import { compileDeck, planDeck } from '../decks.mjs'
 import {
   getCompositionStats,
@@ -15,7 +16,13 @@ import {
   resolveStatsWindow,
   resolveUsageStatsWindow,
 } from '../stats.mjs'
-import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant, roleForProductScopes } from '../oauth/policy.mjs'
+import {
+  PRODUCT_SCOPES,
+  defaultProductScopes,
+  publicIdentityGrant,
+  roleForProductScopes,
+  withinPrincipalSites,
+} from '../oauth/policy.mjs'
 import { sha256 } from '../utils.mjs'
 
 const siteRef = z.string().min(1).max(100).describe('Site UUID or slug.')
@@ -105,24 +112,8 @@ function requireAnyScope(deps, principal, scopes, siteId = null) {
   }
 }
 
-function actor(principal) {
-  return {
-    actorType: principal.oauth ? 'oauth' : 'api_key',
-    actorId: principal.id,
-  }
-}
-
-// Empty site_ids means global in ContentKit. A site-restricted administrator
-// must therefore provide a non-empty subset; otherwise a CRUD helper could
-// accidentally mint or reveal a cross-tenant credential/grant.
-function withinPrincipalSites(principal, siteIds) {
-  const ceiling = Array.isArray(principal.site_ids) ? principal.site_ids : []
-  if (!ceiling.length) return true
-  return Array.isArray(siteIds) && siteIds.length > 0 && siteIds.every((id) => ceiling.includes(id))
-}
-
 async function audit(deps, principal, input) {
-  await deps.audit.record({ ...actor(principal), transport: 'mcp', result: 'success', ...input })
+  await deps.audit.record({ ...auditActor(principal), transport: 'mcp', result: 'success', ...input })
 }
 
 async function recordDeckEvent(deps, siteId, event) {

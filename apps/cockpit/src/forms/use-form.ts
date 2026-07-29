@@ -93,9 +93,20 @@ export function useForm<UI>({
     // A field the operator has just corrected must stop showing the server's
     // old complaint about it — the message is about a value that no longer
     // exists, and leaving it there makes the form look permanently broken.
+    //
+    // Matching the key exactly is not enough: `errorsFromResponse` deliberately
+    // files a 422 under the *section prefix* it belongs to, so a complaint about
+    // `settings.theme.tokens` is stored as `settings.theme`. Editing the field
+    // named in the message would then never clear it. A stored error is about a
+    // subtree, so an edit anywhere inside that subtree clears it — and an edit
+    // that replaces a subtree clears every complaint underneath it.
     setServerErrors((current) => {
-      if (!(path in current)) return current
-      const { [path]: _cleared, ...rest } = current
+      const stale = Object.keys(current).filter(
+        (key) => key === path || path.startsWith(`${key}.`) || key.startsWith(`${path}.`),
+      )
+      if (stale.length === 0) return current
+      const rest = { ...current }
+      for (const key of stale) delete rest[key]
       return rest
     })
   }, [])

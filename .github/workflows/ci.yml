@@ -11,7 +11,12 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      # Node 20 is a supported engine and a required status check, so its result
+      # has to be a result. Without this it is cancelled the moment 22 fails and
+      # no recent commit has a passing 20.x run at all.
+      fail-fast: false
       matrix:
         node-version: ['20.x', '22.x']
     steps:
@@ -29,8 +34,49 @@ jobs:
       - run: npm run check:docs-drift
       - run: npm audit --audit-level=high
 
+  # The console is a quarter of the codebase and the primary deliverable inside
+  # the binary, and until this job existed CI never type-checked it, never
+  # regenerated its two generated files and never audited its toolchain. That
+  # made `tsc --noEmit` — the only thing in the repository that compares a
+  # documented response shape to the code consuming it — a check nobody ran.
+  cockpit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/cockpit
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: npm
+          # apps/cockpit is deliberately not a workspace (see
+          # scripts/build-cockpit.sh), so its lockfile has to be named here or
+          # its ~900-package install is uncached on every run.
+          cache-dependency-path: |
+            package-lock.json
+            apps/cockpit/package-lock.json
+      - run: npm ci
+      # site.scoped.css is gitignored and so cannot drift, but it can be empty:
+      # the generator now refuses that rather than shipping an unstyled console.
+      - run: npm run gen:css
+      - run: npm run gen:api
+      # schema.d.ts is tracked, generated, and was gated by nothing — `gen:api`
+      # is in neither `build` nor any test, so it only updated when someone
+      # remembered to type it. Stale types are still valid types, so tsc alone
+      # would never notice.
+      - name: schema.d.ts is in sync with docs/openapi.json
+        run: git diff --exit-code -- src/api/schema.d.ts
+      - run: npx tsc --noEmit
+      - run: npm run build
+      # The root gate proves nothing about this tree: it has its own lockfile and
+      # `build-cockpit.sh` installs it with --no-audit.
+      - run: npm audit --audit-level=high
+
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -57,6 +103,7 @@ jobs:
 
   binary-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -69,6 +116,7 @@ jobs:
 
   benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

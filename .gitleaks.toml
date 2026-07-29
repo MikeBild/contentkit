@@ -1,0 +1,25 @@
+# gitleaks configuration for ContentKit.
+#
+# The whole default rule set is kept; one allowlist is added on top of it.
+#
+# The production walkthrough in scripts/verify-cockpit-prod.md shows the operator
+# how to probe an API key with curl, and spells the key as a placeholder the
+# reader is meant to replace. The `curl-auth-header` rule cannot tell that from a
+# leak, and it already reddened a release build once — while staying green
+# afterwards only because the action scans the pushed commit range rather than
+# the tree, so the next edit to those lines would red it again.
+#
+# The exemption is written as the two literal placeholders rather than as a path,
+# deliberately: allowlisting the file would also allowlist a real key pasted into
+# it tomorrow.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholder credentials, not secrets"
+# Matched against the whole finding rather than the captured secret, so the
+# exemption only ever applies to a bearer header naming one of these two words.
+regexTarget = "match"
+regexes = [
+  '''(?i)authorization:\s*bearer\s+(THEKEY|PROBE_KEY)\b''',
+]

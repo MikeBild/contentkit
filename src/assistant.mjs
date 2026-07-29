@@ -145,13 +145,18 @@ export function createAssistant(config, deps) {
           inputSchema: jsonSchema(candidate.inputSchema),
           execute: async (input) => {
             const started = Date.now()
-            const parsed = candidate.schema.parse(input ?? {})
+            // Inside the try: a rejected tool input is the failure a model is
+            // most likely to produce, and parsing outside it made `outcome:
+            // 'error'` undercount by exactly that class. `parsed` is read back
+            // afterwards so a schema rejection still records the raw input.
+            let parsed
             try {
+              parsed = candidate.schema.parse(input ?? {})
               const result = await candidate.execute(deps, principal, parsed, context)
               await record(candidate, principal, parsed, result, started, 'success')
               return jsonSafe(result)
             } catch (error) {
-              await record(candidate, principal, parsed, null, started, 'error')
+              await record(candidate, principal, parsed ?? input, null, started, 'error')
               // Surfaced to the model as a tool failure rather than killing the
               // stream: a declined confirmation is a normal outcome it must be
               // able to read and report honestly.
@@ -191,6 +196,19 @@ export function createAssistant(config, deps) {
 
     resolveElicitation(id, outcome) {
       return elicitations.resolve(id, outcome)
+    },
+
+    /**
+     * The tool names this principal would actually be offered on a turn.
+     *
+     * The scope ceiling is this surface's central promise, and it was assertable
+     * only by calling `visibleTools` directly — which says nothing about what
+     * the assistant does with the answer. Asking the assistant itself is the
+     * only question worth testing. A turn's `context` cannot change the answer,
+     * so none is required to ask.
+     */
+    toolNames(principal) {
+      return Object.keys(toolsFor(principal, null))
     },
 
     /**

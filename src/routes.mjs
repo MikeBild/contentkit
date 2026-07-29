@@ -43,7 +43,14 @@ import {
   sessionCookie,
   validReturnTo,
 } from './access.mjs'
-import { PRODUCT_SCOPES, defaultProductScopes, publicIdentityGrant, roleForProductScopes } from './oauth/policy.mjs'
+import {
+  PRODUCT_SCOPES,
+  defaultProductScopes,
+  publicIdentityGrant,
+  roleForProductScopes,
+  withinPrincipalSites,
+} from './oauth/policy.mjs'
+import { auditActor } from './audit.mjs'
 import { csrfSecretFor, csrfSetCookie, signCsrf, verifyCsrf } from './csrf.mjs'
 import { serveCockpit } from './cockpit.mjs'
 
@@ -56,12 +63,6 @@ export const SERVICE = {
   mcp: '/mcp',
   oauth_protected_resource: '/.well-known/oauth-protected-resource/mcp',
   health: '/health',
-}
-
-function withinPrincipalSites(principal, siteIds) {
-  const ceiling = Array.isArray(principal?.site_ids) ? principal.site_ids : []
-  if (!ceiling.length) return true
-  return Array.isArray(siteIds) && siteIds.length > 0 && siteIds.every((id) => ceiling.includes(id))
 }
 
 function documentation(config, name) {
@@ -1156,8 +1157,7 @@ export function createRequestHandler(ctx) {
         // No siteId on the record: the row it would reference is gone, and the
         // audit trail has to survive the thing it describes.
         await audit.record({
-          actorType: principal.oauth ? 'oauth' : 'api_key',
-          actorId: principal.id,
+          ...auditActor(principal),
           action: 'site.delete',
           resourceType: 'site',
           resourceId: site.id,
@@ -1674,18 +1674,19 @@ export function createRequestHandler(ctx) {
       // item has a published revision: unpublishing is a release operation with
       // its own endpoint, and conflating the two would let a single DELETE remove
       // live content and its whole history at once.
-      if (!(await requireScope(req, res, 'content:write', items[0].site_id))) return
+      const discarding = await requireScope(req, res, 'content:write', items[0].site_id)
+      if (!discarding) return
       if (items[0].published_revision_id)
         return sendJson(res, 409, { error: 'published content cannot be deleted; unpublish it first' })
       await db.remove('ck_content_items', { id: `eq.${items[0].id}` })
       await audit.record({
-        actorType: 'api_key',
-        actorId: String(items[0].site_id),
+        ...auditActor(discarding),
+        siteId: items[0].site_id,
         action: 'content.delete_draft',
         resourceType: 'content',
         resourceId: items[0].id,
         result: 'success',
-        transport: 'rest',
+        transport: 'http',
       })
       return sendJson(res, 200, { item_id: items[0].id, deleted: true })
     }
@@ -2008,8 +2009,7 @@ export function createRequestHandler(ctx) {
         })
       }
       await audit.record({
-        actorType: principal.oauth ? 'oauth' : 'api_key',
-        actorId: principal.id,
+        ...auditActor(principal),
         action: 'identity.create',
         resourceType: 'identity_grant',
         resourceId: grant.id,
@@ -2103,8 +2103,7 @@ export function createRequestHandler(ctx) {
       const grant = rows[0]
       if (!grant) return sendJson(res, 404, { error: 'identity grant not found' })
       await audit.record({
-        actorType: principal.oauth ? 'oauth' : 'api_key',
-        actorId: principal.id,
+        ...auditActor(principal),
         action: req.method === 'DELETE' ? 'identity.revoke' : restore ? 'identity.restore' : 'identity.update',
         resourceType: 'identity_grant',
         resourceId: grant.id,
@@ -2150,8 +2149,7 @@ export function createRequestHandler(ctx) {
       }
       const created = await repo.createApiKey(input)
       await audit.record({
-        actorType: principal.oauth ? 'oauth' : 'api_key',
-        actorId: principal.id,
+        ...auditActor(principal),
         action: 'api_key.create',
         resourceType: 'api_key',
         resourceId: created.id,
@@ -2175,8 +2173,7 @@ export function createRequestHandler(ctx) {
       )
       if (!revoked) return sendJson(res, 404, { error: 'API key not found' })
       await audit.record({
-        actorType: principal.oauth ? 'oauth' : 'api_key',
-        actorId: principal.id,
+        ...auditActor(principal),
         action: 'api_key.revoke',
         resourceType: 'api_key',
         resourceId: revoked.id,

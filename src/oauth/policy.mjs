@@ -67,3 +67,19 @@ export function publicIdentityGrant(row) {
   delete safe.source_pepper_fingerprint
   return safe
 }
+
+/**
+ * Whether a principal may act on a credential or grant scoped to `siteIds`.
+ *
+ * Empty `site_ids` means global in ContentKit, so a site-restricted
+ * administrator must name a non-empty subset of their own ceiling; otherwise a
+ * CRUD helper could mint or reveal a cross-tenant credential. This is the
+ * containment boundary itself, and it lived as two byte-identical copies — one
+ * in routes.mjs, one in mcp/tools.mjs — which is one copy too many for a rule
+ * that decides what one tenant can see of another.
+ */
+export function withinPrincipalSites(principal, siteIds) {
+  const ceiling = Array.isArray(principal?.site_ids) ? principal.site_ids : []
+  if (!ceiling.length) return true
+  return Array.isArray(siteIds) && siteIds.length > 0 && siteIds.every((id) => ceiling.includes(id))
+}

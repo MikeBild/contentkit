@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+// The build has to reach the same verdict as the gateway, or the system is
+// wrong in one of two directions: the build calls a page public that serving
+// then 403s (a link to nowhere), or it renders a protected page's title into
+// navigation and the search index (a leak). This file used to carry its own copy
+// of the resolver, identical down to the sort comparator and tested nowhere.
+import { mostSpecificAccess } from './access.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { materializeReportCharts } from './report-charts.mjs'
 import { materializeComposition } from './composition-output.mjs'
@@ -104,12 +110,6 @@ function assignContentRoutes(items, site) {
     if (urls.has(item.url)) throw Object.assign(new Error(`duplicate generated URL ${item.url}`), { statusCode: 422 })
     urls.add(item.url)
   }
-}
-
-function matchingRule(rules, pathname) {
-  return [...rules]
-    .filter((rule) => (rule.match === 'exact' ? pathname === rule.path : pathname.startsWith(rule.path)))
-    .sort((a, b) => Number(b.match === 'exact') - Number(a.match === 'exact') || b.path.length - a.path.length)[0]
 }
 
 function sameAccessGrant(left, right) {
@@ -615,7 +615,7 @@ export async function buildSite({
     const authored = item.access?.length
       ? { match: 'exact', path: item.url, group_slugs: item.access, user_ids: [], content_item_id: item.item_id }
       : null
-    item.access_rule = authored || matchingRule(accessRules, item.url) || null
+    item.access_rule = authored || mostSpecificAccess(accessRules, item.url) || null
     item.protected = Boolean(item.access_rule)
     item.canonical = absolute(site, item.url)
   }
@@ -639,7 +639,8 @@ export async function buildSite({
 
   const sitemapItems = []
   const protectedPath = (pathname) =>
-    rendered.some((item) => item.url === pathname && item.protected) || Boolean(matchingRule(accessRules, pathname))
+    rendered.some((item) => item.url === pathname && item.protected) ||
+    Boolean(mostSpecificAccess(accessRules, pathname))
   // Static per-locale routes (home, listings, contact …) exist for every
   // configured locale, so their hreflang alternates can be derived directly.
   const staticAlternates = (path) =>
@@ -726,7 +727,7 @@ export async function buildSite({
       sameAs: Object.values(site.settings?.socials || {}),
     }
     const homePath = `/${locale}/`
-    const homeGrant = matchingRule(accessRules, homePath)
+    const homeGrant = mostSpecificAccess(accessRules, homePath)
     const homeBase = { ...base, pages: pagesVisibleWithGrant(pages, allPages, homeGrant) }
     files.set(
       `${locale}/index.html`,
@@ -752,7 +753,7 @@ export async function buildSite({
 
     for (const series of configuredReportSeries) {
       const seriesPath = `/${locale}/reports/${series.id}/`
-      const seriesGrant = matchingRule(accessRules, seriesPath)
+      const seriesGrant = mostSpecificAccess(accessRules, seriesPath)
       const seriesPages = pagesVisibleWithGrant(pages, allPages, seriesGrant)
       const visibleReports = seriesPages.filter(
         (item) =>

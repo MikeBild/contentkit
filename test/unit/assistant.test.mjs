@@ -20,11 +20,27 @@ describe('the authoring assistant', () => {
 
   test('offers exactly the tools the principal is already allowed on MCP', () => {
     // The assistant must not be a way around the scope ceiling, so it reuses
-    // the same filter rather than keeping its own list.
+    // the same filter rather than keeping its own list. Asked of the assistant,
+    // not of `visibleTools`: comparing the filter to itself would still pass
+    // with the filter removed from the assistant entirely.
+    const assistant = createAssistant(config, deps)
     const reader = { scopes: ['content:read'], site_ids: [] }
     const admin = { scopes: ['*'], site_ids: [] }
-    const readerTools = visibleTools(reader).map((candidate) => candidate.name)
-    const adminTools = visibleTools(admin).map((candidate) => candidate.name)
+    const readerTools = assistant.toolNames(reader)
+    const adminTools = assistant.toolNames(admin)
+
+    assert.deepEqual(
+      readerTools.toSorted(),
+      visibleTools(reader)
+        .map((candidate) => candidate.name)
+        .toSorted(),
+    )
+    assert.deepEqual(
+      adminTools.toSorted(),
+      visibleTools(admin)
+        .map((candidate) => candidate.name)
+        .toSorted(),
+    )
 
     assert.ok(readerTools.length > 0)
     assert.ok(adminTools.length > readerTools.length)
