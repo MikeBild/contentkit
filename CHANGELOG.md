@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.4.0 — 2026-07-29
+
+### Added
+
+- **ContentKit Cockpit**, a first-party operator console served by ContentKit
+  itself under `/cockpit/` on the API host. It covers the full API surface:
+  sites and settings, content and revisions, compositions, decks, releases and
+  previews, published documents and search, reader access, webhooks and
+  deliveries, moderation, credentials, audit, audio and system maintenance.
+  Same origin as the API it drives, so no CORS is opened, no second process is
+  deployed and no credential is held in the browser. The console ships inside
+  the self-contained binary and costs 652 kB.
+- `GET /v1/identity/cockpit-login` signs an operator into the console through
+  the existing OIDC or API-key funnel, issuing only the HttpOnly operator
+  session cookie. It is not an OAuth client: no registration, no consent screen
+  for the operator's own console, and no authorization codes minted to be
+  discarded.
+- `GET /v1/identity/session` returns the signed-in identity, the live
+  product-scope ceiling that decides which parts of the console exist, and the
+  CSRF token every cookie-authenticated mutation must echo.
+- An authoring assistant behind `CONTENTKIT_ANTHROPIC_API_KEY`
+  (`POST /v1/assistant/messages`). Credential = enabled: with no key the routes
+  answer 404 and the console hides the tab. It calls ContentKit's own MCP tools
+  through the same scope filter and the same schema validation, so it can never
+  exceed what the caller's credential already permits. Publication, activation
+  and credential changes still require a human decision, delivered as an
+  approval card; declining, ignoring or dropping the connection changes
+  nothing.
+
+### Changed
+
+- Authentication accepts the operator session cookie as a third credential
+  source alongside `Authorization: Bearer` and `x-api-key`, resolving to the
+  same live grant ceiling as an OAuth access token. A request that carries an
+  explicit key is still judged by that key alone.
+- Cookie-authenticated mutations must send a matching `X-Contentkit-Csrf`
+  header. The gate sits where every secured route resolves its principal, so a
+  new route cannot omit it. Key- and token-authenticated clients are
+  unaffected.
+- Every operation in the OpenAPI document now carries a unique `operationId`,
+  enforced by a contract test, so generated clients get stable method names
+  instead of path-derived ones that shift whenever a path does.
+
 ## 4.3.4 — 2026-07-29
 
 ### Fixed
