@@ -8,11 +8,19 @@ import { fileURLToPath } from 'node:url'
  * The Cockpit's navigation is split into two contexts, and this test is what
  * keeps the split honest.
  *
- * The sidebar used to be one flat list with the site switcher above all of it,
- * which claimed the switcher governed every page. It governs the pages that name
- * the site in their path — a large part of the documented /v1 surface does not.
- * Moderation, Credentials and Audit run on installation-wide endpoints, so an
- * operator reading them under a site switcher is being told something untrue.
+ * The sidebar used to be one flat list of sixteen labels, and this file's first
+ * job was the split beneath it: the site switcher governs the pages that name
+ * the site in their path, and a large part of the documented /v1 surface does
+ * not. Moderation, Credentials and Audit run on installation-wide endpoints, so
+ * an operator reading them under a site switcher is being told something untrue.
+ *
+ * Sixteen labels in two headed lists is still not a navigation, though — the two
+ * headings answered "whose endpoints?" and nothing answered "what am I doing?".
+ * So there is now a second dimension, GROUPS: the blocks the sidebar is drawn
+ * in. It is presentation, and it is checked against the contract rather than
+ * trusted — a block declares one context and every entry in it must agree — so
+ * "this page reads nicely under Content" cannot quietly move an
+ * installation-wide page under the switcher.
  *
  * Two things this file used to do and no longer does, because both rotted:
  *
@@ -221,10 +229,34 @@ function parseNav() {
       label: field(chunk, /\blabel:\s*'([^']*)'/),
       scope: scopeMatch ? (scopeMatch[1] ?? null) : undefined,
       context: field(chunk, /\bcontext:\s*'([^']*)'/),
+      group: field(chunk, /\bgroup:\s*'([^']*)'/),
       selection: field(chunk, /\bselection:\s*'([^']*)'/),
       api: list(chunk, 'api'),
     }
   })
+}
+
+/**
+ * The blocks the sidebar is drawn in — the dimension the flat list did not have.
+ *
+ * `context` still says whose endpoints a page reaches; `group` says which block
+ * it is drawn in. They are different questions with different answers (four
+ * blocks are site context), and the second is presentation, so it is checked
+ * against the first rather than trusted: see “every block is one context, and
+ * every entry sits in a block that agrees with it”.
+ */
+function parseGroups() {
+  return objectChunks(tableBody(shell, 'const GROUPS = [')).map((chunk) => ({
+    id: field(chunk, /\bid:\s*'([^']*)'/),
+    // A block may deliberately have no heading — Overview is one page and a
+    // heading over one page is noise — so '' is a value here, not a miss.
+    label: field(chunk, /\blabel:\s*'([^']*)'/),
+    context: field(chunk, /\bcontext:\s*'([^']*)'/),
+    testId: field(chunk, /\btestId:\s*'([^']*)'/),
+    collapsible: field(chunk, /\bcollapsible:\s*(true|false)/) === 'true',
+    startsOpen: field(chunk, /\bstartsOpen:\s*(true|false)/) === 'true',
+    separated: field(chunk, /\bseparated:\s*(true|false)/) === 'true',
+  }))
 }
 
 function parseMixed() {
@@ -238,10 +270,12 @@ function parseMixed() {
 
 const NAV = parseNav()
 const MIXED = parseMixed()
+const GROUPS = parseGroups()
 const labelOf = (entry) => `${entry.label} (${entry.to})`
 
-/** How many entries the table declares, counted without the chunk parser. */
+/** How many entries each table declares, counted without the chunk parser. */
 const declaredNav = (tableBody(shell, 'const NAV = [').match(/\bto:\s*'/g) ?? []).length
+const declaredGroups = (tableBody(shell, 'const GROUPS = [').match(/\bid:\s*'/g) ?? []).length
 
 /**
  * Why nothing derived from the NAV table can be believed — or null.
@@ -266,6 +300,17 @@ const navFailure = (() => {
       `no to/label/scope could be read for ${unreadable.length} of ${declaredNav} NAV entries ` +
       `(${unreadable.map((entry) => entry.to ?? entry.label ?? '(nameless)').join(', ')})`
     )
+  if (declaredGroups === 0) return 'shell.tsx declares no GROUPS table this test can read'
+  if (GROUPS.length !== declaredGroups) return `the parser read ${GROUPS.length} of ${declaredGroups} GROUPS entries`
+  const nameless = GROUPS.filter((group) => !group.id || !group.context || !group.testId)
+  if (nameless.length > 0)
+    return (
+      `no id/context/testId could be read for ${nameless.length} of ${declaredGroups} GROUPS entries ` +
+      `(${nameless.map((group) => group.id ?? group.testId ?? '(nameless)').join(', ')})`
+    )
+  const homeless = NAV.filter((entry) => !entry.group)
+  if (homeless.length > 0)
+    return `no group could be read for ${homeless.length} NAV entries (${homeless.map((entry) => entry.to).join(', ')})`
   return null
 })()
 
@@ -329,10 +374,21 @@ function entryForOver(table) {
   return new Function('NAV', `${declaration}\nreturn entryFor`)(table)
 }
 
-/** The three rules this file slices out of shell.tsx and runs. */
+/**
+ * The three rules this file slices out of shell.tsx and runs.
+ *
+ * `carriesSwitcher` used to be the third and is gone with the thing it guarded.
+ * It answered "does this group have to render even with no items, because the
+ * switcher is inside it?" — the switcher now sits in the SidebarHeader, above
+ * every block, so no block's emptiness can take it off screen and no block has
+ * to be kept alive to hold it. What replaced it is `groupShown`, the rule that
+ * drops an empty block; the guarantee that used to need three rules is now
+ * structural, and the test that checked it (“no block’s emptiness can unmount
+ * the switcher”) checks the structure instead.
+ */
 const visibleRule = expressionOf(shell, 'visible')
 const switcherRule = expressionOf(shell, 'switcherUsed')
-const carriesRule = expressionOf(shell, 'carriesSwitcher')
+const groupRule = expressionOf(shell, 'groupShown')
 
 /**
  * The same guard as `navFailure`, for the rules — or null.
@@ -341,7 +397,7 @@ const carriesRule = expressionOf(shell, 'carriesSwitcher')
  * is a SyntaxError: six tests failing on a message about a paren, none of them
  * saying which rule went missing. The suite that names it runs either way.
  */
-const unsliceable = Object.entries({ visible: visibleRule, switcherUsed: switcherRule, carriesSwitcher: carriesRule })
+const unsliceable = Object.entries({ visible: visibleRule, switcherUsed: switcherRule, groupShown: groupRule })
   .filter(([, expression]) => !expression)
   .map(([name]) => name)
 const rulesFailure =
@@ -707,13 +763,13 @@ describe('Cockpit navigation: what this test reads out of shell.tsx', () => {
   })
 
   test('the three rules the sidebar applies are still one sliceable const each', () => {
-    // `visible`, `switcherUsed` and `carriesSwitcher` are run below out of the
+    // `visible`, `switcherUsed` and `groupShown` are run below out of the
     // committed source. Renaming or inlining one of them is a real change, and
     // this is where it is reported rather than six SyntaxErrors later.
     assert.equal(rulesFailure, null, rulesFailure ?? '')
     assert.match(visibleRule, /session\.product_scopes/, 'the sidebar filter must still ask the session for scopes')
     assert.doesNotMatch(
-      `${visibleRule}${switcherRule}${carriesRule}`,
+      `${visibleRule}${switcherRule}${groupRule}`,
       /\/\/|\/\*/,
       'a comment survived the slice: `evaluate` wraps the expression in `return (…)`, so a `//` inside it ' +
         'comments out the closing paren and every test that runs the rule fails on a SyntaxError instead',
@@ -781,12 +837,14 @@ describe('Cockpit navigation: site context versus installation context', withNav
     // Each page names one exact scope. Nothing is implied by a role, so this
     // list is a contract with the server, not a convenience. Splitting /sites
     // did not change it: both halves are site:admin, because creating, deleting
-    // and PATCHing a site all need that one scope.
+    // and PATCHing a site all need that one scope. Neither did grouping: the
+    // /content entry is labelled 'Documents' now, because the block above it is
+    // called Content, and it needs content:read exactly as it did.
     const expected = new Map([
       ['Overview', 'stats:read'],
       ['Sites', 'site:admin'],
       ['Site settings', 'site:admin'],
-      ['Content', 'content:read'],
+      ['Documents', 'content:read'],
       ['Published', 'content:read'],
       ['Compositions', 'content:read'],
       ['Decks', 'content:read'],
@@ -1051,38 +1109,156 @@ describe('Cockpit navigation: site context versus installation context', withNav
 
   // ── The chrome around it ───────────────────────────────────────────────────
 
-  test('both groups are labelled and the switcher sits inside the site one', () => {
-    // The two groups have to be addressable whether the testid is written
-    // inline or carried by the group table that renders them.
-    assert.ok(shell.includes('nav-group-site'), 'the site group needs the testid nav-group-site')
-    assert.ok(
-      shell.includes('nav-group-installation'),
-      'the installation group needs the testid nav-group-installation',
+  test('every block is one context, and every entry sits in a block that agrees with it', () => {
+    // `group` is presentation and `context` is the contract, so the first is
+    // checked against the second. Without this, "Moderation reads nicely under
+    // Content" would silently move an installation-wide page under the switcher
+    // — the exact claim the two contexts exist to refuse — because a block
+    // heading is the only thing on screen saying which is which.
+    const byId = new Map(GROUPS.map((group) => [group.id, group]))
+    assert.equal(byId.size, GROUPS.length, 'two blocks share an id, so one of them can never be filled')
+    assert.equal(
+      new Set(GROUPS.map((group) => group.testId)).size,
+      GROUPS.length,
+      'two blocks share a testid, so a browser test cannot tell them apart',
     )
+    for (const entry of NAV) {
+      const group = byId.get(entry.group)
+      assert.ok(group, `${labelOf(entry)} names the block '${entry.group}', which GROUPS does not declare`)
+      assert.equal(
+        group.context,
+        entry.context,
+        `${labelOf(entry)} is ${entry.context} context but is drawn in the ${group.context} block ` +
+          `'${group.id}' — the heading over it would say the switcher does something it does not`,
+      )
+    }
+    for (const group of GROUPS) {
+      const items = NAV.filter((entry) => entry.group === group.id)
+      assert.ok(
+        items.length > 0,
+        `the block '${group.id}' holds no entry, so it is never drawn — drop it rather than leaving it to rot`,
+      )
+      // A block with no heading has nothing to click, so it cannot be closed;
+      // one that can be closed must say what it is.
+      assert.equal(
+        group.collapsible,
+        group.label !== '',
+        `the block '${group.id}' is ${group.collapsible ? 'collapsible' : 'fixed'} and its heading is ` +
+          `${group.label === '' ? 'empty' : `'${group.label}'`} — a heading is the only thing there is to click, ` +
+          `and a block that closes without one closes into nothing`,
+      )
+    }
+    // The blocks partition the table: every entry drawn exactly once.
+    assert.equal(
+      GROUPS.flatMap((group) => NAV.filter((entry) => entry.group === group.id)).length,
+      NAV.length,
+      'the blocks must cover the table exactly once — an entry in no block is a page with no way in',
+    )
+  })
 
+  test('the sidebar is drawn as the blocks the operator was promised', () => {
+    // The shape the user decided: Overview alone above the site's work, that
+    // work grouped by the job it belongs to, and INSTALLATION last and apart.
+    // Pinned as a list because the ORDER is the navigation — reshuffling it is
+    // a redesign, and a redesign should have to edit this line.
+    assert.deepEqual(
+      GROUPS.map((group) => [group.label, group.context]),
+      [
+        ['', 'site'],
+        ['Content', 'site'],
+        ['Deliver', 'site'],
+        ['Access', 'site'],
+        ['Settings', 'site'],
+        ['Installation', 'installation'],
+      ],
+      'the blocks, in order, are Overview (unheaded), Content, Deliver, Access, Settings and Installation',
+    )
+    assert.deepEqual(
+      GROUPS.map((group) => [group.id, group.label]).filter(([, label]) => label !== ''),
+      GROUPS.map((group) => [group.id, group.label]).filter(([id]) => id !== 'overview'),
+      'only the Overview block may go unheaded',
+    )
+    // Every block is addressable, and the installation one keeps the testid it
+    // has always had so the browser suites do not have to be rewritten.
+    for (const group of GROUPS) {
+      assert.ok(shell.includes(group.testId), `the block '${group.id}' declares the testid ${group.testId}`)
+    }
+    assert.ok(
+      GROUPS.some((group) => group.testId === 'nav-group-installation'),
+      'the installation block keeps the testid nav-group-installation',
+    )
+    assert.match(
+      shell,
+      /data-testid=\{group\.testId\}\s+data-context=\{group\.context\}/,
+      'each block renders its own testid AND its context, so a browser test can select the site blocks as a ' +
+        'set — with five blocks there is no single nav-group-site to look for any more',
+    )
+    // Exactly one block is set apart, and it is the one the switcher does not
+    // govern. Two rules would be two claims about where the sidebar divides.
+    assert.deepEqual(
+      GROUPS.filter((group) => group.separated).map((group) => group.id),
+      ['installation'],
+      'the installation block is the one that is set apart, because it is the one the switcher does not reach',
+    )
+    assert.equal(
+      GROUPS.at(-1)?.id,
+      'installation',
+      'and it is last: a block set apart in the middle divides the site’s own pages from each other',
+    )
     const navStart = shell.indexOf('<nav data-testid="nav"')
     const navEnd = shell.indexOf('</nav>', navStart)
     assert.ok(navStart !== -1 && navEnd !== -1, 'the sidebar must render a <nav data-testid="nav">')
-    const aboveGroups = shell.slice(0, navStart)
-    const withinGroups = shell.slice(navStart, navEnd)
+    assert.match(
+      shell.slice(navStart, navEnd),
+      /GROUPS\.map\(/,
+      'the blocks must be drawn from the GROUPS table, not written out one by one beside it',
+    )
+    // Closed by default is a judgement about how often a block is needed, and
+    // it must not be made about a block the operator works in all day.
+    assert.deepEqual(
+      GROUPS.filter((group) => !group.startsOpen).map((group) => group.id),
+      ['access', 'settings', 'installation'],
+      'Overview, Content and Deliver are open on a cold load; the three that are visited to change something ' +
+        'rather than to do the work are closed',
+    )
+    assert.match(
+      shell,
+      /if \(holdsOpenPage\) setExpanded\(true\)/,
+      'a closed block must open itself when the page inside it is the open one — otherwise a ⌘K jump into ' +
+        'Access lands on a page whose sidebar entry is not on screen',
+    )
+    assert.match(
+      shell,
+      /state === 'collapsed' \|\| expanded/,
+      'collapsed to a rail there is no heading to click, so a closed block must still show its icons or its ' +
+        'pages become unreachable',
+    )
+  })
 
+  test('the switcher is chrome above the blocks, and says what it does to the open page', () => {
     assert.equal(
       (shell.match(/<SiteSwitcher/g) ?? []).length,
       1,
       'the switcher is rendered once, in one place, so it cannot mean two different things',
     )
+    // It used to sit inside the site group, so that what it governed was what
+    // appeared beneath it. With the site's pages in four blocks and
+    // INSTALLATION below them that arrangement is no longer available, and the
+    // team-switcher position — first thing in the sidebar, naming the thing the
+    // console is pointed at — is the one the user chose. Position therefore no
+    // longer carries the claim, so the words have to, and they are checked
+    // below rather than left to a comment.
+    const headerStart = shell.indexOf('<SidebarHeader>')
+    const headerEnd = shell.indexOf('</SidebarHeader>', headerStart)
+    assert.ok(headerStart !== -1 && headerEnd !== -1, 'the sidebar must render a SidebarHeader')
     assert.ok(
-      !aboveGroups.includes('<SiteSwitcher'),
-      'the switcher must not sit above the groups — there it claims to govern the installation pages too',
+      shell.slice(headerStart, headerEnd).includes('<SiteSwitcher'),
+      'the switcher belongs in the SidebarHeader, above every block',
     )
+    const navStart = shell.indexOf('<nav data-testid="nav"')
     assert.ok(
-      withinGroups.includes('<SiteSwitcher'),
-      'the switcher must be rendered inside the group list, under the site heading',
-    )
-    assert.match(
-      withinGroups,
-      /context === 'site'/,
-      'the switcher must be rendered by the site group, not by whichever group happens to come first',
+      !shell.slice(navStart, shell.indexOf('</nav>', navStart)).includes('<SiteSwitcher'),
+      'and not inside the block list, where four of the five blocks would each look like the one it governs',
     )
     assert.match(
       shell,
@@ -1091,14 +1267,31 @@ describe('Cockpit navigation: site context versus installation context', withNav
     )
     assert.match(
       shell,
+      /data-relation=\{open\?\.selection \?\? 'governs'\}/,
+      'that wrapper must carry the open page’s own relation, not a constant',
+    )
+    assert.match(
+      shell,
       /data-testid="site-switcher-note"/,
       'on a page it does not govern, the switcher has to say so in words as well as in opacity',
     )
+    // The one thing position used to say for free: an operator on an
+    // installation page must be told, in words, that the control above the
+    // sidebar does not reach it. Every relation but 'governs' therefore has a
+    // caption, and it is not blank.
+    const notes = shell.slice(shell.indexOf('const SELECTION_NOTE = {'))
+    for (const relation of ['requires', 'scopes', 'seeds', 'ignored']) {
+      const caption = notes.match(new RegExp(`\\n\\s*${relation}:\\s*'([^']*)'`))?.[1] ?? ''
+      assert.ok(
+        caption.length > 0,
+        `'${relation}' has no caption: the switcher sits above every block now, so a page it does not govern ` +
+          `has nothing but these words to say so`,
+      )
+    }
   })
 
   test('the breadcrumb is built on the Cockpit’s own primitives', () => {
     assert.match(shell, /from '@\/components\/ui\/breadcrumb'/, 'the page header must render the breadcrumb')
-    assert.match(breadcrumb, /data-testid=/, 'the breadcrumb must be addressable in the browser')
     const dependencies = new Set(Object.keys(cockpitPackage.dependencies ?? {}))
     for (const [, imported] of breadcrumb.matchAll(/from '([^']+)'/g)) {
       if (imported.startsWith('@/') || imported.startsWith('.')) continue
@@ -1107,11 +1300,65 @@ describe('Cockpit navigation: site context versus installation context', withNav
         `breadcrumb.tsx imports "${imported}", which is not already a Cockpit dependency`,
       )
     }
+    // The testid used to be a default inside breadcrumb.tsx, which took an
+    // `items` array and drew the whole trail. The component is now compound —
+    // Breadcrumb / BreadcrumbList / BreadcrumbItem / BreadcrumbPage — so the
+    // trail is composed at the call site and that is where the addressability
+    // has to be asserted. Checking breadcrumb.tsx for a `data-testid=` would now
+    // pass on a testid the console never renders.
+    assert.match(shell, /data-testid="breadcrumb"/, 'the composed trail must be addressable in the browser')
+    assert.match(
+      shell,
+      /data-trail=\{crumbs\.map\(/,
+      'and it must keep carrying the joined trail, so a browser test reads it in one go instead of stitching ' +
+        'the crumbs back together',
+    )
+    assert.match(
+      shell,
+      /data-testid=\{`breadcrumb-item-\$\{index\}`\}/,
+      'each crumb keeps its indexed testid: breadcrumb-item-0 is the context, and that is what a browser test ' +
+        'asserts to know which context the page runs in',
+    )
+    // The reason the old file gave for being non-interactive still holds, and
+    // shadcn's BreadcrumbLink is the thing that would end it. Two of the three
+    // crumbs are not routes at all — the console has no page for "the site
+    // context" — and the third is the page already open, so a link here could
+    // only leave a half-filled form or change the site.
+    // The element, not the word: shell.tsx names BreadcrumbLink in prose to
+    // explain why it is not rendered, and a substring match would read that
+    // explanation as the thing it warns about.
+    assert.doesNotMatch(
+      shell,
+      /<BreadcrumbLink\b/,
+      'no crumb may be a link: two of them name no route and the last is the open page',
+    )
+    assert.equal(
+      (shell.match(/<BreadcrumbPage/g) ?? []).length,
+      1,
+      'exactly one crumb is the page: BreadcrumbPage carries aria-current="page", and three of them announce ' +
+        'three current pages to a screen reader',
+    )
+    assert.match(
+      shell,
+      /index === crumbs\.length - 1/,
+      'and it is the last one, not whichever crumb happens to be rendered first',
+    )
   })
 
   test('the breadcrumb names the context the open page runs in', () => {
-    assert.match(shell, /'Installation'/, "an installation route must read 'Installation · <page>'")
-    assert.match(shell, /'Site'/, "a site route must read 'Site · <site name> · <page>'")
+    // Scoped to useCrumbs: 'Installation' is also a block heading in GROUPS now,
+    // so matching the whole file would pass on the sidebar alone even if the
+    // trail had stopped naming the context at all.
+    const start = shell.indexOf('function useCrumbs(')
+    assert.notEqual(start, -1, 'the page header must still derive its trail from the open entry')
+    const crumbs = shell.slice(start, shell.indexOf('\n}', start))
+    assert.match(crumbs, /'Installation'/, "an installation route must read 'Installation · <page>'")
+    assert.match(crumbs, /'Site'/, "a site route must read 'Site · <site name> · <page>'")
+    assert.match(
+      crumbs,
+      /open\.context === 'installation'/,
+      'the trail must branch on the entry’s declared context, not on the block it is drawn in',
+    )
   })
 
   // ── The /sites split ───────────────────────────────────────────────────────
@@ -1338,7 +1585,7 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
     )
     assert.equal(mounted(['audit:read'], 'Audit'), true, 'the audit filter is seeded from it')
     assert.equal(mounted(['content:write'], 'Assistant'), true, 'the assistant sends the selection with every turn')
-    assert.equal(mounted(['content:read'], 'Content'), true, 'and a governed page, obviously')
+    assert.equal(mounted(['content:read'], 'Documents'), true, 'and a governed page, obviously')
     // The condition is not `true`: with nothing visible that reads the selection
     // there is nothing for the control to do, and it says so by being absent.
     assert.equal(
@@ -1349,34 +1596,63 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
     assert.equal(mounted([], 'System'), false)
   })
 
-  test('the site group renders when the switcher is all it has to carry', () => {
-    // The same failure from the other side: even with the condition right, a
-    // group that returns null on an empty item list takes the switcher with it —
-    // which is exactly the case a moderation-only session is in.
-    assert.ok(carriesRule, 'the site group must still decide whether it carries the switcher')
-    const empty = shell.match(/if \(([^)]*)\) return null/)
-    assert.ok(empty, 'a group with nothing in it must still be able to render nothing')
+  test('no block’s emptiness can unmount the switcher', () => {
+    // The same failure from the other side, and the reason the switcher moved
+    // out of the block list. A block returns null on an empty item list, and
+    // while the switcher lived inside the site block that null took the switcher
+    // with it — which is exactly the case a moderation-only session is in:
+    // installation-wide endpoints, <NoSite/> until a site is chosen, and not one
+    // site-context page to hang the control off.
+    //
+    // It is now header chrome, so the guarantee is structural rather than a
+    // second condition inside a block. Both halves are checked: every site block
+    // really is empty for that session, and the switcher really is rendered
+    // outside every block.
+    assert.ok(groupRule, 'a block with nothing in it must still be able to render nothing')
 
     const scopes = ['moderation:write']
     const visible = visibleFor(scopes)
-    const items = visible.filter((entry) => entry.context === 'site')
-    assert.deepEqual(items, [], 'a moderation-only session has no site-context page at all')
-    const switcherUsed = evaluate(switcherRule, {
-      visible,
-      open: NAV.find((entry) => entry.label === 'Moderation'),
-      NAV,
-      session: { product_scopes: scopes },
-    })
-    const carriesSwitcher = evaluate(carriesRule, { group: { context: 'site' }, switcherUsed })
-    assert.equal(carriesSwitcher, true, 'the site group is where the switcher lives, on every route')
+    for (const group of GROUPS.filter((candidate) => candidate.context === 'site')) {
+      const items = visible.filter((entry) => entry.group === group.id)
+      assert.deepEqual(items, [], `a moderation-only session has no page in the '${group.id}' block`)
+      assert.equal(
+        evaluate(groupRule, { items }),
+        false,
+        `the '${group.id}' block must draw nothing rather than an empty heading`,
+      )
+    }
     assert.equal(
-      evaluate(empty[1], { items, carriesSwitcher }),
-      false,
-      'the site group must still render for a session whose only page needs a site it cannot otherwise choose',
+      evaluate(switcherRule, {
+        visible,
+        open: NAV.find((entry) => entry.label === 'Moderation'),
+        NAV,
+        session: { product_scopes: scopes },
+      }),
+      true,
+      'and the switcher is still mounted: Moderation shows nothing without a site and this is the only control ' +
+        'that chooses one',
     )
-    // And it is dropped when there is genuinely nothing to put in it.
-    assert.equal(evaluate(empty[1], { items: [], carriesSwitcher: false }), true)
-    assert.equal(evaluate(empty[1], { items: [NAV[0]], carriesSwitcher: false }), false)
+    // The rule itself, driven both ways, so a `groupShown = true` that draws
+    // empty headings for every scope a session lacks fails here.
+    assert.equal(evaluate(groupRule, { items: [] }), false)
+    assert.equal(evaluate(groupRule, { items: [NAV[0]] }), true)
+
+    // The structural half: the mount condition is the session's, and the JSX
+    // that renders the switcher is outside the block list. Guarded by the
+    // element the block list is drawn into, so moving <SiteSwitcher/> back
+    // inside it fails here rather than only in a browser.
+    const navStart = shell.indexOf('<nav data-testid="nav"')
+    const navEnd = shell.indexOf('</nav>', navStart)
+    assert.ok(navStart !== -1 && navEnd !== -1, 'the sidebar must render a <nav data-testid="nav">')
+    assert.ok(
+      !shell.slice(navStart, navEnd).includes('<SiteSwitcher'),
+      'the switcher must not be rendered by a block: a block that can return null cannot be trusted with it',
+    )
+    assert.match(
+      shell,
+      /\{switcherUsed \? \(/,
+      'and its mount must still be `switcherUsed`, so it is absent only where no visible page reads the selection',
+    )
   })
 
   test('the open entry is the longest match, and "/" matches only itself', () => {

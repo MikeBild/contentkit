@@ -89,8 +89,14 @@ export function FieldShell({
         </p>
       ) : null}
 
+      {/* `role="alert"` is the difference between an error a sighted operator
+          sees turn red and an error a screen-reader operator is told about. The
+          id makes it the control's description, which is only read when the
+          control is reached; the live region is what interrupts to say the save
+          was refused. Both are needed — the id alone leaves an operator who has
+          already tabbed past the field with no idea anything happened. */}
       {error ? (
-        <p id={messageId} data-testid={`${testId}-error`} className="text-xs text-chart-5">
+        <p role="alert" id={messageId} data-testid={`${testId}-error`} className="text-xs text-chart-5">
           {error}
         </p>
       ) : warning ? (

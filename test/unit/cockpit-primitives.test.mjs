@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -678,6 +678,34 @@ const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(
 const openingTags = (text, tag) =>
   [...stripComments(text).matchAll(new RegExp(`<${tag}\\b(?:[^>]|=>)*>`, 'g'))].map((hit) => hit[0])
 
+/**
+ * Every place the console renders `<Tag …>`, with the file it is in.
+ *
+ * Two of the rules below are now enforced by the component itself — shadcn's
+ * `Spinner` carries its own `role="status"`, Radix's `Progress` its own ARIA —
+ * which moves what can still go wrong out to the call sites. Reading the
+ * component's source would no longer see it, so this walks the console instead
+ * of naming files: a component used correctly in eight places and wrongly in a
+ * ninth is exactly the defect a fixed list misses.
+ *
+ * Only `.tsx` under apps/cockpit/src, all of it committed source. The generated
+ * artefacts are a stylesheet and a bundle, neither of which is a component.
+ */
+const callSites = (tag) => {
+  const found = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name.endsWith('.tsx'))
+        for (const opening of openingTags(readFileSync(full, 'utf8'), tag))
+          found.push([full.slice(cockpit.length + 1), opening])
+    }
+  }
+  walk(cockpit)
+  return found
+}
+
 describe('Cockpit primitives: what the sources have to say', () => {
   test('every control is addressable in the browser', () => {
     // The standing rule for this console. A spread of `control` or `props` counts:
@@ -698,20 +726,63 @@ describe('Cockpit primitives: what the sources have to say', () => {
     const dependencies = new Set(
       Object.keys(JSON.parse(readFileSync(join(root, 'apps', 'cockpit', 'package.json'), 'utf8')).dependencies ?? {}),
     )
+    // Both quote styles: the shadcn files are formatted with double quotes, so a
+    // check that only read single ones would have gone quiet over exactly the
+    // files that introduced the new dependencies.
     for (const [name, text] of OWNED) {
-      for (const [, imported] of text.matchAll(/from '([^']+)'/g)) {
+      for (const [, imported] of text.matchAll(/from ['"]([^'"]+)['"]/g)) {
         if (imported.startsWith('@/') || imported.startsWith('.')) continue
-        assert.ok(dependencies.has(imported), `${name} imports "${imported}", which is not a Cockpit dependency`)
+        const owner = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0]
+        assert.ok(dependencies.has(owner), `${name} imports "${imported}", which is not a Cockpit dependency`)
       }
     }
   })
 
-  test('the palette is the existing dialog holding the existing combobox', () => {
-    const palette = ui('command-palette')
-    assert.match(palette, /from '\.\/dialog'/, 'Escape, the focus trap and returning focus are already solved there')
-    assert.match(palette, /from '\.\/combobox'/, 'so are typing, the arrows, Enter and the three list states')
+  test('the palette is cmdk’s CommandDialog, and the two hacks it replaced stay gone', () => {
+    // Comment-stripped: this component documents the two hacks it replaced, and
+    // a `requestAnimationFrame` written in prose to say it is gone would read as
+    // one that is still there.
+    const palette = stripComments(ui('command-palette'))
+    // It used to be a Combobox inside a Dialog, and it paid for the mismatch
+    // twice. The combobox's listbox is an absolutely positioned sibling and the
+    // dialog panel clips its overflow, so the panel reserved a fixed height it
+    // could not need; and the dialog focuses its own close button first, so the
+    // caret had to be moved onto the input a frame later with
+    // requestAnimationFrame. cmdk's Command owns the input, the list and the
+    // selection together — the list is inside the panel and the input is the
+    // panel's first focusable — so both hacks are gone rather than rewritten,
+    // and this is where they stay gone.
+    assert.match(palette, /from '\.\/command'/, 'Escape, the focus trap, typing, the arrows and Enter are all there')
+    assert.doesNotMatch(
+      palette,
+      /from '\.\/combobox'/,
+      'a listbox that cannot leave the panel is the arrangement both hacks existed for',
+    )
+    assert.doesNotMatch(
+      palette,
+      /requestAnimationFrame/,
+      'cmdk’s input is the panel’s first focusable, so nothing has to place the caret a frame later',
+    )
+    assert.doesNotMatch(
+      palette,
+      /className="h-\[/,
+      'the list no longer escapes the panel, so the panel must not reserve a height for it',
+    )
     assert.doesNotMatch(palette, /fixed inset-0/, 'a second overlay would be a second set of the same two bugs')
     assert.doesNotMatch(palette, /addEventListener\('keydown'[\s\S]*Escape/, 'Escape is the dialog’s to handle')
+
+    // A cmdk item may only live inside a group, and a palette that matches
+    // nothing has to say so rather than showing an empty box.
+    assert.match(palette, /<CommandEmpty\b/, 'a palette that matches nothing must say nothing matches')
+    const groupStart = palette.indexOf('<CommandGroup')
+    const groupEnd = palette.lastIndexOf('</CommandGroup>')
+    assert.ok(groupStart !== -1 && groupEnd !== -1, 'the three kinds of destination are three CommandGroups')
+    const itemStart = palette.indexOf('<CommandItem')
+    assert.ok(
+      itemStart > groupStart && itemStart < groupEnd,
+      'every CommandItem sits inside its CommandGroup — three kinds of destination in one ungrouped list read ' +
+        'as one kind',
+    )
   })
 
   test('the palette is mounted with a hint an operator can see', () => {
@@ -738,32 +809,86 @@ describe('Cockpit primitives: what the sources have to say', () => {
   })
 
   test('an indeterminate bar reports no percentage to anyone', () => {
-    const progress = ui('progress')
-    // A build with no reported progress must not be narrated as "90%". The three
-    // ARIA numbers are all tied to the fraction, so there is no path that emits
-    // one without it.
+    // The claim is unchanged; where it is kept moved twice. It was a hand-rolled
+    // bar that tied all three ARIA numbers to its own `fraction`; then it was
+    // Radix's primitive, which cannot keep the claim on its own, because its root
+    // emits `role="progressbar"`, `aria-valuemin` and `aria-valuemax`
+    // unconditionally and drops only `aria-valuenow` — a bar with no value still
+    // reports a maximum for a quantity nobody measured. So `ui/progress.tsx` picks
+    // the form first (`progress-value.ts`, called for real in
+    // cockpit-dates-progress.test.mjs) and Radix draws only the determinate one.
+    const progress = stripComments(ui('progress'))
+    assert.match(progress, /from ['"]radix-ui['"]/, 'a fraction that exists is Radix’s bar, not markup of ours')
+    assert.match(progress, /<ProgressPrimitive\.Root/, 'and the root that carries its ARIA is Radix’s')
     for (const attribute of ['aria-valuenow', 'aria-valuemin', 'aria-valuemax']) {
-      assert.match(
-        progress,
-        new RegExp(`${attribute}=\\{fraction === null \\? undefined :`),
-        `${attribute} must be absent while the fraction is unknown`,
+      assert.doesNotMatch(progress, new RegExp(attribute), `${attribute} is never written here: see the test above`)
+    }
+    // `role="progressbar"` is the one piece of that vocabulary this file does
+    // write, and only on the branch Radix cannot serve: a progressbar with no
+    // `aria-valuenow` is ARIA's own spelling of "busy, no idea how far", which is
+    // the whole point. It appears once, so there is one place it can be wrong.
+    assert.equal(
+      (progress.match(/role="progressbar"/g) ?? []).length,
+      1,
+      'the determinate bar must not restate the role Radix already emits',
+    )
+    const bars = callSites('Progress')
+    assert.ok(bars.length > 0, 'no <Progress> found anywhere, so this test proves nothing')
+    for (const [name, opening] of bars) {
+      // A bar has to be about something. With a fraction it draws it; without one
+      // it may still say how long the work has been running, which is the one fact
+      // unknown-duration work has — but a bar that says neither is decoration
+      // pulsing where a status should be.
+      assert.ok(
+        /\bvalue=\{/.test(opening) || /\bsince=\{/.test(opening),
+        `${name} draws a bar that reports neither a fraction nor an elapsed time: ${opening.slice(0, 80)}…`,
       )
     }
-    assert.match(progress, /role="progressbar"/)
-    assert.match(progress, /!\(max > 0\)/, 'zero, null and absent are all "not a denominator"')
   })
 
-  test('the skeleton announces once and the spinner keeps the label', () => {
+  test('the skeleton announces once and the spinner is never a second voice', () => {
     assert.match(ui('skeleton'), /role="status"/, 'a placeholder nobody is told about is a silent one')
     assert.match(ui('skeleton'), /aria-hidden="true"/, 'and the shapes themselves are not read out one by one')
-    // Every branch of the spinner, not just one of them: the in-button case is
-    // exactly the one where an announced icon would read the label out twice.
-    const icons = openingTags(ui('spinner'), 'Loader2')
-    assert.equal(icons.length, 2, 'the spinner has a standalone form and an in-button form')
-    for (const icon of icons) {
-      assert.match(icon, /aria-hidden="true"/, `a spinner is a picture, not a label: ${icon}`)
+    // The spinner has two forms, and the component is what chooses between them:
+    // a standalone one that announces, and an in-button one that stays quiet.
+    // Stock shadcn's is one icon carrying `role="status"` and a hardcoded
+    // `aria-label="Loading"` (`npx shadcn@latest docs spinner`), which announces
+    // "Loading" beside a button that already says `Revoke key` — the second voice
+    // this test is named after. So the icon is always `aria-hidden`, and the
+    // announcement is a sentence the caller supplies.
+    const spinner = stripComments(ui('spinner'))
+    assert.match(spinner, /role="status"/, 'the spinner still announces itself where it stands alone')
+    assert.match(spinner, /<span className="sr-only">\{announcement\}<\/span>/, 'with the caller’s noun, not "Loading"')
+    assert.match(spinner, /const announcement = label \?\? ariaLabel/, 'named by either spelling of the same claim')
+    assert.match(spinner, /if \(!announcement\) return icon/, 'and unnamed, it is a picture and nothing else')
+    assert.doesNotMatch(
+      spinner,
+      /aria-label="Loading"/,
+      'a label the component invents cannot say what is loading, and says it in the wrong language',
+    )
+    assert.match(
+      spinner,
+      /aria-hidden="true"/,
+      'the icon is never read out: either the sr-only text is, or words beside it',
+    )
+    assert.equal(openingTags(spinner, 'Loader2Icon').length, 1, 'and there is one icon, so one place to change it')
+    assert.match(spinner, /SIZES\[size\]/, 'the second form is a size, because pagination.tsx asks for the small one')
+    const spinners = callSites('Spinner')
+    assert.ok(spinners.length > 0, 'no <Spinner> found anywhere, so this test proves nothing')
+    for (const [name, opening] of spinners) {
+      // The rule used to be that every call site must carry `aria-hidden` or a
+      // name, because stock shadcn's spinner announced "Loading" by itself and a
+      // caller who forgot got a second voice beside their button. The component
+      // above makes silence the default, so a bare `<Spinner data-icon="…" />` in
+      // a button is now the correct shape — which leaves exactly one thing a call
+      // site can still get wrong, and this is it: naming a spinner and hiding it
+      // in the same breath, which is a sentence written for a reader who is then
+      // told not to read it.
+      assert.ok(
+        !(/\baria-label=|\blabel=/.test(opening) && /aria-hidden="true"/.test(opening)),
+        `${name} names a Spinner it also hides, so the name is announced to nobody: ${opening}`,
+      )
     }
-    assert.match(ui('spinner'), /role="status"/, 'and a status only where it stands alone')
   })
 
   test('the dropzone is a real file input, not a div with a click handler', () => {

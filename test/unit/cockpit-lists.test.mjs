@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
  * stripping types, which landed in 22.6, so on Node 20 those tests skip with a
  * printed reason rather than passing silently. The structural half runs
  * everywhere and guards what a pure function cannot: that the data table is the
- * existing Table primitives rather than a second table, that its four states are
+ * console's one Table rather than a second one, that its four states are
  * still four, that every control is addressable, that the editor no longer
  * renders the word "Loading…", and that the sort capability the page claims is
  * the capability docs/openapi.json actually describes.
@@ -484,11 +484,16 @@ describe('how far a sort would actually reach', behavioural, () => {
   })
 })
 
-describe('the data table is the Table primitives, with three things added', () => {
-  test('it renders the existing primitives rather than a second table', () => {
-    assert.match(dataTable, /from '\.\/primitives'/, 'Table/THead/TBody/TR/TH/TD/TableState come from primitives.tsx')
-    for (const primitive of ['Table', 'THead', 'TBody', 'TR', 'TH', 'TD', 'TableState'])
-      assert.match(dataTable, new RegExp(`\\b${primitive}\\b`), `${primitive} is used, not replaced`)
+describe('the data table is the shared Table, with three things added', () => {
+  test('it renders the shared table rather than a second one', () => {
+    // The hand-rolled `components/ui/primitives.tsx` is gone; its Table/THead/
+    // TBody/TR/TH/TD are shadcn's Table parts and its TableState moved to
+    // forms/table-state.tsx. What this test guards is unchanged: the console has
+    // one table implementation and this file is not a second one.
+    assert.match(dataTable, /from '\.\/table'/, 'the table parts come from ui/table.tsx')
+    assert.match(dataTable, /from '@\/forms\/table-state'/, 'and the four states from the single TableState')
+    for (const part of ['Table', 'TableHeader', 'TableBody', 'TableRow', 'TableHead', 'TableCell', 'TableState'])
+      assert.match(dataTable, new RegExp(`\\b${part}\\b`), `${part} is used, not replaced`)
     assert.doesNotMatch(dataTable, /<table|<thead|<tbody|<tr\b|<th\b|<td\b/, 'no raw table markup of its own')
   })
 
@@ -902,5 +907,132 @@ describe('a value nobody sent is not drawn as zero', () => {
     assert.equal(evaluate(attribute('tone'), { deckInflight: 0, deckQueued: 0 }), 'success', 'a reported zero is fine')
     assert.equal(evaluate(attribute('tone'), { deckInflight: 2, deckQueued: 3 }), 'warning')
     assert.equal(evaluate(attribute('value'), { deckInflight: 2, deckQueued: 3 }), '2 running')
+  })
+})
+
+/**
+ * What the shadcn migration moved, and what it must not have dropped on the way.
+ *
+ * Three of these guard a contract that used to be enforced by hand-written code
+ * and is now a prop on somebody else's component — which is exactly the kind of
+ * rule that disappears silently. The toast one is the sharpest: the old
+ * `DISMISS_AFTER` map spelled `null` for "never expires" in a file that also
+ * contained the loop honouring it, so the rule was visible next to its
+ * implementation. sonner's default duration is finite for every method, so the
+ * same rule is now a `duration` this file has to insist on. Drop it and every 422
+ * that names a field the form does not render vanishes after four seconds — the
+ * only evidence the operator gets that a save did nothing.
+ */
+describe('the components the console stopped hand-rolling', () => {
+  const toast = source('components', 'ui', 'toast.tsx')
+  const chip = source('components', 'ui', 'chip.tsx')
+  const segmented = source('components', 'ui', 'segmented.tsx')
+  const pages = ['overview', 'sites', 'site-settings', 'content', 'releases', 'authoring', 'assistant', 'governance']
+
+  test('an error and a warning still outlive the four seconds a confirmation gets', () => {
+    // The map is read as data rather than matched as text: a regex for
+    // `Infinity` would also pass for `info: Infinity`, which is the opposite rule.
+    // `braceGroup`, not `rightHandSide`, because the declaration carries a type
+    // annotation — `const DURATION: Record<ToastTone, number> = {`.
+    const toastCode = code(toast)
+    const durations = evaluate(`{${braceGroup(toastCode, toastCode.indexOf('const DURATION'))}}`, {})
+    assert.equal(durations.danger, Number.POSITIVE_INFINITY, 'a failed save must stay on screen until it is dismissed')
+    assert.equal(durations.warning, Number.POSITIVE_INFINITY)
+    assert.ok(Number.isFinite(durations.info), 'and a confirmation must not, or the corner fills with stale news')
+    assert.ok(Number.isFinite(durations.success))
+    // An eternal toast with no close control is an unremovable one.
+    assert.match(toast, /closeButton/, 'the two tones that never expire need a way out')
+  })
+
+  test('every tone reaches sonner, so no severity is quietly downgraded', () => {
+    const emit = code(toast).slice(code(toast).indexOf('const EMIT'))
+    for (const [tone, method] of [
+      ['info', 'info'],
+      ['success', 'success'],
+      ['warning', 'warning'],
+      ['danger', 'error'],
+    ])
+      assert.match(
+        emit,
+        new RegExp(`${tone}: \\(title, options\\) => sonner\\.${method}\\(`),
+        `${tone} must arrive as sonner.${method} — mapping it to anything milder loses the severity`,
+      )
+  })
+
+  test('the toaster follows the console’s own theme, not next-themes', () => {
+    // ui/sonner.tsx reads next-themes, which lib/theme.ts exists instead of. It
+    // spreads props last, so passing `theme` is what overrides it; without this a
+    // manual light choice under a dark OS leaves the toasts dark.
+    assert.match(toast, /from '@\/lib\/theme'/, 'the theme comes from the store that owns the .dark class')
+    assert.match(toast, /theme=\{resolved\}/, 'and it is passed to the Toaster, or next-themes wins')
+    // The code, not the prose: this file names next-themes to say it is not used.
+    assert.doesNotMatch(code(toast), /next-themes/, 'this file must not reach for it either')
+  })
+
+  test('the hand-rolled stack is gone, not merely unused', () => {
+    for (const [name, why] of [
+      ['createContext', 'sonner needs no provider of ours'],
+      ['setTimeout', 'the dismissal schedule is sonner’s'],
+      ['z-\\[', 'no manual z-index on an overlay'],
+    ])
+      // Comments stripped for the same reason: the header describes what it deleted.
+      assert.doesNotMatch(code(toast), new RegExp(name), `${name} should have gone with the markup: ${why}`)
+    // The file that had no callers left at all.
+    assert.throws(
+      () => source('components', 'ui', 'empty-state.tsx'),
+      /ENOENT/,
+      'empty-state.tsx was replaced by Empty and must not sit there as a second answer',
+    )
+  })
+
+  test('a chip is a Badge and a segmented control is a ToggleGroup', () => {
+    // Every assertion here reads `code(…)`, not the file. Both headers *describe*
+    // the props they adopted, so matching the raw text would let the prose satisfy
+    // the rule: `spacing={0}` survived being changed to `spacing={2}` on the JSX
+    // because the sentence above it still said `spacing={0}`.
+    const chipCode = code(chip)
+    const segmentedCode = code(segmented)
+    assert.match(chipCode, /from '\.\/badge'/, 'the pill is Badge’s, so a chip and a status badge match')
+    assert.match(chipCode, /<Badge/)
+    assert.match(segmentedCode, /from '@\/components\/ui\/toggle-group'/)
+    assert.match(segmentedCode, /type="single"/, 'single mode is what gives Radix role=radiogroup/radio')
+    assert.match(segmentedCode, /spacing=\{0\}/, 'zero gap is the joined look this replaced')
+    // Both files used to build their own surface out of chart colours.
+    for (const [name, text] of [
+      ['chip.tsx', chipCode],
+      ['segmented.tsx', segmentedCode],
+    ])
+      assert.doesNotMatch(text, /chart-\d/, `${name} must take its colour from the component, not a chart series`)
+  })
+
+  test('no page paints a severity with a chart colour', () => {
+    // `chart-3`/`chart-5` were doing the work of warning and destructive across
+    // seven pages. They are series in a graph; index.css maps --destructive onto
+    // the same value, and the name is the whole difference between a token and a
+    // literal. Comments are stripped, because two of these files explain the swap.
+    const offenders = []
+    for (const name of pages)
+      for (const [hit] of code(source('pages', `${name}.tsx`)).matchAll(/(?:text|bg|border)-chart-[35]\S*/g))
+        offenders.push(`${name}.tsx: ${hit}`)
+    assert.deepEqual(offenders, [], 'route these through Alert, Badge or the destructive token')
+  })
+
+  test('no page hand-writes a pulsing rectangle', () => {
+    for (const name of pages)
+      assert.doesNotMatch(
+        source('pages', `${name}.tsx`),
+        /animate-pulse/,
+        `${name}.tsx must ask Skeleton for a placeholder rather than animating a div`,
+      )
+  })
+
+  test('the word "Loading…" is not a placeholder on any page', () => {
+    // content.tsx already had this rule; the same defect was live on three more
+    // pages, where a one-line sentence stood where a form was about to appear.
+    for (const name of pages) {
+      const text = code(source('pages', `${name}.tsx`))
+      assert.doesNotMatch(text, />\s*Loading…/, `${name}.tsx renders "Loading…" as body text`)
+      assert.doesNotMatch(text, /Loading…</, `${name}.tsx renders "Loading…" as body text`)
+    }
   })
 })

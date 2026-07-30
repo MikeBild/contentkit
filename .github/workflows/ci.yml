@@ -69,6 +69,19 @@ jobs:
       - name: schema.d.ts is in sync with docs/openapi.json
         run: git diff --exit-code -- src/api/schema.d.ts
       - run: npx tsc --noEmit
+      # Everything above this line reads the console as text. `tsc` proves the
+      # types line up and the Node suite greps the source, so a dialog that has
+      # stopped trapping focus, a progress bar that has started inventing a
+      # percentage and a spinner announcing itself twice all compile, all match,
+      # and all ship. These render the components and ask the DOM instead — the
+      # step that fails when the console misbehaves rather than when it is
+      # misspelled.
+      - name: Behaviour (jsdom) — focus, roles and announcements
+        # `--prefix` is resolved against the process's cwd, and this job's default
+        # cwd is already apps/cockpit; the repository root is where this exact
+        # command means what it says.
+        working-directory: ${{ github.workspace }}
+        run: npm --prefix apps/cockpit run test
       - run: npm run build
       # The root gate proves nothing about this tree: it has its own lockfile and
       # `build-cockpit.sh` installs it with --no-audit.

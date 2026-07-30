@@ -153,6 +153,7 @@ export function SwitchField({
           <Switch
             id={control.id}
             aria-describedby={control['aria-describedby']}
+            aria-invalid={control['aria-invalid']}
             data-testid={control['data-testid']}
             disabled={control.disabled}
             checked={value}
