@@ -1,9 +1,14 @@
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { ck, statsKinds, usageStatsKinds, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/primitives'
+import { ReleaseChain } from '@/components/ui/release-chain'
 import { keys } from '@/lib/query'
+import { deriveReleaseChain } from '@/lib/release-chain'
+import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
+import { tileEmptiness, visibleMetrics } from '@/lib/stat-tile'
 
 const WINDOW = { bucket: 'day', tz: 'UTC' } as const
 
@@ -37,7 +42,11 @@ function readProductStats(payload: unknown): Metric[] {
   const buckets = stats?.buckets ?? []
   return Object.keys(totals).map((name) => ({
     name,
-    total: Number(totals[name] ?? 0),
+    // The same test the points below apply, applied to the total: a value that is
+    // not a number was not answered, and `?? 0` answered it with the one number
+    // an operator reads as "this happened, nought times". null prints as an em
+    // dash instead, which is the contract the usage reader beside this one keeps.
+    total: typeof totals[name] === 'number' ? totals[name] : null,
     points: buckets.map((bucket) => ({
       ts: String(bucket.ts ?? ''),
       value: typeof bucket[name] === 'number' ? (bucket[name] as number) : null,
@@ -69,7 +78,44 @@ function readUsageStats(payload: unknown): Metric[] {
 }
 
 export function OverviewPage() {
-  const { site } = useSite()
+  const { site, current } = useSite()
+  const can = useCan()
+  // Both lists are content:read; this page's own scope is stats:read, so an
+  // operator may hold one and not the other. Asking anyway would answer 403 and
+  // an empty list, and an empty list here means "nothing waiting" — the exact
+  // lie the chain exists to avoid. So it is not asked, and the chain says so.
+  const canReadChain = can('content:read')
+
+  const releases = useQuery({
+    queryKey: keys.releases(site),
+    queryFn: () => ck.releases.list(site),
+    enabled: Boolean(site) && canReadChain,
+    retry: false,
+    // A build is asynchronous, and 'building' is a state this page reports.
+    refetchInterval: (query) => ((query.state.data ?? []).some((row) => row.status === 'building') ? 3000 : false),
+  })
+  const content = useQuery({
+    queryKey: keys.content.list(site),
+    queryFn: () => ck.content.list(site),
+    enabled: Boolean(site) && canReadChain,
+    retry: false,
+    staleTime: 60_000,
+  })
+
+  // `undefined` from a pending or failed query becomes `null`: absent evidence,
+  // never an empty list. The endpoints are unpaginated, so a count taken here is
+  // the whole site and not the first page of it.
+  const chain = useMemo(
+    () =>
+      deriveReleaseChain({
+        releases: releases.data ?? null,
+        items: content.data ?? null,
+        baseUrl: current?.base_url ?? null,
+      }),
+    [releases.data, content.data, current?.base_url],
+  )
+  const chainLoading = canReadChain && (releases.isPending || content.isPending)
+
   const results = useQueries({
     queries: statsKinds.map((kind) => ({
       queryKey: keys.stats(site, kind, WINDOW),
@@ -91,6 +137,19 @@ export function OverviewPage() {
 
   return (
     <Page title="Overview" description={`Daily UTC aggregates for ${site}, last 30 buckets.`}>
+      {/*
+        Summary first. A chain with nothing wrong in it is one line; a chain with
+        an exception in it earns the block, because that is the state an operator
+        has to act on. The derivation is the same either way — the variant is a
+        layout choice, not a second reading of the same two endpoints.
+      */}
+      <ReleaseChain
+        chain={chain}
+        isLoading={chainLoading}
+        variant={chain.calm ? 'compact' : 'card'}
+        className="mb-4"
+      />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {statsKinds.map((kind, index) => (
           <StatCard key={kind} kind={kind} result={results[index]} />
@@ -109,8 +168,11 @@ function StatCard({
 }) {
   const usage = usageStatsKinds.includes(kind)
   const metrics = result?.data ? (usage ? readUsageStats(result.data) : readProductStats(result.data)) : []
-  const shown = metrics.filter((metric) => metric.total !== null && metric.total !== 0).slice(0, 4)
+  // Both rules live in lib/stat-tile.ts so they can be called by a test rather than
+  // matched as text — see that module's header for why that distinction earned its own file.
+  const shown = visibleMetrics(metrics)
   const lead = shown[0] ?? metrics[0]
+  const emptiness = tileEmptiness(metrics)
 
   return (
     <Card data-testid="stat-card" data-kind={kind}>
@@ -128,8 +190,12 @@ function StatCard({
             {result.error instanceof Error ? result.error.message : 'Unavailable'}
           </p>
         ) : shown.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {usage ? 'No usage telemetry in this window.' : 'Nothing recorded in this window.'}
+          <p className="text-sm text-muted-foreground" data-testid="stat-card-empty" data-emptiness={emptiness}>
+            {emptiness === 'measured-all-zero'
+              ? 'Measured in this window, and every value is zero.'
+              : usage
+                ? 'No usage telemetry in this window.'
+                : 'Nothing recorded in this window.'}
           </p>
         ) : (
           <>

@@ -55,6 +55,12 @@ test('request labels canonicalize every dynamic site, content, preview and publi
     routeName('/v1/sites/tenant/access/users/020fd832-6b86-4d50-82dd-a600be466a2e/revoke-sessions'),
     '/v1/sites/:site/access/users/:id/revoke-sessions',
   )
+  // A locale is not a uuid, so the generic id collapse never reaches it. Without
+  // its own rule every locale a site owns opens a separate metrics series, and
+  // the cardinality of /metrics then grows with the content, not with the API.
+  assert.equal(routeName('/v1/sites/tenant/locales'), '/v1/sites/:site/locales')
+  assert.equal(routeName('/v1/sites/tenant/locales/de-DE'), '/v1/sites/:site/locales/:locale')
+  assert.equal(routeName('/v1/sites/tenant/locales/pt-BR'), '/v1/sites/:site/locales/:locale')
 })
 
 test('direct agent narratives are bounded before deterministic recommendation', () => {

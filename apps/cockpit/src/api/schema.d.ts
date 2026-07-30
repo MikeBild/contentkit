@@ -225,7 +225,10 @@ export interface paths {
          */
         get: operations["siteList"];
         put?: never;
-        /** Create a site (unrestricted site administrator) */
+        /**
+         * Create a site (unrestricted site administrator)
+         * @description Creates the site row, its locale rows, its hostname mappings and its settings in one request. `slug` is derived from `name` when omitted. `default_locale` and every entry in `locales` must be an IETF language tag content can carry (`de`, `en-us`) — the same validation `POST /v1/sites/{site}/locales` applies, so the two doors cannot disagree; a tag like `Deutsch` is a 422 rather than a locale row no document could ever use. Locales are case-folded and de-duplicated, `default_locale` is always among them, and at most 32 are stored: each one adds a page tree to every release. `settings` is validated exactly as in `PATCH`. Content can only be ingested and published into a locale this site builds, so send the full set here rather than discovering the refusal later.
+         */
         post: operations["siteCreate"];
         delete?: never;
         options?: never;
@@ -256,9 +259,53 @@ export interface paths {
         head?: never;
         /**
          * Update site metadata, settings and domains
-         * @description Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean. Optional `If-Match` with the ETag from `GET` makes the update conditional: a site written by someone else in the meantime answers 412 instead of dropping their change.
+         * @description Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean. Optional `If-Match` with the ETag from `GET` makes the update conditional: a site written by someone else in the meantime answers 412 instead of dropping their change. `locales` is not part of this body. `default_locale` is validated against the stored locale rows, and the rows themselves are read with `GET /v1/sites/{site}/locales` and changed one at a time through `POST /v1/sites/{site}/locales` and `DELETE /v1/sites/{site}/locales/{locale}`, so each removal is refused on its own grounds — the locale that still has published or scheduled content is named, and the rest of the set is untouched. `POST /v1/sites` does accept the whole list at once, because a site being created has no content to orphan. `default_locale` and the locale rows are one invariant across two tables: this write and the locale writes take the same row lock, so a concurrent `PATCH {default_locale}` and `DELETE .../locales/{locale}` cannot both succeed.
          */
         patch: operations["siteUpdate"];
+        trace?: never;
+    };
+    "/v1/sites/{site}/locales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the locales a site builds (site:admin)
+         * @description The locale set is what decides how many page trees a release contains, and the `Site` row does not carry it — this is the read path the two writes below depend on. `locales` are the stored rows; `builds` is what the next release actually emits, which is the stored set or `default_locale` alone when a site carries no rows (the builder falls back to it, so such a site builds exactly one tree that no row records). Content may only be ingested and published into a locale in `builds`. `max_locales` is the hard cap on rows.
+         */
+        get: operations["siteLocaleList"];
+        put?: never;
+        /**
+         * Add a locale to a site (site:admin)
+         * @description Locale rows are the build matrix: the site builder emits one page tree per locale, so a language without a row is one this site can never serve — and content in it is refused on ingest and on publish. `POST /v1/sites` writes the initial rows and `PATCH /v1/sites/{site}` only validates `default_locale` against them — this is the only way to add one afterwards. The locale is case-folded (`DE` and `de` are the same row) and must be an IETF language tag content can carry (`de`, `en-us`). A locale the site already has answers 409, and a site already at `max_locales` (32) answers 422: each row adds a full page tree — home, listings, tags, feeds, 404 — to every release. Live traffic is unaffected until the next release is built, which is what `rebuild_required` reports.
+         */
+        post: operations["siteLocaleAdd"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/locales/{locale}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a locale from a site (site:admin)
+         * @description Refused with 409 in two cases: the locale is the site's `default_locale` — the root redirect and the fallback 404 page target it, and a site cannot have a default it does not build; point `default_locale` at another locale first, then remove this one — or the locale still carries content the site publishes, in which case the error names both counts: items with a published revision, and items with a revision that is `scheduled` and would be published by the next `POST /v1/publish-due` into a locale the build no longer emits. Unpublish the former and cancel the latter first. Items with neither are left in place and reported as `draft_items`; no content is ever deleted here. Removal does not stop content from re-entering the locale in the past tense — it is the door, not a retroactive sweep: ingest and publish both refuse a locale the site does not build, so nothing new arrives in it afterwards. The locale segment is case-folded, and one the site does not have answers 404.
+         */
+        delete: operations["siteLocaleRemove"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/sites/{site}/access/users": {
@@ -421,7 +468,7 @@ export interface paths {
         put?: never;
         /**
          * Create content and its first draft revision
-         * @description Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` and may select a configured series with `reportSeries`. `reportSeries` is invalid on non-report compositions; a preview or release rejects IDs absent from `settings.presentation.report_series`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references.
+         * @description Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` and may select a configured series with `reportSeries`. `reportSeries` is invalid on non-report compositions; a preview or release rejects IDs absent from `settings.presentation.report_series`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references. The document's `locale` must be one the site builds (`GET /v1/sites/{site}/locales`, field `builds`): a document in any other locale is refused with 422, because no release emits a page tree for it — the item would be storable, publishable and permanently a 404 on the site.
          */
         post: operations["contentCreate"];
         delete?: never;
@@ -841,7 +888,7 @@ export interface paths {
         get: operations["contentRevisionList"];
         /**
          * Create another immutable revision
-         * @description Accepts the same controlled-layout, semantic-composition, semantic-deck, report-cadence, report-series, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata.
+         * @description Accepts the same controlled-layout, semantic-composition, semantic-deck, report-cadence, report-series, hierarchy, reader-access, custom-field and related-post frontmatter contract as content creation. Values are validated on write (422 on malformed input) and stored in immutable revision metadata. A revision cannot change `kind`, `locale` or `translationKey`, and its `locale` must still be one the site builds — a locale removed in the meantime makes further revisions a 422 until it is added back.
          */
         put: operations["contentRevisionCreate"];
         post?: never;
@@ -1011,7 +1058,7 @@ export interface paths {
         put?: never;
         /**
          * Build and atomically activate a release
-         * @description Overlays revision_ids on the currently published set and removes retire_item_ids from it; items in neither keep their published revision. Retired items get published_revision_id cleared and their live revision archived.
+         * @description Overlays revision_ids on the currently published set and removes retire_item_ids from it; items in neither keep their published revision. Retired items get published_revision_id cleared and their live revision archived. A revision whose item sits in a locale the site does not build is refused with 422: releases emit one page tree per locale, so publishing it would set a published pointer and list the item in `GET /v1/sites/{site}/published` for a page no build emits. Only the revisions this release publishes are checked — content published before a locale went away keeps its pointer and does not block future releases.
          */
         post: operations["releaseCreate"];
         delete?: never;
@@ -1066,7 +1113,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Publish scheduled revisions grouped by site */
+        /**
+         * Publish scheduled revisions grouped by site
+         * @description Publishes every `scheduled` revision whose `scheduled_at` has passed, grouped into one release per site; for one item the latest due revision wins and the earlier ones are archived. Each site is reported separately, with `error` instead of a release when its build was refused — a revision in a locale the site no longer builds is refused here rather than published into a page tree that does not exist, which is also why removing a locale with scheduled content answers 409.
+         */
         post: operations["publishDue"];
         delete?: never;
         options?: never;
@@ -2293,6 +2343,25 @@ export interface components {
             domains?: string[];
             settings?: components["schemas"]["SiteSettings"];
         };
+        /** @description Everything a site needs in one request: metadata, the initial locale set, the verified hostnames and the settings preset. Sending `locales`, `domains` and `settings` here is the difference between one write and a site that exists without its preset because the second request failed. */
+        SiteCreateInput: {
+            name: string;
+            /** @description Slugified server-side; derived from `name` when omitted. */
+            slug?: string;
+            description?: string;
+            /**
+             * Format: uri
+             * @description Absolute HTTP(S) URL without credentials; a trailing slash is stripped.
+             */
+            base_url: string;
+            /** @description IETF language tag such as `de` or `en-us`, case-folded. Always stored as a locale row too — the root redirect and the 404 page target it. */
+            default_locale: string;
+            /** @description Additional locales to build, validated and case-folded exactly like `default_locale`, which is always included. At most 32 in total: each one adds a full page tree to every release. */
+            locales?: string[];
+            /** @description Hostnames to map to this site, stored as verified. */
+            domains?: string[];
+            settings?: components["schemas"]["SiteSettings"];
+        };
         Site: {
             /** Format: uuid */
             id: string;
@@ -2305,6 +2374,52 @@ export interface components {
             settings: components["schemas"]["SiteSettings"];
         } & {
             [key: string]: unknown;
+        };
+        SiteLocaleInput: {
+            /** @description IETF language tag such as `de` or `en-us`. Case-folded on write: locale rows are stored lowercase, so `DE` and `de` are the same locale. */
+            locale: string;
+        };
+        SiteLocaleRow: {
+            /** @description The stored, lowercased locale. */
+            locale: string;
+            /** Format: date-time */
+            created_at: string | null;
+        };
+        /** @description The site locale set as stored, plus what a release would actually emit. The two differ for a site that carries no locale rows at all: the builder falls back to `default_locale`, so such a site builds exactly one tree that no row records. */
+        SiteLocaleList: {
+            /** Format: uuid */
+            site_id: string;
+            /** @description The locale `/` redirects to and the fallback 404 page is built from. It can never be removed. */
+            default_locale: string;
+            /** @description The stored locale rows, ascending. Empty for a site provisioned without any. */
+            locales: components["schemas"]["SiteLocaleRow"][];
+            /** @description The locales the next release emits a page tree for: the stored rows, or `default_locale` alone when there are none. Content may only be ingested and published into these. */
+            builds: string[];
+            /** @description The hard cap on locale rows per site — every row multiplies the build matrix. */
+            max_locales: number;
+        };
+        SiteLocale: {
+            /** Format: uuid */
+            site_id: string;
+            /** @description The stored, lowercased locale. */
+            locale: string;
+            /** Format: date-time */
+            created_at?: string | null;
+            /** @description Every locale the site now builds, ascending. */
+            locales: string[];
+            /** @description Always true: nothing is served under `/<locale>/` until the next release build. */
+            rebuild_required: boolean;
+        };
+        SiteLocaleRemoved: {
+            deleted: boolean;
+            /** Format: uuid */
+            site_id: string;
+            locale: string;
+            /** @description Content items left behind in that locale with no published revision — drafts and items that were unpublished earlier alike. The removal only succeeds when nothing there is published or scheduled, so this is every remaining item. None is deleted, but the builder no longer has a tree to emit them into. */
+            draft_items: number;
+            /** @description Every locale the site still builds, ascending. */
+            locales: string[];
+            rebuild_required: boolean;
         };
         /** @description A content item merged with its newest revision. Title, slug, summary and tags live on the revision, so an unmerged item row identifies a document only by its translation_key. */
         ContentItem: {
@@ -3182,7 +3297,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SiteCreateInput"];
             };
         };
         responses: {
@@ -3202,6 +3317,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description A required field is missing, `base_url` is not an absolute HTTP(S) URL, a locale is not an IETF language tag, more than 32 locales were requested, or `settings` failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -3339,6 +3463,138 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             /** @description If-Match did not match: the site changed since it was read */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    siteLocaleList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored locale rows and the set the next release builds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteLocaleList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Site not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    siteLocaleAdd: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteLocaleInput"];
+            };
+        };
+        responses: {
+            /** @description Locale added; `locales` is the full resulting set */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteLocale"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Site not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The site already has this locale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `locale` is missing, not an IETF language tag such as `de` or `en-us`, or the site already builds the maximum number of locales */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    siteLocaleRemove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                /** @description The site locale to remove, case-insensitive. */
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Locale removed; `locales` is the full resulting set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteLocaleRemoved"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Site not found, or the site does not have this locale */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The locale is the site default_locale, or it still has published or scheduled content; the error names both counts */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5202,7 +5458,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Publish results */
+            /** @description Publish results, one entry per site: a release or an error */
             200: {
                 headers: {
                     [name: string]: unknown;

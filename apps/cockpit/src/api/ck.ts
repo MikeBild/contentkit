@@ -28,6 +28,10 @@ type Created<T extends keyof operations> = operations[T] extends {
 export type Site = Schema<'Site'>
 export type SitePatch = Schema<'SitePatch'>
 export type SiteSettings = Schema<'SiteSettings'>
+export type SiteCreateInput = Schema<'SiteCreateInput'>
+export type SiteLocale = Schema<'SiteLocale'>
+export type SiteLocaleList = Schema<'SiteLocaleList'>
+export type SiteLocaleRemoved = Schema<'SiteLocaleRemoved'>
 export type PublishedList = Schema<'PublishedList'>
 export type PublishedDocument = Schema<'PublishedDocument'>
 export type ProductStats = Schema<'ProductStats'>
@@ -221,8 +225,16 @@ export const ck = {
     /** Every site this credential may read. `site_ids: []` on a grant means all of them. */
     list: () => unwrap(api.GET('/v1/sites', {})),
     get: (site: string) => unwrap(api.GET('/v1/sites/{site}', { params: { path: { site } } })),
-    create: (input: { name: string; base_url: string; default_locale: string; slug?: string }) =>
-      unwrap(api.POST('/v1/sites', { body: body(input) })),
+    /**
+     * One request creates the site row, its locale rows, its hostname mappings and
+     * its settings — `POST /v1/sites` validates and stores all four. The signature
+     * used to stop at `name`/`base_url`/`default_locale`/`slug`, which forced the
+     * console into three sequential writes and a state where the site exists
+     * without its preset because the second one failed. `locales` is validated
+     * like `addLocale()` (IETF tag, case-folded, `default_locale` always included,
+     * at most 32), so a whole multilingual site is one call.
+     */
+    create: (input: SiteCreateInput) => unwrap(api.POST('/v1/sites', { body: body(input) })),
     // PATCH replaces `settings` wholesale — read, merge, then send the whole
     // object back. Sending a partial subtree silently drops the rest.
     update: (site: string, patch: SitePatch) =>
@@ -235,6 +247,33 @@ export const ck = {
      */
     remove: (site: string, purge = false) =>
       unwrap(api.DELETE('/v1/sites/{site}', { params: { path: { site }, query: { purge } } })),
+    /**
+     * The locale set the site builds. `Site` does not carry it, so this is the only
+     * read path: `locales` are the stored rows, `builds` is what the next release
+     * actually emits — they differ for a site with no rows at all, which still
+     * builds its `default_locale` tree. `max_locales` is the cap.
+     */
+    locales: (site: string) => unwrap(api.GET('/v1/sites/{site}/locales', { params: { path: { site } } })),
+    /**
+     * Locale rows are the site's build matrix — the builder emits one page tree
+     * per locale — and `update()` cannot change them: `SitePatch` validates
+     * `default_locale` against the stored rows and never writes them. The locale
+     * is case-folded server-side, a locale the site already has answers 409, and
+     * the 33rd answers 422. Live pages are unaffected until the next release build.
+     */
+    addLocale: (site: string, locale: string) =>
+      unwrap(api.POST('/v1/sites/{site}/locales', { params: { path: { site } }, body: body({ locale }) })),
+    /**
+     * Refused with 409 while the locale is the site's `default_locale` (the root
+     * redirect and the 404 page target it) or while it still carries content the
+     * site publishes — items with a published revision *or* with a `scheduled` one,
+     * which sets no published pointer but would be published into a locale the
+     * build no longer emits. That refusal is the safeguard, not a step to repeat.
+     * Content is never deleted; `draft_items` counts the items left behind with no
+     * published revision (drafts and items unpublished earlier alike).
+     */
+    removeLocale: (site: string, locale: string) =>
+      unwrap(api.DELETE('/v1/sites/{site}/locales/{locale}', { params: { path: { site, locale } } })),
   },
 
   content: {

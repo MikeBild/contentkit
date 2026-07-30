@@ -110,7 +110,15 @@ test('preview invitations exchange once into a separately hashed session', async
   assert.equal((await repo.authenticatePreview('article-review', exchanged.token)).release_id, 'release-1')
 })
 
-function snapshotRepo({ siteLocales = [{ site_id: 'site-1', locale: 'de' }] } = {}) {
+function snapshotRepo({
+  siteLocales = [{ site_id: 'site-1', locale: 'de' }],
+  extraItems = [],
+  extraRevisions = [],
+  // What a `SELECT … FOR UPDATE` on the site row sees. Defaults to the same row
+  // every unlocked read returns; a test sets it to model a racing transaction that
+  // committed between the unlocked read and the lock.
+  lockedSite = null,
+} = {}) {
   const site = {
     id: 'site-1',
     slug: 'site-1',
@@ -137,24 +145,69 @@ function snapshotRepo({ siteLocales = [{ site_id: 'site-1', locale: 'de' }] } = 
       published_revision_id: 'rev-b',
     },
     { id: 'item-c', site_id: 'site-1', kind: 'page', locale: 'de', translation_key: 'c', published_revision_id: null },
+    ...extraItems,
   ]
   const revisions = [
-    { id: 'rev-a', item_id: 'item-a', markdown: '# a' },
-    { id: 'rev-a2', item_id: 'item-a', markdown: '# a v2' },
-    { id: 'rev-b', item_id: 'item-b', markdown: '# b' },
-    { id: 'rev-c', item_id: 'item-c', markdown: '# c' },
+    { id: 'rev-a', item_id: 'item-a', markdown: '# a', status: 'published' },
+    { id: 'rev-a2', item_id: 'item-a', markdown: '# a v2', status: 'draft' },
+    { id: 'rev-b', item_id: 'item-b', markdown: '# b', status: 'published' },
+    { id: 'rev-c', item_id: 'item-c', markdown: '# c', status: 'draft' },
+    ...extraRevisions,
   ]
+  // The locale and item selects honour the `locale=eq.` filter and the
+  // `locale.asc` order the repository sends, because the locale writes below
+  // depend on both: an unfiltered fake would report every existing locale as a
+  // duplicate of the one being added.
+  const filterLocale = (rows, query) =>
+    query.locale ? rows.filter((row) => row.locale === query.locale.slice(3)) : rows
   const db = {
     async select(table, query = {}) {
       if (table === 'ck_sites') return query.slug === 'eq.site-1' || query.id === 'eq.site-1' ? [site] : []
-      if (table === 'ck_site_locales') return siteLocales
-      if (table === 'ck_content_items') return items
+      if (table === 'ck_site_locales') {
+        const rows = filterLocale(siteLocales, query)
+        return query.order === 'locale.asc' ? [...rows].sort((a, b) => a.locale.localeCompare(b.locale)) : rows
+      }
+      if (table === 'ck_content_items') return filterLocale(items, query)
       if (table === 'ck_content_revisions') {
-        const wanted = query.id?.match(/^in\.\((.*)\)$/)?.[1].split(',') || []
-        return revisions.filter((revision) => wanted.includes(revision.id))
+        // Both shapes the repository sends: revisions by id (the release overlay)
+        // and revisions by item with a status filter (the removal guard looking for
+        // scheduled publications).
+        const ids = query.id?.match(/^in\.\((.*)\)$/)?.[1].split(',')
+        const itemIds = query.item_id?.match(/^in\.\((.*)\)$/)?.[1].split(',')
+        if (!ids && !itemIds) return []
+        return revisions.filter(
+          (revision) =>
+            (!ids || ids.includes(revision.id)) &&
+            (!itemIds || itemIds.includes(revision.item_id)) &&
+            (!query.status || revision.status === query.status.slice(3)),
+        )
       }
       if (table === 'ck_comments') return []
       return []
+    },
+    async insert(table, rows) {
+      assert.equal(table, 'ck_site_locales')
+      siteLocales.push(...(Array.isArray(rows) ? rows : [rows]))
+      return (Array.isArray(rows) ? rows : [rows]).map((row) => ({ ...row, created_at: '2026-07-30T00:00:00.000Z' }))
+    },
+    async remove(table, filters) {
+      assert.equal(table, 'ck_site_locales')
+      const locale = filters.locale.slice(3)
+      const index = siteLocales.findIndex((row) => row.locale === locale)
+      if (index >= 0) siteLocales.splice(index, 1)
+    },
+    // The locale writes run in one transaction behind a row lock, so the fake has
+    // to be able to run one. `query` answers only the lock, which is the single
+    // piece of raw SQL these writes use.
+    async tx(run) {
+      return run(txApi)
+    },
+  }
+  const txApi = {
+    ...db,
+    async query(sql, values) {
+      assert.match(sql, /FROM ck_sites WHERE id = \$1 FOR UPDATE/, 'the only raw statement is the site-row lock')
+      return values[0] === site.id ? [lockedSite ?? site] : []
     },
   }
   return createRepository({}, db, {})
@@ -213,10 +266,13 @@ test('buildSnapshot rejects publishing and retiring the same item', async () => 
   )
 })
 
-// A site with zero locale rows builds nothing under /<locale>/: no page, no
-// deck, only the shared assets. The release and the preview still report
-// success, so the omission first shows up as a 404 on a URL the build never
-// emitted — which is how it reached the deploy canary's named deck preview.
+// A site with zero locale rows does not build nothing — it builds exactly the
+// default_locale tree, because of this fallback. What is missing is the record: the
+// stored set says nothing while a release emits one tree, which is why the read path
+// reports `locales` and `builds` separately. Building such a site *verbatim*, before
+// the fallback existed, produced an assets-only release that still reported success
+// — the omission first showed up as a 404 on a URL the build never emitted, which is
+// how it reached the deploy canary's named deck preview.
 test('buildSnapshot falls back to the default locale when a site has no locale rows', async () => {
   const repo = snapshotRepo({ siteLocales: [] })
   const snapshot = await repo.buildSnapshot('site-1', [], [])
@@ -238,8 +294,9 @@ test('createSite always stores the default locale, even for an empty locales lis
     },
   }
   const repo = createRepository({}, db, {})
-  // `locales: []` is truthy, so it used to survive as zero locale rows and left
-  // the site permanently unbuildable — no endpoint can add a locale afterwards.
+  // `locales: []` is truthy, so it used to survive as zero locale rows: the site
+  // then built only its default tree, with nothing recording that this was its
+  // whole build matrix and nothing to add a second locale to.
   await repo.createSite({ slug: 'canary', name: 'Canary', base_url: 'https://canary.invalid', default_locale: 'DE' })
   await repo.createSite({
     slug: 'canary-2',
@@ -259,6 +316,456 @@ test('createSite always stores the default locale, even for an empty locales lis
     .filter((entry) => entry.table === 'ck_site_locales')
     .map((entry) => entry.body.map((row) => row.locale))
   assert.deepEqual(locales, [['de'], ['de'], ['de', 'en']])
+})
+
+// createSite wrote the locale rows once and nothing could change them
+// afterwards, so a second language was impossible to add through any door. The
+// five tests below pin the invariants that make the two writes safe.
+test('addSiteLocale stores the locale lowercase', async () => {
+  const siteLocales = [{ site_id: 'site-1', locale: 'de' }]
+  const repo = snapshotRepo({ siteLocales })
+  const added = await repo.addSiteLocale('site-1', { locale: '  EN-US ' })
+  assert.equal(added.locale, 'en-us')
+  assert.equal(added.rebuild_required, true)
+  assert.deepEqual(added.locales, ['de', 'en-us'])
+  // The primary key does not case-fold, so a verbatim `EN-US` row would coexist
+  // with `en-us` and build the same tree twice under two URLs.
+  assert.deepEqual(
+    siteLocales.map((row) => row.locale),
+    ['de', 'en-us'],
+  )
+})
+
+test('addSiteLocale rejects a locale the site already has', async () => {
+  const repo = snapshotRepo({ siteLocales: [{ site_id: 'site-1', locale: 'de' }] })
+  await assert.rejects(
+    // Case-folded first: `DE` is the existing `de` row, not a new one.
+    () => repo.addSiteLocale('site-1', { locale: 'DE' }),
+    (error) => {
+      assert.equal(error.statusCode, 409)
+      assert.match(error.message, /locale de already exists/)
+      return true
+    },
+  )
+})
+
+test('addSiteLocale rejects a tag no content could carry', async () => {
+  const repo = snapshotRepo()
+  await assert.rejects(
+    () => repo.addSiteLocale('site-1', { locale: 'Deutsch' }),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /IETF language tag/)
+      return true
+    },
+  )
+})
+
+test('removeSiteLocale refuses to remove the site default_locale', async () => {
+  const siteLocales = [{ site_id: 'site-1', locale: 'de' }]
+  const repo = snapshotRepo({ siteLocales })
+  await assert.rejects(
+    () => repo.removeSiteLocale('site-1', 'DE'),
+    (error) => {
+      assert.equal(error.statusCode, 409)
+      assert.match(error.message, /default_locale/)
+      return true
+    },
+  )
+  // `/` redirects to `/{default_locale}/` and the 404 page is built from it, so
+  // the row has to survive the attempt.
+  assert.deepEqual(
+    siteLocales.map((row) => row.locale),
+    ['de'],
+  )
+})
+
+test('removeSiteLocale refuses a locale that still has published content', async () => {
+  const siteLocales = [
+    { site_id: 'site-1', locale: 'de' },
+    { site_id: 'site-1', locale: 'en' },
+  ]
+  const repo = snapshotRepo({
+    siteLocales,
+    extraItems: [
+      {
+        id: 'item-en',
+        site_id: 'site-1',
+        kind: 'post',
+        locale: 'en',
+        translation_key: 'a',
+        published_revision_id: 'rev-en',
+      },
+    ],
+  })
+  await assert.rejects(
+    () => repo.removeSiteLocale('site-1', 'en'),
+    (error) => {
+      assert.equal(error.statusCode, 409)
+      // The counts are the point: silently dropping the row would 404 that page
+      // on the next release while the build still answered success.
+      assert.match(error.message, /1 published and 0 scheduled content item/)
+      return true
+    },
+  )
+  assert.deepEqual(
+    siteLocales.map((row) => row.locale),
+    ['de', 'en'],
+  )
+})
+
+// The removal guard used to read `published_revision_id` alone. A revision with
+// status='scheduled' sets no pointer, so a scheduled item was indistinguishable
+// from a draft: the DELETE answered 200, POST /v1/publish-due then published the
+// item into a locale the build no longer emits, and the result was an item the API
+// reported as published and the site served as a 404.
+test('removeSiteLocale refuses a locale whose only content is scheduled for publication', async () => {
+  const siteLocales = [
+    { site_id: 'site-1', locale: 'de' },
+    { site_id: 'site-1', locale: 'en' },
+  ]
+  const repo = snapshotRepo({
+    siteLocales,
+    extraItems: [
+      {
+        id: 'item-en',
+        site_id: 'site-1',
+        kind: 'post',
+        locale: 'en',
+        translation_key: 'a',
+        // Nothing is published yet — this is exactly what made it look harmless.
+        published_revision_id: null,
+      },
+    ],
+    extraRevisions: [
+      {
+        id: 'rev-en',
+        item_id: 'item-en',
+        markdown: '# en',
+        status: 'scheduled',
+        scheduled_at: '2099-01-01T00:00:00.000Z',
+      },
+    ],
+  })
+  await assert.rejects(
+    () => repo.removeSiteLocale('site-1', 'en'),
+    (error) => {
+      assert.equal(error.statusCode, 409)
+      assert.match(error.message, /0 published and 1 scheduled content item/)
+      return true
+    },
+  )
+  assert.deepEqual(
+    siteLocales.map((row) => row.locale),
+    ['de', 'en'],
+    'the row has to survive, or publish-due publishes into a locale nothing builds',
+  )
+})
+
+// `draft_items` is every remaining item without a published revision, which
+// includes items that were published and then unpublished — the label used to say
+// "never-published", a number the code never computed.
+test('removeSiteLocale reports every item left with no published revision', async () => {
+  const siteLocales = [
+    { site_id: 'site-1', locale: 'de' },
+    { site_id: 'site-1', locale: 'en' },
+  ]
+  const repo = snapshotRepo({
+    siteLocales,
+    extraItems: [
+      {
+        id: 'item-draft',
+        site_id: 'site-1',
+        kind: 'post',
+        locale: 'en',
+        translation_key: 'd',
+        published_revision_id: null,
+      },
+      // Published once, unpublished since: no pointer, an archived revision.
+      {
+        id: 'item-was-live',
+        site_id: 'site-1',
+        kind: 'post',
+        locale: 'en',
+        translation_key: 'w',
+        published_revision_id: null,
+      },
+    ],
+    extraRevisions: [{ id: 'rev-was-live', item_id: 'item-was-live', markdown: '# w', status: 'archived' }],
+  })
+  const removed = await repo.removeSiteLocale('site-1', 'en')
+  assert.equal(removed.draft_items, 2)
+})
+
+test('adding and removing a locale changes what buildSnapshot emits', async () => {
+  const repo = snapshotRepo()
+  const before = await repo.buildSnapshot('site-1', [], [])
+  assert.deepEqual(
+    before.locales.map((entry) => entry.locale),
+    ['de'],
+  )
+  await repo.addSiteLocale('site-1', { locale: 'EN' })
+  const added = await repo.buildSnapshot('site-1', [], [])
+  assert.deepEqual(
+    added.locales.map((entry) => entry.locale),
+    ['de', 'en'],
+  )
+  const removed = await repo.removeSiteLocale('site-1', 'en')
+  assert.deepEqual(removed, {
+    deleted: true,
+    site_id: 'site-1',
+    locale: 'en',
+    draft_items: 0,
+    locales: ['de'],
+    rebuild_required: true,
+  })
+  const after = await repo.buildSnapshot('site-1', [], [])
+  assert.deepEqual(
+    after.locales.map((entry) => entry.locale),
+    ['de'],
+  )
+})
+
+// A racing PATCH {default_locale:'en'} that commits after this call resolved the
+// site is invisible to an unlocked read: the removal then validated against the old
+// default, deleted the row, and left the site with a default_locale nothing builds.
+// The locked re-read is what makes the pair serialize.
+test('removeSiteLocale re-reads default_locale under the lock, so a racing PATCH cannot orphan it', async () => {
+  const siteLocales = [
+    { site_id: 'site-1', locale: 'de' },
+    { site_id: 'site-1', locale: 'en' },
+  ]
+  const repo = snapshotRepo({
+    siteLocales,
+    // What the transaction sees once it holds the lock: the racing PATCH committed.
+    lockedSite: { id: 'site-1', slug: 'site-1', default_locale: 'en', base_url: 'https://example.com', settings: {} },
+  })
+  await assert.rejects(
+    () => repo.removeSiteLocale('site-1', 'en'),
+    (error) => {
+      assert.equal(error.statusCode, 409)
+      assert.match(error.message, /default_locale/)
+      return true
+    },
+  )
+  assert.deepEqual(
+    siteLocales.map((row) => row.locale),
+    ['de', 'en'],
+  )
+})
+
+test('siteLocales reports the stored rows, what the next release builds and the cap', async () => {
+  const repo = snapshotRepo({ siteLocales: [{ site_id: 'site-1', locale: 'de', created_at: 'c' }] })
+  const listed = await repo.siteLocales('site-1')
+  assert.equal(listed.site_id, 'site-1')
+  assert.equal(listed.default_locale, 'de')
+  assert.deepEqual(listed.locales, [{ locale: 'de', created_at: 'c' }])
+  assert.deepEqual(listed.builds, ['de'])
+  assert.equal(listed.max_locales, 32)
+  // A site with no rows at all is the case the documentation used to get wrong: it
+  // does not build nothing, it builds default_locale. The read path has to say so,
+  // or a locale editor shows an empty set for a site that serves pages.
+  const zero = await snapshotRepo({ siteLocales: [] }).siteLocales('site-1')
+  assert.deepEqual(zero.locales, [])
+  assert.deepEqual(zero.builds, ['de'])
+})
+
+// Every locale row multiplies the build matrix — one page tree, with home,
+// listings, tags, feeds and a 404, per row and per release.
+test('addSiteLocale caps the number of locales a site builds', async () => {
+  const tags = [...'abcdefghijklmnopqrstuvwxyzabcdef'].map((letter, index) => `${index < 26 ? 'a' : 'b'}${letter}`)
+  const siteLocales = ['de', ...tags.slice(0, 31)].map((locale) => ({ site_id: 'site-1', locale }))
+  assert.equal(siteLocales.length, 32)
+  const repo = snapshotRepo({ siteLocales })
+  await assert.rejects(
+    () => repo.addSiteLocale('site-1', { locale: 'fr' }),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /at most 32 locales/)
+      return true
+    },
+  )
+  assert.equal(siteLocales.length, 32)
+})
+
+// F7, door one: content entering. The locale set was only ever read by the
+// builder, so `locale: en` on a site that builds `de` produced an item and a
+// revision for a page no release can emit — publishable, listed by the read API and
+// a 404 on the site.
+test('ingest refuses a document in a locale the site does not build', async () => {
+  const db = {
+    async select(table) {
+      return table === 'ck_site_locales' ? [{ locale: 'de' }] : []
+    },
+    async insert(table) {
+      assert.fail(`nothing may be written: ${table}`)
+    },
+  }
+  const repo = createRepository({}, db, { async upload() {} })
+  const md = '---\nkind: post\ntitle: T\nlocale: en\nslug: t\ntranslationKey: t\n---\n# T'
+  await assert.rejects(
+    () => repo.ingest('site-1', md),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /locale en is not a locale this site builds \(de\)/)
+      return true
+    },
+  )
+})
+
+// The check is against what a release builds, not against the rows: a site
+// provisioned with no rows still builds its default_locale tree, so its content
+// must keep ingesting.
+test('ingest accepts the default locale of a site that carries no locale rows', async () => {
+  const inserted = []
+  const db = {
+    async select(table) {
+      return table === 'ck_sites' ? [{ id: 'site-1', default_locale: 'de' }] : []
+    },
+    async insert(table, body) {
+      inserted.push(table)
+      const rows = Array.isArray(body) ? body : [body]
+      return rows.map((row, index) => ({ id: `id-${index}`, ...row }))
+    },
+  }
+  const repo = createRepository({}, db, { async upload() {} })
+  const md = '---\nkind: post\ntitle: T\nlocale: de\nslug: t\ntranslationKey: t\n---\n# T'
+  const result = await repo.ingest('site-1', md)
+  assert.equal(result.revision.title, 'T')
+  assert.ok(inserted.includes('ck_content_revisions'))
+})
+
+// F7, door two: publishing. Reached when the item was ingested first and the locale
+// removed later, or when a scheduled publish lands after the removal.
+test('buildSnapshot refuses to publish a revision whose locale the site does not build', async () => {
+  const repo = snapshotRepo({
+    siteLocales: [{ site_id: 'site-1', locale: 'de' }],
+    extraItems: [
+      {
+        id: 'item-en',
+        site_id: 'site-1',
+        kind: 'post',
+        locale: 'en',
+        translation_key: 'a',
+        published_revision_id: null,
+      },
+    ],
+    extraRevisions: [{ id: 'rev-en', item_id: 'item-en', markdown: '# en', status: 'draft' }],
+  })
+  await assert.rejects(
+    () => repo.buildSnapshot('site-1', ['rev-en'], []),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /cannot publish into locale\(s\) en/)
+      return true
+    },
+  )
+  // Only the revisions this release publishes are checked. An item published before
+  // the rule (or before its locale went away) keeps its pointer, or the site could
+  // never build another release at all.
+  const snapshot = await snapshotRepo({
+    siteLocales: [{ site_id: 'site-1', locale: 'de' }],
+    extraItems: [
+      {
+        id: 'item-en',
+        site_id: 'site-1',
+        kind: 'post',
+        locale: 'en',
+        translation_key: 'a',
+        published_revision_id: 'rev-en',
+      },
+    ],
+    extraRevisions: [{ id: 'rev-en', item_id: 'item-en', markdown: '# en', status: 'published' }],
+  }).buildSnapshot('site-1', [], [])
+  assert.deepEqual(
+    snapshot.locales.map((entry) => entry.locale),
+    ['de'],
+  )
+})
+
+// F9: the two doors that write locale rows have to validate identically, or the
+// stricter one is decoration. `Deutsch` passed here and 422s at
+// POST /v1/sites/{site}/locales.
+test('createSite validates the locale shape on both default_locale and locales', async () => {
+  const createDb = () => ({
+    inserted: [],
+    async insert(table, body) {
+      this.inserted.push({ table, body })
+      return [{ id: 'site-1' }]
+    },
+    async select() {
+      return []
+    },
+  })
+  for (const input of [
+    { default_locale: 'Deutsch' },
+    { default_locale: 'de', locales: ['English'] },
+    { default_locale: 'de', locales: ['de_AT'] },
+  ]) {
+    const db = createDb()
+    await assert.rejects(
+      () =>
+        createRepository({}, db, {}).createSite({
+          slug: 'canary',
+          name: 'Canary',
+          base_url: 'https://canary.invalid',
+          ...input,
+        }),
+      (error) => {
+        assert.equal(error.statusCode, 422)
+        assert.match(error.message, /IETF language tag/)
+        return true
+      },
+      `expected ${JSON.stringify(input)} to be rejected`,
+    )
+    // The site row must not exist either: a site whose only locale row can never
+    // hold a document is one nothing can repair, because the row is the default.
+    assert.deepEqual(db.inserted, [])
+  }
+  const db = createDb()
+  await createRepository({}, db, {}).createSite({
+    slug: 'canary',
+    name: 'Canary',
+    base_url: 'https://canary.invalid',
+    default_locale: ' DE ',
+    locales: ['EN-US'],
+  })
+  assert.equal(db.inserted[0].body.default_locale, 'de')
+  assert.deepEqual(
+    db.inserted[1].body.map((row) => row.locale),
+    ['de', 'en-us'],
+  )
+})
+
+test('createSite caps the initial locale set', async () => {
+  const db = {
+    inserted: [],
+    async insert(table) {
+      this.inserted.push(table)
+      return [{ id: 'site-1' }]
+    },
+    async select() {
+      return []
+    },
+  }
+  const locales = ['a', 'b'].flatMap((first) => [...'abcdefghijklmnopqrst'].map((second) => `${first}${second}`))
+  assert.equal(new Set(locales).size, 40)
+  await assert.rejects(
+    () =>
+      createRepository({}, db, {}).createSite({
+        slug: 'canary',
+        name: 'Canary',
+        base_url: 'https://canary.invalid',
+        default_locale: 'de',
+        locales,
+      }),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /at most 32 locales/)
+      return true
+    },
+  )
+  assert.deepEqual(db.inserted, [])
 })
 
 function enqueueDb({ endpoints = [] }) {
@@ -404,8 +911,10 @@ test('buildSnapshot returns the item list and overlay revisions alongside the re
 
 test('ingest rejects every browser-executable asset content type', async () => {
   const db = {
-    async select() {
-      return []
+    // Ingest now reads the site's locale rows: a document in a locale the site does
+    // not build is refused before any asset is uploaded.
+    async select(table) {
+      return table === 'ck_site_locales' ? [{ locale: 'de' }] : []
     },
     async insert(table, body) {
       return Array.isArray(body) ? body : [body]
@@ -439,8 +948,8 @@ test('ingest rejects every browser-executable asset content type', async () => {
 test('ingest accepts a normal image content type', async () => {
   const inserted = []
   const db = {
-    async select() {
-      return []
+    async select(table) {
+      return table === 'ck_site_locales' ? [{ locale: 'de' }] : []
     },
     async insert(table, body) {
       const rows = Array.isArray(body) ? body : [body]
@@ -478,8 +987,8 @@ test('revision reads shed the search_vector index internal (SELECT * / RETURNING
 
   const md = '---\nkind: post\ntitle: T\nlocale: de\nslug: t\ntranslationKey: t\n---\n# T\n\nBody.'
   const dbEmpty = {
-    async select() {
-      return []
+    async select(table) {
+      return table === 'ck_site_locales' ? [{ locale: 'de' }] : []
     },
     insert: db.insert,
   }
@@ -488,16 +997,58 @@ test('revision reads shed the search_vector index internal (SELECT * / RETURNING
   assert.equal(ingested.revision.title, 'T')
 })
 
-test('updateSite rejects a default_locale not among the site locales', async () => {
-  const db = {
+// updateSite spans two tables: `default_locale` lives on ck_sites and the set it
+// must belong to in ck_site_locales. The fake records which executor every call
+// arrived on, because that is the whole point of the fix — a write on the pool
+// executor is the unsynchronized one a concurrent locale removal raced.
+// `txLocales` models the racing transaction having already committed: the pool
+// still answers the old locale set, the transaction sees the new one.
+function siteWriteDb({
+  locales = [{ locale: 'de' }],
+  txLocales = null,
+  site = { id: 'site-1', name: 'Example' },
+} = {}) {
+  const calls = []
+  const tx = {
     async select(table) {
-      return table === 'ck_site_locales' ? [{ locale: 'de' }] : []
+      calls.push(['tx-select', table])
+      return table === 'ck_site_locales' ? (txLocales ?? locales) : [site]
     },
-    async update() {
-      return [{}]
+    async update(table, filters, body) {
+      calls.push(['update', table, body])
+      return [{ ...site, ...body }]
+    },
+    async remove(table, filters) {
+      calls.push(['remove', table, filters])
+    },
+    async insert(table, rows) {
+      calls.push(['insert', table, rows])
+      return rows
+    },
+    async query(sql, values) {
+      assert.match(sql, /FROM ck_sites WHERE id = \$1 FOR UPDATE/)
+      calls.push(['lock', values[0]])
+      return [site]
     },
   }
-  const repo = createRepository({}, db, {})
+  const db = {
+    async select(table) {
+      calls.push(['pool-select', table])
+      return table === 'ck_site_locales' ? locales : [site]
+    },
+    async update(table, filters, body) {
+      calls.push(['pool-update', table, body])
+      return [{ ...site, ...body }]
+    },
+    async tx(run) {
+      return run(tx)
+    },
+  }
+  return { repo: createRepository({}, db, {}), calls }
+}
+
+test('updateSite rejects a default_locale not among the site locales', async () => {
+  const { repo } = siteWriteDb()
   await assert.rejects(
     () => repo.updateSite('site-1', { default_locale: 'fr' }),
     (error) => {
@@ -509,45 +1060,39 @@ test('updateSite rejects a default_locale not among the site locales', async () 
 })
 
 test('updateSite accepts and lowercases a valid default_locale', async () => {
-  const updated = []
-  const db = {
-    async select() {
-      return [{ locale: 'de' }]
-    },
-    async update(table, filters, body) {
-      updated.push(body)
-      return [{ id: 'site-1', ...body }]
-    },
-  }
-  const repo = createRepository({}, db, {})
+  const { repo, calls } = siteWriteDb()
   await repo.updateSite('site-1', { default_locale: 'DE' })
-  assert.equal(updated[0].default_locale, 'de')
+  const update = calls.find(([op]) => op === 'update')
+  assert.equal(update[2].default_locale, 'de')
+})
+
+// The invariant is cross-table, so the read that validates it and the write that
+// depends on it have to be one atomic step behind one lock. Unlocked, a concurrent
+// PATCH {default_locale:'en'} and DELETE /locales/en each validated against the
+// state the other was about to change and both committed: default_locale='en' with
+// no `en` row — a root redirect and a 404 page pointing into a tree no release
+// emits.
+test('updateSite validates default_locale against the locked, transactional read', async () => {
+  const { repo, calls } = siteWriteDb({ locales: [{ locale: 'de' }, { locale: 'en' }], txLocales: [{ locale: 'de' }] })
+  await assert.rejects(
+    () => repo.updateSite('site-1', { default_locale: 'en' }),
+    (error) => {
+      assert.equal(error.statusCode, 422)
+      assert.match(error.message, /site locales/)
+      return true
+    },
+  )
+  assert.deepEqual(
+    calls.map(([op]) => op),
+    ['lock', 'tx-select'],
+    'the site row is locked first, then the locale rows are read inside the transaction',
+  )
+  assert.ok(!calls.some(([op]) => op === 'pool-update' || op === 'update'), 'nothing is written when the check fails')
 })
 
 test('updateSite replaces domains in full, lowercased; absent domains leave mappings alone', async () => {
-  const calls = []
-  const txApi = {
-    async remove(table, filters) {
-      calls.push(['remove', table, filters])
-    },
-    async insert(table, rows) {
-      calls.push(['insert', table, rows])
-      return rows
-    },
-  }
-  const db = {
-    async select(table) {
-      return table === 'ck_site_locales' ? [{ locale: 'de' }] : [{ id: 'site-1', name: 'Example' }]
-    },
-    async update(table, filters, body) {
-      calls.push(['update', table, body])
-      return [{ id: 'site-1', ...body }]
-    },
-    async tx(fn) {
-      return fn(txApi)
-    },
-  }
-  const repo = createRepository({}, db, {})
+  const { repo, calls: recorded } = siteWriteDb()
+  const calls = recorded
 
   // Domains-only PATCH: no ck_sites update, but the row still comes back.
   const site = await repo.updateSite('site-1', { domains: ['Verify.Example', 'www.verify.example'] })
@@ -563,34 +1108,30 @@ test('updateSite replaces domains in full, lowercased; absent domains leave mapp
     'PATCHed domains are verified like created ones',
   )
   assert.ok(!calls.some(([op]) => op === 'update'), 'a domains-only PATCH must not touch ck_sites')
+  // The read-back of the row happens inside the same transaction as the domain
+  // replacement, so a domains-only PATCH cannot report a state it did not commit.
+  assert.equal(calls.at(-1)[0], 'tx-select')
 
   // Empty array removes every mapping without inserting.
   calls.length = 0
   await repo.updateSite('site-1', { domains: [] })
   assert.deepEqual(
     calls.map(([op]) => op),
-    ['remove'],
+    ['remove', 'tx-select'],
   )
 
-  // Absent domains: plain metadata update, no domain writes.
+  // Absent domains and no default_locale: nothing spans two tables, so this stays
+  // one statement on the pool executor — no transaction is opened for it.
   calls.length = 0
   await repo.updateSite('site-1', { name: 'Renamed' })
   assert.deepEqual(
     calls.map(([op]) => op),
-    ['update'],
+    ['pool-update'],
   )
 })
 
 test('updateSite rejects an empty-string default_locale (guard on presence, not truthiness)', async () => {
-  const db = {
-    async select(table) {
-      return table === 'ck_site_locales' ? [{ locale: 'de' }] : []
-    },
-    async update() {
-      return [{}]
-    },
-  }
-  const repo = createRepository({}, db, {})
+  const { repo } = siteWriteDb()
   await assert.rejects(
     () => repo.updateSite('site-1', { default_locale: '' }),
     (error) => {

@@ -300,10 +300,13 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | Method | Path | Scope | Function |
 |---|---|---|---|
 | GET | `/v1/sites` | `content:read` | List the sites this credential may read, ordered by name |
-| POST | `/v1/sites` | unrestricted `site:admin` | Create a site, locales and optional hostnames |
+| POST | `/v1/sites` | unrestricted `site:admin` | Create a site in one write: metadata, the initial `locales` (validated like `POST .../locales`), optional hostnames and `settings` |
 | GET | `/v1/sites/{site}` | `content:read` or `site:admin` | Read site metadata and settings; answers a strong `ETag` and honours `If-None-Match` |
 | PATCH | `/v1/sites/{site}` | `site:admin` | Update site metadata, base URL, default locale and settings; optional `If-Match` makes the write conditional (412 on a concurrent change) |
 | DELETE | `/v1/sites/{site}` | `site:admin` | Delete a site and everything it owns; 409 with the counts unless `?purge=true` |
+| GET | `/v1/sites/{site}/locales` | `site:admin` | Read the stored locale rows plus `builds` — what the next release actually emits — and `max_locales` |
+| POST | `/v1/sites/{site}/locales` | `site:admin` | Add one locale to the site's build matrix; stored lowercase, 409 on a duplicate, 422 on a tag that is not `de`/`en-us` or on the 32-locale cap |
+| DELETE | `/v1/sites/{site}/locales/{locale}` | `site:admin` | Remove one locale; 409 for `default_locale` or while the locale still has published or scheduled content (the error names both counts) |
 | GET | `/v1/sites/{site}/content` | `content:read` | List content items for a site |
 | GET | `/v1/content/{item}` | `content:read` | Read one content item merged with its newest revision |
 | POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
@@ -551,6 +554,74 @@ merge into the object you get back, then send the whole thing. `GET` accepts eit
 
 Updating site settings affects future previews/releases. Existing active release
 files remain unchanged until a new release is built.
+
+Read and change the locales a site builds:
+
+```bash
+curl "$CONTENTKIT_URL/v1/sites/<site-id>/locales" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY"
+
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/locales" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"locale":"en"}'
+
+curl -X DELETE "$CONTENTKIT_URL/v1/sites/<site-id>/locales/en" \
+  -H "Authorization: Bearer $CONTENTKIT_SITE_ADMIN_KEY"
+```
+
+Locale rows are the build matrix: the builder emits one page tree per locale, so a
+language without a row is one the site can never serve. `POST /v1/sites` writes the
+initial rows (`default_locale` is always one of them, and every entry is validated
+and case-folded exactly like the `POST .../locales` body), `PATCH /v1/sites/{site}`
+only validates `default_locale` against them, and the three routes above are the
+read path and the only two ways to change the set afterwards. `locales` is not
+accepted by the `PATCH` body: the rows are changed one locale at a time, so each
+removal is refused on its own grounds and the rest of the set is untouched. `POST
+/v1/sites` does take the whole list at once, because a site being created has no
+content to orphan.
+
+A site that carries **no** locale rows at all still builds: the snapshot falls back
+to `default_locale` (which is `NOT NULL`), so it emits exactly that one page tree
+while the stored set records nothing. That is why the read path reports two fields —
+`locales`, the stored rows, and `builds`, what the next release actually emits.
+`GET /v1/sites/{site}/locales` also reports `max_locales`.
+
+What the API checks, and when:
+
+- locale rows are stored lowercase, so `DE` and `de` are the same locale and
+  never both exist. Checked on every write, including `POST /v1/sites`;
+- a locale must be an IETF language tag content can carry (`de`, `en-us`) — the
+  same shape frontmatter requires. Checked on every write, including
+  `POST /v1/sites`, which is why `{"default_locale":"Deutsch"}` is a 422;
+- a locale is unique per site — adding one twice answers 409 instead of building
+  the same tree twice under two URLs;
+- at most 32 locales per site (`max_locales`): every row adds a full page tree —
+  home, listings, tags, feeds, 404 — to every release, so the build matrix is
+  bounded like `settings.presentation.report_series`;
+- `default_locale` can never be removed: `/index.html` redirects to
+  `/{default_locale}/` and the fallback 404 page is built from it, and a site
+  cannot have a default it does not build. Point `default_locale` at another
+  locale first — the two writes take the same row lock, so a concurrent
+  `PATCH {default_locale}` and `DELETE .../locales/{locale}` cannot both succeed;
+- a locale that still carries content the site publishes cannot be removed. The
+  409 names both counts: items with a published revision, and items with a
+  `scheduled` revision, which sets no published pointer but would be published by
+  the next `POST /v1/publish-due` — into a locale the build no longer emits, which
+  is exactly the "published per the API, 404 on the site" state the guard exists to
+  prevent. Items with neither are left in place and reported as `draft_items`
+  (items with no published revision — drafts and items unpublished earlier alike);
+  nothing is ever deleted, the builder simply has no tree to emit them into;
+- content cannot enter or be published into a locale the site does not build:
+  `POST /v1/sites/{site}/content` and `PUT /v1/content/{item}/revisions` answer 422
+  for a frontmatter `locale` outside `builds`, and a release refuses (422) to
+  publish a revision whose item sits outside it. Only the revisions a release
+  publishes are checked, so content published before a locale went away keeps its
+  pointer and does not block future releases. Removal is therefore a door, not a
+  retroactive sweep: it refuses while such content exists, and nothing new arrives
+  in the locale afterwards;
+- both write responses carry `rebuild_required: true` and the full resulting
+  `locales` list. Nothing changes for live traffic until the next release is built.
 
 ---
 

@@ -23,6 +23,7 @@ import {
   TableState,
   Textarea,
 } from '@/components/ui/primitives'
+import { Progress } from '@/components/ui/progress'
 import { ContentHtml, useContentScheme } from '@/content/lazy'
 import {
   AUDIO_JOB_STATUS,
@@ -32,6 +33,7 @@ import {
   type AudioJobStatus,
 } from '@/forms/contracts/enums.generated'
 import { NumberField } from '@/forms/fields'
+import { audioBudget } from '@/lib/audio-budget'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
@@ -880,6 +882,24 @@ export function DecksPage() {
 
 const AUDIO_LIMITS = [50, 100, 250, 500]
 
+/**
+ * A count the response actually carried, or `null` — never zero for silence.
+ *
+ * lib/audio-budget.ts refuses to build a fraction out of a numerator nobody sent,
+ * and the numbers printed beside its bar hold to the same rule. `?? 0` draws an
+ * unmeasured month as a quiet one, and those are the two readings an operator most
+ * needs to tell apart. The per-status counters make it a live case rather than a
+ * hypothetical: only `chars_this_month`, `monthly_char_budget` and
+ * `budget_remaining` are required in AudioJobList.summary, so a status this console
+ * knows and a response omits would otherwise read as a status with no jobs.
+ *
+ * `—` is how this file already says "not reported" — see the Characters column of
+ * the jobs table below.
+ */
+function reportedCount(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 export function AudioPage() {
   const { site, current } = useSite()
   const can = useCan()
@@ -903,6 +923,21 @@ export function AudioPage() {
 
   const rows = jobs.data?.jobs ?? []
   const summary = jobs.data?.summary
+  // A real fraction when the site configured a budget, and `null` when it did
+  // not — which is what most sites report. See lib/audio-budget.ts for why the
+  // second case is a sentence rather than an empty or a pulsing bar.
+  const budget = audioBudget(summary)
+  // The two numbers that decision is made of, kept apart because the sentence
+  // below has to say which of them is missing: `audioBudget` answers null for a
+  // numerator nobody sent just as it does for a budget nobody configured.
+  const usedChars = reportedCount(summary?.chars_this_month)
+  const budgetChars = reportedCount(summary?.monthly_char_budget)
+  // "0 characters used this month" for a month nobody measured would be this
+  // screen inventing a measurement, so an absent numerator says it is absent.
+  const usedThisMonth =
+    usedChars === null
+      ? 'Characters used this month: not reported'
+      : `${usedChars.toLocaleString()} characters used this month`
 
   return (
     <Page
@@ -935,18 +970,58 @@ export function AudioPage() {
       }
     >
       {summary ? (
-        <div data-testid="audio-summary" className="mb-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
-          <span>
-            {summary.chars_this_month.toLocaleString()} characters used this month
-            {summary.monthly_char_budget
-              ? ` of ${summary.monthly_char_budget.toLocaleString()} · ${(summary.budget_remaining ?? 0).toLocaleString()} left`
-              : ' · no budget configured'}
-          </span>
-          {AUDIO_JOB_STATUS.map((name) => (
-            <span key={name}>
-              {name}: {summary[name] ?? 0}
+        <div data-testid="audio-summary" className="mb-3 flex flex-col gap-2 text-sm text-muted-foreground">
+          {budget ? (
+            <div className="max-w-md">
+              <Progress
+                data-testid="audio-budget"
+                label="Characters used this month"
+                value={budget.used}
+                max={budget.budget}
+                tone={budget.tone}
+                // The numbers in words as well as a bar: a percentage alone does
+                // not answer "can this backfill still run", and the cap below is
+                // entered in characters.
+                valueLabel={`${budget.used.toLocaleString()} of ${budget.budget.toLocaleString()} · ${budget.remaining.toLocaleString()} left`}
+              />
+              {budget.spent ? (
+                // Precisely what a spent budget does, because the two paths
+                // differ: publishing a post checks the month (src/audio.mjs
+                // enqueueAudioJobs skips it once used + its characters exceed the
+                // budget), while a backfill's cap is per run and counts only its
+                // own characters. Saying "nothing will render" would be wrong and
+                // would be discovered as a surprise bill.
+                <p data-testid="audio-budget-spent" className="mt-1.5 text-xs text-chart-5">
+                  The month's characters are spent, so publishing a post no longer queues narration; it resets with the
+                  next calendar month (UTC). A backfill still runs — its cap applies to that one run, not to what is
+                  left of the month.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            // No denominator, so no bar. An indeterminate one would read as work
+            // in progress, and nothing is in progress. Which half is missing is
+            // said rather than assumed: usually the budget, which
+            // `monthly_char_budget: null` is exactly how the API says it, and a
+            // numerator the response did not carry lands in this branch too.
+            // Every piece is an expression, including the separator, so the
+            // rendered sentence is these values joined and no other text.
+            <span data-testid="audio-budget-unmeasured">
+              {usedThisMonth}
+              {' · '}
+              {budgetChars === null ? 'no budget configured' : `budget ${budgetChars.toLocaleString()} characters`}
             </span>
-          ))}
+          )}
+          <div className="flex flex-wrap gap-4">
+            {AUDIO_JOB_STATUS.map((name) => (
+              <span key={name} data-testid={`audio-count-${name}`}>
+                {/* A counter the response omitted is not a status with no jobs;
+                    src/audio.mjs zero-fills the statuses it knows, and the ones it
+                    does not know are the whole reason this is not `?? 0`. */}
+                {name}: {reportedCount(summary[name])?.toLocaleString() ?? '—'}
+              </span>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1110,6 +1185,13 @@ export function SystemPage() {
   // so "no data" here is itself the status, not a missing reading.
   const readiness = ready.data
   const draining = Boolean(ready.error)
+  // `readiness` is undefined until /ready answers and again whenever it answers
+  // 503, and both deck counters are optional in ReadinessReport even when it does
+  // answer. So these are three separate readings a tile may not have, and none of
+  // them is zero — see reportedCount above.
+  const inflight = reportedCount(readiness?.inflight)
+  const deckInflight = reportedCount(readiness?.deck_inflight)
+  const deckQueued = reportedCount(readiness?.deck_queued)
 
   return (
     <Page title="System" description="Liveness, readiness and the two scheduled maintenance actions.">
@@ -1134,19 +1216,22 @@ export function SystemPage() {
               : `Version ${readiness?.version ?? '—'}`
           }
         />
+        {/* Green is a claim as much as the number is: a count nobody reported is
+            not a count known to be zero, so an unread tile is the same "warning"
+            the Readiness tile beside it shows while it has no status. */}
         <StatusTile
           testId="system-builds"
           label="Release builds in flight"
-          value={String(readiness?.inflight ?? '—')}
-          tone={(readiness?.inflight ?? 0) > 0 ? 'warning' : 'success'}
+          value={`${inflight ?? '—'}`}
+          tone={inflight === null || inflight > 0 ? 'warning' : 'success'}
           detail="A restart waits for these to finish."
         />
         <StatusTile
           testId="system-decks"
           label="Deck renders"
-          value={`${readiness?.deck_inflight ?? 0} running`}
-          tone={(readiness?.deck_queued ?? 0) > 0 ? 'warning' : 'success'}
-          detail={`${readiness?.deck_queued ?? 0} queued`}
+          value={`${deckInflight ?? '—'} running`}
+          tone={deckQueued === null || deckQueued > 0 ? 'warning' : 'success'}
+          detail={`${deckQueued ?? '—'} queued`}
         />
       </div>
 

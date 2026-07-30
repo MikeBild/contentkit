@@ -1,6 +1,7 @@
 import { Input } from '@/components/ui/primitives'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { DATE_PRESETS, presetInstant } from './date-value'
 import { FieldShell, invalidBorder, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -114,15 +115,20 @@ export function DimensionField({ value, onChange, ...shell }: FieldShellProps & 
   )
 }
 
-const PRESETS: { label: string; days: number | null }[] = [
-  { label: '30 days', days: 30 },
-  { label: '90 days', days: 90 },
-  { label: '365 days', days: 365 },
-  { label: 'Never', days: null },
-]
-
 /**
  * An ISO 8601 instant, with the presets that cover almost every real answer.
+ *
+ * The quick sets are `DATE_PRESETS` from `date-value.ts` — the one copy, imported
+ * rather than repeated, because a second list beside this component is a list that
+ * drifts. Counting forward is right here and wrong on a calendar-day field: "90
+ * days" is what a credential's expiry wants, while `now + 90 days` on a
+ * publication date dates a post a season ahead of everything published, which is
+ * why `DateField` offers "Today" instead.
+ *
+ * `unsetLabel` is the label on the choice that clears the field, and it has to say
+ * what empty does *here*: "Never" is the truth for an expiry, and the caller whose
+ * empty means "publishes with the next release" passes its own word instead. The
+ * testid does not move with the label, so one script still drives both callers.
  *
  * A date in the past is a warning and never a block: the server accepts one, and
  * an already-expired credential is a legitimate thing to create — it is how a
@@ -131,8 +137,9 @@ const PRESETS: { label: string; days: number | null }[] = [
 export function DateTimeField({
   value,
   onChange,
+  unsetLabel = 'Never',
   ...shell
-}: FieldShellProps & ValueProps<string | undefined> & { placeholder?: string }) {
+}: FieldShellProps & ValueProps<string | undefined> & { placeholder?: string; unsetLabel?: string }) {
   const parsed = value ? new Date(value) : null
   const invalid = Boolean(value) && Number.isNaN(parsed?.valueOf())
   const error = shell.error ?? (invalid ? 'Not a date' : undefined)
@@ -155,22 +162,16 @@ export function DateTimeField({
               onChange(event.target.value ? new Date(event.target.value).toISOString() : undefined)
             }
           />
-          {PRESETS.map((preset) => (
+          {DATE_PRESETS.map((preset) => (
             <button
               key={preset.label}
               type="button"
               data-testid={`${control['data-testid']}-preset-${preset.days ?? 'never'}`}
               disabled={control.disabled}
-              onClick={() =>
-                onChange(
-                  preset.days === null
-                    ? undefined
-                    : new Date(Date.now() + preset.days * 86_400_000).toISOString(),
-                )
-              }
+              onClick={() => onChange(presetInstant(preset.days))}
               className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              {preset.label}
+              {preset.days === null ? unsetLabel : preset.label}
             </button>
           ))}
         </div>

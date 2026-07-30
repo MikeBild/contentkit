@@ -90,16 +90,21 @@ export function routeName(path) {
   ) {
     return '/:published-path'
   }
-  return clean
-    .replace(/\/preview-invitations\/[^/]+/, '/preview-invitations/:token')
-    .replace(/(\/v1\/sites)\/[^/]+/, '$1/:site')
-    .replace(/(\/v1\/content)\/[^/]+/, '$1/:content')
-    .replace(/(\/deck-jobs|\/releases|\/webhooks)\/[^/]+/, '$1/:id')
-    .replace(/(\/published)\/[^/]+\/[^/]+\/[^/]+/, '$1/:kind/:locale/:slug')
-    .replace(/(\/public\/v1\/posts)\/[^/]+/, '$1/:post')
-    .replace(/(\/v1\/(?:comments|contact-submissions))\/[^/]+/, '$1/:id')
-    .replace(/(\/v1\/webhook-deliveries)\/[^/]+/, '$1/:id')
-    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+  return (
+    clean
+      .replace(/\/preview-invitations\/[^/]+/, '/preview-invitations/:token')
+      .replace(/(\/v1\/sites)\/[^/]+/, '$1/:site')
+      .replace(/(\/v1\/content)\/[^/]+/, '$1/:content')
+      .replace(/(\/deck-jobs|\/releases|\/webhooks)\/[^/]+/, '$1/:id')
+      // The locale is not a uuid, so the generic id collapse below never reaches
+      // it and every locale would otherwise open its own metrics series.
+      .replace(/(\/locales)\/[^/]+/, '$1/:locale')
+      .replace(/(\/published)\/[^/]+\/[^/]+\/[^/]+/, '$1/:kind/:locale/:slug')
+      .replace(/(\/public\/v1\/posts)\/[^/]+/, '$1/:post')
+      .replace(/(\/v1\/(?:comments|contact-submissions))\/[^/]+/, '$1/:id')
+      .replace(/(\/v1\/webhook-deliveries)\/[^/]+/, '$1/:id')
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+  )
 }
 
 // Content types for gateway-served release objects. Order matters: `feed.xml`
@@ -259,6 +264,8 @@ export const API_ROUTES = [
   { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET'], apiHostOnly: true },
   { pattern: /^\/v1\/sites$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH', 'DELETE'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/locales$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/locales\/[^/]+$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/render$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
@@ -1198,6 +1205,29 @@ export function createRequestHandler(ctx) {
       }
       const updated = await repo.updateSite(site.id, parseJson(await bodyFor(req)))
       return sendJson(res, 200, updated, { etag: siteEtag(updated) })
+    }
+    // Locale rows decide what a release contains at all — one page tree per
+    // locale — and until these routes existed only createSite could write them
+    // and nothing could read them back. All three are `site:admin`, like every
+    // other structural change to a site.
+    const localeCollection = path.match(/^\/v1\/sites\/([^/]+)\/locales$/)
+    if (localeCollection && ['GET', 'POST'].includes(req.method)) {
+      const site = await repo.getSite(localeCollection[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'site:admin', site.id))) return
+      // The read path: `Site` does not carry the locale set, so without this route
+      // no client can show, let alone edit, what the site builds — the two writes
+      // below would be blind operations.
+      if (req.method === 'GET') return sendJson(res, 200, await repo.siteLocales(site.id))
+      return sendJson(res, 201, await repo.addSiteLocale(site.id, parseJson(await bodyFor(req))))
+    }
+    const localeItem = path.match(/^\/v1\/sites\/([^/]+)\/locales\/([^/]+)$/)
+    if (localeItem && req.method === 'DELETE') {
+      const site = await repo.getSite(localeItem[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'site:admin', site.id))) return
+      const removed = await repo.removeSiteLocale(site.id, decodeURIComponent(localeItem[2]))
+      return removed ? sendJson(res, 200, removed) : sendJson(res, 404, { error: 'site locale not found' })
     }
     const statsMatch = path.match(
       /^\/v1\/sites\/([^/]+)\/stats\/(releases|content|decks|readers|webhooks|audio|engagement|http|compositions|mcp)$/,

@@ -8,6 +8,7 @@ import { ContentPage } from '@/pages/content'
 import { AccessPage, AuditPage, CredentialsPage, ModerationPage, WebhooksPage } from '@/pages/governance'
 import { OverviewPage } from '@/pages/overview'
 import { ReleasesPage } from '@/pages/releases'
+import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
 
 /** Every route carries the selected site; nothing below the root may drop it. */
@@ -27,7 +28,7 @@ function Root() {
   )
 }
 
-// Code-based routing: fifteen static routes need no file-convention plugin,
+// Code-based routing: sixteen static routes need no file-convention plugin,
 // and the site is selected in the sidebar rather than carried in every path.
 const rootRoute = createRootRoute({
   component: Root,
@@ -39,7 +40,10 @@ const rootRoute = createRootRoute({
 
 const routes = [
   ['/', OverviewPage],
+  // The registry and one site's settings are two routes on purpose: the site
+  // switcher governs the second and plays no part in the first.
   ['/sites', SitesPage],
+  ['/settings', SiteSettingsPage],
   ['/content', ContentPage],
   ['/published', PublishedPage],
   ['/compositions', CompositionsPage],

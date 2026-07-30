@@ -2,9 +2,11 @@ import { ChevronRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { AppLink } from '@/components/app-link'
 import { Badge } from '@/components/ui/primitives'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { cn } from '@/lib/utils'
 import { CONTENT_KIND } from '../contracts/enums.generated'
 import {
+  DateField,
   DateTimeField,
   EnumMultiSelect,
   EnumSelect,
@@ -297,11 +299,39 @@ export function FrontmatterForm({
       </Group>
 
       <Group id="publication" title="Publication" defaultOpen>
-        <DateTimeField
+        {/*
+          Three dates, two controls, and the difference between them is what the
+          value means rather than how it looks.
+
+          `date` and `updatedAt` are calendar days: a document is dated the 3rd of
+          August and the update line reads a day. They take `DateField`, which
+          shows the empty state in words and keeps a way back to it, because empty
+          here is a documented decision — the release's build moment, and no update
+          line at all — and a control that quietly filled in today would change what
+          gets published without anybody choosing it.
+
+          Their one quick set is "Today", and that is the whole list on purpose. A
+          date counted forward — the 30/90/365 an expiry offers — would date a post
+          a month or a year ahead of everything that was actually published, and
+          this is the field the document is sorted by. There is no upper bound
+          either: a document dated for a launch day is a real thing, so a future
+          day stays something the operator can type and not something a button
+          hands them by accident.
+
+          `scheduledAt` is not a day. `/v1/publish-due` publishes every scheduled
+          revision whose `scheduled_at` has already passed, so the time of day is
+          the operator's choice and the difference between "tomorrow morning" and
+          "tomorrow, the moment the clock ticks over". A day-only control would
+          quietly move every scheduled document to local midnight, so it keeps the
+          instant control — and counting forward is an answer there ("publish in a
+          month"), which is why that one keeps the offsets.
+        */}
+        <DateField
           label="Publication date"
+          presets
           disabled={disabled}
           data-testid="ck-fm-date"
-          help="What the document is sorted and dated by."
+          help="What the document is sorted and dated by. A date in the past is ordinary."
           fallback="Unset uses the moment the release is built."
           value={fm.date || undefined}
           error={error('date')}
@@ -312,14 +342,29 @@ export function FrontmatterForm({
             label="Scheduled for"
             disabled={disabled}
             data-testid="ck-fm-scheduled-at"
-            help="A revision with a future date is published by the scheduler, not by this save."
+            help="A revision with a future date is published by the scheduler, not by this save. The time of day is part of it."
             fallback="Unset means it publishes with the next release."
+            // The way back to empty, in this field's own words. The shared control
+            // calls it "Never" because it was built for a credential that never
+            // expires; here empty means the next release publishes the revision,
+            // and "Never" next to that sentence reads as "never publish".
+            unsetLabel="No schedule"
+            // The state in words, next to the label: a datetime control that has
+            // been cleared looks exactly like one nobody has reached yet.
+            hint={
+              fm.scheduledAt ? (
+                <RelativeTime value={fm.scheduledAt} data-testid="ck-fm-scheduled-at-when" />
+              ) : (
+                <span data-testid="ck-fm-scheduled-at-when">Not set</span>
+              )
+            }
             value={fm.scheduledAt || undefined}
             error={error('scheduledAt')}
             onChange={(value) => set('scheduledAt', value ?? '')}
           />
-          <DateTimeField
+          <DateField
             label="Last updated"
+            presets
             disabled={disabled}
             data-testid="ck-fm-updated-at"
             fallback="Unset shows no update line."

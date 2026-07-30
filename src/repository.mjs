@@ -48,6 +48,47 @@ function wildcardMatch(host, hostname) {
   return host.length > suffix.length && host.endsWith(suffix)
 }
 
+// A site locale is stored lowercase and has to be a tag content can actually
+// carry: frontmatter validation (src/markdown.mjs) accepts exactly `de` or
+// `en-us`, so a site locale outside that shape could never hold a single
+// document — and the value also becomes a URL path segment (`/<locale>/`).
+function siteLocale(value) {
+  const locale = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (!/^[a-z]{2}(?:-[a-z]{2})?$/.test(locale)) {
+    throw Object.assign(new Error('locale must be an IETF language tag such as de or en-us'), { statusCode: 422 })
+  }
+  return locale
+}
+
+// Every locale row multiplies the build matrix: buildSnapshot emits one page
+// tree per row and the builder renders home, listings, tags, feeds and a 404 for
+// each, so an unbounded set is an unbounded release. Capped like the other
+// build-multiplying list (`settings.presentation.report_series`, 32).
+const SITE_LOCALE_MAX = 32
+
+// The locales a release actually emits for this site: the stored rows, or
+// `default_locale` alone when the site carries none — buildSnapshot's documented
+// fallback, so a zero-row site builds its default tree rather than nothing.
+// Content and publishing are checked against this set, not against the rows.
+function buildableLocales(site, storedLocales) {
+  return storedLocales.length
+    ? storedLocales.map((entry) => entry.locale)
+    : [String(site?.default_locale ?? '').toLowerCase()].filter(Boolean)
+}
+
+// `SELECT … FOR UPDATE` on the site row, taken inside a transaction. It is the
+// one lock every writer of the default_locale/locale-rows invariant takes, which
+// is what serializes the validate-then-write pairs that span ck_sites and
+// ck_site_locales — two of them running concurrently each validated against the
+// state the other was about to change.
+async function lockSite(tx, siteId) {
+  const [row] = await tx.query('SELECT * FROM ck_sites WHERE id = $1 FOR UPDATE', [siteId])
+  if (!row) throw Object.assign(new Error('site not found'), { statusCode: 404 })
+  return row
+}
+
 function validBaseUrl(value) {
   try {
     const url = new URL(value)
@@ -660,23 +701,32 @@ export function createRepository(config, db, storage) {
         throw Object.assign(new Error('name, base_url and default_locale are required'), { statusCode: 422 })
       }
       validateSiteSettings(input.settings)
+      // INVARIANT: a site locale is a tag content can carry. siteLocale() is the
+      // same validation POST /v1/sites/{site}/locales applies, applied here so
+      // the two doors cannot disagree: `default_locale: 'Deutsch'` used to create
+      // a site whose only locale row could never hold a document (frontmatter
+      // requires ^[a-z]{2}(-[a-z]{2})?$, src/markdown.mjs) and could never be
+      // removed either, because it was the default.
+      // Case-folded before de-duplicating: locale rows are stored lowercase, so
+      // ['DE', 'de'] would otherwise survive as two rows that collide.
+      const locales = [...new Set([input.default_locale, ...(input.locales || [])].map(siteLocale))]
+      if (locales.length > SITE_LOCALE_MAX) {
+        throw Object.assign(new Error(`a site builds at most ${SITE_LOCALE_MAX} locales`), { statusCode: 422 })
+      }
       const [site] = await db.insert('ck_sites', {
         slug,
         name: input.name,
         description: input.description || '',
         base_url: validBaseUrl(input.base_url),
-        default_locale: input.default_locale.toLowerCase(),
+        default_locale: locales[0],
         settings: input.settings || {},
       })
       // default_locale is what the root redirect and the 404 page target, so it
       // is always a site locale — the same invariant updateSite enforces. An
-      // empty `locales: []` is truthy and used to survive as zero locale rows,
-      // which builds a site with no pages at all: every release and preview
-      // still answers 201, but nothing under /<locale>/ exists to serve, and no
-      // API can add the missing locale afterwards.
-      // Case-fold before de-duplicating: locale rows are stored lowercase, so
-      // ['DE', 'de'] would otherwise survive as two rows that collide.
-      const locales = [...new Set([input.default_locale, ...(input.locales || [])].map((l) => String(l).toLowerCase()))]
+      // empty `locales: []` is truthy and used to survive as zero locale rows;
+      // buildSnapshot then falls back to default_locale, so such a site builds
+      // its default tree while the stored set claims nothing at all — an
+      // untracked build matrix, not an empty site.
       await db.insert(
         'ck_site_locales',
         locales.map((locale) => ({ site_id: site.id, locale })),
@@ -701,21 +751,32 @@ export function createRepository(config, db, storage) {
       )
       if (allowed.base_url) allowed.base_url = validBaseUrl(allowed.base_url)
       if ('settings' in allowed) validateSiteSettings(allowed.settings)
-      if ('default_locale' in allowed) {
-        // The root redirect and 404 target default_locale, so it must be a locale
-        // the site actually builds — otherwise `/` would redirect to a 404. Guard
-        // on presence (not truthiness) so an empty string can't slip through.
-        allowed.default_locale = String(allowed.default_locale).toLowerCase()
-        const locales = await db.select('ck_site_locales', { site_id: `eq.${siteId}` })
-        if (!locales.some((entry) => entry.locale === allowed.default_locale)) {
-          throw Object.assign(new Error('default_locale must be one of the site locales'), { statusCode: 422 })
+      // Guard on presence (not truthiness) so an empty string can't slip through.
+      if ('default_locale' in allowed) allowed.default_locale = String(allowed.default_locale).trim().toLowerCase()
+      // `default_locale` lives in ck_sites and the locale rows in
+      // ck_site_locales, so validating one against the other is a cross-table
+      // invariant — and a plain select-then-update cannot hold it: a concurrent
+      // DELETE /v1/sites/{site}/locales/{locale} validated against the *old*
+      // default at the same time and both writes committed, leaving
+      // default_locale pointing at a row that no longer exists. Both writers now
+      // take the same lock first — the site row, via lockSite() — so the pair
+      // serializes and whichever runs second sees the other's result and refuses.
+      const write = async (tx) => {
+        if ('default_locale' in allowed) {
+          await lockSite(tx, siteId)
+          // The root redirect and 404 target default_locale, so it must be a
+          // locale the site actually builds — otherwise `/` would redirect to a
+          // 404. Read inside the transaction, after the lock: the unlocked read
+          // is exactly the stale one the race exploited.
+          const locales = await tx.select('ck_site_locales', { site_id: `eq.${siteId}` })
+          if (!locales.some((entry) => entry.locale === allowed.default_locale)) {
+            throw Object.assign(new Error('default_locale must be one of the site locales'), { statusCode: 422 })
+          }
         }
-      }
-      // Domains replace in full, mirroring the settings contract: read first,
-      // merge, send the whole list. An empty array removes every mapping —
-      // absent means "leave them alone".
-      if (Array.isArray(input.domains)) {
-        await db.tx(async (tx) => {
+        // Domains replace in full, mirroring the settings contract: read first,
+        // merge, send the whole list. An empty array removes every mapping —
+        // absent means "leave them alone".
+        if (Array.isArray(input.domains)) {
           await tx.remove('ck_site_domains', { site_id: `eq.${siteId}` })
           if (input.domains.length) {
             await tx.insert(
@@ -727,14 +788,165 @@ export function createRepository(config, db, storage) {
               })),
             )
           }
-        })
+        }
+        // A domains-only PATCH leaves `allowed` empty, and update() with no
+        // columns is a no-op returning [] — read the row back instead.
+        const rows = Object.keys(allowed).length
+          ? await tx.update('ck_sites', { id: `eq.${siteId}` }, allowed)
+          : await tx.select('ck_sites', { id: `eq.${siteId}`, limit: '1' })
+        return rows[0]
       }
-      // A domains-only PATCH leaves `allowed` empty, and update() with no
-      // columns is a no-op returning [] — read the row back instead.
-      const rows = Object.keys(allowed).length
-        ? await db.update('ck_sites', { id: `eq.${siteId}` }, allowed)
-        : await db.select('ck_sites', { id: `eq.${siteId}`, limit: '1' })
-      return rows[0]
+      // Only the two cross-table cases need the transaction: validating
+      // default_locale against the locale rows, and replacing the domain list.
+      // A metadata- or settings-only PATCH is a single statement and stays one.
+      const crossTable = 'default_locale' in allowed || Array.isArray(input.domains)
+      return crossTable ? db.tx(write) : write(db)
+    },
+    // createSite writes the locale rows once and updateSite only validates
+    // against them, so a site's locale set used to be frozen at creation: a
+    // second language could not be added and a wrong one could not be taken
+    // back. Locale rows *are* the build matrix — buildSnapshot emits one page
+    // tree per row — which makes these writes the only way a multilingual site
+    // can be evolved, and each has to hold the invariants the rest of the
+    // codebase already assumes.
+    //
+    // What the read path reports, exactly: the stored rows, plus `builds` — the
+    // set a release would actually emit, which is the rows or `default_locale`
+    // alone when there are none (buildSnapshot's fallback). The difference
+    // matters for a site provisioned out of band: it builds one tree that no row
+    // records.
+    async siteLocales(siteId) {
+      const site = await this.getSite(siteId)
+      if (!site) throw Object.assign(new Error('site not found'), { statusCode: 404 })
+      const stored = await this.getLocales(site.id)
+      return {
+        site_id: site.id,
+        default_locale: site.default_locale,
+        locales: stored.map((entry) => ({ locale: entry.locale, created_at: entry.created_at ?? null })),
+        builds: buildableLocales(site, stored),
+        max_locales: SITE_LOCALE_MAX,
+      }
+    },
+    async addSiteLocale(siteId, input) {
+      const found = await this.getSite(siteId)
+      if (!found) throw Object.assign(new Error('site not found'), { statusCode: 404 })
+      // INVARIANT: locale rows are stored lowercase. createSite case-folds
+      // before de-duplicating for the same reason — the (site_id, locale)
+      // primary key does not fold, so a verbatim `DE` would coexist with `de`
+      // and build the same tree twice under two URLs.
+      const locale = siteLocale(input?.locale)
+      // The same lock removeSiteLocale and the default_locale PATCH take, for the
+      // same reason: the duplicate and cap checks below decide on a read, and
+      // outside a transaction a second concurrent add validates against the state
+      // this one is about to write.
+      return db.tx(async (tx) => {
+        const site = await lockSite(tx, found.id)
+        const stored = await tx.select('ck_site_locales', { site_id: `eq.${site.id}`, order: 'locale.asc' })
+        // INVARIANT: a locale is unique per site. Left to the primary key a
+        // duplicate surfaces as an opaque 500; a 409 that names the locale tells
+        // the caller its intent is already satisfied.
+        if (stored.some((entry) => entry.locale === locale)) {
+          throw Object.assign(new Error(`locale ${locale} already exists on this site`), { statusCode: 409 })
+        }
+        // INVARIANT: the build matrix is bounded. Every row adds a full page tree
+        // — home, listings, tags, feeds, 404 — to every release.
+        if (stored.length >= SITE_LOCALE_MAX) {
+          throw Object.assign(new Error(`a site builds at most ${SITE_LOCALE_MAX} locales`), { statusCode: 422 })
+        }
+        const [row] = await tx.insert('ck_site_locales', { site_id: site.id, locale })
+        // rebuild_required mirrors the access-rule contract: the row is authoring
+        // state. Nothing is served under /<locale>/ until the next release build.
+        return {
+          site_id: site.id,
+          locale,
+          created_at: row?.created_at ?? null,
+          locales: [...stored.map((entry) => entry.locale), locale].sort(),
+          rebuild_required: true,
+        }
+      })
+    },
+    async removeSiteLocale(siteId, rawLocale) {
+      const found = await this.getSite(siteId)
+      if (!found) throw Object.assign(new Error('site not found'), { statusCode: 404 })
+      // Case-folded on the way in as well: rows are lowercase, so `/locales/DE`
+      // and `/locales/de` have to address the same row. An unusable tag simply
+      // matches nothing and answers 404 rather than 422 — a removal that cannot
+      // name an existing row is a missing row, not a malformed request.
+      const locale = String(rawLocale ?? '')
+        .trim()
+        .toLowerCase()
+      // Everything below reads to decide and then writes, across two tables, so
+      // it runs in one transaction behind the site-row lock. Unlocked, a
+      // concurrent PATCH {default_locale} pointed the site at this locale after
+      // the check below read the old default, and both writes committed: a site
+      // whose default_locale had no row. `site` is therefore re-read here, under
+      // the lock — the unlocked copy above only resolves the slug.
+      return db.tx(async (tx) => {
+        const site = await lockSite(tx, found.id)
+        const rows = await tx.select('ck_site_locales', { site_id: `eq.${site.id}`, locale: `eq.${locale}` })
+        if (!rows.length) return null
+        // INVARIANT: default_locale can NEVER be removed. `/` redirects to
+        // `/{default_locale}/` and the fallback 404 page is built from it, and
+        // updateSite refuses a default_locale that is not a locale row — so
+        // dropping this row would leave the root redirect and the 404 pointing
+        // into a tree the build no longer emits until someone adds the row back
+        // through POST /v1/sites/{site}/locales. Moving default_locale first is
+        // the supported order.
+        if (locale === String(site.default_locale || '').toLowerCase()) {
+          throw Object.assign(
+            new Error(
+              `locale ${locale} is the site default_locale, which the root redirect and the 404 page target, and cannot be removed; point default_locale at another locale first`,
+            ),
+            { statusCode: 409 },
+          )
+        }
+        // INVARIANT: a locale that carries content the site publishes — now or on
+        // a schedule — is never removed silently. Without the row the next release
+        // stops emitting those pages while still answering 201, so the refusal
+        // names how many items stand in the way.
+        //
+        // `published_revision_id` alone is not that set: a revision with
+        // status='scheduled' sets no pointer, so a scheduled item looked exactly
+        // like a harmless draft and the removal succeeded — then POST
+        // /v1/publish-due published it into a locale the build no longer emits.
+        // The API reported it published, GET .../published listed it, and the site
+        // served a 404. Scheduled revisions therefore block the removal too;
+        // cancelling the schedule (or letting the release land before removing the
+        // locale) is the way through.
+        const items = await tx.select('ck_content_items', { site_id: `eq.${site.id}`, locale: `eq.${locale}` })
+        const published = items.filter((item) => item.published_revision_id)
+        const pending = items.length
+          ? await tx.select('ck_content_revisions', {
+              item_id: inFilter(items.map((item) => item.id)),
+              status: 'eq.scheduled',
+            })
+          : []
+        const scheduledItems = new Set(pending.map((revision) => revision.item_id))
+        if (published.length || scheduledItems.size) {
+          throw Object.assign(
+            new Error(
+              `locale ${locale} still has ${published.length} published and ${scheduledItems.size} scheduled content item(s); unpublish them and cancel their schedules before removing the locale`,
+            ),
+            { statusCode: 409 },
+          )
+        }
+        await tx.remove('ck_site_locales', { site_id: `eq.${site.id}`, locale: `eq.${locale}` })
+        return {
+          deleted: true,
+          site_id: site.id,
+          locale,
+          // Everything left in that locale: the guard above already established
+          // that none of it is published or scheduled, so this is every item with
+          // no published revision — drafts and items unpublished earlier alike.
+          // Nothing is deleted; the builder simply has no tree to emit them into
+          // until the locale is added back.
+          draft_items: items.length,
+          locales: (await tx.select('ck_site_locales', { site_id: `eq.${site.id}`, order: 'locale.asc' })).map(
+            (entry) => entry.locale,
+          ),
+          rebuild_required: true,
+        }
+      })
     },
     siteInventory,
     // Every row a site owns is reachable through ON DELETE CASCADE, so one row
@@ -1195,6 +1407,24 @@ export function createRepository(config, db, storage) {
           throw Object.assign(new Error('a revision cannot change kind, locale or translationKey'), { statusCode: 422 })
         }
       }
+      // INVARIANT, enforced at the door content comes in through: a document's
+      // locale is one this site builds. The locale set was only ever read by the
+      // builder, so `locale: en` on a site that builds `de` produced a revision,
+      // an item and a published pointer for a page no release can emit — the same
+      // "published per the API, 404 on the site" failure the locale-removal guard
+      // refuses. Checked against buildableLocales(), not the rows, so a site
+      // provisioned with no rows keeps ingesting its default locale; and checked
+      // before a single asset byte is uploaded.
+      const storedLocales = await db.select('ck_site_locales', { site_id: `eq.${siteId}`, order: 'locale.asc' })
+      const buildable = buildableLocales(storedLocales.length ? null : await this.getSite(siteId), storedLocales)
+      if (!buildable.includes(rendered.meta.locale)) {
+        throw Object.assign(
+          new Error(
+            `locale ${rendered.meta.locale} is not a locale this site builds (${buildable.join(', ') || 'none'}); add it with POST /v1/sites/{site}/locales first`,
+          ),
+          { statusCode: 422 },
+        )
+      }
       const assetMap = new Map()
       for (const asset of assets) {
         const path = asset.name.slice('asset:'.length).replace(/^\/+/, '')
@@ -1328,6 +1558,27 @@ export function createRepository(config, db, storage) {
         throw Object.assign(new Error('an item cannot be published and retired in the same release'), {
           statusCode: 422,
         })
+      }
+      // The second door the locale invariant is held at: publishing. Emitting
+      // happens per locale tree, so a revision whose item sits outside the build
+      // matrix would take a published pointer, appear in GET /published and be
+      // served as a 404 — the orphan the locale-removal guard exists to prevent,
+      // reached from the other side (item ingested first, locale removed after, or
+      // a scheduled publish landing later). Only the revisions this release
+      // publishes are checked: an already-published pointer from before this rule
+      // must not make every future release of that site unbuildable.
+      const buildable = new Set(buildableLocales(site, stored))
+      const itemsById = new Map(items.map((item) => [item.id, item]))
+      const unbuildable = [
+        ...new Set(overlay.map((revision) => itemsById.get(revision.item_id)?.locale).filter((l) => !buildable.has(l))),
+      ]
+      if (unbuildable.length) {
+        throw Object.assign(
+          new Error(
+            `cannot publish into locale(s) ${unbuildable.join(', ')}: this site builds ${[...buildable].join(', ') || 'no locale'}; add the locale with POST /v1/sites/{site}/locales first`,
+          ),
+          { statusCode: 422 },
+        )
       }
       const byItem = new Map(overlay.map((revision) => [revision.item_id, revision]))
       const publishedIds = items

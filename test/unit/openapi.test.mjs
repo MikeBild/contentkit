@@ -44,6 +44,85 @@ test('every operation carries a unique operationId', () => {
   }
 })
 
+// A site's locale set decides what a release contains at all, and the writes
+// that change it refuse for reasons a client has to act on. A response described
+// in prose generates no client type and a missing 409 makes the refusal look like
+// a server fault, so both are pinned here rather than left to the generic
+// "documents at least one response" rule.
+test('the site locale operations name schemas for their bodies and their refusals', () => {
+  const spec = openApi(config)
+  const list = spec.paths['/v1/sites/{site}/locales']?.get
+  const add = spec.paths['/v1/sites/{site}/locales']?.post
+  const remove = spec.paths['/v1/sites/{site}/locales/{locale}']?.delete
+  assert.equal(list?.operationId, 'siteLocaleList')
+  assert.equal(add?.operationId, 'siteLocaleAdd')
+  assert.equal(remove?.operationId, 'siteLocaleRemove')
+  assert.equal(add.requestBody.content['application/json'].schema.$ref, '#/components/schemas/SiteLocaleInput')
+  assert.equal(
+    list.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/SiteLocaleList',
+    'the read path must name a schema, or no locale editor can be typed against it',
+  )
+  assert.equal(
+    add.responses[201].content['application/json'].schema.$ref,
+    '#/components/schemas/SiteLocale',
+    'the 201 must name a schema, not describe the body in prose',
+  )
+  assert.equal(
+    remove.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/SiteLocaleRemoved',
+    'the 200 must name a schema, not describe the body in prose',
+  )
+  for (const [operation, name] of [
+    [add, 'siteLocaleAdd'],
+    [remove, 'siteLocaleRemove'],
+  ]) {
+    assert.ok(operation.responses[409], `${name} must document the 409 refusal`)
+    assert.ok(operation.responses[404], `${name} must document the missing site`)
+  }
+  // Removing default_locale and removing a locale whose content the site
+  // publishes are the two refusals; the description has to name both — including
+  // the scheduled revision, which sets no published pointer and so used to read
+  // as a harmless draft — or a caller takes the 409 for a transient failure.
+  assert.match(remove.description, /default_locale/)
+  assert.match(remove.description, /published revision/)
+  assert.match(remove.description, /scheduled/)
+  // The stored rows and what the next release builds are two different sets for a
+  // site with no rows at all. A read path that reported only one of them would
+  // reproduce the claim this documentation used to make.
+  const listed = spec.components.schemas.SiteLocaleList
+  assert.deepEqual(listed.required, ['site_id', 'default_locale', 'locales', 'builds', 'max_locales'])
+  assert.equal(listed.properties.locales.items.$ref, '#/components/schemas/SiteLocaleRow')
+})
+
+// `POST /v1/sites` validates and stores locales, domains and settings, and a body
+// documented as an empty object hides all three: the console then creates a site
+// and configures it in separate writes, which is the partial-progress state this
+// schema exists to remove.
+test('siteCreate documents the body it actually accepts', () => {
+  const create = openApi(config).paths['/v1/sites'].post
+  assert.equal(create.requestBody.content['application/json'].schema.$ref, '#/components/schemas/SiteCreateInput')
+  assert.ok(create.description, 'siteCreate must describe what it validates')
+  const input = openApi(config).components.schemas.SiteCreateInput
+  assert.deepEqual(input.required, ['name', 'base_url', 'default_locale'])
+  for (const property of [
+    'name',
+    'slug',
+    'description',
+    'base_url',
+    'default_locale',
+    'locales',
+    'domains',
+    'settings',
+  ])
+    assert.ok(input.properties[property], `SiteCreateInput must document ${property}`)
+  assert.equal(input.properties.settings.$ref, '#/components/schemas/SiteSettings')
+  // The locale shape is validated on this door too, so the description has to say
+  // so: it used to accept tags `POST /v1/sites/{site}/locales` rejects.
+  assert.match(create.description, /IETF language tag/)
+  assert.ok(create.responses[422], 'the validation refusal has to be documented')
+})
+
 test('every documented API path and method is actually routable', () => {
   const spec = openApi(config)
   for (const [path, operations] of Object.entries(spec.paths)) {

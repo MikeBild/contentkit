@@ -139,6 +139,30 @@ const AUDIT_ACTIONS = [
 
 const LIMITS = [50, 100, 200]
 
+/**
+ * The installation's audit trail, with its own site filter.
+ *
+ * `useState(site)` is deliberate and is what shell.tsx declares (`selection:
+ * 'seeds'`): the trail is one append-only log for the whole installation, so the
+ * filter is seeded from the selection and then belongs to the operator. Moving
+ * the switcher afterwards does not re-narrow the list — following it would
+ * silently discard a filter someone had just set, on a page whose whole purpose
+ * is comparing one actor across sites.
+ *
+ * The seed is the FIRST render's selection, and on a cold load of /audit that is
+ * no site at all: `useSite()` reads `?site=` and only picks a default once
+ * GET /v1/sites has answered (lib/site.tsx), which is an effect later. So this
+ * page opens on every site unless the URL already named one, and the sentence in
+ * `description` says that rather than promising the switcher's site — re-seeding
+ * from the effect would move a control under the hand of an operator already
+ * reading the page, after the unfiltered request had gone out anyway.
+ *
+ * What was wrong was not the seeding but that nothing said so: the page named
+ * the site nowhere and offered no way back to the selected one. Both are below —
+ * `diverged` is true for the cold-load case too, so the way back is offered
+ * exactly when the filter and the switcher disagree — and the switcher's own
+ * caption is dimmed for the same reason.
+ */
 export function AuditPage() {
   const { site, sites } = useSite()
   const [action, setAction] = useState('')
@@ -151,10 +175,15 @@ export function AuditPage() {
   const query = { ...(scope ? { site: scope } : {}), ...(action ? { action } : {}), limit }
   const events = useQuery({ queryKey: keys.audit(query), queryFn: () => ck.audit(query) })
   const rows = events.data ?? []
+  const selected = sites.find((entry) => entry.slug === site)
+  const diverged = Boolean(site) && scope !== site
 
   return (
-    <Page title="Audit" description="Append-only, redacted record of every privileged action.">
-      <div className="mb-3 flex flex-wrap gap-2">
+    <Page
+      title="Audit"
+      description="Append-only, redacted record of every privileged action, across the whole installation. The site filter is seeded from the switcher as this page opens — on a cold load nothing is selected yet, so it starts on every site — and then stays where you put it: moving the switcher does not change this list."
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <Select
           data-testid="ck-audit-site-filter"
           aria-label="Filter the audit trail by site"
@@ -193,6 +222,19 @@ export function AuditPage() {
             </option>
           ))}
         </Select>
+        {diverged ? (
+          // The one thing the seeded copy owes the operator: a way back to the
+          // selected site, said out loud rather than implied by a switcher that
+          // does nothing here.
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="ck-audit-follow-site"
+            onClick={() => setScope(site)}
+          >
+            {scope ? `Showing ${scope}` : 'Showing every site'} — switch to {selected?.name ?? site}
+          </Button>
+        ) : null}
       </div>
 
       <div className="rounded-xl border border-border bg-surface">

@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ck, type ContentItem, type ContentKind, type Revision } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
+import { DataTable, firstPage, useTableView, type DataColumn } from '@/components/ui/data-table'
 import {
   Badge,
   Button,
@@ -19,6 +20,8 @@ import {
   Table,
   TableState,
 } from '@/components/ui/primitives'
+import { RelativeTime } from '@/components/ui/relative-time'
+import { SkeletonFields, SkeletonText } from '@/components/ui/skeleton'
 import { Tabs, TabPanel } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/toast'
 import { ContentHtml, useContentScheme } from '@/content/lazy'
@@ -28,7 +31,7 @@ import { siteSettingsContract } from '@/forms/site/contract'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
+import { compareText, compareTime, encodeSort } from '@/lib/table-view'
 
 const KINDS: ContentKind[] = ['page', 'post', 'project', 'deck']
 
@@ -42,6 +45,40 @@ summary: One sentence that says what this is.
 Write the article here.
 `
 
+/**
+ * What to call a row.
+ *
+ * Title lives on the newest revision; an item whose revision carries none is
+ * identified by its translation_key, which is the only thing that is never
+ * missing. Sorting and every confirmation dialog use this same answer, so a
+ * document cannot be listed under one name and destroyed under another.
+ */
+function name(item: ContentItem): string {
+  return item.title || item.translation_key
+}
+
+/**
+ * The authoring list.
+ *
+ * `GET /v1/sites/{site}/content` answers a bare array: no `limit`, no `cursor`,
+ * no `order`. Two consequences, both visible in this file.
+ *
+ * The window is the console's own, over a result it holds completely — which is
+ * why the pager may print a total (the server sent every row, so counting them
+ * is reading, not guessing) and why the header sorts are honest: they reorder all
+ * of the items before the window is taken, not the twenty-five inside it. Both
+ * facts are `paging`, which this file deliberately does not pass: `'whole'` is the
+ * default of `DataTable` and of `useTableView`, and taking that default is how the
+ * page claims it. The claim is not on trust — test/unit/cockpit-lists.test.mjs
+ * reads docs/openapi.json, and the moment `contentList` grows a `cursor` or a
+ * `limit` it demands `paging="cursor"` here, which withdraws every client-side
+ * sort rather than leaving the controls lying.
+ *
+ * The order the endpoint does impose is `created_at` descending — a field the list
+ * did not use to show at all, so "newest first" named a column that was not
+ * there. `Created` is now a column, hidden by default: the default order is at
+ * least expressible, and the operator can look at it without a second request.
+ */
 export function ContentPage() {
   const { site } = useSite()
   const can = useCan()
@@ -57,6 +94,172 @@ export function ContentPage() {
     enabled: Boolean(site),
   })
 
+  const columns = useMemo<DataColumn<ContentItem>[]>(
+    () => [
+      {
+        id: 'title',
+        label: 'Title',
+        // The only field that says which document a row is, and the row's
+        // heading for a screen reader. It cannot be put away.
+        required: true,
+        compare: (left, right) => compareText(name(left), name(right)),
+        className: 'max-w-[22rem] truncate font-medium',
+        cell: (item) => name(item),
+      },
+      {
+        id: 'kind',
+        label: 'Kind',
+        compare: (left, right) => compareText(left.kind, right.kind),
+        className: 'text-muted-foreground',
+        cell: (item) => item.kind,
+      },
+      {
+        id: 'locale',
+        label: 'Locale',
+        compare: (left, right) => compareText(left.locale, right.locale),
+        className: 'text-muted-foreground',
+        cell: (item) => item.locale,
+      },
+      {
+        id: 'slug',
+        label: 'Slug',
+        compare: (left, right) => compareText(left.slug, right.slug),
+        className: 'text-muted-foreground',
+        cell: (item) => item.slug || '—',
+      },
+      {
+        id: 'live',
+        label: 'Live',
+        // Deliberately not comparable. The cell is two independent facts —
+        // whether the item is published, and whether newer work is waiting — and
+        // an invented rank over the pair would order the list by something no
+        // column shows. "Which documents have unreleased work" is a filter the
+        // API can answer; it is not a direction.
+        className: 'space-x-1 whitespace-nowrap',
+        cell: (item) => (
+          <>
+            {item.published_revision_id ? <Badge tone="success">published</Badge> : <Badge>draft only</Badge>}
+            {/* A published item whose newest revision is still a draft
+                has unreleased work — the single most useful thing to
+                see in an authoring list. */}
+            {item.published_revision_id && item.latest_revision_status === 'draft' ? (
+              <Badge tone="warning">newer draft</Badge>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        id: 'updated',
+        label: 'Updated',
+        compare: (left, right) => compareTime(left.updated_at, right.updated_at),
+        descFirst: true,
+        className: 'text-muted-foreground',
+        // "vor 2 Stunden" is what the operator reads; the instant is in `title`
+        // and in `<time datetime>`, because deciding whether an edit landed
+        // before or after a release needs the timestamp, not a rounding of it.
+        cell: (item) => <RelativeTime value={item.updated_at} data-testid="content-updated" />,
+      },
+      {
+        id: 'created',
+        label: 'Created',
+        compare: (left, right) => compareTime(left.created_at, right.created_at),
+        descFirst: true,
+        // The endpoint's own order. Off by default because it is the same for
+        // every row on a normal day; available because it is the answer to "why
+        // is the list in this order".
+        hiddenByDefault: true,
+        className: 'text-muted-foreground',
+        cell: (item) => <RelativeTime value={item.created_at} data-testid="content-created" />,
+      },
+      {
+        id: 'actions',
+        label: 'Row actions',
+        required: true,
+        headerHidden: true,
+        className: 'flex gap-2',
+        cell: (item) => (
+          <>
+            <Button
+              data-testid="content-open"
+              size="sm"
+              variant="outline"
+              onClick={() => setOpen({ itemId: item.id })}
+            >
+              {can('content:write') ? 'Edit' : 'Inspect'}
+            </Button>
+            {can('content:write') && !item.published_revision_id ? (
+              <Confirm
+                title="Discard this draft?"
+                description={
+                  <>
+                    <strong>{name(item)}</strong> and every one of its revisions are removed. It was never published,
+                    so nothing on the live site changes. This cannot be undone.
+                  </>
+                }
+                confirmLabel="Discard draft"
+                destructive
+                onConfirm={async () => {
+                  await ck.content.deleteDraft(item.id)
+                  await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
+                }}
+              >
+                {(openConfirm) => (
+                  <Button data-testid="content-discard" size="sm" variant="ghost" onClick={openConfirm}>
+                    Discard
+                  </Button>
+                )}
+              </Confirm>
+            ) : null}
+            {can('release:write') && item.published_revision_id ? (
+              <Confirm
+                title="Remove from the live site?"
+                description={
+                  <>
+                    <strong>{name(item)}</strong> stops being served after the next release. Its revisions are kept.
+                  </>
+                }
+                confirmLabel="Unpublish"
+                destructive
+                onConfirm={async () => {
+                  await ck.content.unpublish(item.id)
+                  await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
+                }}
+              >
+                {(openConfirm) => (
+                  <Button data-testid="content-unpublish" size="sm" variant="ghost" onClick={openConfirm}>
+                    Unpublish
+                  </Button>
+                )}
+              </Confirm>
+            ) : null}
+          </>
+        ),
+      },
+    ],
+    // `query` is rebuilt every render; the two filters it is made of are the
+    // dependency that actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [can, client, site, kind, locale],
+  )
+
+  const { view, setView } = useTableView('content', columns)
+  const [page, setPage] = useState(firstPage)
+
+  // A cursor names a position in one particular result. Another site, a new
+  // filter or a new order is a different result, so the walk starts over rather
+  // than resuming three windows into a list that no longer has three windows.
+  //
+  // The site is in here because switching it does not remount this page: the
+  // switcher only rewrites `?site=`, so `page` would survive into a workspace the
+  // operator has just opened and print "Page 3" over its first rows.
+  //
+  // The sort dependency is the encoded sort, not the object: `useCan` hands out a
+  // new function every render, so every derived value here is a new identity every
+  // render, and an object dependency would reset the walk on the render after
+  // every click on Next.
+  const order = encodeSort(view.sort) ?? ''
+  useEffect(() => setPage(firstPage), [site, kind, locale, order])
+
   if (!site)
     return (
       <Page title="Content">
@@ -69,6 +272,10 @@ export function ContentPage() {
       <ContentDetail
         site={site}
         itemId={open.itemId}
+        // Every item, deliberately — not the window on screen. The editor derives
+        // the sibling slugs a translation may point at and the locales it may be
+        // written in from this, and a list that only knew page 3 would offer the
+        // author a subset of their own site.
         allItems={items.data ?? []}
         onClose={async () => {
           setOpen(null)
@@ -93,128 +300,45 @@ export function ContentPage() {
         ) : null
       }
     >
-      <div className="mb-3 flex gap-2">
-        <Select
-          data-testid="content-kind-filter"
-          value={kind}
-          onChange={(event) => setKind(event.target.value as ContentKind | '')}
-        >
-          <option value="">All kinds</option>
-          {KINDS.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </Select>
-        <Input
-          className="w-40"
-          data-testid="content-locale-filter"
-          placeholder="locale"
-          value={locale}
-          onChange={(event) => setLocale(event.target.value.trim())}
-        />
-      </div>
-
-      <div className="rounded-xl border border-border bg-surface">
-        <Table>
-          <THead>
-            <TR>
-              <TH>Title</TH>
-              <TH>Kind</TH>
-              <TH>Locale</TH>
-              <TH>Slug</TH>
-              <TH>Live</TH>
-              <TH>Updated</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
-            <TableState
-              columns={7}
-              isLoading={items.isPending}
-              error={items.error}
-              isEmpty={rows.length === 0}
-              onRetry={() => items.refetch()}
-              emptyMessage="No content items match this filter."
+      <DataTable
+        testId="content"
+        columns={columns}
+        rows={rows}
+        rowKey={(item) => item.id}
+        rowTestId="content-row"
+        rowAttributes={(item) => ({ 'data-item': item.id })}
+        isLoading={items.isPending}
+        error={items.error}
+        onRetry={() => items.refetch()}
+        emptyMessage="No content items match this filter."
+        view={view}
+        onViewChange={setView}
+        page={page}
+        onPageChange={setPage}
+        toolbar={
+          <>
+            <Select
+              data-testid="content-kind-filter"
+              value={kind}
+              onChange={(event) => setKind(event.target.value as ContentKind | '')}
             >
-              {rows.map((item) => (
-                <TR key={item.id} data-testid="content-row" data-item={item.id}>
-                  <TD className="max-w-[22rem] truncate font-medium">{item.title || item.translation_key}</TD>
-                  <TD className="text-muted-foreground">{item.kind}</TD>
-                  <TD className="text-muted-foreground">{item.locale}</TD>
-                  <TD className="text-muted-foreground">{item.slug || '—'}</TD>
-                  <TD className="space-x-1 whitespace-nowrap">
-                    {item.published_revision_id ? <Badge tone="success">published</Badge> : <Badge>draft only</Badge>}
-                    {/* A published item whose newest revision is still a draft
-                        has unreleased work — the single most useful thing to
-                        see in an authoring list. */}
-                    {item.published_revision_id && item.latest_revision_status === 'draft' ? (
-                      <Badge tone="warning">newer draft</Badge>
-                    ) : null}
-                  </TD>
-                  <TD className="text-muted-foreground">{formatDate(item.updated_at)}</TD>
-                  <TD className="flex gap-2">
-                    <Button
-                      data-testid="content-open"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setOpen({ itemId: item.id })}
-                    >
-                      {can('content:write') ? 'Edit' : 'Inspect'}
-                    </Button>
-                    {can('content:write') && !item.published_revision_id ? (
-                      <Confirm
-                        title="Discard this draft?"
-                        description={
-                          <>
-                            <strong>{item.title || item.translation_key}</strong> and every one of its revisions are
-                            removed. It was never published, so nothing on the live site changes. This cannot be undone.
-                          </>
-                        }
-                        confirmLabel="Discard draft"
-                        destructive
-                        onConfirm={async () => {
-                          await ck.content.deleteDraft(item.id)
-                          await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
-                        }}
-                      >
-                        {(openConfirm) => (
-                          <Button data-testid="content-discard" size="sm" variant="ghost" onClick={openConfirm}>
-                            Discard
-                          </Button>
-                        )}
-                      </Confirm>
-                    ) : null}
-                    {can('release:write') && item.published_revision_id ? (
-                      <Confirm
-                        title="Remove from the live site?"
-                        description={
-                          <>
-                            <strong>{item.title || item.translation_key}</strong> stops being served after the next
-                            release. Its revisions are kept.
-                          </>
-                        }
-                        confirmLabel="Unpublish"
-                        destructive
-                        onConfirm={async () => {
-                          await ck.content.unpublish(item.id)
-                          await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
-                        }}
-                      >
-                        {(openConfirm) => (
-                          <Button data-testid="content-unpublish" size="sm" variant="ghost" onClick={openConfirm}>
-                            Unpublish
-                          </Button>
-                        )}
-                      </Confirm>
-                    ) : null}
-                  </TD>
-                </TR>
+              <option value="">All kinds</option>
+              {KINDS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
               ))}
-            </TableState>
-          </TBody>
-        </Table>
-      </div>
+            </Select>
+            <Input
+              className="w-40"
+              data-testid="content-locale-filter"
+              placeholder="locale"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value.trim())}
+            />
+          </>
+        }
+      />
     </Page>
   )
 }
@@ -331,7 +455,10 @@ function ContentDetail({
 
       <TabPanel active={tab === 'editor'} data-testid="content-tab-editor">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          // The word "Loading…" was one line high where a form of forty fields
+          // was about to appear, so every control the operator was already
+          // reaching for moved out from under the pointer the moment it landed.
+          <SkeletonFields fields={6} label="Loading the document…" data-testid="content-editor-skeleton" />
         ) : failure ? (
           <p className="text-sm text-chart-5">{failure instanceof Error ? failure.message : 'Could not load'}</p>
         ) : (
@@ -478,7 +605,9 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
                   <TD className="text-muted-foreground">{job.attempts}</TD>
                   <TD className="text-muted-foreground">{job.chars ?? '—'}</TD>
                   <TD className="max-w-[20rem] truncate text-chart-5">{job.error ?? ''}</TD>
-                  <TD className="text-muted-foreground">{formatDate(job.updated_at)}</TD>
+                  <TD className="text-muted-foreground">
+                    <RelativeTime value={job.updated_at} data-testid="content-audio-job-updated" />
+                  </TD>
                 </TR>
               ))}
             </TableState>
@@ -498,7 +627,14 @@ function LivePanel({ site, item }: { site: string; item: ContentItem }) {
     enabled: Boolean(item.slug),
   })
 
-  if (published.isPending) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (published.isPending)
+    return (
+      <Card>
+        <CardContent className="pt-5">
+          <SkeletonText lines={8} label="Loading the published document…" data-testid="content-live-skeleton" />
+        </CardContent>
+      </Card>
+    )
   if (published.error)
     return (
       <p className="text-sm text-chart-5">

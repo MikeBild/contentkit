@@ -1,5 +1,10 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { ck } from '@/api/ck'
+import { Button } from '@/components/ui/primitives'
+import { keys } from '@/lib/query'
+import { useSite } from '@/lib/site'
 import { THEME_TOKENS, PRESENTATION_PRESET, REPORT_CADENCE } from '../contracts/enums.generated'
 import {
   CarriedKeys,
@@ -22,6 +27,7 @@ import {
   type TokenDefinition,
 } from '../fields'
 import type { useForm } from '../use-form'
+import { SUGGESTED_LOCALES } from './rules'
 import {
   ANALYTICS_PROVIDERS,
   AUDIO_PROVIDERS,
@@ -135,6 +141,229 @@ function Identity({ form, locales, disabled }: SectionProps) {
         Hostname mappings are not part of this form. The site read does not return them, and `domains` is a whole-list
         write where an empty list removes every mapping — so the console never sends the key and the mappings stay as
         they are.
+      </Note>
+    </div>
+  )
+}
+
+/**
+ * The locale rows: the site's build matrix, and the one part of this page that is
+ * not a settings field.
+ *
+ * The create wizard has always said "languages can be added later". That was true
+ * of the API — `POST` and `DELETE /v1/sites/{site}/locales/…` have both existed —
+ * and false of the console: the client's remove-locale and read-locales methods
+ * had no caller at all, and there was no locale editor on any page. The sentence
+ * is now true here.
+ *
+ * Three properties this section has and the settings form deliberately does not:
+ *
+ *  - every write is its own request and takes effect at once, so there is no
+ *    Save button and nothing here is part of the PATCH (`locales` is not in that
+ *    body at all — `SitePatch` validates `default_locale` against these rows and
+ *    never writes them);
+ *  - the server's refusals are shown as they arrive, not translated. The default
+ *    locale cannot be removed, and a locale that still carries published or
+ *    scheduled content is refused with its counts. Those two 409s are the
+ *    safeguard for every URL the site already serves;
+ *  - nothing changes for a reader until the next release is built, which is what
+ *    `rebuild_required` in each answer means.
+ */
+function Languages({ disabled }: SectionProps) {
+  const { site } = useSite()
+  const client = useQueryClient()
+  const [adding, setAdding] = useState('')
+  // Removal is confirmed in the row itself: a locale row is one page tree per
+  // release, and the operator should see which one they are about to stop
+  // building before it stops being built.
+  const [removing, setRemoving] = useState<string | null>(null)
+
+  const localeKey = [...keys.sites.detail(site), 'locales'] as const
+  const rows = useQuery({
+    queryKey: localeKey,
+    queryFn: () => ck.sites.locales(site),
+    enabled: Boolean(site),
+  })
+
+  const refresh = async () => {
+    await client.invalidateQueries({ queryKey: localeKey })
+    // The site row's own `default_locale` is validated against these, and the
+    // registry lists the site — both read stale sets otherwise.
+    await client.invalidateQueries({ queryKey: keys.sites.all })
+  }
+
+  const add = useMutation({
+    mutationFn: (locale: string) => ck.sites.addLocale(site, locale.trim().toLowerCase()),
+    onSuccess: async () => {
+      setAdding('')
+      await refresh()
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (locale: string) => ck.sites.removeLocale(site, locale),
+    onSuccess: async () => {
+      setRemoving(null)
+      await refresh()
+    },
+  })
+
+  const data = rows.data
+  const stored = data?.locales ?? []
+  const builds = data?.builds ?? []
+  const max = data?.max_locales
+  const defaultLocale = data?.default_locale ?? ''
+  const busy = disabled || add.isPending || remove.isPending
+  const full = typeof max === 'number' && stored.length >= max
+  const removed = remove.data
+
+  return (
+    <div data-testid="ck-site-locales" className="flex flex-col gap-4">
+      {rows.isPending ? (
+        <p className="text-xs text-muted-foreground">Loading the locale rows…</p>
+      ) : rows.error ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5">
+          <span data-testid="ck-site-locales-load-error">
+            {rows.error instanceof Error ? rows.error.message : 'Could not read the locale rows'}
+          </span>
+          <Button variant="ghost" size="sm" data-testid="ck-site-locales-retry" onClick={() => void rows.refetch()}>
+            Try again
+          </Button>
+        </div>
+      ) : (
+        <ul data-testid="ck-site-locales-list" className="flex flex-col gap-2">
+          {stored.map((row) => {
+            const isDefault = row.locale === defaultLocale
+            return (
+              <li
+                key={row.locale}
+                data-testid={`ck-site-locale-${row.locale}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-2 text-xs"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="font-mono">{row.locale}</span>
+                  {isDefault ? (
+                    <span data-testid={`ck-site-locale-default-${row.locale}`} className="text-muted-foreground">
+                      default locale — “/” redirects here and the 404 page is built from it, so it cannot be removed
+                    </span>
+                  ) : null}
+                </span>
+                {isDefault ? null : removing === row.locale ? (
+                  <span className="flex items-center gap-2">
+                    <span className="text-muted-foreground">
+                      Stop building /{row.locale}/? Its content is kept and nothing is deleted.
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      data-testid={`ck-site-locale-remove-confirm-${row.locale}`}
+                      onClick={() => remove.mutate(row.locale)}
+                    >
+                      {remove.isPending ? 'Removing…' : 'Remove'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-testid={`ck-site-locale-remove-cancel-${row.locale}`}
+                      onClick={() => setRemoving(null)}
+                    >
+                      Keep
+                    </Button>
+                  </span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    data-testid={`ck-site-locale-remove-${row.locale}`}
+                    onClick={() => {
+                      remove.reset()
+                      setRemoving(row.locale)
+                    }}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </li>
+            )
+          })}
+          {stored.length === 0 ? (
+            <li data-testid="ck-site-locales-empty" className="text-xs text-muted-foreground">
+              No locale rows are stored. The next release still builds{' '}
+              <span className="font-mono">{builds.join(', ') || defaultLocale}</span> — the documented fallback to
+              default_locale — so the build matrix is untracked rather than empty.
+            </li>
+          ) : null}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[12rem] flex-1">
+          <LocaleField
+            label="Add a language"
+            disabled={busy || full}
+            data-testid="ck-site-locales-add"
+            help="One page tree is built per row. The tag is case-folded server-side; a locale the site already has is refused with 409, and content can only be ingested into a locale this list contains."
+            // The menu offers what the site does not have yet: the ones it does
+            // have are the rows above, and asking for one of them is a 409.
+            locales={SUGGESTED_LOCALES.filter((locale) => !builds.includes(locale))}
+            value={adding}
+            onChange={(value) => {
+              add.reset()
+              setAdding(value)
+            }}
+          />
+        </div>
+        <Button
+          size="sm"
+          disabled={busy || full || !adding.trim()}
+          data-testid="ck-site-locales-add-submit"
+          onClick={() => add.mutate(adding)}
+        >
+          {add.isPending ? 'Adding…' : 'Add locale'}
+        </Button>
+      </div>
+
+      {add.error ? (
+        <p
+          data-testid="ck-site-locales-add-error"
+          className="rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5"
+        >
+          {add.error instanceof Error ? add.error.message : 'The locale could not be added'}
+        </p>
+      ) : null}
+      {remove.error ? (
+        // Verbatim: “locale en still has 2 published and 1 scheduled content
+        // item(s)…” names what to do, and a rewritten version would drop the
+        // counts that make it actionable.
+        <p
+          data-testid="ck-site-locales-remove-error"
+          className="rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5"
+        >
+          {remove.error instanceof Error ? remove.error.message : 'The locale could not be removed'}
+        </p>
+      ) : null}
+      {removed ? (
+        <p
+          data-testid="ck-site-locales-removed"
+          className="rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-xs text-chart-3"
+        >
+          <span className="font-mono">{removed.locale}</span> is no longer built. {removed.draft_items} content{' '}
+          {removed.draft_items === 1 ? 'item stays' : 'items stay'} in it, unpublished and undeleted — nothing is served
+          from that locale until it is added back and a release is built.
+        </p>
+      ) : null}
+
+      {full ? (
+        <Note tone="warning">
+          {max} locale rows is the cap: every row adds a full page tree — home, listings, tags, feeds and a 404 — to
+          every release.
+        </Note>
+      ) : null}
+      <Note>
+        Adding or removing a row changes nothing a reader sees until the next release is built. Removing one is refused
+        while it is the default locale, and while it still carries published or scheduled content; the refusal names the
+        counts. Content is never deleted by it.
       </Note>
     </div>
   )
@@ -973,6 +1202,7 @@ function dropLeaf(carried: Record<string, unknown>, path: string): Record<string
 
 export const SITE_SECTION_BODIES: Record<SiteSectionId, (props: SectionProps) => ReactNode> = {
   identity: Identity,
+  languages: Languages,
   presentation: Presentation,
   theme: Theme,
   branding: Branding,

@@ -516,6 +516,7 @@ export const siteSettingsContract: Contract<SiteSettingsUI, SiteWire> = { detect
 
 export type SiteSectionId =
   | 'identity'
+  | 'languages'
   | 'presentation'
   | 'theme'
   | 'branding'
@@ -542,6 +543,23 @@ export const SITE_SECTIONS: readonly SectionSpec<SiteSettingsUI>[] = [
     paths: ['identity'],
     summary: (ui) => `${ui.identity.default_locale || 'no locale'} · ${hostOf(ui.identity.base_url)}`,
     warning: (ui) => (ui.identity.base_url ? undefined : 'No base URL — every canonical link breaks'),
+  },
+  /**
+   * The locale rows, which are not part of this form and not part of the PATCH.
+   *
+   * It is a section anyway, because "languages can be added later" was true of
+   * the API and false of the console: `POST`/`DELETE /v1/sites/{site}/locales`
+   * existed, the client's remove-locale method had no caller, and there was no locale
+   * editor anywhere — so the one thing the create wizard promises could not be
+   * done afterwards. `paths` is empty on purpose: nothing here is a leaf of the
+   * settings request, so no server error routes to it and the save bar has
+   * nothing to do with it. Each write is its own request, applied immediately.
+   */
+  {
+    id: 'languages',
+    label: 'Languages',
+    paths: [],
+    summary: (ui) => `default ${ui.identity.default_locale || 'unset'} · one page tree per row`,
   },
   {
     id: 'presentation',

@@ -5,6 +5,8 @@ import { ck, type ContentItem, type Release } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
 import { Badge, Button, Input, TBody, TD, TH, THead, TR, Table, TableState } from '@/components/ui/primitives'
+import { Progress } from '@/components/ui/progress'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { PreviewsCard } from '@/forms/platform/previews'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
@@ -35,6 +37,22 @@ function isDeletable(release: Release) {
   return release.status !== 'active' && release.status !== 'building'
 }
 
+/**
+ * What a build says it holds, or the fact that it said nothing.
+ *
+ * A build of zero files is an active release that serves nothing — which is how a
+ * site once came to answer empty pages while every status in the console read
+ * green. That makes 0 the state with an incident attached to it, and it is
+ * exactly the value `?? 0` used to put here for a count the release never
+ * reported. `liveStep` in lib/release-chain.ts calls an absent count 'unknown'
+ * for that reason, and the Overview and this page must not disagree about one
+ * release: an absent count reads as absent in both.
+ */
+function fileCount(count: number | null | undefined) {
+  if (count === null || count === undefined) return 'no file count reported'
+  return `${count} ${count === 1 ? 'file' : 'files'}`
+}
+
 export function ReleasesPage() {
   const { site } = useSite()
   const can = useCan()
@@ -42,14 +60,23 @@ export function ReleasesPage() {
   const [reason, setReason] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
+  const invalidate = () => client.invalidateQueries({ queryKey: keys.releases(site) })
+  const build = useMutation({ mutationFn: () => ck.releases.create(site, { reason }), onSuccess: invalidate })
+  const activate = useMutation({
+    mutationFn: (release: string) => ck.releases.activate(site, release),
+    onSuccess: invalidate,
+  })
+
   const releases = useQuery({
     queryKey: keys.releases(site),
     queryFn: () => ck.releases.list(site),
     enabled: Boolean(site),
     // A build is asynchronous; while one is in flight the list is the only
-    // place its outcome shows up.
+    // place its outcome shows up. The pending mutation counts too: the POST
+    // blocks for the whole build, so without it the row that appears while this
+    // operator waits would not be polled and the elapsed time would stand still.
     refetchInterval: (query) =>
-      (query.state.data ?? []).some((release) => release.status === 'building') ? 3000 : false,
+      (query.state.data ?? []).some((release) => release.status === 'building') || build.isPending ? 3000 : false,
   })
 
   // Releases carry revision ids and nothing else; the authoring list is where
@@ -62,13 +89,6 @@ export function ReleasesPage() {
   })
   const items = (content.data ?? []) as ContentItem[]
 
-  const invalidate = () => client.invalidateQueries({ queryKey: keys.releases(site) })
-  const build = useMutation({ mutationFn: () => ck.releases.create(site, { reason }), onSuccess: invalidate })
-  const activate = useMutation({
-    mutationFn: (release: string) => ck.releases.activate(site, release),
-    onSuccess: invalidate,
-  })
-
   if (!site)
     return (
       <Page title="Releases">
@@ -78,6 +98,31 @@ export function ReleasesPage() {
 
   const rows = releases.data ?? []
   const active = rows.find((release) => release.status === 'active')
+
+  /*
+   * What is known about a build in progress, and nothing beyond it.
+   *
+   * `GET /v1/sites/{site}/releases` answers `id`, `kind`, `status`, `reason`,
+   * `revision_ids`, `file_count`, `created_at`, `completed_at` and `activated_at`
+   * — no step, no total, no percentage; `file_count` is written once, in the same
+   * update that flips the status to `ready`. So a fraction does not exist to draw,
+   * and a bar filling at a guessed rate on work measured at over a hundred seconds
+   * would reach ninety per cent and sit there until the operator cancelled a build
+   * that was fine.
+   *
+   * Two real facts are left: that it is running, and since when. `created_at` is
+   * the server's own instant; a pending POST is this operator's own, which matters
+   * because the request blocks for the whole build and the row is not visible
+   * until the next poll brings it back.
+   */
+  const building = rows.filter((release) => release.status === 'building')
+  const startedAt =
+    building.reduce<string | null>(
+      (oldest, release) =>
+        oldest === null || Date.parse(release.created_at) < Date.parse(oldest) ? release.created_at : oldest,
+      null,
+    ) ?? (build.isPending ? build.submittedAt : null)
+  const inFlight = Math.max(building.length, build.isPending ? 1 : 0)
 
   return (
     <Page
@@ -115,9 +160,25 @@ export function ReleasesPage() {
       }
     >
       {active ? (
-        <p className="mb-3 text-sm text-muted-foreground">
-          Live since {formatDate(active.activated_at)} · {active.file_count ?? 0} files
+        <p data-testid="release-active-summary" className="mb-3 text-sm text-muted-foreground">
+          Live since{' '}
+          <RelativeTime value={active.activated_at} data-testid="release-active-since" className="inline" /> ·{' '}
+          <span data-testid="release-active-files">{fileCount(active.file_count)}</span>
         </p>
+      ) : null}
+
+      {startedAt !== null ? (
+        <div data-testid="release-building" className="mb-3 max-w-md rounded-xl border border-border bg-surface p-3">
+          <Progress
+            data-testid="release-build-progress"
+            label={inFlight === 1 ? 'Building' : `Building ${inFlight} at once`}
+            since={startedAt}
+          />
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Elapsed time, not a percentage — a build reports none until it finishes, and one over a hundred seconds is
+            normal. This list refreshes itself.
+          </p>
+        </div>
       ) : null}
 
       <PreviewsCard site={site} />
@@ -163,7 +224,13 @@ export function ReleasesPage() {
                       </TD>
                       <TD className="text-muted-foreground">{release.kind}</TD>
                       <TD className="max-w-[18rem] truncate">{release.reason || '—'}</TD>
-                      <TD className="tabular-nums text-muted-foreground">{release.revision_ids?.length ?? 0}</TD>
+                      {/*
+                        0 is a claim of its own here — "this build is exactly the
+                        published set", which is what the detail row spells out —
+                        so an absent list does not get to borrow it, the same way
+                        the Files column beside it refuses to.
+                      */}
+                      <TD className="tabular-nums text-muted-foreground">{release.revision_ids?.length ?? '—'}</TD>
                       <TD className="tabular-nums text-muted-foreground">{release.file_count ?? '—'}</TD>
                       <TD className="whitespace-nowrap text-muted-foreground">{formatDate(release.completed_at)}</TD>
                       <TD className="flex flex-wrap gap-2">
@@ -251,6 +318,15 @@ export function ReleasesPage() {
                             <dd>{release.activated_at ? formatDate(release.activated_at) : '—'}</dd>
                             <dt className="text-muted-foreground">Files</dt>
                             <dd className="tabular-nums">{release.file_count ?? '—'}</dd>
+                            {/*
+                              Drawn when a reason arrives and never faked when one
+                              does not: `listReleases` in src/repository.mjs
+                              projects nine fields and `error` is not among them,
+                              so today this row does not appear on a failed build.
+                              The declared `Release` schema does carry `error`;
+                              until the projection sends it, "the last build
+                              failed" is the whole of what this console knows.
+                            */}
                             {release.error ? (
                               <>
                                 <dt className="text-muted-foreground">Error</dt>

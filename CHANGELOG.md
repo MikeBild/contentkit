@@ -6,6 +6,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.7.0 — 2026-07-30
+
+### Added
+
+- A site's locales are writable: `POST /v1/sites/{site}/locales`,
+  `DELETE /v1/sites/{site}/locales/{locale}` and `GET /v1/sites/{site}/locales`.
+  Until now `createSite` stored the rows once and nothing could add one, so a
+  multilingual site could not be created or evolved through any door. The writes
+  share a row lock, because two select-then-write pairs still commit under READ
+  COMMITTED: without it a `PATCH {default_locale}` racing a `DELETE` left a site
+  pointing its root redirect and its 404 page at a locale the build no longer
+  emits. The default locale cannot be removed, and a locale is refused while it
+  still holds published *or scheduled* content — a scheduled revision sets no
+  `published_revision_id`, so it counted as a harmless draft until the scheduler
+  published it into a locale with no page.
+- Content may no longer enter or be published into a locale the site does not
+  build. The removal refusal was a point-in-time check on the past: ingest took
+  `meta.locale` verbatim and publish never looked, so the same orphan was
+  reachable a second later from the other side.
+- The console has a site-creation wizard in place of three free-text fields. The
+  locale was typed by hand although the server has a closed set; the preset — the
+  decision that settles layouts and URL shapes — was not asked at all; and the
+  consequence of each choice now stands where the choice is made.
+- A command palette, cursor pagination and sorting for the content list, date
+  pickers, progress, skeletons, relative times, a locale editor and a release-chain
+  state. Twelve components, no new dependency: +18 kB gzip, and all 87 vendor
+  chunks byte-identical.
+
+### Changed
+
+- The sidebar separates what the site switcher governs from what it does not.
+  It was a flat list of fifteen entries with the switcher above all of them, while
+  Moderation, Credentials and Audit answer on installation-wide endpoints. A test
+  measures each entry's declared surface against `docs/openapi.json`, so the
+  separation cannot rot quietly, and the pages that genuinely straddle the line
+  declare which paths cross and why.
+- `/sites` is split. It was titled as a registry but read the switcher, edited the
+  selected site's nine setting sections and hosted its delete button — while the
+  breadcrumb read `Installation · Site` and the switcher was captioned as a filter,
+  over the control that chooses which site gets deleted.
+- `POST /v1/sites` validates locale shape like the locale endpoint does. The two
+  doors disagreed: `{"default_locale":"Deutsch"}` created a site whose only locale
+  row could never hold a document and could never be removed.
+
+### Fixed
+
+- The release chain no longer says "everything published is in the build this site
+  serves" without checking. A revision published after the active release was built
+  is counted nowhere — the exact state the product exists to make visible.
+- A site with drafts and no release read as the loudest state in the chain, with the
+  alert card, permanently. Severity graded on whether the site holds *any* content;
+  it now grades on whether anything is published, because nothing published means
+  nothing an activation could be serving.
+- `{active.file_count ?? 0} files` drew an unreported count as zero — on the one
+  fact the chain refuses to guess, because a build of zero files is an active
+  release that serves nothing, which is how a site once came to answer empty pages
+  while every status read green.
+- A date-only frontmatter value showed and wrote back the previous day west of
+  Greenwich, and the previous year across a year boundary. `date: 2026-07-30` parses
+  as UTC midnight, and the control shifted it to the local day regardless.
+- The publication date offered 30/90/365-day offsets and "Never" — semantics carried
+  over from credential expiry. One click dated a post a month into the future, which
+  is what the field sorts by.
+- A usage metric the server reported as `missing` was dropped from its tile rather
+  than shown as unmeasured, and a tile of missing values claimed "nothing recorded
+  in this window".
+
 ## 4.6.4 — 2026-07-30
 
 ### Fixed
