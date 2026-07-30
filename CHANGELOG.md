@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.6.4 — 2026-07-30
+
+### Fixed
+
+- The console rendered content unstyled. Every typography rule the site has is
+  written under `.prose` — templates.mjs puts each document body inside
+  `<div class="prose">` — and scoping turned those into `.ck-content .prose …`,
+  a descendant selector. The surface carried both classes on one element and so
+  matched none of them: no paragraph rhythm, no inline-code chip, no blockquote
+  rule, no table borders. Tailwind's preflight additionally removed the list
+  markers and heading sizes a published page inherits from the user agent, which
+  is why `site.css` never states them; they are handed back with `revert` rather
+  than reinvented.
+- A site could be created with zero locale rows: `locales: []` is truthy, so
+  nothing was stored, and page emission iterates locales. The release then
+  contained assets and no pages at all while every build and preview kept
+  answering `201`, and the 404 surfaced much later on a page that was never
+  emitted. No endpoint could add the locale afterwards. The default locale is
+  now always stored, and snapshot builds fall back to it, which repairs the
+  sites already in that state without touching them.
+- An access rule authored on a directory did not match its own `index.html`, so
+  the builder could treat a page as public — leaking its title into navigation,
+  sitemap and search index — while serving it `403`. Build time asks about a
+  page URL and serve time about the release object behind it; both now reach the
+  same rule.
+- `POST /v1/api-keys` and the MCP tool disagreed on the default: an omitted
+  `scopes` minted a one-scope key through one door and a five-scope key through
+  the other. The narrow default wins, because a key minted wider than intended
+  cannot be un-issued.
+
+### Changed
+
+- The credential and identity administration rules are stated once and called by
+  both doors, instead of a copy each in the HTTP router and the MCP tool
+  registry. The MCP tool gains `restore` and the seed source, which is the
+  consistency that was the point.
+- The integration suite can be run repeatedly against one database. It could
+  not: hardcoded slugs collided on the second run, a fixed migration tag made
+  the concurrency probe silently stop testing the race, and three tables
+  accumulated fixtures.
+
 ## 4.6.3 — 2026-07-29
 
 ### Fixed
