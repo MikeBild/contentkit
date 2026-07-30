@@ -304,9 +304,14 @@ function Languages({ disabled }: SectionProps) {
             disabled={busy || full}
             data-testid="ck-site-locales-add"
             help="One page tree is built per row. The tag is case-folded server-side; a locale the site already has is refused with 409, and content can only be ingested into a locale this list contains."
-            // The menu offers what the site does not have yet: the ones it does
-            // have are the rows above, and asking for one of them is a 409.
-            locales={SUGGESTED_LOCALES.filter((locale) => !builds.includes(locale))}
+            // Filtered against the stored ROWS, not against what the site builds.
+            // The two differ on exactly the site this editor exists to repair: a
+            // site with no rows still builds its default locale through the
+            // documented fallback, so filtering on `builds` withheld the one row
+            // such a site is missing — the console offered every locale except
+            // the only one worth adding. A 409 is about a row that exists, and
+            // `stored` is the list of rows.
+            locales={SUGGESTED_LOCALES.filter((locale) => !stored.some((row) => row.locale === locale))}
             value={adding}
             onChange={(value) => {
               add.reset()

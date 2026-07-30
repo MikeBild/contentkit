@@ -509,6 +509,29 @@ describe('“languages can be added later” is true of the console, not just of
     assert.match(body, /release is built/, 'a locale change is invisible until the next release')
   })
 
+  /**
+   * The one site this editor exists to repair is the one it used to lock out.
+   *
+   * `builds` and the stored rows differ on exactly a zero-row site: it builds its
+   * default locale through the documented fallback while having no row for it. The
+   * add menu filtered on `builds`, so that site was offered every locale except
+   * the only one worth adding — verified on production, where canary carries no
+   * rows and `de` was missing from the list. A 409 is about a row that exists, so
+   * the filter belongs on the rows.
+   */
+  test('the add menu withholds a locale only when a row for it exists', async () => {
+    const sections = await read('forms', 'site', 'sections.tsx')
+    const body = sections.slice(sections.indexOf('function Languages('), sections.indexOf('function Presentation('))
+    const filter = body.slice(body.indexOf('locales={SUGGESTED_LOCALES'))
+    const line = filter.slice(0, filter.indexOf('\n'))
+    assert.match(line, /stored\b/, 'the filter must read the stored rows')
+    assert.doesNotMatch(
+      line,
+      /\bbuilds\b/,
+      'filtering on what the site builds withholds the default locale from a site that has no row for it — the repair case',
+    )
+  })
+
   test('the wizard points at that editor rather than at a bare endpoint', async () => {
     const wizard = await read('forms', 'site', 'wizard.tsx')
     assert.match(

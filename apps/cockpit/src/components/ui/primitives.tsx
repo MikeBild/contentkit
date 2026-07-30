@@ -163,13 +163,27 @@ export function TableState({
   emptyMessage?: string
   children: ReactNode
 }) {
+  // Shape-preserving rows rather than one centred word: the header is already on
+  // screen, so a single "Loading…" cell collapses the table to one line and then
+  // shoves it open when the data lands. Written out here instead of reusing
+  // SkeletonRows from ./skeleton, which imports TR/TD from this module — the
+  // import would be a cycle. The `sr-only` label is what the centred word used to
+  // do for a screen reader.
   if (isLoading)
     return (
-      <TR>
-        <TD colSpan={columns} className="h-24 text-center text-muted-foreground">
-          Loading…
-        </TD>
-      </TR>
+      <>
+        {Array.from({ length: 5 }, (_, row) => (
+          <TR key={row} data-testid={row === 0 ? 'table-state-loading' : undefined}>
+            {Array.from({ length: columns }, (_, column) => (
+              <TD key={column}>
+                <div className="h-4 animate-pulse rounded bg-muted motion-reduce:animate-none">
+                  {row === 0 && column === 0 ? <span className="sr-only">Loading…</span> : null}
+                </div>
+              </TD>
+            ))}
+          </TR>
+        ))}
+      </>
     )
   if (error)
     return (

@@ -4,6 +4,7 @@ import { ck, statsKinds, usageStatsKinds, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/primitives'
 import { ReleaseChain } from '@/components/ui/release-chain'
+import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { keys } from '@/lib/query'
 import { deriveReleaseChain } from '@/lib/release-chain'
 import { useCan } from '@/lib/session'
@@ -184,7 +185,20 @@ function StatCard({
       </CardHeader>
       <CardContent>
         {result?.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          // The tile's own shape: a sparkline band and four metric rows. Twelve of
+          // these load at once, so a one-line "Loading…" made the grid settle at
+          // twelve short cards and then jolt to full height a moment later.
+          <SkeletonGroup label="Loading the statistics…" data-testid="stat-card-skeleton">
+            <Skeleton className="h-10 w-full" />
+            <div className="mt-3 space-y-2">
+              {Array.from({ length: 4 }, (_, row) => (
+                <div key={row} className="flex items-baseline justify-between gap-3">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="h-3 w-10" />
+                </div>
+              ))}
+            </div>
+          </SkeletonGroup>
         ) : result?.error ? (
           <p className="text-sm text-muted-foreground">
             {result.error instanceof Error ? result.error.message : 'Unavailable'}

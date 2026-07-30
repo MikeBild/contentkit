@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.7.1 — 2026-07-30
+
+### Fixed
+
+- The Languages editor withheld the one locale a site with no rows actually needs.
+  The add menu filtered against what the site *builds*, and those two lists differ
+  on exactly that site: it builds its default locale through the documented
+  fallback while carrying no row for it, so the console offered every locale except
+  the only one worth adding. Found on production, where a site in that state could
+  not be repaired through the console the editor was added for. A 409 is about a
+  row that exists, so the filter reads the rows.
+- Statistics tiles and plain tables said "Loading…" in one line. Twelve tiles load
+  at once, so the grid settled at twelve short cards and jolted to full height when
+  the data landed; a table collapsed to a single centred cell under a header that
+  was already on screen. Both now hold their own shape while loading.
+
 ## 4.7.0 — 2026-07-30
 
 ### Added
