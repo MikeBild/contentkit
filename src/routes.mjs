@@ -44,11 +44,16 @@ import {
   validReturnTo,
 } from './access.mjs'
 import {
-  PRODUCT_SCOPES,
-  defaultProductScopes,
+  createIdentityGrant,
+  listApiKeys,
+  listIdentityGrants,
   publicIdentityGrant,
-  roleForProductScopes,
-  withinPrincipalSites,
+  requireApiKey,
+  requireIdentityGrant,
+  resolveApiKeyCreate,
+  revokeApiKey,
+  revokeIdentityGrant,
+  updateIdentityGrant,
 } from './oauth/policy.mjs'
 import { auditActor } from './audit.mjs'
 import { csrfSecretFor, csrfSetCookie, signCsrf, verifyCsrf } from './csrf.mjs'
@@ -212,6 +217,17 @@ export function validateNarrativePlan(value) {
 // not depend on a database lookup, which rules out resolving the host to a site.
 export function isApiHost(req, config) {
   return (req.headers.host || '').split(':')[0] === new URL(config.publicUrl).hostname
+}
+
+// The shared admin rules in oauth/policy.mjs throw; the MCP surface lets those
+// throws travel as tool errors, so HTTP is the only door that has to turn one
+// back into a status and a body. A `code` marks the documented structured
+// conflict (identity_grant_exists) — everything else is the plain {error}
+// shape the rest of /v1 answers with.
+function adminError(res, error) {
+  if (!error.statusCode) throw error
+  const body = error.code ? { error: error.code, id: error.id, hint: error.hint } : { error: String(error.message) }
+  return sendJson(res, error.statusCode, body)
 }
 
 // Method map for the API surface (system, public and /v1 routes). Keep in sync
@@ -447,12 +463,7 @@ export function createRequestHandler(ctx) {
   }
   const accessFor = async (req, site, release, pathname) => {
     const entries = repo.releaseAccessEntries ? await repo.releaseAccessEntries(release.id) : []
-    const normalized = cleanPath(pathname)
-    const entry =
-      mostSpecificAccess(entries, normalized) ||
-      (normalized.endsWith('/index.html')
-        ? mostSpecificAccess(entries, normalized.slice(0, -'index.html'.length))
-        : null)
+    const entry = mostSpecificAccess(entries, cleanPath(pathname))
     if (!entry) return { entry: null, reader: null, allowed: true }
     const reader = await readerFor(req, site)
     return { entry, reader, allowed: readerAllowed(entry, reader) }
@@ -1929,84 +1940,23 @@ export function createRequestHandler(ctx) {
           : rows
       return sendJson(res, 200, { events: visible })
     }
+    // Credential and identity administration is one domain behind two doors.
+    // Every rule — role XOR product_scopes, the site ceiling, the duplicate
+    // conflict, the cascade — lives in oauth/policy.mjs and the MCP tools call
+    // the same functions. What stays here is HTTP: status codes and bodies.
     if (path === '/v1/identity-grants' && ['GET', 'POST'].includes(req.method)) {
       const principal = await requireScope(req, res, 'identity:admin')
       if (!principal) return
       if (req.method === 'GET') {
-        const providerFilter = url.searchParams.get('provider_id')
-        const subjectFilter = url.searchParams.get('subject')
-        const rows = await db.select('ck_oauth_identity_grants', {
-          ...(providerFilter ? { provider_id: `eq.${providerFilter}` } : {}),
-          ...(subjectFilter ? { subject: `eq.${subjectFilter}` } : {}),
-          order: 'created_at.desc',
-        })
-        return sendJson(res, 200, {
-          identities: rows.filter((row) => withinPrincipalSites(principal, row.site_ids)).map(publicIdentityGrant),
-        })
+        const filter = { provider_id: url.searchParams.get('provider_id'), subject: url.searchParams.get('subject') }
+        return sendJson(res, 200, { identities: await listIdentityGrants(db, principal, filter) })
       }
       const input = parseJson(await bodyFor(req))
-      const provider = (config.oauthProviders || []).find(
-        (entry) => entry.protocol !== 'api_key' && entry.id === input.provider_id,
-      )
-      if (!provider || provider.issuer !== input.issuer) {
-        return sendJson(res, 422, { error: 'provider_id and issuer must match a configured identity provider' })
-      }
-      if (!input.subject) {
-        return sendJson(res, 422, { error: 'subject is required' })
-      }
-      // role XOR product_scopes: a named role is a shorthand the server expands
-      // once; the stored truth is always the product-scope ceiling.
-      if (input.role !== undefined && input.product_scopes !== undefined) {
-        return sendJson(res, 422, { error: 'role and product_scopes are mutually exclusive' })
-      }
-      if (input.role === undefined && input.product_scopes === undefined) {
-        return sendJson(res, 422, { error: 'either role or product_scopes is required' })
-      }
-      if (input.role !== undefined && !['reader', 'author', 'admin'].includes(input.role)) {
-        return sendJson(res, 422, { error: 'role is invalid' })
-      }
-      const scopes = input.role !== undefined ? defaultProductScopes(input.role) : input.product_scopes
-      if (!Array.isArray(scopes) || scopes.some((scope) => !PRODUCT_SCOPES.includes(scope))) {
-        return sendJson(res, 422, { error: 'product_scopes contains an unsupported scope' })
-      }
-      if (input.source !== undefined && input.source !== 'seed') {
-        return sendJson(res, 422, { error: "source accepts only 'seed'" })
-      }
-      const siteIds = Array.isArray(input.site_ids) ? input.site_ids : []
-      if (!withinPrincipalSites(principal, siteIds)) {
-        return sendJson(res, 403, { error: 'identity grant must be restricted to your own site(s)' })
-      }
       let grant
       try {
-        ;[grant] = await db.insert('ck_oauth_identity_grants', {
-          provider_id: provider.id,
-          issuer: provider.issuer,
-          subject: String(input.subject),
-          email: input.email || null,
-          display_name: input.display_name || '',
-          role: input.role !== undefined ? input.role : roleForProductScopes(scopes),
-          product_scopes: scopes,
-          site_ids: siteIds,
-          grant_source: input.source === 'seed' ? 'seed' : 'admin',
-        })
+        grant = await createIdentityGrant(db, principal, input, config.oauthProviders || [])
       } catch (error) {
-        // ck_oauth_identity_grants_provider_id_issuer_subject_key: one grant
-        // per identity, revoked rows included — a duplicate is a client
-        // conflict (409), never a server error.
-        if (error?.code !== '23505') throw error
-        const [existing] = await db.select('ck_oauth_identity_grants', {
-          provider_id: `eq.${provider.id}`,
-          issuer: `eq.${provider.issuer}`,
-          subject: `eq.${String(input.subject)}`,
-          limit: '1',
-        })
-        return sendJson(res, 409, {
-          error: 'identity_grant_exists',
-          id: existing?.id || null,
-          hint: existing?.revoked_at
-            ? `a revoked grant for this identity already exists; PATCH /v1/identity-grants/${existing.id} with restore:true revives it`
-            : `a grant for this identity already exists; use PATCH /v1/identity-grants/${existing ? existing.id : '{id}'} to change it`,
-        })
+        return adminError(res, error)
       }
       await audit.record({
         ...auditActor(principal),
@@ -2023,85 +1973,17 @@ export function createRequestHandler(ctx) {
       const principal = await requireScope(req, res, 'identity:admin')
       if (!principal) return
       const input = req.method === 'PATCH' ? parseJson(await bodyFor(req)) : {}
-      // restore:true is the only way to clear revoked_at; every other PATCH
-      // and the DELETE keep matching non-revoked rows only.
       const restore = input.restore === true
-      const [existing] = await db.select('ck_oauth_identity_grants', {
-        id: `eq.${identityGrantMatch[1]}`,
-        revoked_at: restore ? 'not.is.null' : 'is.null',
-        limit: '1',
-      })
-      if (!existing || !withinPrincipalSites(principal, existing.site_ids)) {
-        return sendJson(res, 404, { error: 'identity grant not found' })
+      let grant
+      try {
+        await requireIdentityGrant(db, principal, identityGrantMatch[1], { restore })
+        grant =
+          req.method === 'DELETE'
+            ? await revokeIdentityGrant(db, identityGrantMatch[1])
+            : await updateIdentityGrant(db, principal, identityGrantMatch[1], input)
+      } catch (error) {
+        return adminError(res, error)
       }
-      let rows
-      if (req.method === 'DELETE') {
-        rows = await db.update(
-          'ck_oauth_identity_grants',
-          { id: `eq.${identityGrantMatch[1]}`, revoked_at: 'is.null' },
-          { revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-        )
-        if (rows[0]) {
-          await db.update(
-            'ck_operator_sessions',
-            { grant_id: `eq.${rows[0].id}`, revoked_at: 'is.null' },
-            { revoked_at: new Date().toISOString() },
-            { returning: false },
-          )
-          await db.update(
-            'ck_oauth_access_tokens',
-            { grant_id: `eq.${rows[0].id}`, revoked_at: 'is.null' },
-            { revoked_at: new Date().toISOString() },
-            { returning: false },
-          )
-          await db.update(
-            'ck_oauth_refresh_tokens',
-            { grant_id: `eq.${rows[0].id}`, revoked_at: 'is.null' },
-            { revoked_at: new Date().toISOString() },
-            { returning: false },
-          )
-        }
-      } else {
-        const allowed = Object.fromEntries(
-          Object.entries(input).filter(([key]) =>
-            ['email', 'display_name', 'role', 'product_scopes', 'site_ids'].includes(key),
-          ),
-        )
-        // role XOR product_scopes: a named role is a shorthand the server
-        // expands into a complete scope replacement; the stored truth is
-        // always the product-scope ceiling and role stays denormalized.
-        if (allowed.role !== undefined && allowed.product_scopes !== undefined) {
-          return sendJson(res, 422, { error: 'role and product_scopes are mutually exclusive' })
-        }
-        if (allowed.role !== undefined && !['reader', 'author', 'admin'].includes(allowed.role))
-          return sendJson(res, 422, { error: 'role is invalid' })
-        if (allowed.role !== undefined) allowed.product_scopes = defaultProductScopes(allowed.role)
-        if (
-          allowed.product_scopes !== undefined &&
-          (!Array.isArray(allowed.product_scopes) ||
-            allowed.product_scopes.some((scope) => !PRODUCT_SCOPES.includes(scope)))
-        )
-          return sendJson(res, 422, { error: 'product_scopes contains an unsupported scope' })
-        if (allowed.role === undefined && allowed.product_scopes !== undefined)
-          allowed.role = roleForProductScopes(allowed.product_scopes)
-        if (input.source !== undefined && input.source !== 'seed') {
-          return sendJson(res, 422, { error: "source accepts only 'seed'" })
-        }
-        if (allowed.site_ids && !withinPrincipalSites(principal, allowed.site_ids)) {
-          return sendJson(res, 403, { error: 'identity grant must stay inside your own site(s)' })
-        }
-        // Every PATCH stamps who now manages the row: the seeder marks its
-        // rows with source:'seed'; any other PATCH is a manual takeover and
-        // the seeder skips the row from then on.
-        allowed.grant_source = input.source === 'seed' ? 'seed' : 'admin'
-        rows = await db.update(
-          'ck_oauth_identity_grants',
-          { id: `eq.${identityGrantMatch[1]}`, revoked_at: restore ? 'not.is.null' : 'is.null' },
-          { ...allowed, ...(restore ? { revoked_at: null } : {}), updated_at: new Date().toISOString() },
-        )
-      }
-      const grant = rows[0]
-      if (!grant) return sendJson(res, 404, { error: 'identity grant not found' })
       await audit.record({
         ...auditActor(principal),
         action: req.method === 'DELETE' ? 'identity.revoke' : restore ? 'identity.restore' : 'identity.update',
@@ -2115,39 +1997,16 @@ export function createRequestHandler(ctx) {
     if (path === '/v1/api-keys' && ['GET', 'POST'].includes(req.method)) {
       const principal = await requireAnyScope(req, res, ['api-key:admin', 'site:admin'])
       if (!principal) return
-      if (req.method === 'GET') {
-        const rows = await db.select('ck_api_keys', { order: 'created_at.desc' })
-        return sendJson(res, 200, {
-          api_keys: rows
-            .filter((row) => withinPrincipalSites(principal, row.site_ids))
-            .map(({ key_hash, ...row }) => row),
-        })
-      }
+      if (req.method === 'GET') return sendJson(res, 200, { api_keys: await listApiKeys(db, principal) })
       const input = parseJson(await bodyFor(req))
-      if ((input.scopes || []).includes('*')) {
-        return sendJson(res, 403, { error: 'cannot grant the * (global) scope' })
+      let created
+      try {
+        created = await repo.createApiKey(
+          resolveApiKeyCreate(principal, input, (scope) => auth.authorize(principal, scope)),
+        )
+      } catch (error) {
+        return adminError(res, error)
       }
-      if (
-        input.scopes &&
-        (!Array.isArray(input.scopes) || input.scopes.some((scope) => !PRODUCT_SCOPES.includes(scope)))
-      ) {
-        return sendJson(res, 422, { error: 'scopes contains an unsupported product scope' })
-      }
-      if (!principal.bootstrap) {
-        // site:admin's job is to provision scoped keys, so it may grant the
-        // normal scopes — but never the bootstrap-only global wildcard, and
-        // never an implicitly-global or cross-tenant key.
-        if (principal.oauth && (input.scopes || []).some((scope) => !auth.authorize(principal, scope))) {
-          return sendJson(res, 403, { error: 'cannot grant product scopes above the OAuth identity ceiling' })
-        }
-        if (Array.isArray(principal.site_ids) && principal.site_ids.length > 0) {
-          const target = input.site_ids || []
-          if (!target.length || target.some((siteId) => !principal.site_ids.includes(siteId))) {
-            return sendJson(res, 403, { error: 'key must be scoped to your own site(s)' })
-          }
-        }
-      }
-      const created = await repo.createApiKey(input)
       await audit.record({
         ...auditActor(principal),
         action: 'api_key.create',
@@ -2162,16 +2021,13 @@ export function createRequestHandler(ctx) {
     if (apiKeyMatch && req.method === 'DELETE') {
       const principal = await requireAnyScope(req, res, ['api-key:admin', 'site:admin'])
       if (!principal) return
-      const [target] = await db.select('ck_api_keys', { id: `eq.${apiKeyMatch[1]}`, limit: '1' })
-      if (!target || !withinPrincipalSites(principal, target.site_ids)) {
-        return sendJson(res, 404, { error: 'API key not found' })
+      let revoked
+      try {
+        await requireApiKey(db, principal, apiKeyMatch[1])
+        revoked = await revokeApiKey(db, apiKeyMatch[1])
+      } catch (error) {
+        return adminError(res, error)
       }
-      const [revoked] = await db.update(
-        'ck_api_keys',
-        { id: `eq.${apiKeyMatch[1]}`, revoked_at: 'is.null' },
-        { revoked_at: new Date().toISOString() },
-      )
-      if (!revoked) return sendJson(res, 404, { error: 'API key not found' })
       await audit.record({
         ...auditActor(principal),
         action: 'api_key.revoke',

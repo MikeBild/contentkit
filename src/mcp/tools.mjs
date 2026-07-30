@@ -19,7 +19,11 @@ import {
 import {
   PRODUCT_SCOPES,
   defaultProductScopes,
+  listApiKeys,
   publicIdentityGrant,
+  requireApiKey,
+  resolveApiKeyCreate,
+  revokeApiKey,
   roleForProductScopes,
   withinPrincipalSites,
 } from '../oauth/policy.mjs'
@@ -879,31 +883,18 @@ const TOOLS = [
     }),
     async execute(deps, principal, input, context) {
       requireAnyScope(deps, principal, ['api-key:admin', 'site:admin'])
-      if (input.action === 'list') {
-        const rows = await deps.db.select('ck_api_keys', { order: 'created_at.desc' })
-        return {
-          api_keys: rows
-            .filter((row) => withinPrincipalSites(principal, row.site_ids))
-            .map(({ key_hash, ...row }) => row),
-        }
-      }
+      if (input.action === 'list') return { api_keys: await listApiKeys(deps.db, principal) }
       if (input.action === 'revoke') {
         if (!input.id) throw Object.assign(new Error('id is required'), { statusCode: 422 })
-        const [target] = await deps.db.select('ck_api_keys', { id: `eq.${input.id}`, limit: '1' })
-        if (!target || !withinPrincipalSites(principal, target.site_ids)) {
-          throw Object.assign(new Error('API key not found'), { statusCode: 404 })
-        }
+        // Containment first: a key this principal may not see must be a 404
+        // before the operator is shown a confirmation naming it.
+        await requireApiKey(deps.db, principal, input.id)
         await confirm(
           context,
           `Revoke API key ${input.id}? Existing clients using it will stop working.`,
           'Revoke API key',
         )
-        const [row] = await deps.db.update(
-          'ck_api_keys',
-          { id: `eq.${input.id}`, revoked_at: 'is.null' },
-          { revoked_at: new Date().toISOString() },
-        )
-        if (!row) throw Object.assign(new Error('API key not found'), { statusCode: 404 })
+        const row = await revokeApiKey(deps.db, input.id)
         await audit(deps, principal, { action: 'api_key.revoke', resourceType: 'api_key', resourceId: row.id })
         return { revoked: true, id: row.id }
       }
@@ -912,24 +903,9 @@ const TOOLS = [
           statusCode: 409,
           reason: 'elicitation_unsupported',
         })
-      const requestedScopes = input.scopes || defaultProductScopes('author')
-      const requestedSites = input.site_ids || []
-      if (!withinPrincipalSites(principal, requestedSites)) {
-        throw Object.assign(new Error('new API keys must be restricted to the current principal sites'), {
-          statusCode: 403,
-        })
-      }
-      if (principal.oauth && requestedScopes.some((scope) => !can(principal, scope))) {
-        throw Object.assign(new Error('an OAuth operator cannot grant product scopes above its live ceiling'), {
-          statusCode: 403,
-        })
-      }
-      const created = await deps.repo.createApiKey({
-        name: input.name,
-        scopes: requestedScopes,
-        site_ids: requestedSites,
-        expires_at: input.expires_at,
-      })
+      const created = await deps.repo.createApiKey(
+        resolveApiKeyCreate(principal, input, (scope) => deps.auth.authorize(principal, scope)),
+      )
       // A handoff must fail closed across a process crash: keep the key revoked
       // until the one-time page is actually opened, then activate it immediately
       // before revealing the secret.

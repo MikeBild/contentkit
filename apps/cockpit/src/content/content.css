@@ -10,6 +10,44 @@
   color: hsl(var(--foreground));
 }
 
+/* A published page loads site.css over the browser's default stylesheet, so the
+   site never states that a list has markers or that an h3 is larger than body
+   text — the user agent already said it. The console loads Tailwind, whose
+   preflight removes exactly those defaults, and the content surface inherited the
+   removal: lists lost their bullets and every heading below h2 rendered at body
+   size. `revert` hands the property back to the user agent rather than inventing
+   a value, so the surface keeps matching the page instead of approximating it,
+   and any rule in the scoped sheet still outranks these by specificity. */
+.ck-content :is(p, blockquote, dl, dd, figure, pre, hr) {
+  margin: revert;
+}
+
+.ck-content :is(h1, h2, h3, h4, h5, h6) {
+  font-size: revert;
+  font-weight: revert;
+  margin: revert;
+}
+
+.ck-content :is(ul, ol, menu) {
+  list-style: revert;
+  margin: revert;
+  padding: revert;
+}
+
+/* Preflight makes replaced elements block-level; on a page they are inline, which
+   is what an image inside a sentence and a KaTeX glyph both depend on. */
+.ck-content :is(img, svg, video, canvas) {
+  display: revert;
+  vertical-align: revert;
+}
+
+/* The one place the surface may not follow the page. `.prose` reserves 5rem below
+   the last paragraph to clear the site footer; in a preview pane there is no
+   footer, only five rems of empty scroll under every reply. */
+.ck-content .prose {
+  padding-bottom: 0;
+}
+
 /* The scoped sheet carries the site's `prefers-color-scheme` switch, but the
    console's theme is a class the operator can force against the OS. Forced dark
    on a light OS is precisely the mismatch that puts a light rendering on a dark

@@ -668,10 +668,18 @@ export function createRepository(config, db, storage) {
         default_locale: input.default_locale.toLowerCase(),
         settings: input.settings || {},
       })
-      const locales = [...new Set(input.locales || [input.default_locale])]
+      // default_locale is what the root redirect and the 404 page target, so it
+      // is always a site locale — the same invariant updateSite enforces. An
+      // empty `locales: []` is truthy and used to survive as zero locale rows,
+      // which builds a site with no pages at all: every release and preview
+      // still answers 201, but nothing under /<locale>/ exists to serve, and no
+      // API can add the missing locale afterwards.
+      // Case-fold before de-duplicating: locale rows are stored lowercase, so
+      // ['DE', 'de'] would otherwise survive as two rows that collide.
+      const locales = [...new Set([input.default_locale, ...(input.locales || [])].map((l) => String(l).toLowerCase()))]
       await db.insert(
         'ck_site_locales',
-        locales.map((locale) => ({ site_id: site.id, locale: locale.toLowerCase() })),
+        locales.map((locale) => ({ site_id: site.id, locale })),
       )
       if (input.domains?.length) {
         await db.insert(
@@ -1289,7 +1297,13 @@ export function createRepository(config, db, storage) {
     async buildSnapshot(siteId, overlayRevisionIds = [], retireItemIds = []) {
       const site = await this.getSite(siteId)
       if (!site) throw Object.assign(new Error('site not found'), { statusCode: 404 })
-      const locales = await this.getLocales(site.id)
+      // A site restored or provisioned out of band can carry zero locale rows.
+      // Building it verbatim yields an assets-only release that reports success
+      // — the failure only surfaces much later as a 404 on a page that was
+      // never emitted. default_locale is NOT NULL on the site, so fall back to
+      // it and keep the build total.
+      const stored = await this.getLocales(site.id)
+      const locales = stored.length ? stored : [{ locale: site.default_locale }]
       const items = await this.listContent(site.id)
       const overlay = overlayRevisionIds.length
         ? await db.select('ck_content_revisions', { id: inFilter(overlayRevisionIds) })

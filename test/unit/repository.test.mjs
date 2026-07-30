@@ -110,7 +110,7 @@ test('preview invitations exchange once into a separately hashed session', async
   assert.equal((await repo.authenticatePreview('article-review', exchanged.token)).release_id, 'release-1')
 })
 
-function snapshotRepo() {
+function snapshotRepo({ siteLocales = [{ site_id: 'site-1', locale: 'de' }] } = {}) {
   const site = {
     id: 'site-1',
     slug: 'site-1',
@@ -147,7 +147,7 @@ function snapshotRepo() {
   const db = {
     async select(table, query = {}) {
       if (table === 'ck_sites') return query.slug === 'eq.site-1' || query.id === 'eq.site-1' ? [site] : []
-      if (table === 'ck_site_locales') return [{ site_id: 'site-1', locale: 'de' }]
+      if (table === 'ck_site_locales') return siteLocales
       if (table === 'ck_content_items') return items
       if (table === 'ck_content_revisions') {
         const wanted = query.id?.match(/^in\.\((.*)\)$/)?.[1].split(',') || []
@@ -211,6 +211,54 @@ test('buildSnapshot rejects publishing and retiring the same item', async () => 
       return true
     },
   )
+})
+
+// A site with zero locale rows builds nothing under /<locale>/: no page, no
+// deck, only the shared assets. The release and the preview still report
+// success, so the omission first shows up as a 404 on a URL the build never
+// emitted — which is how it reached the deploy canary's named deck preview.
+test('buildSnapshot falls back to the default locale when a site has no locale rows', async () => {
+  const repo = snapshotRepo({ siteLocales: [] })
+  const snapshot = await repo.buildSnapshot('site-1', [], [])
+  assert.deepEqual(
+    snapshot.locales.map((entry) => entry.locale),
+    ['de'],
+  )
+})
+
+test('createSite always stores the default locale, even for an empty locales list', async () => {
+  const inserted = []
+  const db = {
+    async insert(table, body) {
+      inserted.push({ table, body })
+      return [{ id: 'site-1' }]
+    },
+    async select() {
+      return []
+    },
+  }
+  const repo = createRepository({}, db, {})
+  // `locales: []` is truthy, so it used to survive as zero locale rows and left
+  // the site permanently unbuildable — no endpoint can add a locale afterwards.
+  await repo.createSite({ slug: 'canary', name: 'Canary', base_url: 'https://canary.invalid', default_locale: 'DE' })
+  await repo.createSite({
+    slug: 'canary-2',
+    name: 'Canary',
+    base_url: 'https://canary.invalid',
+    default_locale: 'de',
+    locales: [],
+  })
+  await repo.createSite({
+    slug: 'canary-3',
+    name: 'Canary',
+    base_url: 'https://canary.invalid',
+    default_locale: 'de',
+    locales: ['en'],
+  })
+  const locales = inserted
+    .filter((entry) => entry.table === 'ck_site_locales')
+    .map((entry) => entry.body.map((row) => row.locale))
+  assert.deepEqual(locales, [['de'], ['de'], ['de', 'en']])
 })
 
 function enqueueDb({ endpoints = [] }) {

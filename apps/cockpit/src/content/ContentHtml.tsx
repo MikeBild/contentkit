@@ -75,14 +75,19 @@ export function ContentHtml({
 
   // KaTeX has no runtime here: the server emits the finished markup and only the
   // stylesheet is missing, which content.css supplies.
+  //
+  // Two elements, not one, because that is what the published page is:
+  // templates.mjs puts the document body inside `<div class="prose">`, and every
+  // typography rule the site has — paragraph rhythm, the inline-code chip, the
+  // blockquote rule, table borders — is written as `.prose p`, `.prose code`,
+  // `.prose table`. Scoping turned those into `.ck-content .prose …`, so a single
+  // element carrying both classes matches none of them: the surface rendered raw
+  // until this wrapper existed. `container` is deliberately not copied — it sizes
+  // a page column against the viewport, and these panes size themselves.
   return (
-    <div
-      ref={root}
-      data-testid={testId}
-      data-scheme={scheme}
-      className={cn('ck-content', className)}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div ref={root} data-testid={testId} data-scheme={scheme} className={cn('ck-content', className)}>
+      <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
   )
 }
 

@@ -46,6 +46,24 @@ test('the most-specific access rule wins and grants groups or individual readers
   assert.equal(readerAllowed(exact, { id: 'u-team', groups: ['team'] }), false)
 })
 
+// Build time (site-builder) resolves a page URL, serve time (routes) resolves
+// the release object behind it. A page that resolves to a rule in one and to
+// nothing in the other is a leak in one direction and a broken page in the
+// other, so both must go through the same function and land on the same rule.
+test('build-time page URLs and serve-time object paths resolve to the same access rule', () => {
+  const entries = [
+    { match: 'prefix', path: '/de/docs/', group_slugs: ['customers'], user_ids: [] },
+    { match: 'exact', path: '/de/handbook/', group_slugs: ['team'], user_ids: [] },
+    { match: 'exact', path: '/de/notes/index.html', group_slugs: ['authors'], user_ids: [] },
+  ]
+  for (const url of ['/de/docs/start/', '/de/handbook/', '/de/public/']) {
+    assert.deepEqual(mostSpecificAccess(entries, url), mostSpecificAccess(entries, `${url}index.html`))
+  }
+  // An exact rule authored on the object itself still wins over its directory.
+  assert.deepEqual(mostSpecificAccess(entries, '/de/notes/index.html').group_slugs, ['authors'])
+  assert.equal(mostSpecificAccess(entries, '/de/notes/'), undefined)
+})
+
 test('reader cookies are HttpOnly, same-site and clearable', () => {
   const cookie = sessionCookie('secret', { secure: true })
   assert.match(cookie, /^__Host-contentkit_session=secret;/)

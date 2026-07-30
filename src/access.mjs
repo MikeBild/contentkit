@@ -111,10 +111,27 @@ export function matchesAccessPath(entry, pathname) {
   return entry.match === 'exact' ? pathname === entry.path : pathname.startsWith(entry.path)
 }
 
-export function mostSpecificAccess(entries, pathname) {
+function bestMatch(entries, pathname) {
   return entries
     .filter((entry) => matchesAccessPath(entry, pathname))
     .sort((a, b) => Number(b.match === 'exact') - Number(a.match === 'exact') || b.path.length - a.path.length)[0]
+}
+
+/**
+ * The one access rule that governs `pathname`, for every surface.
+ *
+ * Build time asks about a page URL ("/de/docs/"), serve time about the release
+ * object behind it ("/de/docs/index.html"). Both must reach the same rule: if
+ * they disagree, either the builder treats a page as public and leaks its title
+ * into navigation, sitemap and search index while serving 403s it, or the
+ * reverse. The directory retry therefore lives here rather than at one call
+ * site — the raw path still wins, so a rule authored on the object itself is
+ * not shadowed by the directory it sits in.
+ */
+export function mostSpecificAccess(entries, pathname) {
+  const direct = bestMatch(entries, pathname)
+  if (direct || !pathname.endsWith('/index.html')) return direct
+  return bestMatch(entries, pathname.slice(0, -'index.html'.length))
 }
 
 export function readerAllowed(entry, reader) {

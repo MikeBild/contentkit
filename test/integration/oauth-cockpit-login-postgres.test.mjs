@@ -50,7 +50,7 @@ test(
       version: '1.23.0-test',
     }
     const rawKey = `cockpit-operator-${randomUUID()}`
-    await db.insert('ck_api_keys', {
+    const [operatorKey] = await db.insert('ck_api_keys', {
       name: `Cockpit integration operator ${randomUUID()}`,
       key_hash: hashApiKey(rawKey, config.keyPepper),
       key_prefix: 'ck_ctest',
@@ -138,6 +138,19 @@ test(
       assert.equal(await auth.authenticate({ cookie }), null)
     } finally {
       mount.stop?.()
+      // Signing in mints a grant for the key and a login state pointing at it.
+      // The grant only clears the pointer (on delete set null), so the login
+      // state goes first; the grant then cascades to the operator session.
+      await pool
+        .query(
+          'DELETE FROM ck_oauth_login_states WHERE grant_id IN (SELECT id FROM ck_oauth_identity_grants WHERE provider_id=$1 AND subject=$2)',
+          ['api-key', operatorKey.id],
+        )
+        .catch(() => {})
+      await pool
+        .query("DELETE FROM ck_oauth_identity_grants WHERE provider_id='api-key' AND subject=$1", [operatorKey.id])
+        .catch(() => {})
+      await pool.query('DELETE FROM ck_api_keys WHERE id=$1', [operatorKey.id]).catch(() => {})
       await pool.end()
     }
   },
