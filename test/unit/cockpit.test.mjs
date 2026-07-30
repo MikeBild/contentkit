@@ -225,11 +225,20 @@ describe('the console’s content surface matches the published page', () => {
     )
   })
 
-  test('every scoped prose rule is reachable from that structure', async () => {
-    const css = await readFile(join(cockpit, 'site.scoped.css'), 'utf8')
-    // `.container.prose` is deliberately unreachable: it sizes a page column
-    // against the viewport, and the console's panes size themselves.
-    const selectors = [...css.matchAll(/\.ck-content \.prose(?![-.\w])/g)]
-    assert.ok(selectors.length > 5, `expected the site's prose typography to be scoped, found ${selectors.length}`)
+  // Against assets/site.css, not the scoped derivative: `gen:css` writes that one
+  // and it is gitignored, so reading it would fail on a clean checkout for a
+  // reason this test is not about — which is exactly how this assertion first
+  // broke CI. site.css is also the better source: it is where the requirement
+  // originates, and the scoping script only prefixes what it finds there.
+  test('the site really does write its body typography under .prose', async () => {
+    const css = await readFile(join(root, 'assets', 'site.css'), 'utf8')
+    const selectors = [...css.matchAll(/^\.prose(?![-.\w])/gm)]
+    assert.ok(selectors.length > 5, `expected the site's prose typography under .prose, found ${selectors.length}`)
+    // The rules the console was missing, named individually: if the site ever
+    // moves them to a bare `p`/`code`/`table`, the wrapper is no longer what
+    // makes them apply and this test should be revisited rather than deleted.
+    for (const rule of ['.prose p', '.prose pre', '.prose blockquote', '.prose table']) {
+      assert.ok(css.includes(rule), `${rule} is the rule the content surface depends on`)
+    }
   })
 })
