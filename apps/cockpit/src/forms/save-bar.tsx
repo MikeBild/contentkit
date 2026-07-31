@@ -85,7 +85,7 @@ export function UnsavedPill({
 
 const toneDot: Record<SectionTone, string> = {
   neutral: 'bg-muted-foreground/40',
-  ok: 'bg-chart-2',
+  ok: 'bg-success',
   warning: 'bg-warning',
   error: 'bg-destructive',
 }

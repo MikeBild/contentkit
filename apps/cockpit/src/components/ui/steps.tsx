@@ -73,7 +73,7 @@ export function Steps<T extends string>({
               <span
                 className={cn(
                   'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] tabular-nums',
-                  passed ? 'bg-chart-2 text-background' : active ? 'bg-accent text-background' : 'bg-muted',
+                  passed ? 'bg-success text-background' : active ? 'bg-accent text-background' : 'bg-muted',
                 )}
               >
                 {passed ? <Check className="h-3 w-3" /> : index + 1}

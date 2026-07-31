@@ -75,7 +75,7 @@ export function SecretField({
           {value ? (
             <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn('h-full transition-all', strength < 0.5 ? 'bg-warning' : 'bg-chart-2')}
+                className={cn('h-full transition-all', strength < 0.5 ? 'bg-warning' : 'bg-success')}
                 style={{ width: `${Math.round(strength * 100)}%` }}
               />
             </div>

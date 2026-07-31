@@ -386,6 +386,13 @@ describe('the cockpit runs on one component stack', () => {
       // ui/release-chain.tsx's component renders nothing twice.
       for (const match of file.src.matchAll(/^\s*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([\w$]+)/gm))
         declared.add(match[1])
+      // `export default function X` and `export default class X`. The default
+      // export is exactly how a second stack arrives unseen — the review that
+      // asked for this walked in through one — and it was the shape the line
+      // above could not read, because `default` sits between `export` and the
+      // keyword. An anonymous default declares no name and is left alone.
+      for (const match of file.src.matchAll(/^\s*export\s+default\s+(?:async\s+)?(?:function|class)\s+([\w$]+)/gm))
+        declared.add(match[1])
       for (const match of file.src.matchAll(/^\s*export\s+\{([^}]*)\}(?!\s*from)/gm))
         for (const piece of match[1].split(',')) {
           const spec = piece.trim()

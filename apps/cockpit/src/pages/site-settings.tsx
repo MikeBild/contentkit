@@ -196,9 +196,15 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
 
           Its trigger is the Save control — there is no second button — which is
           exactly what the render prop is for: `ask` opens the dialog, and
-          `Confirm` remembers the control it was opened from, so focus comes back
-          to Save whether the operator confirms or cancels, and never lands on
-          `<body>` while the button is briefly disabled by the save it started.
+          `Confirm` remembers the control it was opened from.
+
+          What that buys, precisely, because an earlier version of this comment
+          claimed more than the code does: on cancel, focus returns to Save. On
+          confirm it does not, and cannot — the PATCH is already in flight and Save
+          is disabled by it, so `Confirm` parks on the nearest ancestor a screen
+          reader announces (here `<main>`) and hands focus back to Save the moment
+          it re-enables, unless the operator has moved first. What is guaranteed in
+          both paths is the thing worth guaranteeing: focus never lands on `<body>`.
 
           The PATCH now runs *inside* the dialog instead of after it closes: the
           box stays up and refuses to be dismissed until the request answers, so

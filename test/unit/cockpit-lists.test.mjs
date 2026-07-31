@@ -1056,9 +1056,17 @@ describe('the components the console stopped hand-rolling', () => {
     // The class alone, opacity modifier included: `bg-chart-5/5` is the same
     // decision as `bg-chart-5`, and the rest of the line is not the finding.
     const utility =
-      /(?:text|bg|border|ring|fill|stroke|from|via|to|outline|divide|decoration|accent|caret)-chart-[35](?:\/\d+)?/g
+      /(?:text|bg|border|ring|fill|stroke|from|via|to|outline|divide|decoration|accent|caret)-chart-[235](?:\/\d+)?/g
+    // chart-2 joined 3 and 5 once `--success` existed to route it through. Two
+    // uses stay, and they are named rather than left to look like oversights: a
+    // diff's green is a convention older than this console, and an up-vote count
+    // is a quantity in a column of quantities. Both are data, neither is severity.
+    const DATA = { 'forms/content/revisions.tsx': /chart-[25]/, 'forms/audience/moderation.tsx': /text-chart-2/ }
     for (const file of allSources)
-      for (const [hit] of code(file.src).matchAll(utility)) offenders.push(`${file.id}: ${hit}`)
+      for (const [hit] of code(file.src).matchAll(utility)) {
+        if (DATA[file.id]?.test(hit)) continue
+        offenders.push(`${file.id}: ${hit}`)
+      }
     assert.deepEqual(
       offenders,
       [],

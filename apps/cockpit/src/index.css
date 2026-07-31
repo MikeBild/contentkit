@@ -17,6 +17,13 @@
    `accent`. A focus ring in a colour the product never uses would be the one thing
    on screen belonging to no design system.
 
+   `success` completes the set for the same reason `warning` did: `bg-chart-2` on
+   a saved indicator, a passed step or a diff's added line is a severity wearing a
+   chart series' name. Two of those five uses are genuinely data — the up-vote
+   column and the added/removed rows of a diff are quantities, and a diff's green
+   is a convention older than this console — so they keep the chart token and the
+   rule below exempts them by name rather than by silence.
+
    `warning` is the newest of the six and it exists for the same reason
    `destructive` does. A severity spelled `bg-chart-3` is the warning tone wearing a
    chart series' name: it renders identically, so nothing on screen says it is
@@ -40,6 +47,7 @@
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
   --warning: #d97706;
+  --success: #059669;
   --border: #e2e8f0;
   --input: #e2e8f0;
   --ring: #2563eb;
@@ -79,6 +87,7 @@
   --accent-foreground: #020817;
   --destructive: #f87171;
   --warning: #fbbf24;
+  --success: #34d399;
   --border: #334155;
   --input: #334155;
   --ring: #60a5fa;
@@ -120,6 +129,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-warning: var(--warning);
+  --color-success: var(--success);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
