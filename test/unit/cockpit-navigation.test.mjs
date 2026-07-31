@@ -1235,6 +1235,47 @@ describe('Cockpit navigation: site context versus installation context', withNav
     )
   })
 
+  test('collapsed to the icon rail, every control still says what it is', () => {
+    // The other half of the block above. A closed block keeps showing its icons
+    // in the rail, which is only useful if an icon can still be read — and at
+    // 3rem there is no label on screen, so `tooltip=` is not decoration but the
+    // label itself. The switcher is the control this is written for: in the pass
+    // that was lost it was the one thing in the rail without a tooltip, so the
+    // control answering "which site am I about to change?" showed a globe and
+    // nothing else.
+    assert.match(shell, /<Sidebar collapsible="icon"/, 'the sidebar the operator was promised collapses to icons')
+    assert.match(
+      shell,
+      /<TooltipProvider>/,
+      'and every one of those labels needs a provider above it: without one Radix renders no tooltip at all, ' +
+        'so the rail goes unlabelled everywhere at once rather than in one place a reviewer would notice',
+    )
+    const menu = shell.slice(shell.indexOf('const menu = ('))
+    assert.match(
+      menu.slice(0, menu.indexOf('</SidebarMenu>')),
+      /<SidebarMenuButton[^>]*tooltip=\{label\}/,
+      'each nav entry carries its own label as its tooltip, because in the rail that is where the label went',
+    )
+    const switcher = shell.slice(shell.indexOf('function SiteSwitcher('))
+    assert.match(switcher, /<TooltipContent/, 'the switcher needs one too — a globe on its own names no site')
+    assert.match(
+      switcher,
+      /hidden=\{state !== 'collapsed'\}/,
+      'and only in the rail: expanded, the site’s name is already on screen and a tooltip repeating it is noise',
+    )
+    // The order the user drew: the thing the console is pointed at, then the way
+    // to jump anywhere in it. A palette trigger above the switcher would offer
+    // destinations before saying which site they belong to.
+    const headerStart = shell.indexOf('<SidebarHeader>')
+    const header = shell.slice(headerStart, shell.indexOf('</SidebarHeader>', headerStart))
+    assert.ok(
+      header.includes('<SiteSwitcher') &&
+        header.includes('<CommandPalette') &&
+        header.indexOf('<SiteSwitcher') < header.indexOf('<CommandPalette'),
+      'the palette trigger sits in the header directly beneath the switcher',
+    )
+  })
+
   test('the switcher is chrome above the blocks, and says what it does to the open page', () => {
     assert.equal(
       (shell.match(/<SiteSwitcher/g) ?? []).length,

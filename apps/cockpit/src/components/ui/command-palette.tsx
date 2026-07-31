@@ -1,28 +1,35 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Search } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ck } from '@/api/ck'
 import { isApplePlatform, isShortcut } from '@/lib/keyboard'
-import { CONTENT_ROUTE, paletteTargets, type PaletteNavEntry, type PaletteTarget } from '@/lib/palette'
+import {
+  CONTENT_ROUTE,
+  paletteTargets,
+  type PaletteGroup,
+  type PaletteNavEntry,
+  type PaletteTarget,
+} from '@/lib/palette'
 import { keys } from '@/lib/query'
 import { useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { cn } from '@/lib/utils'
-import { Combobox } from './combobox'
-import { Dialog } from './dialog'
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './command'
 import { Shortcut } from './kbd'
-import { Button } from './primitives'
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './sidebar'
 
 /**
  * ⌘K over the pages, the sites and the selected site's content.
  *
- * Built on the dialog and the combobox that already exist rather than on a sixth
- * hand-rolled overlay: the dialog is what handles Escape, the focus trap and
- * returning focus to whatever opened it, and the combobox is what handles typing,
- * the arrow keys, Enter and the three states an option list can be in. A palette
- * is a dialog holding a combobox, and writing it as anything else would have been
- * a second component stack with the same two bugs the first one had.
+ * Built on cmdk's CommandDialog, which owns the input, the list and the
+ * selection together. It used to be a Combobox inside the console's own Dialog,
+ * and it paid for the mismatch twice: the combobox's listbox is an absolutely
+ * positioned sibling and the dialog panel clips its overflow, so the panel had to
+ * reserve a fixed height it could not need; and the dialog focuses its own close
+ * button first, so the caret had to be moved onto the input a frame later. Both
+ * hacks are gone rather than rewritten — the list is inside the panel and the
+ * input is the panel's first focusable — and the closing key is the dialog's to
+ * handle, not this component's.
  *
  * What it offers is decided by `paletteTargets`, which drops every entry whose one
  * exact scope the session does not hold — the sidebar's rule, over the sidebar's
@@ -32,21 +39,27 @@ import { Button } from './primitives'
  * The trigger is part of the component. A shortcut nobody can see is not a
  * feature, and the hint is where an operator learns the chord in the first place.
  */
+
+/**
+ * The three kinds of destination, in the order the list draws them.
+ *
+ * Written out rather than derived from the targets, so an empty group cannot
+ * reorder the two that are left under an operator who is already typing.
+ */
+const GROUP_ORDER: readonly PaletteGroup[] = ['Page', 'Site', 'Content']
+
 export function CommandPalette({
   pages,
-  className,
   'data-testid': testId = 'ck-command-palette',
 }: {
   /** shell.tsx's NAV table, whole: the scope filter below is the only one. */
   pages: readonly PaletteNavEntry[]
-  className?: string
   'data-testid'?: string
 }) {
   const session = useSession()
   const { site, setSite, sites } = useSite()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const search = useRef<HTMLDivElement>(null)
   const apple = useMemo(() => isApplePlatform(navigator), [])
   const mayReadContent = pages.some(
     (entry) => entry.to === CONTENT_ROUTE && (entry.scope === null || session.product_scopes.includes(entry.scope)),
@@ -64,17 +77,6 @@ export function CommandPalette({
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [apple])
-
-  useEffect(() => {
-    if (!open) return
-    // The dialog focuses its panel's first focusable, and in DOM order that is
-    // the dialog's own close button. A palette that has to be Tabbed into before
-    // it can be typed into is not a palette, so the caret is moved on the frame
-    // after the dialog has had its turn. Focusing the input is also what opens
-    // the combobox's list, so the whole set is visible before the first keystroke.
-    const frame = requestAnimationFrame(() => search.current?.querySelector('input')?.focus())
-    return () => cancelAnimationFrame(frame)
-  }, [open])
 
   // Nothing is fetched until the palette is opened by someone who may read it:
   // the sidebar is on every page, and a console that loaded a site's whole
@@ -101,67 +103,64 @@ export function CommandPalette({
             // replaces the search on navigation, and dropping `?site=` here
             // would land the operator on a different site than the one the
             // palette was opened from.
-            search: ((previous: Record<string, unknown>) =>
-              previous.site ? { site: previous.site } : {}) as never,
+            search: ((previous: Record<string, unknown>) => (previous.site ? { site: previous.site } : {})) as never,
           }),
         pickSite: setSite,
       }),
     [pages, sites, items.data, session.product_scopes, site, navigate, setSite],
   )
 
-  const byId = useMemo(() => new Map(targets.map((target) => [target.id, target])), [targets])
-
-  function run(target: PaletteTarget | undefined) {
-    if (!target) return
+  function run(target: PaletteTarget) {
     setOpen(false)
     target.run()
   }
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        data-testid={`${testId}-open`}
-        className={cn('w-full justify-between', className)}
-        onClick={() => setOpen(true)}
-      >
-        <span className="flex items-center gap-2 text-muted-foreground">
-          <Search className="h-3.5 w-3.5" />
-          Jump to…
-        </span>
-        <Shortcut letter="K" data-testid={`${testId}-hint`} />
-      </Button>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton data-testid={`${testId}-open`} tooltip="Jump to…" onClick={() => setOpen(true)}>
+            <Search data-icon="inline-start" />
+            <span>Jump to…</span>
+            <Shortcut letter="K" data-testid={`${testId}-hint`} className="ml-auto" />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
 
-      <Dialog
+      <CommandDialog
         open={open}
-        onClose={() => setOpen(false)}
+        onOpenChange={setOpen}
         title="Jump to"
         description="Pages, sites and this site’s content — only what this session may reach."
-        size="lg"
-        // The combobox's list is an absolutely positioned sibling and the dialog
-        // panel clips its overflow, so the panel reserves the room instead of the
-        // palette resizing under the operator as they type.
-        className="h-[26rem]"
-        data-testid={testId}
       >
-        <div ref={search}>
-          <Combobox
-            data-testid={`${testId}-search`}
-            placeholder="Search pages, sites and content…"
-            value=""
-            isLoading={items.isPending && items.fetchStatus === 'fetching'}
-            error={items.error}
-            emptyMessage="Nothing here matches."
-            options={targets.map((target) => ({
-              value: target.id,
-              label: target.label,
-              hint: target.hint ? `${target.group} · ${target.hint}` : target.group,
-            }))}
-            onChange={(id) => run(byId.get(id))}
-          />
-        </div>
-      </Dialog>
+        <Command data-testid={testId}>
+          <CommandInput data-testid={`${testId}-search`} placeholder="Search pages, sites and content…" />
+          <CommandList>
+            <CommandEmpty>Nothing here matches.</CommandEmpty>
+            {GROUP_ORDER.map((group) => {
+              const inGroup = targets.filter((target) => target.group === group)
+              if (inGroup.length === 0) return null
+              return (
+                <CommandGroup key={group} heading={group}>
+                  {inGroup.map((target) => (
+                    <CommandItem
+                      key={target.id}
+                      value={`${target.label} ${target.hint ?? ''}`}
+                      data-testid={`${testId}-target-${target.id}`}
+                      onSelect={() => run(target)}
+                    >
+                      <span className="truncate">{target.label}</span>
+                      {target.hint ? (
+                        <span className="ml-auto truncate text-xs text-muted-foreground">{target.hint}</span>
+                      ) : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )
+            })}
+          </CommandList>
+        </Command>
+      </CommandDialog>
     </>
   )
 }

@@ -70,6 +70,31 @@ class** (the CVA sizes them per button size).
 > the mapping from each old symbol to its replacement is the reason the call sites read
 > the way they do. Where an item was resolved differently from the plan, the resolution
 > is written next to it.
+>
+> **Corrected again 2026-07-31.** The paragraph above described a tree that no longer
+> exists: a `git reset --hard HEAD` destroyed every unstaged edit to a tracked file, so
+> the deleted modules came back and the vendored ones that had replaced an existing file
+> were reverted to their old contents. Do not read a ✅ here as "true today" — read it as
+> "this is the shape it is meant to end in". What is actually outstanding, as of this
+> edit:
+>
+> - **`components/ui/dialog.tsx` is still the console's own overlay**, and twelve modules
+>   still import `Dialog`/`DialogActions` from it with the `title`/`onClose`/`size` props
+>   §4 says are gone. This is the largest single piece left, and it is what forced the
+>   deviation recorded in §7.
+> - **`components/ui/primitives.tsx` and `components/ui/empty-state.tsx` are back**, so
+>   `test/unit/cockpit-one-stack.test.mjs` is red on both counts. Five modules still
+>   import `Button`/`Table`/`TableState` from primitives: `components/session-gate.tsx`,
+>   `components/ui/copy-button.tsx`, `components/ui/data-table.tsx`,
+>   `components/ui/dialog.tsx`, `components/ui/pagination.tsx`. `app/shell.tsx` and
+>   `components/ui/command-palette.tsx` came off it on 2026-07-31.
+> - **`ui/progress.tsx` and `ui/spinner.tsx` are the pre-migration versions**, which is
+>   every remaining failure in the vitest suite and §26.2 / §26.3 in the Node one.
+> - `forms/fields/` is imported both through its barrel and by file path, which
+>   one-stack reads as two modules owning one name.
+>
+> Green as of 2026-07-31: `tsc --noEmit` reports nothing outside
+> `ui/progress.test.tsx`, and `cockpit-navigation.test.mjs` is 33/33.
 
 **Exports that no longer exist**
 
@@ -95,8 +120,13 @@ class** (the CVA sizes them per button size).
 **Also unwired (no tsc error, but wrong at runtime) — ✅ ALL THREE WIRED 2026-07-30**
 
 - ~~`TooltipProvider` is **not mounted anywhere** in `src/`.~~ **Mounted**, once, in
-  `app/shell.tsx:629` wrapping the whole console (it closes at `:745`), which is what
-  `SidebarMenuButton tooltip=…` needs too. `forms/fields/scopes.tsx` and
+  `app/shell.tsx` as the outermost element of `Shell()` — outside `SidebarProvider`, so
+  the `Outlet` and therefore every route is inside it. Line numbers are not quoted any
+  more: the mount moved twice and both citations were stale within a day. Grep
+  `<TooltipProvider>`; `test/unit/cockpit-navigation.test.mjs` asserts it is there,
+  because without it Radix renders no tooltip at all and the collapsed icon rail loses
+  every label at once. That mount is what `SidebarMenuButton tooltip=…` needs too.
+  `forms/fields/scopes.tsx` and
   `forms/fields/map.tsx` each still open a local `TooltipProvider`; nesting is legal and
   both say why in a comment, but the root one is the load-bearing mount.
 - ~~`Toaster` is **not mounted anywhere**.~~ **Mounted** by `ToastProvider` in
@@ -404,7 +434,8 @@ It **throws** `"useSidebar must be used within a SidebarProvider."` outside the 
 5. `tooltip` on `SidebarMenuButton` renders `Tooltip/TooltipTrigger/TooltipContent` with
    `side="right" align="center"` and `hidden={state !== "collapsed" || isMobile}` — the
    label reappears as a tooltip only when collapsed on desktop. **Requires a
-   `TooltipProvider` ancestor** — mounted at `app/shell.tsx:629` since 2026-07-30 (§1).
+   `TooltipProvider` ancestor** — mounted as the outermost element of `Shell()` in
+   `app/shell.tsx` (§1).
 6. `variant="floating"|"inset"` widen the collapsed rail to
    `calc(var(--sidebar-width-icon) + --spacing(4))` and need `SidebarInset` for the main
    pane.
@@ -427,6 +458,39 @@ no prop.
 - `Sidebar` spreads `...props` onto the desktop container div — and onto `Sheet` on
   mobile — so a `data-testid` on `Sidebar` disappears at mobile widths. Put test ids on
   `SidebarMenuButton`/`SidebarTrigger` instead.
+
+**What `app/shell.tsx` actually composes** (done 2026-07-31; graded by
+`test/unit/cockpit-navigation.test.mjs`):
+
+```
+TooltipProvider                        ← outermost; without it no tooltip renders at all
+└── SidebarProvider
+    ├── Sidebar collapsible="icon"
+    │   ├── SidebarHeader
+    │   │   ├── <div data-testid="site-switcher-scope" data-relation={…}>
+    │   │   │     SiteSwitcher   ← DropdownMenu + DropdownMenuRadioGroup, team-switcher
+    │   │   │     <div data-testid="site-switcher-note">   ← what it does to THIS page
+    │   │   └── CommandPalette   ← the ⌘K trigger, directly beneath, with its Kbd hint
+    │   ├── SidebarContent > <nav data-testid="nav"> > GROUPS.map(NavBlock)
+    │   ├── SidebarFooter  ← theme toggle, sign out, operator identity
+    │   └── SidebarRail
+    └── SidebarInset > header(SidebarTrigger) + Outlet
+```
+
+Three things that are not obvious and are each pinned by a test:
+
+- **A block is `Collapsible` wrapping `SidebarGroup`, not the other way round**, with
+  `SidebarGroupLabel asChild > CollapsibleTrigger` as the only clickable heading. A block
+  with no heading (Overview) therefore cannot be collapsible — there would be nothing to
+  click — so `collapsible === (label !== '')` is a rule, not a coincidence.
+- **`open={state === 'collapsed' || expanded}`.** In the rail there is no heading to
+  click, so a closed block must still show its icons or its pages become unreachable.
+- **A tooltip on a `DropdownMenuTrigger` cannot come from `SidebarMenuButton tooltip=`.**
+  `tooltip=` makes the button return `Tooltip > TooltipTrigger asChild > button`, and
+  `DropdownMenuTrigger asChild` would then clone the Tooltip *Root*, which renders no DOM
+  node. The working nesting is `Tooltip > TooltipTrigger asChild > DropdownMenuTrigger
+  asChild > SidebarMenuButton`, with `TooltipContent hidden={state !== 'collapsed'}` doing
+  by hand what `tooltip=` does for the plain buttons.
 
 ---
 
@@ -502,9 +566,32 @@ cmdk props that exist on `Command`: `value`, `onValueChange`, `filter`, `shouldF
 `value`, `forceMount`. On `CommandList`: nothing beyond `div` props.
 
 ~~`components/ui/command-palette.tsx:138` is the current break: it passes `onClose`,
-`title`, `description`, `size` to the old `Dialog`.~~ **Done 2026-07-30** — that file now
-imports `CommandDialog` and composes exactly the shape above; the ⌘K handler stayed where
-it was.
+`title`, `description`, `size` to the old `Dialog`.~~ **Done** — that file now imports
+`CommandDialog` and composes exactly the shape above; the ⌘K handler stayed where it was.
+Its groups are `Page` / `Site` / `Content`, written out as a constant so an empty group
+cannot reorder the two that are left under someone already typing.
+
+### `CommandDialog` here does NOT stand on `ui/dialog.tsx` — corrected 2026-07-31
+
+The stock file composes `CommandDialog` out of `Dialog`, `DialogContent`, `DialogHeader`,
+`DialogTitle` and `DialogDescription` from `@/components/ui/dialog`. **None of those five
+names exists in this project.** `ui/dialog.tsx` is still the console's own overlay —
+`Dialog` there takes `title` / `onClose` / `size` and renders a panel, it is not a Radix
+Root — so `shadcn add command` writes a file that does not compile here. That was five of
+the fourteen `tsc` errors on the branch.
+
+So `command.tsx` builds the modal on `Dialog` from **`radix-ui`** directly, with the same
+overlay and content classes `ui/sheet.tsx` and `ui/alert-dialog.tsx` already use. The
+caller-facing shape is unchanged (`CommandDialog > Command > CommandInput + CommandList`,
+and `title` / `description` / `showCloseButton` behave as documented above), and one
+thing is deliberately better than stock: the `sr-only` title and description are rendered
+**inside** `DialogPrimitive.Content`, not beside it. Radix wires them by context either
+way, but a labelling element outside the dialog is not in the subtree it labels.
+
+**This is a workaround, not the destination.** The real fix is to vendor shadcn's
+`dialog.tsx` and migrate the twelve modules still importing `Dialog` / `DialogActions`
+from `@/components/ui/dialog` (§4 has the replacement shape). When that lands, revert this
+`CommandDialog` to the stock composition — it is a single function.
 
 ---
 
@@ -539,8 +626,19 @@ aria-hidden>`** (so it must be a direct child of `BreadcrumbList`, never inside 
 Only `BreadcrumbLink` takes `asChild`. `BreadcrumbSeparator` renders `ChevronRightIcon`
 unless you pass children.
 
-`app/shell.tsx` must own the loop that was previously `items={crumbs}`, and define its
-own crumb type locally (the old `Crumb` type is gone).
+~~`app/shell.tsx` must own the loop that was previously `items={crumbs}`, and define its
+own crumb type locally (the old `Crumb` type is gone).~~ **Done** — `Page()` composes the
+trail and `interface Crumb` is declared next to `useCrumbs`. The composition carries
+`data-testid="breadcrumb"`, the joined `data-trail`, and an indexed
+`breadcrumb-item-${index}` per crumb (§26.4). No crumb is a `BreadcrumbLink`: two of the
+three name no route — the console has no page for "the site context" — and the third is
+the page already open, so a link there could only leave a half-filled form or change the
+site. Exactly one crumb is a `BreadcrumbPage`, the last, because that part carries
+`aria-current="page"` and three of them announce three current pages.
+
+**Re-vendored 2026-07-31.** The `git reset --hard` put the old `items`-taking
+`breadcrumb.tsx` back; `npx shadcn@latest add breadcrumb --overwrite` restored the
+compound file. It still contains zero `data-testid`, which is the point of §26.4.
 
 ---
 
@@ -1106,7 +1204,7 @@ in `components/ui/toast.tsx` (§1) — do not mount a second one.
 import { toast } from "sonner"
 
 toast("Release queued.")
-toast.success("Site published", { description: "mikebild.dev · release 4.3.3" })
+toast.success("Site published", { description: "example.test · release 4.3.3" })
 toast.error("Publish failed", { action: { label: "Retry", onClick: retry } })
 toast.warning("Unsaved changes")
 toast.info("Preview expires in 10 minutes")
@@ -1350,7 +1448,7 @@ The list this document exists for. Each row was verified in the installed source
 | 7 | `Progress` can be indeterminate | **Stock** cannot: `value={null}` renders a static empty bar that still reports `aria-valuemin`/`aria-valuemax`. This project's wrapper can, and `pages/releases.tsx` uses it — corrected 2026-07-30, this row used to end "Use `Spinner`". §21 |
 | 8 | `<Tooltip content="…">` | `Tooltip > TooltipTrigger asChild + TooltipContent`. No `content` prop. §10 |
 | 9 | `TooltipContent sideOffset` defaults to 4 | Installed default is **`0`**. It also always renders its own Arrow. |
-| 10 | Tooltips work standalone | `TooltipProvider` is required — and `SidebarMenuButton tooltip=…` needs it too. Mounted once at `app/shell.tsx:629` since 2026-07-30; before that it was mounted nowhere and the sidebar threw. §1 |
+| 10 | Tooltips work standalone | `TooltipProvider` is required — and `SidebarMenuButton tooltip=…` needs it too. Mounted once, as the outermost element of `Shell()` in `app/shell.tsx`; before that it was mounted nowhere and the sidebar threw. §1 |
 | 11 | `CommandDialog` renders `Command` for you | It does **not**. You must nest `<Command>` inside. §7 |
 | 12 | Add your own `DialogTitle` inside `CommandDialog` | It already renders an `sr-only` `DialogHeader` (outside `DialogContent`). Adding a second is a duplicate. |
 | 13 | Add a `SearchIcon` next to `CommandInput` | `CommandInput` already wraps itself in `InputGroup` with a `SearchIcon` addon. |

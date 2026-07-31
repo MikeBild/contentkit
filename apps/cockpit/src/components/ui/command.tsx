@@ -1,19 +1,14 @@
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
+import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import {
   InputGroup,
   InputGroupAddon,
 } from "@/components/ui/input-group"
-import { SearchIcon, CheckIcon } from "lucide-react"
+import { SearchIcon, CheckIcon, XIcon } from "lucide-react"
 
 function Command({
   className,
@@ -31,35 +26,79 @@ function Command({
   )
 }
 
+/**
+ * The one place this file differs from what `shadcn add command` writes.
+ *
+ * Stock composes `CommandDialog` out of `@/components/ui/dialog`'s `Dialog`,
+ * `DialogContent`, `DialogHeader`, `DialogTitle` and `DialogDescription`. This
+ * console's `ui/dialog.tsx` is still its own overlay — `Dialog` there takes
+ * `title`/`onClose`/`size` and renders a panel, not a Radix Root — so those five
+ * names do not exist and the stock file does not compile here. Rather than
+ * rewrite twelve `<Dialog title=… onClose=…>` call sites from inside the
+ * palette, the modal is built on the same Radix primitive shadcn's own dialog is
+ * built on, with the same classes `ui/sheet.tsx` and `ui/alert-dialog.tsx` use.
+ * The composition callers write is unchanged: `CommandDialog > Command >
+ * CommandInput + CommandList`, and the `title`/`description`/`showCloseButton`
+ * props behave as documented.
+ *
+ * The `sr-only` title and description are rendered INSIDE the content rather
+ * than beside it, which is the one thing stock gets wrong: Radix wires them by
+ * context either way, but a labelling element outside the dialog is not in the
+ * accessibility subtree it labels.
+ */
 function CommandDialog({
   title = "Command Palette",
   description = "Search for a command to run...",
   children,
   className,
   showCloseButton = false,
+  "data-testid": testId = "ck-command-dialog",
   ...props
-}: React.ComponentProps<typeof Dialog> & {
+}: React.ComponentProps<typeof DialogPrimitive.Root> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  "data-testid"?: string
 }) {
   return (
-    <Dialog {...props}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
-      </DialogHeader>
-      <DialogContent
-        className={cn(
-          "top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0",
-          className
-        )}
-        showCloseButton={showCloseButton}
-      >
-        {children}
-      </DialogContent>
-    </Dialog>
+    <DialogPrimitive.Root data-slot="dialog" {...props}>
+      <DialogPrimitive.Portal data-slot="dialog-portal">
+        <DialogPrimitive.Overlay
+          data-slot="dialog-overlay"
+          className="fixed inset-0 z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
+        />
+        <DialogPrimitive.Content
+          data-slot="dialog-content"
+          data-testid={testId}
+          className={cn(
+            "fixed top-1/3 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-xl! bg-popover p-0 text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            className
+          )}
+        >
+          <DialogPrimitive.Title className="sr-only">
+            {title}
+          </DialogPrimitive.Title>
+          <DialogPrimitive.Description className="sr-only">
+            {description}
+          </DialogPrimitive.Description>
+          {children}
+          {showCloseButton ? (
+            <DialogPrimitive.Close asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close"
+                data-testid={`${testId}-close`}
+                className="absolute top-2 right-2"
+              >
+                <XIcon />
+              </Button>
+            </DialogPrimitive.Close>
+          ) : null}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
 

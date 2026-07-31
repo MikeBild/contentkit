@@ -1,69 +1,122 @@
-import type { ComponentProps } from 'react'
-import { cn } from '@/lib/utils'
+import * as React from "react"
+import { Slot } from "radix-ui"
 
-/**
- * Where the open page sits: which context it runs in, and — for a site page —
- * which site that is.
- *
- * The Cockpit's sidebar names two contexts, and half the API is installation-
- * wide, so the page header has to repeat what the sidebar said. An operator who
- * arrives by deep link, or who has scrolled the sidebar, otherwise has nothing
- * on screen telling them whether the action in front of them touches one site
- * or the whole installation.
- *
- * Deliberately not interactive: a crumb that is also a link invites a click
- * that changes the site or leaves an unsaved form, and every existing header
- * already carries its own actions. It is a label, not a navigation control —
- * `Badge` next door draws the same distinction.
- */
-export interface Crumb {
-  label: string
-  /** A stand-in for something not chosen yet, e.g. "No site selected". */
-  placeholder?: boolean
-}
+import { cn } from "@/lib/utils"
+import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
 
-export function Breadcrumb({
-  items,
-  className,
-  'data-testid': testId = 'breadcrumb',
-  ...props
-}: Omit<ComponentProps<'nav'>, 'children'> & { items: Crumb[]; 'data-testid'?: string }) {
-  if (items.length === 0) return null
+function Breadcrumb({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
-      aria-label="Breadcrumb"
-      data-testid={testId}
-      // The joined trail, so a browser test can assert the whole thing in one
-      // read instead of stitching the crumbs back together itself.
-      data-trail={items.map((item) => item.label).join(' · ')}
-      className={cn('text-xs', className)}
+      aria-label="breadcrumb"
+      data-slot="breadcrumb"
+      className={cn(className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
+  return (
+    <ol
+      data-slot="breadcrumb-list"
+      className={cn(
+        "flex flex-wrap items-center gap-1.5 text-sm wrap-break-word text-muted-foreground",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
+  return (
+    <li
+      data-slot="breadcrumb-item"
+      className={cn("inline-flex items-center gap-1", className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbLink({
+  asChild,
+  className,
+  ...props
+}: React.ComponentProps<"a"> & {
+  asChild?: boolean
+}) {
+  const Comp = asChild ? Slot.Root : "a"
+
+  return (
+    <Comp
+      data-slot="breadcrumb-link"
+      className={cn("transition-colors hover:text-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="breadcrumb-page"
+      role="link"
+      aria-disabled="true"
+      aria-current="page"
+      className={cn("font-normal text-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbSeparator({
+  children,
+  className,
+  ...props
+}: React.ComponentProps<"li">) {
+  return (
+    <li
+      data-slot="breadcrumb-separator"
+      role="presentation"
+      aria-hidden="true"
+      className={cn("[&>svg]:size-3.5", className)}
       {...props}
     >
-      <ol className="flex flex-wrap items-center gap-1.5">
-        {items.map((item, index) => {
-          const last = index === items.length - 1
-          return (
-            <li key={`${index}-${item.label}`} className="flex items-center gap-1.5">
-              {index > 0 ? (
-                <span aria-hidden="true" className="text-border">
-                  ·
-                </span>
-              ) : null}
-              <span
-                data-testid={`${testId}-item-${index}`}
-                aria-current={last ? 'page' : undefined}
-                className={cn(
-                  'truncate',
-                  last ? 'font-medium text-foreground' : 'text-muted-foreground',
-                  item.placeholder && 'italic',
-                )}
-              >
-                {item.label}
-              </span>
-            </li>
-          )
-        })}
-      </ol>
-    </nav>
+      {children ?? (
+        <ChevronRightIcon />
+      )}
+    </li>
   )
+}
+
+function BreadcrumbEllipsis({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="breadcrumb-ellipsis"
+      role="presentation"
+      aria-hidden="true"
+      className={cn(
+        "flex size-5 items-center justify-center [&>svg]:size-4",
+        className
+      )}
+      {...props}
+    >
+      <MoreHorizontalIcon
+      />
+      <span className="sr-only">More</span>
+    </span>
+  )
+}
+
+export {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  BreadcrumbEllipsis,
 }
