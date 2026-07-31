@@ -122,9 +122,12 @@ function resolveImport(from, specifier) {
 function everySpecifier() {
   const found = []
   for (const file of sources) {
-    for (const match of file.src.matchAll(/\bfrom\s*["']([^"']+)["']/g)) found.push({ file: file.id, path: file.path, specifier: match[1] })
-    for (const match of file.src.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) found.push({ file: file.id, path: file.path, specifier: match[1] })
-    for (const match of file.src.matchAll(/^[ \t]*import\s+["']([^"']+)["']/gm)) found.push({ file: file.id, path: file.path, specifier: match[1] })
+    for (const match of file.src.matchAll(/\bfrom\s*["']([^"']+)["']/g))
+      found.push({ file: file.id, path: file.path, specifier: match[1] })
+    for (const match of file.src.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g))
+      found.push({ file: file.id, path: file.path, specifier: match[1] })
+    for (const match of file.src.matchAll(/^[ \t]*import\s+["']([^"']+)["']/gm))
+      found.push({ file: file.id, path: file.path, specifier: match[1] })
   }
   return found.map((entry) => ({ ...entry, target: resolveImport(entry.path, entry.specifier) }))
 }
@@ -185,7 +188,9 @@ function bindings() {
         alias: undefined,
         form: 'default',
       })
-    for (const match of file.src.matchAll(/import\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\*\s+as\s+([\w$]+)\s+from\s*["']([^"']+)["']/g))
+    for (const match of file.src.matchAll(
+      /import\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\*\s+as\s+([\w$]+)\s+from\s*["']([^"']+)["']/g,
+    ))
       found.push({
         file: file.id,
         specifier: match[2],

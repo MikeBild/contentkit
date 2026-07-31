@@ -92,11 +92,34 @@ class** (the CVA sizes them per button size).
 >   primitives, so the *new* stack depended on the old one and no amount of call-site
 >   work could delete the file. `grep -rl components/ui/primitives apps/cockpit/src`
 >   returns nothing.
-> - **`ui/progress.tsx` and `ui/spinner.tsx` are the pre-migration versions**, which is
->   every remaining failure in the vitest suite and §26.2 / §26.3 in the Node one.
-> - `ui/toast.tsx`, `ui/chip.tsx` and `ui/segmented.tsx` are the pre-migration versions
->   too — five subtests of *the components the console stopped hand-rolling* in
->   `cockpit-lists.test.mjs`, and the `confirm` suite with them.
+> - ~~**`ui/progress.tsx` and `ui/spinner.tsx` are the pre-migration versions**~~ —
+>   **redone 2026-07-31.** `ui/progress.tsx` now takes the fraction from
+>   `./progress-value` *before* it draws anything and branches on it: a fraction that
+>   exists is `ProgressPrimitive.Root` from `radix-ui`, one that does not is this file's
+>   own named `progressbar` with no value on it, because Radix's root emits a minimum and
+>   a maximum unconditionally. `ui/spinner.tsx` is `Loader2Icon`, always `aria-hidden`,
+>   wrapped in a `role="status"` only when the caller supplies a sentence (`label`, or
+>   `aria-label` — `const announcement = label ?? ariaLabel`); it never invents the word
+>   "Loading". `pages/authoring.tsx` came with them: the budget bar is
+>   `data-testid="audio-budget-bar"`, named by `aria-label`, handed the API's two numbers
+>   raw (`value={budget.used} max={budget.budget}`) instead of a pre-rounded percentage,
+>   and the escalation is a `Badge` (`audio-budget-tone`) as well as a tint.
+> - ~~`ui/toast.tsx`, `ui/chip.tsx` and `ui/segmented.tsx` are the pre-migration versions
+>   too~~ — **redone 2026-07-31.** `ui/toast.tsx` is sonner: no `createContext`, no
+>   `setTimeout`, no queue of ours. It keeps the console's `toast({ tone, title, detail })`
+>   vocabulary over two tables — `DURATION` (`warning`/`danger` are
+>   `Number.POSITIVE_INFINITY`, with `closeButton` as the way out) and `EMIT` (one row per
+>   tone, so a severity cannot be quietly downgraded) — and passes `theme={resolved}` from
+>   `@/lib/theme`, which is what overrides the `next-themes` read inside stock
+>   `ui/sonner.tsx`. `ui/chip.tsx` is a `Badge` plus a remove control; `ui/segmented.tsx`
+>   is `ToggleGroup type="single" spacing={0}`, which is where `role="radiogroup"`, the
+>   roving tabindex and the arrow keys come from. Neither takes a `chart-*` colour any
+>   more.
+> - **`components/confirm.tsx`: one string, not one component.** The rebuild was intact
+>   after the reset; the single failing assertion was `doesNotMatch(body, /role="dialog"/)`
+>   matching the *selector* `'[role="dialog"]'` in `ANNOUNCED_ANCHOR`. The selectors are
+>   built unquoted (`[role=dialog]`) now — identical to CSS, and no longer reads as this
+>   component setting a role it must never set.
 > - ~~`forms/fields/` is imported both through its barrel and by file path, which
 >   one-stack reads as two modules owning one name.~~ **Not a finding, and no longer
 >   reported as one.** One-stack now follows `export … from` to the module that
@@ -104,9 +127,15 @@ class** (the CVA sizes them per button size).
 >   keeps its by-path imports, which `cockpit-behavioural-floor.test.mjs` needs in order
 >   to prove those modules are really rendered.
 >
-> Green as of 2026-07-31: `tsc --noEmit` reports nothing outside
-> `ui/progress.test.tsx`, `cockpit-navigation.test.mjs` is 33/33, and
-> `cockpit-one-stack.test.mjs` is 7/7.
+> Green as of 2026-07-31, end of day, on the whole branch and not on a selection of it:
+> `npm run lint` clean, `node --test test/unit/*.test.mjs test/contract/*.test.mjs`
+> **950 pass / 0 fail** on Node 22 and **795 pass / 0 fail / 3 skipped** on Node 20 (the
+> three are the behavioural halves that import a `.ts`, skipping with their reason
+> printed — the documented degradation, not a silent pass),
+> `npm --prefix apps/cockpit run test` **59 passed (5 files)**,
+> `npm --prefix apps/cockpit run build` (i.e. `tsc --noEmit` + vite) exits 0, and both
+> drift checks pass. The only piece of §1 still outstanding is the first bullet:
+> `ui/dialog.tsx`.
 
 **Exports that no longer exist**
 

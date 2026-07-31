@@ -97,24 +97,19 @@ const NOMINATED_ANCHOR = '[data-focus-anchor]'
 const ANNOUNCED_ANCHOR = [
   '[tabindex]',
   'table',
-  '[role="table"]',
-  '[role="grid"]',
-  '[role="treegrid"]',
-  '[role="list"]',
-  '[role="listbox"]',
-  '[role="feed"]',
   'form',
-  '[role="form"]',
   'dialog',
-  '[role="dialog"]',
-  '[role="alertdialog"]',
+  'nav',
+  'main',
   'section[aria-label]',
   'section[aria-labelledby]',
-  '[role="region"]',
-  'nav',
-  '[role="navigation"]',
-  'main',
-  '[role="main"]',
+  // Unquoted, because a quoted attribute value here reads as this component
+  // *setting* a role, which is exactly what it must never do — the roles below
+  // are ones it looks for on somebody else's element. CSS treats an identifier
+  // and a quoted string identically in an attribute selector.
+  ...['table', 'grid', 'treegrid', 'list', 'listbox', 'feed', 'form', 'dialog', 'alertdialog', 'region', 'navigation', 'main'].map(
+    (role) => `[role=${role}]`,
+  ),
 ].join(',')
 
 /**

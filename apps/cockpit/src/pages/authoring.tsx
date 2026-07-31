@@ -5,6 +5,7 @@ import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
 import { CircleCheckBig, TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
@@ -1079,16 +1080,40 @@ export function AudioPage() {
           {budget ? (
             <div className="max-w-md">
               <Progress
-                data-testid="audio-budget"
-                label="Characters used this month"
+                data-testid="audio-budget-bar"
+                // Named rather than captioned: the sentence beside the bar is the
+                // numbers, and a reader who lands on the bar itself would
+                // otherwise be given a percentage with no noun on it.
+                aria-label="Characters used this month"
+                // The API's two numbers, unaltered: the rounding and the clamp a
+                // spent budget needs happen once, in progress-value.ts, which has
+                // a unit test by name.
                 value={budget.used}
                 max={budget.budget}
                 tone={budget.tone}
                 // The numbers in words as well as a bar: a percentage alone does
                 // not answer "can this backfill still run", and the cap below is
                 // entered in characters.
-                valueLabel={`${budget.used.toLocaleString()} of ${budget.budget.toLocaleString()} · ${budget.remaining.toLocaleString()} left`}
+                valueLabel={
+                  <span data-testid="audio-budget-value">
+                    {budget.used.toLocaleString()} of {budget.budget.toLocaleString()} characters ·{' '}
+                    {budget.remaining.toLocaleString()} left
+                  </span>
+                }
               />
+              {/* A tint is not a message: an operator who cannot separate amber
+                  from accent still has to be told the budget is nearly gone.
+                  When it escalates is audio-budget.ts's decision, the same one
+                  the bar takes its tone from. */}
+              {budget.tone === 'accent' ? null : (
+                <Badge
+                  data-testid="audio-budget-tone"
+                  variant={budget.tone === 'danger' ? 'destructive' : 'outline'}
+                  className="mt-1.5 w-fit"
+                >
+                  {budget.tone === 'danger' ? 'Budget spent' : 'Budget nearly spent'}
+                </Badge>
+              )}
               {budget.spent ? (
                 // Precisely what a spent budget does, because the two paths
                 // differ: publishing a post checks the month (src/audio.mjs
