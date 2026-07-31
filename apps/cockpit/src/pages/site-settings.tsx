@@ -3,16 +3,7 @@ import { AlertTriangle, TriangleAlert } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { ck, type Site } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { Confirm } from '@/components/confirm'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -107,7 +98,6 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
   const { toast } = useToast()
   const [section, setSection] = useState<SiteSectionId>('identity')
   const [conflict, setConflict] = useState<SettingsConflict | null>(null)
-  const [pendingIdentity, setPendingIdentity] = useState(false)
 
   const wire = useMemo(() => pickWire(loaded), [loaded])
   const initial = useMemo(() => siteSettingsContract.detect(wire), [wire])
@@ -200,20 +190,56 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
           </span>
           <UnsavedPill dirty={form.dirty} />
         </div>
-        <SaveBar
-          data-testid="ck-site-save-bar"
-          dirty={form.dirty}
-          canSave={form.canSave && !readOnly}
-          isSaving={form.isSaving}
-          errorCount={errorCount}
-          onReset={form.reset}
-          onSave={() => {
-            // base_url and default_locale move every URL this site serves, so
-            // the identity section is the one save that asks first.
-            if (identityDirty) setPendingIdentity(true)
-            else void attemptSave()
+        {/*
+          The identity question, asked by the console's own confirmation rather
+          than by a dialog this page keeps.
+
+          Its trigger is the Save control — there is no second button — which is
+          exactly what the render prop is for: `ask` opens the dialog, and
+          `Confirm` remembers the control it was opened from, so focus comes back
+          to Save whether the operator confirms or cancels, and never lands on
+          `<body>` while the button is briefly disabled by the save it started.
+
+          The PATCH now runs *inside* the dialog instead of after it closes: the
+          box stays up and refuses to be dismissed until the request answers, so
+          nothing here reports a save it has not had. Where a rejection is *shown*
+          is unchanged — `useForm` routes it onto the fields it names, or into the
+          unassigned Alert below when nothing claims it.
+        */}
+        <Confirm
+          title="Change the site's identity?"
+          description={
+            <>
+              The base URL and the default locale of <strong>{loaded.name}</strong> decide every canonical link, feed
+              URL and redirect this site serves. Changing them moves URLs that other people have already linked to.
+            </>
+          }
+          confirmLabel="Save identity"
+          // The names scripts/verify-cockpit-prod.md drives this by; see `ConfirmIds`.
+          ids={{
+            dialog: 'ck-site-identity-confirm',
+            cancel: 'ck-site-identity-cancel',
+            accept: 'ck-site-identity-accept',
           }}
-        />
+          onConfirm={() => attemptSave()}
+        >
+          {(ask) => (
+            <SaveBar
+              data-testid="ck-site-save-bar"
+              dirty={form.dirty}
+              canSave={form.canSave && !readOnly}
+              isSaving={form.isSaving}
+              errorCount={errorCount}
+              onReset={form.reset}
+              onSave={() => {
+                // base_url and default_locale move every URL this site serves, so
+                // the identity section is the one save that asks first.
+                if (identityDirty) ask()
+                else void attemptSave()
+              }}
+            />
+          )}
+        </Confirm>
       </div>
 
       {readOnly ? (
@@ -278,15 +304,6 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
         />
       ) : null}
 
-      <IdentityConfirm
-        open={pendingIdentity}
-        name={loaded.name}
-        onCancel={() => setPendingIdentity(false)}
-        onConfirm={() => {
-          setPendingIdentity(false)
-          void attemptSave()
-        }}
-      />
     </div>
   )
 }
@@ -352,39 +369,3 @@ function SectionWarnings({
   )
 }
 
-function IdentityConfirm({
-  open,
-  name,
-  onCancel,
-  onConfirm,
-}: {
-  open: boolean
-  name: string
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  return (
-    // An AlertDialog, not a Dialog: this is a decision about URLs other people
-    // have already linked to, and an alert dialog has no light-dismiss — a
-    // confirmation a stray click on the backdrop can answer is not one.
-    <AlertDialog open={open} onOpenChange={(next) => next || onCancel()}>
-      <AlertDialogContent size="sm" data-testid="ck-site-identity-confirm">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Change the site's identity?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The base URL and the default locale of <strong>{name}</strong> decide every canonical link, feed URL and
-            redirect this site serves. Changing them moves URLs that other people have already linked to.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel size="sm" data-testid="ck-site-identity-cancel" onClick={onCancel}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction size="sm" data-testid="ck-site-identity-accept" onClick={onConfirm}>
-            Save identity
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
-}

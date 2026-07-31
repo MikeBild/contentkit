@@ -426,12 +426,33 @@ Use this instead of `Dialog` for the destructive confirms (`pages/sites.tsx`,
 `forms/site/conflict.tsx`, `use-unsaved-guard.tsx`) — it traps focus on Cancel and has
 no dismiss-on-outside-click.
 
-**`components/confirm.tsx` is its first importer** (2026-07-30) and covers all 25
+**`components/confirm.tsx` is its ONLY importer** (2026-07-30) and covers all 27
 mutation confirmations on its own. Two notes from doing it, both non-obvious:
 `AlertDialogAction` closes the dialog on click, so an async confirm must
 `event.preventDefault()` and let the *answer* close it; and the trigger stays the
 caller's own control (a `children(open)` render prop, no `AlertDialogTrigger`) because
 the caller's `data-testid`, `disabled` and scope check belong on that button.
+
+**Do not compose `AlertDialog` in a page** — ✅ the last two stopped on 2026-07-31.
+`pages/sites.tsx` and `pages/site-settings.tsx` each kept one of their own, and the
+site delete is where it cost the most: its trigger is inside the `<TableRow>` the
+mutation deletes, and with no `onCloseAutoFocus` focus landed on `<body>` right after
+the console's most destructive act. Both now go through `Confirm`, which restores focus
+in all three shapes and already keeps the dialog open on a refusal. Two things came out
+of that conversion and are part of the API now:
+
+- `Confirm` takes an optional **`ids`** (`ConfirmIds`: `dialog` · `cancel` · `accept` ·
+  `error`) so a call site can keep names that predate the component. Only those two
+  pages pass it — `scripts/verify-cockpit-prod.md` clicks `ck-site-delete-purge` and
+  `ck-site-identity-accept` by name against a real installation, and the delete's two
+  answers must stay tellable apart because one of them destroys a live site.
+- A two-step server refusal needs **no second dialog**: `onConfirm` catches the 409,
+  records what it means for the *next* answer, and re-throws. `Confirm` keeps itself
+  open and announces the server's own counts through `role="alert"`.
+
+`apps/cockpit/src/pages/sites.test.tsx` renders the page, deletes a row and asks the DOM
+where focus went — the harness in `confirm.test.tsx` was passing over this page for as
+long as this page was not using the component.
 
 ---
 

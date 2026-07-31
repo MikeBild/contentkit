@@ -1,24 +1,13 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, TriangleAlert } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type Site } from '@/api/ck'
 import { ApiError } from '@/api/client'
 import { Page } from '@/app/shell'
 import { AppLink } from '@/components/app-link'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Confirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/components/ui/toast'
 import { TableState } from '@/forms/table-state'
@@ -123,130 +112,111 @@ export function SitesPage() {
  * never passes `purge`. Sending it straight away would turn a deliberate
  * safeguard into a flag the console silently sets.
  *
+ * The dialog is `components/confirm.tsx`, the same one every other mutation goes
+ * through, and this page hand-rolls none of it any more. That matters here more
+ * than anywhere else in the console, because this is the one trigger that is
+ * *deleted by the act it starts*: the `<Button>` lives in the `<TableRow>` the
+ * mutation removes, so by the time the dialog closes there is nothing left to
+ * give focus back to. The page's own dialog dropped focus on `<body>` at that
+ * moment — no position in the table, the next Tab starting from the top of the
+ * document, after the console's most destructive act. `Confirm` parks focus on
+ * the surviving `<table>` instead, and `pages/sites.test.tsx` renders this page
+ * and asks the DOM where focus went.
+ *
+ * The two-step refusal is `Confirm`'s too, and was not reimplemented: a rejected
+ * `onConfirm` keeps the dialog open, announces the server's own words through
+ * `role="alert"` and leaves the target on screen. All this call site adds is what
+ * only it knows — that a 409 means *ask again with `purge`*, and that the second
+ * question is a different one, with its own label and its own name.
+ *
  * One of these sits in each row and names that row's site. Nothing about it
  * reads the site switcher.
  */
 function DeleteSite({ site }: { site: Site }) {
-  const [isOpen, setOpen] = useState(false)
-  const [refusal, setRefusal] = useState<string | null>(null)
+  /**
+   * Sticky, and reset every time the dialog is opened.
+   *
+   * Sticky, because once the server has named what would be lost the operator is
+   * answering a different question and a failure of *that* answer must not
+   * quietly go back to the safe one. Reset on open, because a refusal the
+   * operator walked away from must not arm the purge for whoever opens this row
+   * next: the second answer is only ever available directly behind the refusal
+   * that earned it.
+   */
+  const [refused, setRefused] = useState(false)
+  /** Which of the two names the announcement carries: the 409 that is part of
+   *  the flow, or an ordinary failure that is not. */
+  const [failure, setFailure] = useState<'refusal' | 'error'>('error')
   const client = useQueryClient()
   const { toast } = useToast()
 
-  const remove = useMutation({
-    mutationFn: (purge: boolean) => ck.sites.remove(site.slug, purge),
-    onSuccess: async () => {
-      setOpen(false)
-      setRefusal(null)
-      toast({ tone: 'success', title: `${site.name} was deleted` })
-      // The provider falls back to another site once this one is gone.
-      await client.invalidateQueries({ queryKey: keys.sites.all })
-    },
-    onError: (failure) => {
-      if (failure instanceof ApiError && failure.status === 409) setRefusal(failure.message)
-    },
-  })
-
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label={`Delete ${site.name}`}
-        data-testid={`ck-site-delete-${site.slug}`}
-        onClick={() => {
-          setRefusal(null)
-          remove.reset()
-          setOpen(true)
-        }}
-      >
-        {/* No size class on an icon inside a Button: the CVA sizes it per button
-            size, and the severity is the dialog's to state, not this icon's. */}
-        <Trash2 data-icon="inline-start" />
-        Delete
-      </Button>
-      {/*
-        An AlertDialog rather than a Dialog: this is the console's most
-        destructive act, and an alert dialog has no light-dismiss, traps focus on
-        Cancel and is announced as a decision. A confirmation a stray click on the
-        backdrop can answer is not a confirmation.
-      */}
-      <AlertDialog
-        open={isOpen}
-        onOpenChange={(next) => {
-          // A DELETE that is still in the air is not one that can be taken back,
-          // so only its answer closes this.
-          if (remove.isPending) return
-          setOpen(next)
-        }}
-      >
-        <AlertDialogContent
-          data-testid="ck-site-delete-dialog"
-          onEscapeKeyDown={(event) => {
-            if (remove.isPending) event.preventDefault()
+    <Confirm
+      title={`Delete ${site.name}?`}
+      description={
+        <>
+          The site row, its content, its releases and the stored objects behind them are removed. None of it is
+          recoverable.{' '}
+          {refused
+            ? 'The server has named what would go; answering again deletes it with the site.'
+            : 'A site that still owns content refuses once and names what would go, so the second answer is a decision about known numbers.'}
+          {/* The slug, because two sites may carry the same name and only one of
+              them is in this row. A span rather than a paragraph: the
+              description Radix renders is itself a <p>. */}
+          <span data-testid="ck-site-delete-target" className="mt-2 block font-mono text-xs">
+            {site.slug} · {site.base_url}
+          </span>
+        </>
+      }
+      confirmLabel={refused ? 'Delete the site and all of it' : 'Delete site'}
+      destructive
+      // The names `scripts/verify-cockpit-prod.md` drives this by, including the
+      // one that separates the first answer from the one that destroys a live
+      // site. See `ConfirmIds`.
+      ids={{
+        dialog: 'ck-site-delete-dialog',
+        cancel: 'ck-site-delete-cancel',
+        accept: refused ? 'ck-site-delete-purge' : 'ck-site-delete-confirm',
+        error: failure === 'refusal' ? 'ck-site-delete-refusal' : 'ck-site-delete-error',
+      }}
+      onConfirm={async () => {
+        try {
+          await ck.sites.remove(site.slug, refused)
+        } catch (thrown) {
+          // The 409 is not an error path, it is the second step: it arms the
+          // purge and is re-thrown so that Confirm keeps the dialog open and
+          // announces the counts the server sent, verbatim.
+          const conflict = thrown instanceof ApiError && thrown.status === 409
+          if (conflict) setRefused(true)
+          setFailure(conflict ? 'refusal' : 'error')
+          throw thrown
+        }
+        toast({ tone: 'success', title: `${site.name} was deleted` })
+        // Awaited, so the row is gone before the dialog closes: the trigger this
+        // was opened from unmounts with it, and focus lands on the table rather
+        // than on a control that is about to disappear.
+        // The provider falls back to another site once this one is gone.
+        await client.invalidateQueries({ queryKey: keys.sites.all })
+      }}
+    >
+      {(open) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Delete ${site.name}`}
+          data-testid={`ck-site-delete-${site.slug}`}
+          onClick={() => {
+            setRefused(false)
+            setFailure('error')
+            open()
           }}
         >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {site.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The site row, its content, its releases and the stored objects behind them are removed. None of it is
-              recoverable.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {/* The slug, because two sites may carry the same name and only one of
-              them is in this row. */}
-          <p data-testid="ck-site-delete-target" className="font-mono text-xs text-muted-foreground">
-            {site.slug} · {site.base_url}
-          </p>
-
-          {refusal ? (
-            // The server's own refusal, verbatim and announced: the 409 carries
-            // the counts that make the second answer a decision about known
-            // numbers rather than a repeat of the first.
-            <Alert variant="destructive" data-testid="ck-site-delete-refusal">
-              <TriangleAlert />
-              <AlertTitle>The server refused</AlertTitle>
-              <AlertDescription>{refusal}</AlertDescription>
-            </Alert>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              A site that still owns content refuses once and names what would go, so the second answer is a decision
-              about known numbers.
-            </p>
-          )}
-
-          {remove.error && !(remove.error instanceof ApiError && remove.error.status === 409) ? (
-            <Alert variant="destructive" data-testid="ck-site-delete-error">
-              <TriangleAlert />
-              <AlertTitle>The site was not deleted</AlertTitle>
-              <AlertDescription>{remove.error.message}</AlertDescription>
-            </Alert>
-          ) : null}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel size="sm" data-testid="ck-site-delete-cancel" disabled={remove.isPending}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              size="sm"
-              data-testid={refusal ? 'ck-site-delete-purge' : 'ck-site-delete-confirm'}
-              disabled={remove.isPending}
-              aria-busy={remove.isPending}
-              // Radix closes on this click, and the 409 that turns the first
-              // answer into the second arrives afterwards — so the close is
-              // refused here and the answer is what closes it.
-              onClick={(event) => {
-                event.preventDefault()
-                remove.mutate(Boolean(refusal))
-              }}
-            >
-              {remove.isPending ? <Spinner data-icon="inline-start" /> : null}
-              {refusal ? 'Delete the site and all of it' : 'Delete site'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+          {/* No size class on an icon inside a Button: the CVA sizes it per button
+              size, and the severity is the dialog's to state, not this icon's. */}
+          <Trash2 data-icon="inline-start" />
+          Delete
+        </Button>
+      )}
+    </Confirm>
   )
 }

@@ -73,6 +73,37 @@ import { Spinner } from '@/components/ui/spinner'
  * scope check that belong on it.
  */
 /**
+ * The names a call site's own automation addresses the parts of the dialog by.
+ *
+ * Twenty-three of the twenty-five confirmations are driven by the `confirm-*`
+ * ids below and need none of this. Two are older than this component and are
+ * named, click by click, in `scripts/verify-cockpit-prod.md` — the runbook that
+ * drives a browser against a real installation: `ck-site-delete-*` on the site
+ * registry and `ck-site-identity-*` on the settings page. Renaming those to suit
+ * a refactor renames a production procedure for tidiness.
+ *
+ * The site delete needs more than an alias. It answers twice — the server
+ * refuses once and names what would be lost, and the second answer purges it —
+ * and the runbook tells the two clicks apart by id, because the second one on a
+ * live site destroys it irrecoverably. `ck-site-delete-confirm` and
+ * `ck-site-delete-purge` are that distinction; one `confirm-accept` standing for
+ * both would erase it at exactly the place it matters most.
+ *
+ * Only the parts an operator or a script *acts on* are here. `confirm-title`,
+ * `confirm-description` and `confirm-error-message` stay fixed: they are read,
+ * not clicked, and one stable name for them across every confirmation is worth
+ * more than a local one.
+ */
+export type ConfirmIds = Partial<Record<'dialog' | 'cancel' | 'accept' | 'error', string>>
+
+const DEFAULT_IDS: Record<keyof ConfirmIds, string> = {
+  dialog: 'confirm-dialog',
+  cancel: 'confirm-cancel',
+  accept: 'confirm-accept',
+  error: 'confirm-error',
+}
+
+/**
  * An ancestor the call site nominates itself, for a trigger whose meaningful
  * neighbour is not the nearest announced one. Nothing in the console needs it
  * today; it exists so that a call site with an unusual shape has an answer that
@@ -133,6 +164,7 @@ export function Confirm({
   confirmLabel = 'Confirm',
   destructive,
   onConfirm,
+  ids,
   children,
 }: {
   title: string
@@ -140,11 +172,14 @@ export function Confirm({
   confirmLabel?: string
   destructive?: boolean
   onConfirm: () => Promise<unknown> | unknown
+  /** See `ConfirmIds`. Omitted everywhere but the two pages production drives by name. */
+  ids?: ConfirmIds
   children: (open: () => void) => ReactNode
 }) {
   const [isOpen, setOpen] = useState(false)
   const [isBusy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const id = (part: keyof typeof DEFAULT_IDS) => ids?.[part] ?? DEFAULT_IDS[part]
 
   const effectId = useId()
   const refusalId = useId()
@@ -342,7 +377,7 @@ export function Confirm({
         }}
       >
         <AlertDialogContent
-          data-testid="confirm-dialog"
+          data-testid={id('dialog')}
           // Radix points this at the description alone; a refusal has to be part
           // of what describes the dialog too, or the reason is announced once and
           // then unreachable to a reader that re-reads the box.
@@ -367,7 +402,7 @@ export function Confirm({
               refusal one utterance, so the counts arrive with the sentence they
               belong to rather than as a fragment. */}
           {error ? (
-            <Alert variant="destructive" id={refusalId} aria-atomic="true" data-testid="confirm-error">
+            <Alert variant="destructive" id={refusalId} aria-atomic="true" data-testid={id('error')}>
               <TriangleAlert aria-hidden />
               <AlertTitle>The server refused</AlertTitle>
               <AlertDescription data-testid="confirm-error-message">{error}</AlertDescription>
@@ -375,11 +410,11 @@ export function Confirm({
           ) : null}
 
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="confirm-cancel" size="sm" disabled={isBusy}>
+            <AlertDialogCancel data-testid={id('cancel')} size="sm" disabled={isBusy}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              data-testid="confirm-accept"
+              data-testid={id('accept')}
               size="sm"
               variant={destructive ? 'destructive' : 'default'}
               disabled={isBusy}

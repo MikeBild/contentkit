@@ -14,10 +14,10 @@ import { fileURLToPath } from 'node:url'
  * `apps/cockpit/vitest.config.ts` renders components into jsdom and its docblock
  * says so at length. It is easy to read that file, see the mutations it names,
  * and conclude the console's behaviour is graded. It is not. As of this file,
- * FIVE test files assert against NINE modules. Everything else in
+ * SEVEN test files assert against TEN modules. Everything else in
  * apps/cockpit/src — the sidebar and its collapse, the command palette's
  * keyboard path, the unsaved-changes guard, the site wizard's step gate, the
- * data table's four branches, every modal except the confirmation, and seven of
+ * data table's four branches, every modal except the confirmation, and six of
  * the nine pages — is graded by grep: a Node test reads the source as text,
  * finds the string it expects, and concludes that focus is trapped, that a label
  * is linked, that a bar is honest. Three runtime behaviours, none of them
@@ -53,7 +53,7 @@ import { fileURLToPath } from 'node:url'
  *     step: a case that no longer holds fails there. The two gates are only
  *     useful together — this one says the case still EXISTS, that one says it
  *     still PASSES. Neither alone is a floor.
- *   • It proves nothing about the modules on the uncovered side — 126 of them as
+ *   • It proves nothing about the modules on the uncovered side — 122 of them as
  *     this runs, printed on every run rather than pinned, because a count that
  *     fails on unrelated work stops being read. It only proves the number is
  *     written down and cannot shrink by accident or grow in silence.
@@ -226,7 +226,12 @@ const CONTRACTS = [
     incident: 'B1: the restore held only while the trigger stayed mounted, which deleting a site never does.',
     title: /(row|trigger).{0,60}(was deleted|deleted|removed|unmounted)/i,
     asserts: [/toHaveFocus/, /document\.body/],
-    min: 1,
+    // Two, since the site registry moved onto <Confirm>: the component's own
+    // harness and `pages/sites.test.tsx`, which deletes a real row from the real
+    // page. Held at both, because the harness proves the mechanism and the page
+    // proves the mechanism is what the operator actually meets — a page that
+    // hand-rolls its own dialog again passes the first and fails the second.
+    min: 2,
   },
   {
     id: 'confirm/does-not-steal-focus-back-from-the-operator',
@@ -455,6 +460,40 @@ const CONTRACTS = [
     asserts: [/toHaveTextContent/],
     min: 1,
   },
+  // ── The site registry: the console's most destructive page ────────────────
+  //
+  // Added when `pages/sites.tsx` stopped composing its own AlertDialog. The
+  // component's suite proved the focus restore against a harness shaped like
+  // this page while this page was not using the component at all — so the three
+  // below are asserted through the real page, with its real table, its real
+  // react-query invalidation and the real order in which the row and the dialog
+  // disappear.
+  {
+    id: 'page/sites-focus-survives-the-row-it-deleted',
+    promise:
+      'Deleting a site leaves focus in the sites table — never on <body>, which is no position in a list and starts the next Tab at the top of the document.',
+    incident:
+      'The page composed an AlertDialog inline with no onCloseAutoFocus: focus was dropped on <body> after the console’s most destructive act, under a green suite.',
+    title: /FOCUS IN THE SITES TABLE/i,
+    asserts: [/document\.body/, /toHaveFocus/],
+    min: 1,
+  },
+  {
+    id: 'page/sites-refusal-turns-into-the-second-question',
+    promise:
+      'A 409 keeps the dialog open, announces the server’s own counts through role="alert", and turns the accept control into the differently-named one that purges — the first answer never carries the flag.',
+    title: /KEEPS THE DIALOG OPEN on the server/i,
+    asserts: [/getByRole\(['"]alert['"]\)/, /ck-site-delete-purge/, /purge: false/],
+    min: 1,
+  },
+  {
+    id: 'page/sites-the-purge-is-not-armed-by-a-refusal-nobody-answered',
+    promise:
+      'A refusal the operator walked away from does not survive the close: reopening asks the first question again, so the answer that destroys content is only ever one click behind the refusal that named it.',
+    title: /ARM THE PURGE/i,
+    asserts: [/queryByTestId\(['"]ck-site-delete-purge/, /toEqual/],
+    min: 1,
+  },
   {
     id: 'page/releases-in-flight-build-is-an-indeterminate-progressbar',
     promise:
@@ -476,6 +515,7 @@ const COVERED_SUBJECTS = [
   'forms/fields/scopes.tsx',
   'forms/fields/text.tsx',
   'pages/releases.tsx',
+  'pages/sites.tsx',
 ]
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -589,9 +629,9 @@ const UNCOVERED = [
     where: ['forms/content/*', 'content/*'],
   },
   {
-    id: 'pages/every-page-but-releases',
+    id: 'pages/every-page-but-releases-and-the-registry',
     missing:
-      'Overview, sites, content, governance, site settings, authoring and the assistant. One page of nine has a rendering test.',
+      'Overview, content, governance, site settings, authoring and the assistant. Two pages of nine have a rendering test — releases, and the site registry since its delete moved onto <Confirm>. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text.',
     where: [
       'pages/assistant.tsx',
       'pages/authoring.tsx',
@@ -599,7 +639,6 @@ const UNCOVERED = [
       'pages/governance.tsx',
       'pages/overview.tsx',
       'pages/site-settings.tsx',
-      'pages/sites.tsx',
     ],
   },
   {
@@ -697,11 +736,11 @@ const graded = modules.filter((file) => !IGNORED(file.id))
 describe('the behavioural suite has a floor it cannot fall through', () => {
   test('the corpus is found at all — a floor over zero test files is not a floor', () => {
     assert.ok(
-      suiteFiles.length >= 5,
-      `only ${suiteFiles.length} rendering test file(s) under apps/cockpit/src; there were 5. ` +
+      suiteFiles.length >= 7,
+      `only ${suiteFiles.length} rendering test file(s) under apps/cockpit/src; there were 7. ` +
         `Files found: ${suiteFiles.map((f) => f.id).join(', ') || '(none)'}`,
     )
-    assert.ok(cases.length >= 59, `only ${cases.length} rendering cases parsed out of the corpus; there were 59.`)
+    assert.ok(cases.length >= 66, `only ${cases.length} rendering cases parsed out of the corpus; there were 66.`)
   })
 
   test('every pinned contract is still held by a rendering case', () => {
