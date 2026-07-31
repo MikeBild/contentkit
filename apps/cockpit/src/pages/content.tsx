@@ -1,26 +1,27 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ck, type ContentItem, type ContentKind, type Revision } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable, firstPage, useTableView, type DataColumn } from '@/components/ui/data-table'
+import { Input } from '@/components/ui/input'
 import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  Input,
   Select,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { RelativeTime } from '@/components/ui/relative-time'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { SkeletonFields, SkeletonText } from '@/components/ui/skeleton'
 import { Tabs, TabPanel } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/toast'
@@ -34,6 +35,16 @@ import { useSite } from '@/lib/site'
 import { compareText, compareTime, encodeSort } from '@/lib/table-view'
 
 const KINDS: ContentKind[] = ['page', 'post', 'project', 'deck']
+
+/**
+ * "Every kind", as a value Radix will accept.
+ *
+ * A `SelectItem` may not carry an empty value — Radix reserves it for "nothing
+ * selected" — while this page means "no filter" by the empty string. The
+ * sentinel therefore exists only between the trigger and `onValueChange`; `kind`
+ * still holds '' and the request is built from it exactly as before.
+ */
+const ANY_KIND = '__any'
 
 const TEMPLATE = `---
 title: New article
@@ -135,15 +146,22 @@ export function ContentPage() {
         // an invented rank over the pair would order the list by something no
         // column shows. "Which documents have unreleased work" is a filter the
         // API can answer; it is not a direction.
-        className: 'space-x-1 whitespace-nowrap',
+        // Two badges side by side, spaced by the cell rather than by a margin on
+        // every child but the first: `flex` + `gap` survives one of them being
+        // conditionally absent, which is exactly what happens here.
+        className: 'flex flex-wrap items-center gap-1 whitespace-nowrap',
         cell: (item) => (
           <>
-            {item.published_revision_id ? <Badge tone="success">published</Badge> : <Badge>draft only</Badge>}
+            {item.published_revision_id ? (
+              <StatusBadge tone="success">published</StatusBadge>
+            ) : (
+              <StatusBadge>draft only</StatusBadge>
+            )}
             {/* A published item whose newest revision is still a draft
                 has unreleased work — the single most useful thing to
                 see in an authoring list. */}
             {item.published_revision_id && item.latest_revision_status === 'draft' ? (
-              <Badge tone="warning">newer draft</Badge>
+              <StatusBadge tone="warning">newer draft</StatusBadge>
             ) : null}
           </>
         ),
@@ -317,17 +335,28 @@ export function ContentPage() {
         onPageChange={setPage}
         toolbar={
           <>
+            {/* The kind filter is a Radix Select now, and `content-kind-filter`
+                sits on the trigger: the root renders no DOM node, so an id on it
+                would name nothing a browser test could click. Radix also refuses
+                an empty item value, so "every kind" travels as a sentinel that is
+                taken off again before it reaches the query. */}
             <Select
-              data-testid="content-kind-filter"
-              value={kind}
-              onChange={(event) => setKind(event.target.value as ContentKind | '')}
+              value={kind || ANY_KIND}
+              onValueChange={(next) => setKind(next === ANY_KIND ? '' : (next as ContentKind))}
             >
-              <option value="">All kinds</option>
-              {KINDS.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
+              <SelectTrigger className="w-40" data-testid="content-kind-filter" aria-label="Filter content by kind">
+                <SelectValue placeholder="All kinds" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ANY_KIND}>All kinds</SelectItem>
+                  {KINDS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
             </Select>
             <Input
               className="w-40"
@@ -460,7 +489,11 @@ function ContentDetail({
           // reaching for moved out from under the pointer the moment it landed.
           <SkeletonFields fields={6} label="Loading the document…" data-testid="content-editor-skeleton" />
         ) : failure ? (
-          <p className="text-sm text-chart-5">{failure instanceof Error ? failure.message : 'Could not load'}</p>
+          <Alert variant="destructive" data-testid="content-editor-error">
+            <TriangleAlert />
+            <AlertTitle>This document could not be read</AlertTitle>
+            <AlertDescription>{failure instanceof Error ? failure.message : 'Could not load'}</AlertDescription>
+          </Alert>
         ) : (
           <ContentEditor
             // A restored revision replaces the editor's baseline, so the form
@@ -542,11 +575,14 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-4 pt-5">
-        <p className="text-sm text-muted-foreground">
+      <CardHeader>
+        <CardTitle>Narration</CardTitle>
+        <CardDescription>
           Narration is produced for published posts only, and only while the site has read-aloud switched on. It spends
           the monthly character budget.
-        </p>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
         <div className="flex gap-2">
           <Button
             size="sm"
@@ -577,41 +613,44 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
           </Confirm>
         </div>
         <Table>
-          <THead>
-            <TR>
-              <TH>Status</TH>
-              <TH>Attempts</TH>
-              <TH>Characters</TH>
-              <TH>Error</TH>
-              <TH>Updated</TH>
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Status</TableHead>
+              <TableHead>Attempts</TableHead>
+              <TableHead>Characters</TableHead>
+              <TableHead>Error</TableHead>
+              <TableHead>Updated</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={5}
               isLoading={jobs.isPending}
               error={jobs.error}
               isEmpty={mine.length === 0}
               onRetry={() => jobs.refetch()}
-              emptyMessage="No narration job for this document."
+              emptyTitle="No narration job for this document"
+              emptyMessage="Queue one with the button above, once the document is published."
             >
               {mine.map((job) => (
-                <TR key={job.id} data-testid="content-audio-job" data-job={job.id}>
-                  <TD>
-                    <Badge tone={job.status === 'failed' ? 'danger' : job.status === 'done' ? 'success' : 'neutral'}>
+                <TableRow key={job.id} data-testid="content-audio-job" data-job={job.id}>
+                  <TableCell>
+                    <StatusBadge
+                      tone={job.status === 'failed' ? 'danger' : job.status === 'done' ? 'success' : 'neutral'}
+                    >
                       {job.status}
-                    </Badge>
-                  </TD>
-                  <TD className="text-muted-foreground">{job.attempts}</TD>
-                  <TD className="text-muted-foreground">{job.chars ?? '—'}</TD>
-                  <TD className="max-w-[20rem] truncate text-chart-5">{job.error ?? ''}</TD>
-                  <TD className="text-muted-foreground">
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{job.attempts}</TableCell>
+                  <TableCell className="text-muted-foreground">{job.chars ?? '—'}</TableCell>
+                  <TableCell className="max-w-[20rem] truncate text-destructive">{job.error ?? ''}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     <RelativeTime value={job.updated_at} data-testid="content-audio-job-updated" />
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
     </Card>
@@ -630,24 +669,31 @@ function LivePanel({ site, item }: { site: string; item: ContentItem }) {
   if (published.isPending)
     return (
       <Card>
-        <CardContent className="pt-5">
+        <CardContent>
           <SkeletonText lines={8} label="Loading the published document…" data-testid="content-live-skeleton" />
         </CardContent>
       </Card>
     )
   if (published.error)
     return (
-      <p className="text-sm text-chart-5">
-        {published.error instanceof Error ? published.error.message : 'Could not load the published document'}
-      </p>
+      <Alert variant="destructive" data-testid="content-live-error">
+        <TriangleAlert />
+        <AlertTitle>The published document could not be read</AlertTitle>
+        <AlertDescription>
+          {published.error instanceof Error ? published.error.message : 'Could not load the published document'}
+        </AlertDescription>
+      </Alert>
     )
 
   return (
     <Card>
-      <CardContent className="pt-5">
-        <p className="mb-3 text-xs text-muted-foreground">
+      <CardHeader>
+        <CardTitle>Live output</CardTitle>
+        <CardDescription>
           The active release's own output. It changes only when a release is built and activated.
-        </p>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
         <ContentHtml html={published.data.html} scheme={scheme} testId="content-live-html" />
       </CardContent>
     </Card>

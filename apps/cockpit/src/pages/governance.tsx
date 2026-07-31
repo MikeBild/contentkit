@@ -2,7 +2,19 @@ import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
 import { ck, type AccessRule } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import { Badge, Button, Select, TBody, TD, TH, THead, TR, Table, TableState } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { GroupsCard } from '@/forms/audience/groups'
 import { CommentsCard, ContactCard, FeedbackCard } from '@/forms/audience/moderation'
 import { ReadersCard } from '@/forms/audience/readers'
@@ -38,7 +50,7 @@ export function AccessPage() {
     >
       {rebuild.required ? <RebuildBanner site={site} onBuilt={rebuild.clear} /> : null}
 
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <ReadersCard site={site} />
         <RulesCard
           site={site}
@@ -66,7 +78,7 @@ export function WebhooksPage() {
 
   return (
     <Page title="Webhooks" description="Outbound content events, their endpoints and delivery history.">
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <WebhookEndpointsCard site={site} />
         <WebhookDeliveriesCard site={site} siteId={siteId} />
       </div>
@@ -88,7 +100,7 @@ export function ModerationPage() {
 
   return (
     <Page title="Moderation" description="Visitor comments, contact submissions and anonymous post feedback.">
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <CommentsCard site={site} siteId={siteId} />
         <ContactCard siteId={siteId} />
         <FeedbackCard site={site} siteId={siteId} />
@@ -102,7 +114,7 @@ export function ModerationPage() {
 export function CredentialsPage() {
   return (
     <Page title="Credentials" description="API keys and the OAuth identity grants that bound what a token may ever do.">
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <ApiKeysCard />
         <IdentityGrantsCard />
       </div>
@@ -138,6 +150,18 @@ const AUDIT_ACTIONS = [
 ] as const
 
 const LIMITS = [50, 100, 200]
+
+/**
+ * "No filter", as a value Radix will accept.
+ *
+ * A `SelectItem` may not carry an empty value — Radix reserves it for "nothing
+ * selected" and throws on it — while this page's query means "every site" and
+ * "all actions" by the empty string. So the sentinel exists at the control and
+ * nowhere else: it is put on the way in and taken off in `onValueChange`, and
+ * `scope`/`action` still hold '' exactly as before. The leading underscores keep
+ * it outside the slug and action alphabets, so no real value can collide.
+ */
+const ANY = '__any'
 
 /**
  * The installation's audit trail, with its own site filter.
@@ -184,43 +208,73 @@ export function AuditPage() {
       description="Append-only, redacted record of every privileged action, across the whole installation. The site filter is seeded from the switcher as this page opens — on a cold load nothing is selected yet, so it starts on every site — and then stays where you put it: moving the switcher does not change this list."
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/*
+          The three filters are Radix Selects now, and each one's `data-testid`
+          sits on its `SelectTrigger`: `Select` itself is the headless root and
+          renders no DOM node at all, so an id on it would name nothing. The names
+          are unchanged — `ck-audit-site-filter`, `ck-audit-action-filter`,
+          `ck-audit-limit-filter` are what scripts/verify-cockpit-prod.md drives.
+        */}
         <Select
-          data-testid="ck-audit-site-filter"
-          aria-label="Filter the audit trail by site"
-          value={scope}
-          onChange={(event) => setScope(event.target.value)}
+          value={scope || ANY}
+          onValueChange={(next) => setScope(next === ANY ? '' : next)}
         >
-          <option value="">Every site</option>
-          {sites.map((entry) => (
-            <option key={entry.id} value={entry.slug}>
-              {entry.name}
-            </option>
-          ))}
+          <SelectTrigger
+            className="w-44"
+            data-testid="ck-audit-site-filter"
+            aria-label="Filter the audit trail by site"
+          >
+            <SelectValue placeholder="Every site" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {/* Radix refuses an empty item value — it is how it spells "no
+                  selection" — so "every" is a sentinel the state layer undoes. */}
+              <SelectItem value={ANY}>Every site</SelectItem>
+              {sites.map((entry) => (
+                <SelectItem key={entry.id} value={entry.slug}>
+                  {entry.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
-        <Select
-          data-testid="ck-audit-action-filter"
-          aria-label="Filter the audit trail by action"
-          value={action}
-          onChange={(event) => setAction(event.target.value)}
-        >
-          <option value="">All actions</option>
-          {AUDIT_ACTIONS.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
+        <Select value={action || ANY} onValueChange={(next) => setAction(next === ANY ? '' : next)}>
+          <SelectTrigger
+            className="w-52"
+            data-testid="ck-audit-action-filter"
+            aria-label="Filter the audit trail by action"
+          >
+            <SelectValue placeholder="All actions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={ANY}>All actions</SelectItem>
+              {AUDIT_ACTIONS.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
-        <Select
-          data-testid="ck-audit-limit-filter"
-          aria-label="Number of audit events to load"
-          value={String(limit)}
-          onChange={(event) => setLimit(Number(event.target.value))}
-        >
-          {LIMITS.map((value) => (
-            <option key={value} value={value}>
-              Last {value}
-            </option>
-          ))}
+        <Select value={String(limit)} onValueChange={(next) => setLimit(Number(next))}>
+          <SelectTrigger
+            className="w-32"
+            data-testid="ck-audit-limit-filter"
+            aria-label="Number of audit events to load"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {LIMITS.map((value) => (
+                <SelectItem key={value} value={String(value)}>
+                  Last {value}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
         {diverged ? (
           // The one thing the seeded copy owes the operator: a way back to the
@@ -237,42 +291,51 @@ export function AuditPage() {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-border bg-surface">
+      <Card className="py-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>When</TH>
-              <TH>Actor</TH>
-              <TH>Action</TH>
-              <TH>Resource</TH>
-              <TH>Result</TH>
-              <TH>Transport</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>When</TableHead>
+              <TableHead>Actor</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Resource</TableHead>
+              <TableHead>Result</TableHead>
+              <TableHead>Transport</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={7}
               isLoading={events.isPending}
               error={events.error}
               isEmpty={rows.length === 0}
               onRetry={() => events.refetch()}
-              emptyMessage={action || scope ? 'No events match these filters.' : 'Nothing recorded yet.'}
+              emptyTitle={action || scope ? 'No events match these filters' : 'Nothing recorded yet'}
+              emptyMessage={
+                action || scope
+                  ? 'Widen the site, the action or the window above.'
+                  : 'Every privileged action lands here as it happens.'
+              }
             >
               {rows.map((event) => {
                 const open = expanded === event.id
                 return (
                   <Fragment key={event.id}>
-                    <TR data-testid="ck-audit-row" data-event={event.id}>
-                      <TD className="whitespace-nowrap text-muted-foreground">{formatDate(event.created_at)}</TD>
-                      <TD className="text-muted-foreground">{event.actor_type}</TD>
-                      <TD className="font-mono text-xs">{event.action}</TD>
-                      <TD className="text-muted-foreground">{event.resource_type ?? '—'}</TD>
-                      <TD>
-                        <Badge tone={event.result === 'success' ? 'success' : 'danger'}>{event.result}</Badge>
-                      </TD>
-                      <TD className="text-muted-foreground">{event.transport ?? '—'}</TD>
-                      <TD>
+                    <TableRow data-testid="ck-audit-row" data-event={event.id}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(event.created_at)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{event.actor_type}</TableCell>
+                      <TableCell className="font-mono text-xs">{event.action}</TableCell>
+                      <TableCell className="text-muted-foreground">{event.resource_type ?? '—'}</TableCell>
+                      <TableCell>
+                        <StatusBadge tone={event.result === 'success' ? 'success' : 'danger'}>
+                          {event.result}
+                        </StatusBadge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{event.transport ?? '—'}</TableCell>
+                      <TableCell>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -282,11 +345,11 @@ export function AuditPage() {
                         >
                           {open ? 'Hide' : 'Details'}
                         </Button>
-                      </TD>
-                    </TR>
+                      </TableCell>
+                    </TableRow>
                     {open ? (
-                      <TR data-testid={`ck-audit-detail-${event.id}`}>
-                        <TD colSpan={7} className="bg-muted/40">
+                      <TableRow data-testid={`ck-audit-detail-${event.id}`}>
+                        <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
                             <dt className="text-muted-foreground">Actor id</dt>
                             <dd className="font-mono">{event.actor_id ?? '—'}</dd>
@@ -303,16 +366,16 @@ export function AuditPage() {
                               </Fragment>
                             ))}
                           </dl>
-                        </TD>
-                      </TR>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                   </Fragment>
                 )
               })}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
-      </div>
+      </Card>
     </Page>
   )
 }

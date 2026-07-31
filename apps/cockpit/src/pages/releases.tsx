@@ -4,8 +4,13 @@ import { Fragment, useState } from 'react'
 import { ck, type ContentItem, type Release } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
-import { Badge, Button, Input, TBody, TD, TH, THead, TR, Table, TableState } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { StatusBadge, type StatusTone } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { PreviewsCard } from '@/forms/platform/previews'
 import { keys } from '@/lib/query'
@@ -13,7 +18,7 @@ import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
 import { formatDate } from '@/lib/utils'
 
-const TONE: Record<Release['status'], 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
+const TONE: Record<Release['status'], StatusTone> = {
   active: 'success',
   ready: 'info',
   building: 'warning',
@@ -168,32 +173,39 @@ export function ReleasesPage() {
       ) : null}
 
       {startedAt !== null ? (
-        <div data-testid="release-building" className="mb-3 max-w-md rounded-xl border border-border bg-surface p-3">
-          <Progress
-            data-testid="release-build-progress"
-            label={inFlight === 1 ? 'Building' : `Building ${inFlight} at once`}
-            since={startedAt}
-          />
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Elapsed time, not a percentage — a build reports none until it finishes, and one over a hundred seconds is
-            normal. This list refreshes itself.
-          </p>
-        </div>
+        <Card size="sm" className="mb-3 max-w-md" data-testid="release-building">
+          <CardContent>
+            <Progress
+              data-testid="release-build-progress"
+              label={inFlight === 1 ? 'Building' : `Building ${inFlight} at once`}
+              since={startedAt}
+              // Spelled out for the test id alone: `release-build-since` is the
+              // name a browser test already knows the elapsed time by, and
+              // `Progress` would otherwise derive `-progress-value`. Same
+              // component, same sentence, same instant.
+              valueLabel={<RelativeTime value={startedAt} data-testid="release-build-since" />}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Elapsed time, not a percentage — a build reports none until it finishes, and one over a hundred seconds is
+              normal. This list refreshes itself.
+            </p>
+          </CardContent>
+        </Card>
       ) : null}
 
       <PreviewsCard site={site} />
 
-      <div className="rounded-xl border border-border bg-surface">
+      <Card className="py-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Status</TH>
-              <TH>Kind</TH>
-              <TH>Reason</TH>
-              <TH>Revisions</TH>
-              <TH>Files</TH>
-              <TH>Completed</TH>
-              <TH>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Status</TableHead>
+              <TableHead>Kind</TableHead>
+              <TableHead>Reason</TableHead>
+              <TableHead>Revisions</TableHead>
+              <TableHead>Files</TableHead>
+              <TableHead>Completed</TableHead>
+              <TableHead>
                 <button
                   data-testid="release-refresh"
                   aria-label="Reload releases"
@@ -202,38 +214,43 @@ export function ReleasesPage() {
                 >
                   <RefreshCw className={releases.isFetching ? 'h-3 w-3 animate-spin' : 'h-3 w-3'} />
                 </button>
-              </TH>
-            </TR>
-          </THead>
-          <TBody>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={7}
               isLoading={releases.isPending}
               error={releases.error}
               isEmpty={rows.length === 0}
               onRetry={() => releases.refetch()}
-              emptyMessage="No releases yet. Build one to publish this site."
+              emptyTitle="No releases yet"
+              emptyMessage="Build one to publish this site."
             >
               {rows.map((release) => {
                 const open = expanded === release.id
                 return (
                   <Fragment key={release.id}>
-                    <TR data-testid="release-row" data-release={release.id}>
-                      <TD>
-                        <Badge tone={TONE[release.status]}>{release.status}</Badge>
-                      </TD>
-                      <TD className="text-muted-foreground">{release.kind}</TD>
-                      <TD className="max-w-[18rem] truncate">{release.reason || '—'}</TD>
+                    <TableRow data-testid="release-row" data-release={release.id}>
+                      <TableCell>
+                        <StatusBadge tone={TONE[release.status]}>{release.status}</StatusBadge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{release.kind}</TableCell>
+                      <TableCell className="max-w-[18rem] truncate">{release.reason || '—'}</TableCell>
                       {/*
                         0 is a claim of its own here — "this build is exactly the
                         published set", which is what the detail row spells out —
                         so an absent list does not get to borrow it, the same way
                         the Files column beside it refuses to.
                       */}
-                      <TD className="tabular-nums text-muted-foreground">{release.revision_ids?.length ?? '—'}</TD>
-                      <TD className="tabular-nums text-muted-foreground">{release.file_count ?? '—'}</TD>
-                      <TD className="whitespace-nowrap text-muted-foreground">{formatDate(release.completed_at)}</TD>
-                      <TD className="flex flex-wrap gap-2">
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {release.revision_ids?.length ?? '—'}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">{release.file_count ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(release.completed_at)}
+                      </TableCell>
+                      <TableCell className="flex flex-wrap gap-2">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -304,11 +321,11 @@ export function ReleasesPage() {
                             )}
                           </Confirm>
                         ) : null}
-                      </TD>
-                    </TR>
+                      </TableCell>
+                    </TableRow>
                     {open ? (
-                      <TR data-testid={`release-detail-${release.id}`}>
-                        <TD colSpan={7} className="bg-muted/40">
+                      <TableRow data-testid={`release-detail-${release.id}`}>
+                        <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
                             <dt className="text-muted-foreground">Release id</dt>
                             <dd className="font-mono">{release.id}</dd>
@@ -330,13 +347,13 @@ export function ReleasesPage() {
                             {release.error ? (
                               <>
                                 <dt className="text-muted-foreground">Error</dt>
-                                <dd className="whitespace-pre-wrap break-words text-chart-5">{release.error}</dd>
+                                <dd className="whitespace-pre-wrap break-words text-destructive">{release.error}</dd>
                               </>
                             ) : null}
                             <dt className="text-muted-foreground">Overlaid revisions</dt>
                             <dd>
                               {release.revision_ids?.length ? (
-                                <ul className="space-y-0.5">
+                                <ul className="flex flex-col gap-0.5">
                                   {release.revision_ids.map((revisionId) => (
                                     <li key={revisionId} className="font-mono">
                                       {/*
@@ -358,16 +375,16 @@ export function ReleasesPage() {
                               )}
                             </dd>
                           </dl>
-                        </TD>
-                      </TR>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                   </Fragment>
                 )
               })}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
-      </div>
+      </Card>
     </Page>
   )
 }

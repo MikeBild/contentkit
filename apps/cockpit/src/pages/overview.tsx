@@ -1,8 +1,12 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { ChartNoAxesColumn, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { ck, statsKinds, usageStatsKinds, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/primitives'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ReleaseChain } from '@/components/ui/release-chain'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { keys } from '@/lib/query'
@@ -178,10 +182,15 @@ function StatCard({
   return (
     <Card data-testid="stat-card" data-kind={kind}>
       <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span className="capitalize">{kind}</span>
-          {usage ? <span className="text-[0.65rem] font-normal text-muted-foreground">usage · opt-in</span> : null}
-        </CardTitle>
+        <CardTitle className="capitalize">{kind}</CardTitle>
+        {/* The opt-in note is a status about this tile's data, so it is a Badge
+            rather than a differently-sized span, and it sits in the header's own
+            action slot — CardHeader re-grids itself once one is present. */}
+        {usage ? (
+          <CardAction>
+            <Badge variant="outline">usage · opt-in</Badge>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent>
         {result?.isPending ? (
@@ -190,7 +199,7 @@ function StatCard({
           // twelve short cards and then jolt to full height a moment later.
           <SkeletonGroup label="Loading the statistics…" data-testid="stat-card-skeleton">
             <Skeleton className="h-10 w-full" />
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 flex flex-col gap-2">
               {Array.from({ length: 4 }, (_, row) => (
                 <div key={row} className="flex items-baseline justify-between gap-3">
                   <Skeleton className="h-3 w-28" />
@@ -200,21 +209,37 @@ function StatCard({
             </div>
           </SkeletonGroup>
         ) : result?.error ? (
-          <p className="text-sm text-muted-foreground">
-            {result.error instanceof Error ? result.error.message : 'Unavailable'}
-          </p>
+          // A tile that could not be read and a tile with nothing in it are two
+          // different answers, so they are two different components: an Alert
+          // carries role="alert" and says the reading failed, while the Empty
+          // below says the window is genuinely quiet.
+          <Alert variant="destructive" data-testid="stat-card-error">
+            <TriangleAlert />
+            <AlertTitle>This statistic could not be read</AlertTitle>
+            <AlertDescription>
+              {result.error instanceof Error ? result.error.message : 'Unavailable'}
+            </AlertDescription>
+          </Alert>
         ) : shown.length === 0 ? (
-          <p className="text-sm text-muted-foreground" data-testid="stat-card-empty" data-emptiness={emptiness}>
-            {emptiness === 'measured-all-zero'
-              ? 'Measured in this window, and every value is zero.'
-              : usage
-                ? 'No usage telemetry in this window.'
-                : 'Nothing recorded in this window.'}
-          </p>
+          <Empty className="border" data-testid="stat-card-empty" data-emptiness={emptiness}>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ChartNoAxesColumn />
+              </EmptyMedia>
+              <EmptyTitle>Nothing to plot</EmptyTitle>
+              <EmptyDescription>
+                {emptiness === 'measured-all-zero'
+                  ? 'Measured in this window, and every value is zero.'
+                  : usage
+                    ? 'No usage telemetry in this window.'
+                    : 'Nothing recorded in this window.'}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <>
             {lead ? <Sparkline points={lead.points} /> : null}
-            <dl className="mt-3 space-y-1">
+            <dl className="mt-3 flex flex-col gap-1">
               {shown.map((metric) => (
                 <div key={metric.name} className="flex items-baseline justify-between gap-3">
                   <dt className="truncate text-xs text-muted-foreground" title={metric.name}>

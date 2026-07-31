@@ -2,8 +2,14 @@ import { useChat } from '@ai-sdk/react'
 import { useQuery } from '@tanstack/react-query'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { BotMessageSquare, ExternalLink, ShieldQuestionMark, TriangleAlert } from 'lucide-react'
 import { Page } from '@/app/shell'
-import { Badge, Button, Card, CardContent, Textarea } from '@/components/ui/primitives'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Textarea } from '@/components/ui/textarea'
+import { StatusBadge } from '@/forms/status-badge'
 import { ApiError, getCsrfToken } from '@/api/client'
 import { ck } from '@/api/ck'
 import { ContentHtml, Draft, useContentScheme } from '@/content/lazy'
@@ -74,12 +80,20 @@ export function AssistantPage() {
   if (enabled === false) {
     return (
       <Page title="Assistant">
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            The authoring assistant is not enabled on this deployment. Set{' '}
-            <code className="rounded bg-muted px-1">CONTENTKIT_ANTHROPIC_API_KEY</code> to turn it on.
-          </CardContent>
-        </Card>
+        {/* Not a failure and not a blank list: the feature exists and this
+            deployment has not switched it on, which is what Empty says. */}
+        <Empty className="border" data-testid="assistant-disabled">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <BotMessageSquare />
+            </EmptyMedia>
+            <EmptyTitle>The authoring assistant is not enabled</EmptyTitle>
+            <EmptyDescription>
+              Set <code className="rounded bg-muted px-1">CONTENTKIT_ANTHROPIC_API_KEY</code> on this deployment to turn
+              it on.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </Page>
     )
   }
@@ -104,12 +118,20 @@ export function AssistantPage() {
         ) : null
       }
     >
-      <div className="flex h-[calc(100vh-11rem)] flex-col rounded-xl border border-border bg-surface">
-        <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-5">
+      <Card className="h-[calc(100vh-11rem)] gap-0 py-0">
+        <div className="scrollbar-thin flex flex-1 flex-col gap-4 overflow-y-auto p-5">
           {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Try: “Draft a post about our release process, then show me the composition diagnostics.”
-            </p>
+            <Empty data-testid="assistant-blank">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <BotMessageSquare />
+                </EmptyMedia>
+                <EmptyTitle>Nothing said yet</EmptyTitle>
+                <EmptyDescription>
+                  Try: “Draft a post about our release process, then show me the composition diagnostics.”
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : null}
 
           {messages.map((message, index) => (
@@ -123,7 +145,13 @@ export function AssistantPage() {
             />
           ))}
 
-          {error ? <p className="text-sm text-chart-5">{error.message}</p> : null}
+          {error ? (
+            <Alert variant="destructive" data-testid="assistant-error">
+              <TriangleAlert />
+              <AlertTitle>The conversation stopped</AlertTitle>
+              <AlertDescription>{error.message}</AlertDescription>
+            </Alert>
+          ) : null}
           <div ref={bottom} />
         </div>
 
@@ -163,7 +191,7 @@ export function AssistantPage() {
             </Button>
           )}
         </form>
-      </div>
+      </Card>
     </Page>
   )
 }
@@ -177,7 +205,7 @@ function Message({ message, streaming }: { message: UIMessage; streaming: boolea
       data-role={message.role}
       className={cn('flex', mine && 'justify-end')}
     >
-      <div className={cn('max-w-[85%] space-y-2', mine && 'text-right')}>
+      <div className={cn('flex max-w-[85%] flex-col gap-2', mine && 'items-end text-right')}>
         {message.parts.map((part, index) => {
           if (part.type === 'text')
             return mine ? (
@@ -260,14 +288,18 @@ function AssistantText({ id, text, streaming }: { id: string; text: string; stre
 function RenderProblem({ error }: { error: unknown }) {
   const rejected = error instanceof ApiError && error.status === 422
   return (
-    <p
+    <Alert
+      variant="destructive"
+      className="mt-2"
       data-testid="assistant-render-problem"
       data-status={error instanceof ApiError ? error.status : 'unknown'}
-      className="mt-2 rounded-lg border border-chart-3/40 bg-chart-3/10 px-3 py-2 text-xs"
     >
-      <span className="font-medium">{rejected ? 'Not renderable as published' : 'Rendering failed'}</span>{' '}
-      <span className="text-muted-foreground">{error instanceof Error ? error.message : String(error)}</span>
-    </p>
+      {/* Direct child of Alert and before the title: the CVA switches to a
+          two-column grid on `has-[>svg]`, and an icon in a wrapper breaks it. */}
+      <TriangleAlert />
+      <AlertTitle>{rejected ? 'Not renderable as published' : 'Rendering failed'}</AlertTitle>
+      <AlertDescription>{error instanceof Error ? error.message : String(error)}</AlertDescription>
+    </Alert>
   )
 }
 
@@ -276,7 +308,7 @@ function ToolCall({ part }: { part: { type: string; state?: string; toolName?: s
   const done = part.state === 'output-available'
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 text-xs">
-      <Badge tone={done ? 'success' : 'info'}>{done ? 'done' : 'running'}</Badge>
+      <StatusBadge tone={done ? 'success' : 'info'}>{done ? 'done' : 'running'}</StatusBadge>
       <span className="font-mono text-muted-foreground">{name}</span>
     </div>
   )
@@ -313,36 +345,47 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
 
   if (elicitation.mode === 'url')
     return (
-      <div className="rounded-xl border border-accent/40 bg-accent/10 p-3 text-left text-sm">
-        <p>{elicitation.message}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
+      // A callout, so an Alert — and `role="alert"` is the component's own, which
+      // is what gets a decision request announced rather than merely tinted.
+      <Alert data-testid="assistant-elicitation" className="text-left">
+        <ExternalLink />
+        <AlertTitle>{elicitation.message}</AlertTitle>
+        <AlertDescription>
           The secret is shown on a ContentKit page and never passes through the conversation.
-        </p>
-        <Button
-          data-testid="assistant-elicitation-open"
-          className="mt-2"
-          size="sm"
-          onClick={() => elicitation.url && window.open(elicitation.url, '_blank', 'noopener,noreferrer')}
-        >
-          Open secure page
-        </Button>
-      </div>
+        </AlertDescription>
+        <div className="col-start-2 mt-2">
+          <Button
+            data-testid="assistant-elicitation-open"
+            size="sm"
+            onClick={() => elicitation.url && window.open(elicitation.url, '_blank', 'noopener,noreferrer')}
+          >
+            Open secure page
+          </Button>
+        </div>
+      </Alert>
     )
 
   return (
-    <div
-      data-testid="elicitation-card"
-      className="rounded-xl border border-chart-3/40 bg-chart-3/10 p-3 text-left text-sm"
-    >
-      <p className="font-medium">Your confirmation is required</p>
-      <p className="mt-1 text-muted-foreground">{elicitation.message}</p>
-      {failed ? <p className="mt-2 text-xs text-chart-5">{failed}</p> : null}
+    <Alert data-testid="elicitation-card" className="text-left">
+      <ShieldQuestionMark />
+      <AlertTitle>Your confirmation is required</AlertTitle>
+      <AlertDescription>{elicitation.message}</AlertDescription>
+      {failed ? (
+        // The refusal keeps its own frame rather than being a tinted line inside
+        // this one: the decision was not recorded, which is a different fact from
+        // the decision being asked for.
+        <Alert variant="destructive" className="col-start-2 mt-2" data-testid="elicitation-failed">
+          <TriangleAlert />
+          <AlertTitle>The decision was not recorded</AlertTitle>
+          <AlertDescription>{failed}</AlertDescription>
+        </Alert>
+      ) : null}
       {resolved ? (
-        <p className="mt-2 text-xs text-muted-foreground">
+        <p className="col-start-2 mt-2 text-xs text-muted-foreground">
           {resolved === 'accept' ? 'Approved.' : 'Declined — nothing was changed.'}
         </p>
       ) : (
-        <div className="mt-3 flex gap-2">
+        <div className="col-start-2 mt-3 flex gap-2">
           <Button data-testid="elicitation-approve" size="sm" onClick={() => respond('accept')}>
             Approve
           </Button>
@@ -351,6 +394,6 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
           </Button>
         </div>
       )}
-    </div>
+    </Alert>
   )
 }

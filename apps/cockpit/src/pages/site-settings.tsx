@@ -1,10 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, TriangleAlert } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { ck, type Site } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import { Dialog } from '@/components/ui/dialog'
-import { Button, Card, CardContent } from '@/components/ui/primitives'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { SkeletonFields } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { ConflictDialog, type SettingsConflict } from '@/forms/site/conflict'
 import {
@@ -53,11 +65,18 @@ export function SiteSettingsPage() {
       {!site ? (
         <NoSite />
       ) : detail.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        // A form of forty fields is about to appear here, so the wait keeps its
+        // shape rather than collapsing to one line and shoving every control the
+        // operator was already reaching for out from under the pointer.
+        <SkeletonFields fields={6} label="Loading the site settings…" data-testid="ck-site-settings-skeleton" />
       ) : detail.error ? (
-        <p className="text-sm text-chart-5">
-          {detail.error instanceof Error ? detail.error.message : 'Could not load the site'}
-        </p>
+        <Alert variant="destructive" data-testid="ck-site-settings-error">
+          <TriangleAlert />
+          <AlertTitle>This site could not be read</AlertTitle>
+          <AlertDescription>
+            {detail.error instanceof Error ? detail.error.message : 'Could not load the site'}
+          </AlertDescription>
+        </Alert>
       ) : (
         // Keyed by the site: switching sites is a different record, and reusing
         // the form state across them would carry one site's edits into another.
@@ -198,21 +217,25 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
       </div>
 
       {readOnly ? (
-        <p className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
-          Read-only: saving settings needs the site:admin scope.
-        </p>
+        <Alert data-testid="ck-site-read-only">
+          <AlertTitle>Read-only</AlertTitle>
+          <AlertDescription>Saving settings needs the site:admin scope.</AlertDescription>
+        </Alert>
       ) : null}
 
       {unassigned ? (
-        <div
-          data-testid="ck-site-unassigned-error"
-          className="flex items-start justify-between gap-3 rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5"
-        >
-          <span>The whole request was rejected and nothing was written: {unassigned}</span>
-          <Button variant="ghost" size="sm" data-testid="ck-site-unassigned-dismiss" onClick={form.clearUnassigned}>
-            Dismiss
-          </Button>
-        </div>
+        // The dismiss control is an AlertAction — the slot the component reserves
+        // room for — rather than a button competing with the sentence for width.
+        <Alert variant="destructive" data-testid="ck-site-unassigned-error">
+          <TriangleAlert />
+          <AlertTitle>The whole request was rejected and nothing was written</AlertTitle>
+          <AlertDescription>{unassigned}</AlertDescription>
+          <AlertAction>
+            <Button variant="ghost" size="sm" data-testid="ck-site-unassigned-dismiss" onClick={form.clearUnassigned}>
+              Dismiss
+            </Button>
+          </AlertAction>
+        </Alert>
       ) : null}
 
       <SectionWarnings values={form.values} onOpen={setSection} />
@@ -226,7 +249,12 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
       />
 
       <Card>
-        <CardContent className="pt-5">
+        <CardHeader>
+          {/* The nav above is a strip of nine; the card says which one of them is
+              open, so the heading and the body are one statement. */}
+          <CardTitle>{SITE_SECTIONS.find((entry) => entry.id === section)?.label ?? 'Settings'}</CardTitle>
+        </CardHeader>
+        <CardContent>
           <Body form={form} base={wire.base_url} locales={[wire.default_locale]} disabled={readOnly} />
         </CardContent>
       </Card>
@@ -294,28 +322,33 @@ function SectionWarnings({
   if (active.length === 0) return null
 
   return (
-    <div
-      data-testid="ck-site-warnings"
-      className="flex flex-col gap-2 rounded-lg border border-chart-3/30 bg-chart-3/10 p-3"
-    >
-      <p className="flex items-center gap-2 text-xs font-medium text-chart-3">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+    // `Alert` has two variants and neither of them is amber, which is the right
+    // answer here rather than a defect: none of these blocks the save, so the
+    // destructive treatment would overstate them. The icon is what carries the
+    // severity, and it is a direct child of Alert — the CVA switches to a
+    // two-column grid on `has-[>svg]` and an icon in a wrapper breaks it.
+    <Alert data-testid="ck-site-warnings">
+      <AlertTriangle />
+      <AlertTitle>
         {active.length === 1
           ? 'One thing is accepted but questionable'
           : `${active.length} things are accepted but questionable`}
-      </p>
-      {active.map((entry) => (
-        <button
-          key={entry.id}
-          type="button"
-          data-testid={`ck-site-warnings-${entry.id}`}
-          onClick={() => onOpen(entry.id)}
-          className="rounded-md text-left text-xs text-chart-3 underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          {entry.label}: {entry.warning}
-        </button>
-      ))}
-    </div>
+      </AlertTitle>
+      <AlertDescription className="flex flex-col items-start gap-1">
+        {active.map((entry) => (
+          <Button
+            key={entry.id}
+            variant="link"
+            size="xs"
+            className="h-auto p-0 text-left"
+            data-testid={`ck-site-warnings-${entry.id}`}
+            onClick={() => onOpen(entry.id)}
+          >
+            {entry.label}: {entry.warning}
+          </Button>
+        ))}
+      </AlertDescription>
+    </Alert>
   )
 }
 
@@ -330,30 +363,28 @@ function IdentityConfirm({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  if (!open) return null
   return (
-    <Dialog
-      open
-      size="sm"
-      data-testid="ck-site-identity-confirm"
-      title="Change the site's identity?"
-      description={
-        <>
-          The base URL and the default locale of <strong>{name}</strong> decide every canonical link, feed URL and
-          redirect this site serves. Changing them moves URLs that other people have already linked to.
-        </>
-      }
-      onClose={onCancel}
-      footer={
-        <>
-          <Button variant="outline" size="sm" data-testid="ck-site-identity-cancel" onClick={onCancel}>
+    // An AlertDialog, not a Dialog: this is a decision about URLs other people
+    // have already linked to, and an alert dialog has no light-dismiss — a
+    // confirmation a stray click on the backdrop can answer is not one.
+    <AlertDialog open={open} onOpenChange={(next) => next || onCancel()}>
+      <AlertDialogContent size="sm" data-testid="ck-site-identity-confirm">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Change the site's identity?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The base URL and the default locale of <strong>{name}</strong> decide every canonical link, feed URL and
+            redirect this site serves. Changing them moves URLs that other people have already linked to.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel size="sm" data-testid="ck-site-identity-cancel" onClick={onCancel}>
             Cancel
-          </Button>
-          <Button size="sm" data-testid="ck-site-identity-accept" onClick={onConfirm}>
+          </AlertDialogCancel>
+          <AlertDialogAction size="sm" data-testid="ck-site-identity-accept" onClick={onConfirm}>
             Save identity
-          </Button>
-        </>
-      }
-    />
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
