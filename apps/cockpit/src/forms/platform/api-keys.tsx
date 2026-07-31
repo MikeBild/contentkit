@@ -6,7 +6,14 @@ import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -54,14 +61,88 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={create.isPending}
-      data-testid="ck-api-key-dialog"
-      title="New API key"
-      description="A key cannot be edited afterwards. Its scopes, sites and expiry are fixed at this moment."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // The key is being minted. Until the server answers there is nothing to
+        // cancel and nothing to report, so no dismissal path is open.
+        if (create.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-api-key-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={create.isPending}
+        onEscapeKeyDown={(event) => {
+          if (create.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (create.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>New API key</DialogTitle>
+          <DialogDescription>
+            A key cannot be edited afterwards. Its scopes, sites and expiry are fixed at this moment.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          <TextField
+            data-testid="ck-api-key-name"
+            label="Name"
+            required
+            maxLength={120}
+            help="Who or what holds this key."
+            about="It is the only label the audit trail can show."
+            value={name}
+            onChange={setName}
+          />
+
+          <ScopePicker
+            data-testid="ck-api-key-scopes"
+            label="Scopes"
+            required
+            help="What this key may do."
+            about="`authorize()` has no hierarchy — every scope has to be granted explicitly."
+            value={scopes}
+            ceiling={session.product_scopes}
+            onChange={setScopes}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-api-key-sites"
+            label="Sites"
+            required={mustScopeToSites}
+            definition="Which sites the key may reach."
+            fallback={
+              mustScopeToSites
+                ? 'Your own access is restricted, so the key has to name at least one of your sites.'
+                : 'Empty means every site — including sites created after this key.'
+            }
+            value={siteIds}
+            options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
+            emptyMessage="No sites"
+            onChange={(next) => setSiteIds([...next])}
+          />
+
+          <DateTimeField
+            data-testid="ck-api-key-expires"
+            label="Expires"
+            help="After this instant the key stops working, with no further action."
+            value={expiresAt}
+            onChange={setExpiresAt}
+          />
+
+          {create.error ? (
+            <Alert variant="destructive" data-testid="ck-api-key-error">
+              <TriangleAlert />
+              <AlertTitle>The key was not created</AlertTitle>
+              <AlertDescription>
+                {create.error instanceof Error ? create.error.message : 'Could not create the key'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-api-key-cancel" disabled={create.isPending} onClick={onClose}>
             Cancel
           </Button>
@@ -69,66 +150,8 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
             {create.isPending ? <Spinner data-icon="inline-start" /> : null}
             {create.isPending ? 'Creating…' : 'Create key'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <TextField
-          data-testid="ck-api-key-name"
-          label="Name"
-          required
-          maxLength={120}
-          help="Who or what holds this key."
-          about="It is the only label the audit trail can show."
-          value={name}
-          onChange={setName}
-        />
-
-        <ScopePicker
-          data-testid="ck-api-key-scopes"
-          label="Scopes"
-          required
-          help="What this key may do."
-          about="`authorize()` has no hierarchy — every scope has to be granted explicitly."
-          value={scopes}
-          ceiling={session.product_scopes}
-          onChange={setScopes}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-api-key-sites"
-          label="Sites"
-          required={mustScopeToSites}
-          definition="Which sites the key may reach."
-          fallback={
-            mustScopeToSites
-              ? 'Your own access is restricted, so the key has to name at least one of your sites.'
-              : 'Empty means every site — including sites created after this key.'
-          }
-          value={siteIds}
-          options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
-          emptyMessage="No sites"
-          onChange={(next) => setSiteIds([...next])}
-        />
-
-        <DateTimeField
-          data-testid="ck-api-key-expires"
-          label="Expires"
-          help="After this instant the key stops working, with no further action."
-          value={expiresAt}
-          onChange={setExpiresAt}
-        />
-
-        {create.error ? (
-          <Alert variant="destructive" data-testid="ck-api-key-error">
-            <TriangleAlert />
-            <AlertTitle>The key was not created</AlertTitle>
-            <AlertDescription>
-              {create.error instanceof Error ? create.error.message : 'Could not create the key'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

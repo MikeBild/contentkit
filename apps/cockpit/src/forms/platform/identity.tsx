@@ -7,7 +7,14 @@ import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -127,14 +134,187 @@ function GrantDialog({
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={save.isPending}
-      data-testid="ck-grant-dialog"
-      title={editing ? `Edit grant for ${grant?.email || grant?.subject}` : 'New identity grant'}
-      description="A grant binds one provider subject to a product-scope ceiling. The ceiling is the only stored truth; shrinking it takes effect on the very next request."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // A scope ceiling takes effect on the next request, so a save that is
+        // in the air is already changing what the holder can do. Nothing
+        // dismisses this until the server has said what it stored.
+        if (save.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-grant-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={save.isPending}
+        onEscapeKeyDown={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? `Edit grant for ${grant?.email || grant?.subject}` : 'New identity grant'}
+          </DialogTitle>
+          <DialogDescription>
+            A grant binds one provider subject to a product-scope ceiling. The ceiling is the only stored truth;
+            shrinking it takes effect on the very next request.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          {restoring ? (
+            <Alert data-testid="ck-grant-restore-note">
+              <TriangleAlert />
+              <AlertTitle>This grant is revoked</AlertTitle>
+              <AlertDescription>
+                Saving restores it — the only way to bring a revoked grant back. The holder can sign in again from the
+                next request; the sessions and tokens revoked with it are not restored.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {editing ? (
+            <TextField
+              data-testid="ck-grant-subject"
+              label="Subject"
+              value={`${grant?.provider_id ?? ''} · ${grant?.subject ?? ''}`}
+              disabled
+              help="The provider's immutable identifier for this person."
+              about="It is what the grant is keyed on and cannot be changed."
+              onChange={() => {}}
+            />
+          ) : (
+            <>
+              <EnumSelect
+                data-testid="ck-grant-provider"
+                label="Provider"
+                required
+                help="Only configured OIDC providers can back a grant."
+                value={draft.provider_id}
+                placeholder={providers.isPending ? 'Loading…' : 'Choose a provider'}
+                options={options.map((provider) => ({ value: provider.id, label: `${provider.label} · ${provider.id}` }))}
+                error={
+                  providers.error
+                    ? 'Could not load the providers'
+                    : !providers.isPending && options.length === 0
+                      ? 'This deployment has no OIDC provider configured, so no grant can be created'
+                      : undefined
+                }
+                onChange={(provider_id) => setDraft({ ...draft, provider_id })}
+              />
+
+              <TextField
+                data-testid="ck-grant-issuer"
+                label="Issuer"
+                value={issuer}
+                disabled
+                help="Filled from the provider."
+                about="The server rejects a grant whose issuer does not match it exactly."
+                onChange={() => {}}
+              />
+
+              <TextField
+                data-testid="ck-grant-subject"
+                label="Subject"
+                required
+                help="The provider's stable identifier for this person — the `sub` claim, not their email."
+                value={draft.subject}
+                onChange={(subject) => setDraft({ ...draft, subject })}
+              />
+            </>
+          )}
+
+          <TextField
+            data-testid="ck-grant-email"
+            label="Email"
+            value={draft.email}
+            fallback="Only a label."
+            about="Access is decided by the subject."
+            onChange={(email) => setDraft({ ...draft, email })}
+          />
+
+          <TextField
+            data-testid="ck-grant-display-name"
+            label="Display name"
+            value={draft.display_name}
+            onChange={(display_name) => setDraft({ ...draft, display_name })}
+          />
+
+          <ChoiceCards
+            data-testid="ck-grant-authority"
+            label="Authority"
+            help="The server accepts exactly one of the two."
+            value={draft.authority}
+            options={[
+              {
+                value: 'scopes',
+                label: 'Explicit scopes',
+                description: 'Pick each scope. What is stored is what you chose, unchanged by later role definitions.',
+              },
+              {
+                value: 'role',
+                label: 'Named role',
+                description: 'A shorthand the server expands into a scope set once, at save time.',
+              },
+            ]}
+            onChange={(authority) => setDraft({ ...draft, authority })}
+          />
+
+          {draft.authority === 'role' ? (
+            <ChoiceCards
+              data-testid="ck-grant-role"
+              label="Role"
+              value={draft.role}
+              options={OPERATOR_ROLE.map((role) => ({ value: role, label: role, description: ROLE_CONSEQUENCE[role] }))}
+              onChange={(role) => setDraft({ ...draft, role })}
+            />
+          ) : (
+            <ScopePicker
+              data-testid="ck-grant-scopes"
+              label="Product scopes"
+              required
+              help="The ceiling."
+              about="Nothing this identity does can exceed it, whatever token it holds."
+              value={draft.product_scopes}
+              ceiling={session.product_scopes}
+              onChange={(product_scopes) => setDraft({ ...draft, product_scopes })}
+            />
+          )}
+
+          <EntityMultiSelect
+            data-testid="ck-grant-sites"
+            label="Sites"
+            definition="Which sites this identity may reach."
+            fallback="Empty means every site."
+            value={draft.site_ids}
+            options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
+            emptyMessage="No sites"
+            onChange={(site_ids) => setDraft({ ...draft, site_ids: [...site_ids] })}
+          />
+
+          {conflict ? (
+            <Alert data-testid="ck-grant-conflict">
+              <TriangleAlert />
+              <AlertTitle>A grant for this subject already exists</AlertTitle>
+              <AlertDescription>
+                {/* The server's own sentence: it already says whether the existing
+                    grant needs editing or restoring, and paraphrasing it would only
+                    add a second version to keep in step. */}
+                {conflict.hint ?? 'A grant for this subject already exists.'}
+              </AlertDescription>
+            </Alert>
+          ) : save.error ? (
+            <Alert variant="destructive" data-testid="ck-grant-error">
+              <TriangleAlert />
+              <AlertTitle>The grant was not saved</AlertTitle>
+              <AlertDescription>
+                {save.error instanceof Error ? save.error.message : 'Could not save the grant'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-grant-cancel" disabled={save.isPending} onClick={onClose}>
             Cancel
           </Button>
@@ -142,161 +322,8 @@ function GrantDialog({
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : restoring ? 'Restore grant' : editing ? 'Save grant' : 'Create grant'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        {restoring ? (
-          <Alert data-testid="ck-grant-restore-note">
-            <TriangleAlert />
-            <AlertTitle>This grant is revoked</AlertTitle>
-            <AlertDescription>
-              Saving restores it — the only way to bring a revoked grant back. The holder can sign in again from the
-              next request; the sessions and tokens revoked with it are not restored.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {editing ? (
-          <TextField
-            data-testid="ck-grant-subject"
-            label="Subject"
-            value={`${grant?.provider_id ?? ''} · ${grant?.subject ?? ''}`}
-            disabled
-            help="The provider's immutable identifier for this person."
-            about="It is what the grant is keyed on and cannot be changed."
-            onChange={() => {}}
-          />
-        ) : (
-          <>
-            <EnumSelect
-              data-testid="ck-grant-provider"
-              label="Provider"
-              required
-              help="Only configured OIDC providers can back a grant."
-              value={draft.provider_id}
-              placeholder={providers.isPending ? 'Loading…' : 'Choose a provider'}
-              options={options.map((provider) => ({ value: provider.id, label: `${provider.label} · ${provider.id}` }))}
-              error={
-                providers.error
-                  ? 'Could not load the providers'
-                  : !providers.isPending && options.length === 0
-                    ? 'This deployment has no OIDC provider configured, so no grant can be created'
-                    : undefined
-              }
-              onChange={(provider_id) => setDraft({ ...draft, provider_id })}
-            />
-
-            <TextField
-              data-testid="ck-grant-issuer"
-              label="Issuer"
-              value={issuer}
-              disabled
-              help="Filled from the provider."
-              about="The server rejects a grant whose issuer does not match it exactly."
-              onChange={() => {}}
-            />
-
-            <TextField
-              data-testid="ck-grant-subject"
-              label="Subject"
-              required
-              help="The provider's stable identifier for this person — the `sub` claim, not their email."
-              value={draft.subject}
-              onChange={(subject) => setDraft({ ...draft, subject })}
-            />
-          </>
-        )}
-
-        <TextField
-          data-testid="ck-grant-email"
-          label="Email"
-          value={draft.email}
-          fallback="Only a label."
-          about="Access is decided by the subject."
-          onChange={(email) => setDraft({ ...draft, email })}
-        />
-
-        <TextField
-          data-testid="ck-grant-display-name"
-          label="Display name"
-          value={draft.display_name}
-          onChange={(display_name) => setDraft({ ...draft, display_name })}
-        />
-
-        <ChoiceCards
-          data-testid="ck-grant-authority"
-          label="Authority"
-          help="The server accepts exactly one of the two."
-          value={draft.authority}
-          options={[
-            {
-              value: 'scopes',
-              label: 'Explicit scopes',
-              description: 'Pick each scope. What is stored is what you chose, unchanged by later role definitions.',
-            },
-            {
-              value: 'role',
-              label: 'Named role',
-              description: 'A shorthand the server expands into a scope set once, at save time.',
-            },
-          ]}
-          onChange={(authority) => setDraft({ ...draft, authority })}
-        />
-
-        {draft.authority === 'role' ? (
-          <ChoiceCards
-            data-testid="ck-grant-role"
-            label="Role"
-            value={draft.role}
-            options={OPERATOR_ROLE.map((role) => ({ value: role, label: role, description: ROLE_CONSEQUENCE[role] }))}
-            onChange={(role) => setDraft({ ...draft, role })}
-          />
-        ) : (
-          <ScopePicker
-            data-testid="ck-grant-scopes"
-            label="Product scopes"
-            required
-            help="The ceiling."
-            about="Nothing this identity does can exceed it, whatever token it holds."
-            value={draft.product_scopes}
-            ceiling={session.product_scopes}
-            onChange={(product_scopes) => setDraft({ ...draft, product_scopes })}
-          />
-        )}
-
-        <EntityMultiSelect
-          data-testid="ck-grant-sites"
-          label="Sites"
-          definition="Which sites this identity may reach."
-          fallback="Empty means every site."
-          value={draft.site_ids}
-          options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
-          emptyMessage="No sites"
-          onChange={(site_ids) => setDraft({ ...draft, site_ids: [...site_ids] })}
-        />
-
-        {conflict ? (
-          <Alert data-testid="ck-grant-conflict">
-            <TriangleAlert />
-            <AlertTitle>A grant for this subject already exists</AlertTitle>
-            <AlertDescription>
-              {/* The server's own sentence: it already says whether the existing
-                  grant needs editing or restoring, and paraphrasing it would only
-                  add a second version to keep in step. */}
-              {conflict.hint ?? 'A grant for this subject already exists.'}
-            </AlertDescription>
-          </Alert>
-        ) : save.error ? (
-          <Alert variant="destructive" data-testid="ck-grant-error">
-            <TriangleAlert />
-            <AlertTitle>The grant was not saved</AlertTitle>
-            <AlertDescription>
-              {save.error instanceof Error ? save.error.message : 'Could not save the grant'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

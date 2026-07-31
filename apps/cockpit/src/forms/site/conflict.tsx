@@ -2,7 +2,15 @@ import { TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface SettingsConflict {
@@ -40,14 +48,77 @@ export function ConflictDialog({
   return (
     <Dialog
       open
-      size="lg"
-      data-testid="ck-site-conflict"
-      title="The site changed while you were editing"
-      description={`${changes.length === 1 ? 'One key' : `${changes.length} keys`} were written by someone else since this form was loaded.`}
-      busy={isSaving}
-      onClose={onCancel}
-      footer={
-        <>
+      onOpenChange={(next) => {
+        // The overwrite is a full PATCH of someone else's settings. While it is
+        // in the air neither answer has landed, so nothing dismisses this.
+        if (isSaving) return
+        if (!next) onCancel()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-site-conflict"
+        className="sm:max-w-2xl"
+        closeDisabled={isSaving}
+        onEscapeKeyDown={(event) => {
+          if (isSaving) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (isSaving) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>The site changed while you were editing</DialogTitle>
+          <DialogDescription>
+            {changes.length === 1 ? 'One key' : `${changes.length} keys`} were written by someone else since this form
+            was loaded.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin overflow-y-auto">
+          {/* Two answers with opposite, irreversible consequences: an Alert, not a
+              grey line above the buttons. */}
+          <Alert data-testid="ck-site-conflict-consequences">
+            <TriangleAlert />
+            <AlertTitle>Both answers lose something</AlertTitle>
+            <AlertDescription>
+              Reloading discards everything unsaved on this page. Overwriting keeps this page and removes their change.
+            </AlertDescription>
+          </Alert>
+          {showDiff ? (
+            <ul data-testid="ck-site-conflict-list" className="mt-4 flex flex-col gap-1">
+              {changes.map((change) => (
+                <li key={change.path} className="rounded-lg border border-border p-2 text-xs">
+                  <div className="font-mono text-muted-foreground">{change.path}</div>
+                  {/* The two values are truncated to keep the row one line, so the
+                      full value has to be reachable — and a native `title` is neither
+                      keyboard- nor touch-reachable. */}
+                  <TooltipProvider>
+                    <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-mine-${change.path}`}>
+                            <span className="text-muted-foreground">loaded: </span>
+                            {change.mine}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{change.mine}</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-theirs-${change.path}`}>
+                            <span className="text-muted-foreground">now: </span>
+                            {change.theirs}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{change.theirs}</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TooltipProvider>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button
             variant="outline"
             size="sm"
@@ -72,54 +143,11 @@ export function ConflictDialog({
             disabled={isSaving}
             onClick={onOverwrite}
           >
+            {isSaving ? <Spinner data-icon="inline-start" /> : null}
             {isSaving ? 'Saving…' : 'Overwrite with mine'}
           </Button>
-        </>
-      }
-    >
-      {/* Two answers with opposite, irreversible consequences: an Alert, not a
-          grey line above the buttons. */}
-      <Alert data-testid="ck-site-conflict-consequences">
-        <TriangleAlert />
-        <AlertTitle>Both answers lose something</AlertTitle>
-        <AlertDescription>
-          Reloading discards everything unsaved on this page. Overwriting keeps this page and removes their change.
-        </AlertDescription>
-      </Alert>
-      {showDiff ? (
-        <ul data-testid="ck-site-conflict-list" className="mt-4 flex flex-col gap-1">
-          {changes.map((change) => (
-            <li key={change.path} className="rounded-lg border border-border p-2 text-xs">
-              <div className="font-mono text-muted-foreground">{change.path}</div>
-              {/* The two values are truncated to keep the row one line, so the
-                  full value has to be reachable — and a native `title` is neither
-                  keyboard- nor touch-reachable. */}
-              <TooltipProvider>
-                <div className="mt-1 grid gap-1 sm:grid-cols-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-mine-${change.path}`}>
-                        <span className="text-muted-foreground">loaded: </span>
-                        {change.mine}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>{change.mine}</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-theirs-${change.path}`}>
-                        <span className="text-muted-foreground">now: </span>
-                        {change.theirs}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>{change.theirs}</TooltipContent>
-                  </Tooltip>
-                </div>
-              </TooltipProvider>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

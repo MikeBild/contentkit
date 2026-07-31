@@ -6,7 +6,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
 import { EntityMultiSelect, NumberField, SlugField, TextField } from '@/forms/fields'
@@ -60,14 +67,92 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={create.isPending}
-      data-testid="ck-preview-dialog"
-      title="New preview"
-      description="A preview is a full build behind a one-time invitation. It is never activated and never becomes the live site."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // The build is running on the server. Closing the dialog would not stop
+        // it, so closing the dialog is not offered until it answers.
+        if (create.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-preview-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={create.isPending}
+        onEscapeKeyDown={(event) => {
+          if (create.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (create.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>New preview</DialogTitle>
+          <DialogDescription>
+            A preview is a full build behind a one-time invitation. It is never activated and never becomes the live
+            site.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          <SlugField
+            data-testid="ck-preview-slug"
+            label="Name"
+            required
+            derivedFrom={reason}
+            help="Appears in the preview URL."
+            about="Reusing a name atomically replaces the previous preview under it."
+            value={slug}
+            onChange={setSlug}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-preview-items"
+            label="Documents to overlay"
+            about="Their newest revision is built on top of what is published. One revision per document."
+            fallback="Empty previews the published set exactly as it stands."
+            value={itemIds}
+            isLoading={content.isPending}
+            optionsError={content.error}
+            emptyMessage="No content on this site yet"
+            options={items.map((item) => ({
+              value: item.id,
+              label: item.title || item.slug || item.id.slice(0, 8),
+              hint: `${item.kind} · ${item.latest_revision_status ?? 'draft'}`,
+            }))}
+            onChange={(next) => setItemIds([...next])}
+          />
+
+          <NumberField
+            data-testid="ck-preview-expires"
+            label="Expires in"
+            required
+            integer
+            unit="hours"
+            min={MIN_HOURS}
+            max={MAX_HOURS}
+            help="After this the invitation and the preview URL both stop working."
+            value={hours}
+            onChange={setHours}
+          />
+
+          <TextField
+            data-testid="ck-preview-reason"
+            label="Reason"
+            value={reason}
+            fallback="Recorded on the release row; empty is fine."
+            onChange={setReason}
+          />
+
+          {create.error ? (
+            <Alert variant="destructive" data-testid="ck-preview-error">
+              <TriangleAlert />
+              <AlertTitle>The preview was not built</AlertTitle>
+              <AlertDescription>
+                {create.error instanceof Error ? create.error.message : 'Could not build the preview'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-preview-cancel" disabled={create.isPending} onClick={onClose}>
             Cancel
           </Button>
@@ -79,69 +164,8 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
             {create.isPending ? <Spinner data-icon="inline-start" /> : null}
             {create.isPending ? 'Building…' : 'Build preview'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <SlugField
-          data-testid="ck-preview-slug"
-          label="Name"
-          required
-          derivedFrom={reason}
-          help="Appears in the preview URL."
-          about="Reusing a name atomically replaces the previous preview under it."
-          value={slug}
-          onChange={setSlug}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-preview-items"
-          label="Documents to overlay"
-          about="Their newest revision is built on top of what is published. One revision per document."
-          fallback="Empty previews the published set exactly as it stands."
-          value={itemIds}
-          isLoading={content.isPending}
-          optionsError={content.error}
-          emptyMessage="No content on this site yet"
-          options={items.map((item) => ({
-            value: item.id,
-            label: item.title || item.slug || item.id.slice(0, 8),
-            hint: `${item.kind} · ${item.latest_revision_status ?? 'draft'}`,
-          }))}
-          onChange={(next) => setItemIds([...next])}
-        />
-
-        <NumberField
-          data-testid="ck-preview-expires"
-          label="Expires in"
-          required
-          integer
-          unit="hours"
-          min={MIN_HOURS}
-          max={MAX_HOURS}
-          help="After this the invitation and the preview URL both stop working."
-          value={hours}
-          onChange={setHours}
-        />
-
-        <TextField
-          data-testid="ck-preview-reason"
-          label="Reason"
-          value={reason}
-          fallback="Recorded on the release row; empty is fine."
-          onChange={setReason}
-        />
-
-        {create.error ? (
-          <Alert variant="destructive" data-testid="ck-preview-error">
-            <TriangleAlert />
-            <AlertTitle>The preview was not built</AlertTitle>
-            <AlertDescription>
-              {create.error instanceof Error ? create.error.message : 'Could not build the preview'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

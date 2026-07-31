@@ -78,10 +78,15 @@ class** (the CVA sizes them per button size).
 > "this is the shape it is meant to end in". What is actually outstanding, as of this
 > edit:
 >
-> - **`components/ui/dialog.tsx` is still the console's own overlay**, and twelve modules
->   still import `Dialog`/`DialogActions` from it with the `title`/`onClose`/`size` props
->   §4 says are gone. This is the largest single piece left, and it is what forced the
->   deviation recorded in §7.
+> - ~~**`components/ui/dialog.tsx` is still the console's own overlay**~~ — **replaced by
+>   the vendored Radix Dialog 2026-07-31, and all sixteen call sites across twelve modules
+>   converted in the same change.** `Dialog`/`DialogActions` with `title`/`onClose`/`size`
+>   exist nowhere; `DialogActions` is gone (`DialogFooter` is the row) and so is the dead
+>   `Sheet` export this file used to squat on `ui/sheet.tsx`'s name with. The `CommandDialog`
+>   workaround §7 recorded is reverted: `ui/command.tsx` composes the real Dialog again.
+>   The component now has a rendering test — `components/ui/dialog.test.tsx`, four cases
+>   pinned in `test/unit/cockpit-behavioural-floor.test.mjs`. The **call sites** remain on
+>   the uncovered side of that ledger.
 > - ~~**`components/ui/primitives.tsx` and `components/ui/empty-state.tsx` are back**~~ —
 >   **deleted again 2026-07-31, and this time nothing is left importing either.** The
 >   five modules that still reached into primitives came off it in the same change:
@@ -275,9 +280,49 @@ to forward it. `shadcn add dialog` would revert this.
 Default width is `w-full max-w-[calc(100%-2rem)] sm:max-w-sm`. There is no `size`
 prop — widen via `className="sm:max-w-lg"` (layout, allowed).
 
-### Exact replacement shape for the old `Dialog`
+**Three further local deviations, 2026-07-31, when the file stopped being the console's
+own overlay.** All four (with the test id above) are documented on the file itself:
 
-Old (still in 15 places, e.g. `pages/sites.tsx:148`):
+| deviation | why |
+| --- | --- |
+| `max-h-[calc(100dvh-2rem)]` in `DialogContent`'s base | Stock has no height bound. A rendered release document, the four-step wizard and a line diff are all taller than the viewport. A grid item that scrolls has an automatic minimum size of zero, so a body marked `overflow-y-auto` shrinks and scrolls while `DialogHeader`/`DialogFooter` keep their rows — the pinned-header behaviour the old overlay had. |
+| `closeDisabled?: boolean` on `DialogContent` | While a mutation is in flight the `X` is already inert (every path through it reaches the caller's `onOpenChange`, which returns early). A control that looks pressable and does nothing is its own defect, so the caller says so once. This is what `busy` did to the old header button. |
+| a default `onCloseAutoFocus` that refocuses the opener | **A bug fix, not a preference.** `@radix-ui/react-dialog`'s modal content cancels `FocusScope`'s restore (`event.preventDefault()`) and focuses `context.triggerRef.current` instead. That ref is set only by `DialogTrigger`, and **no dialog in this console uses one** — every call site owns its button so it can own the scope check and the `data-testid`. So the ref is `null` and focus lands on `<body>`. Same defect, same cause, as the one `components/confirm.tsx` documents at length. A caller that prevents the default keeps full control. |
+
+**Busy dialogs: where the check goes.** Three places, and they are not redundant in the
+same direction. `onOpenChange` is the backstop that catches every path; `onEscapeKeyDown`
+and `onPointerDownOutside` catch the two Radix decides *before* it ever calls
+`onOpenChange`; `closeDisabled` is what makes the `X` say so. Removing any one of the
+last three, together with the `onOpenChange` check, is a mutation
+`components/ui/dialog.test.tsx` fails on.
+
+```tsx
+<Dialog
+  open
+  onOpenChange={(next) => {
+    if (save.isPending) return
+    if (!next) onClose()
+  }}
+>
+  <DialogContent
+    data-testid="ck-x-dialog"
+    className="sm:max-w-2xl"
+    closeDisabled={save.isPending}
+    onEscapeKeyDown={(event) => { if (save.isPending) event.preventDefault() }}
+    onPointerDownOutside={(event) => { if (save.isPending) event.preventDefault() }}
+  >
+```
+
+**A dialog with no descriptive sentence** passes `aria-describedby={undefined}` (the
+three read-only viewers in `pages/authoring.tsx` do). Radix warns about a missing
+`Description` otherwise, and inventing a sentence to silence a warning puts a line on
+screen that says nothing.
+
+### Exact replacement shape for the old `Dialog` — ✅ DONE 2026-07-31, all 16 sites
+
+Old (gone from every module; kept here because it is what a diff of this phase reads
+like, and because `pages/sites.tsx` / `pages/site-settings.tsx` hand-roll a confirmation
+of their own that is a separate phase):
 
 ```tsx
 <Dialog
@@ -588,11 +633,12 @@ yourself:
 
 Quirks of the installed version, all verified in source:
 
-- The `sr-only` `DialogHeader`/`DialogTitle`/`DialogDescription` is rendered **outside**
-  `DialogContent` (`command.tsx:49-52`). It still satisfies the "Dialog must have a
-  Title" rule via Radix context. **Do not add a second `DialogTitle`** inside.
-- `className` on `CommandDialog` goes to `DialogContent`, which is already
-  `top-1/3 translate-y-0 p-0 rounded-xl!`.
+- Stock renders the `sr-only` `DialogHeader`/`DialogTitle`/`DialogDescription` **outside**
+  `DialogContent`; **this project renders it as the first child inside** — see the
+  subsection below. Either way it satisfies the "a Dialog must have a Title" rule via
+  Radix context, so **do not add a second `DialogTitle`**.
+- `className` on `CommandDialog` is merged onto `DialogContent`, which this file already
+  overrides to `top-1/3 translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-lg`.
 - `CommandInput` wraps itself in an `InputGroup` with a trailing `SearchIcon`
   `InputGroupAddon`. Do not wrap it again and do not add your own search icon.
 - `CommandItem` appends its own `<CheckIcon>` that is `opacity-0` unless
@@ -612,27 +658,31 @@ cmdk props that exist on `Command`: `value`, `onValueChange`, `filter`, `shouldF
 Its groups are `Page` / `Site` / `Content`, written out as a constant so an empty group
 cannot reorder the two that are left under someone already typing.
 
-### `CommandDialog` here does NOT stand on `ui/dialog.tsx` — corrected 2026-07-31
+### `CommandDialog` stands on `ui/dialog.tsx` again — workaround reverted 2026-07-31
 
-The stock file composes `CommandDialog` out of `Dialog`, `DialogContent`, `DialogHeader`,
-`DialogTitle` and `DialogDescription` from `@/components/ui/dialog`. **None of those five
-names exists in this project.** `ui/dialog.tsx` is still the console's own overlay —
-`Dialog` there takes `title` / `onClose` / `size` and renders a panel, it is not a Radix
-Root — so `shadcn add command` writes a file that does not compile here. That was five of
-the fourteen `tsc` errors on the branch.
+~~**`CommandDialog` here does NOT stand on `ui/dialog.tsx`.**~~ For one day it did not.
+Stock composes `CommandDialog` out of `Dialog`, `DialogContent`, `DialogHeader`,
+`DialogTitle` and `DialogDescription` from `@/components/ui/dialog`, and while
+`ui/dialog.tsx` was still the console's own overlay none of those five names existed —
+`Dialog` there took `title` / `onClose` / `size` and rendered a panel, not a Radix Root —
+so `shadcn add command` wrote a file that did not compile here. That was five of the
+fourteen `tsc` errors on the branch, and `command.tsx` built the modal on `radix-ui`
+directly instead.
 
-So `command.tsx` builds the modal on `Dialog` from **`radix-ui`** directly, with the same
-overlay and content classes `ui/sheet.tsx` and `ui/alert-dialog.tsx` already use. The
-caller-facing shape is unchanged (`CommandDialog > Command > CommandInput + CommandList`,
-and `title` / `description` / `showCloseButton` behave as documented above), and one
-thing is deliberately better than stock: the `sr-only` title and description are rendered
-**inside** `DialogPrimitive.Content`, not beside it. Radix wires them by context either
-way, but a labelling element outside the dialog is not in the subtree it labels.
+That workaround had an explicit end condition — vendor the real Dialog and come back —
+and the condition is met. `CommandDialog` is the stock composition again: `Dialog >
+DialogContent > (sr-only DialogHeader) + children`.
 
-**This is a workaround, not the destination.** The real fix is to vendor shadcn's
-`dialog.tsx` and migrate the twelve modules still importing `Dialog` / `DialogActions`
-from `@/components/ui/dialog` (§4 has the replacement shape). When that lands, revert this
-`CommandDialog` to the stock composition — it is a single function.
+**One thing stays deliberately unlike stock.** Stock renders the `sr-only` `DialogHeader`
+**beside** `DialogContent`, as a sibling; here it is the first child **inside** it. Radix
+wires `aria-labelledby`/`aria-describedby` by context either way, so both are "labelled" —
+but a labelling element outside the dialog is not in the subtree the dialog exposes, and a
+reader that walks into the dialog to re-read its name finds nothing there.
+
+`data-testid` on `CommandDialog` now lands on `DialogContent` (default
+`ck-command-dialog`), so the derived `<testid>-close` from §4 applies to the palette too —
+it used to be a hand-written `absolute top-2 right-2` Button in this file. Row 15 of §27
+still holds for `Sidebar`, no longer for `CommandDialog`.
 
 ---
 
@@ -1481,7 +1531,7 @@ The list this document exists for. Each row was verified in the installed source
 | # | Half-remembered | Actually |
 | --- | --- | --- |
 | 1 | `<Dialog title description footer size busy onClose>` | Compositional only: `Dialog > DialogContent > DialogHeader/DialogTitle/DialogDescription + DialogFooter`. None of those six props exist. §4 |
-| 2 | `DialogActions` wraps footer buttons | Deleted. `DialogFooter` *is* the button row. |
+| 2 | `DialogActions` wraps footer buttons | Deleted, and as of 2026-07-31 it exists in no module. `DialogFooter` *is* the button row (`flex-col-reverse … sm:flex-row sm:justify-end`); `forms/site/wizard.tsx` overrides it to `sm:justify-between` because Back is a navigation, not an answer. |
 | 3 | Wrap `DialogContent` in `DialogPortal` + `DialogOverlay` | `DialogContent` renders both itself. Wrapping double-portals it. |
 | 4 | `DialogFooter` is a plain div | It also takes `showCloseButton` (default `false`) — a `radix-nova` extra. |
 | 5 | `<Progress label valueLabel tone since>` | **Stock** takes only `value`, `max`, `getValueLabel`. This project's `ui/progress.tsx` is not stock and takes all four — do not "simplify" a call site to match the registry. §21 |
@@ -1491,10 +1541,10 @@ The list this document exists for. Each row was verified in the installed source
 | 9 | `TooltipContent sideOffset` defaults to 4 | Installed default is **`0`**. It also always renders its own Arrow. |
 | 10 | Tooltips work standalone | `TooltipProvider` is required — and `SidebarMenuButton tooltip=…` needs it too. Mounted once, as the outermost element of `Shell()` in `app/shell.tsx`; before that it was mounted nowhere and the sidebar threw. §1 |
 | 11 | `CommandDialog` renders `Command` for you | It does **not**. You must nest `<Command>` inside. §7 |
-| 12 | Add your own `DialogTitle` inside `CommandDialog` | It already renders an `sr-only` `DialogHeader` (outside `DialogContent`). Adding a second is a duplicate. |
+| 12 | Add your own `DialogTitle` inside `CommandDialog` | It already renders an `sr-only` `DialogHeader` — *inside* `DialogContent` in this project, beside it in stock. Adding a second is a duplicate either way. §7 |
 | 13 | Add a `SearchIcon` next to `CommandInput` | `CommandInput` already wraps itself in `InputGroup` with a `SearchIcon` addon. |
 | 14 | Hand-roll a check mark on a selected `CommandItem` | `CommandItem` appends its own `CheckIcon`, shown via `data-checked="true"` and auto-hidden when the item has a `CommandShortcut`. |
-| 15 | `data-testid` on `CommandDialog` / `Sidebar` marks the visible thing | Both spread `...props` onto a wrapper (Dialog Root; desktop container / mobile `Sheet`). Put ids on the inner parts. |
+| 15 | `data-testid` on `CommandDialog` / `Sidebar` marks the visible thing | True of `Sidebar` — it spreads `...props` onto the desktop container / mobile `Sheet`, so put ids on the inner parts. **No longer true of `CommandDialog`**: since 2026-07-31 it destructures `data-testid` and puts it on `DialogContent`, defaulting to `ck-command-dialog`, with `-close` derived. §7 |
 | 16 | `useSidebar()` returns `{ open, toggle }` | `{ state, open, setOpen, openMobile, setOpenMobile, isMobile, toggleSidebar }` — and it **throws** outside `SidebarProvider`. §6 |
 | 17 | Sidebar shortcut is ⌘⇧B, or configurable by prop | **⌘B / Ctrl+B, no Shift**, from the module constant `SIDEBAR_KEYBOARD_SHORTCUT = "b"`. No prop. |
 | 18 | `collapsible="icon"` is a persistent mode attribute | `data-collapsible` is set **only while collapsed**, so `group-data-[collapsible=icon]:*` is a state selector. |

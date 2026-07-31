@@ -6,7 +6,14 @@ import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ACCESS_RULE_MATCH, type AccessRuleMatch } from '@/forms/contracts/enums.generated'
@@ -73,14 +80,98 @@ function RuleDialog({
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={save.isPending}
-      data-testid="ck-rule-dialog"
-      title={editing ? `Edit rule for ${rule?.path}` : 'New path rule'}
-      description="Rules are snapshotted into each release. Saving one changes nothing live until the next build."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // A rule decides who can read a path. Until the server says which
+        // audience it stored, there is no answer to dismiss.
+        if (save.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-rule-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={save.isPending}
+        onEscapeKeyDown={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{editing ? `Edit rule for ${rule?.path}` : 'New path rule'}</DialogTitle>
+          <DialogDescription>
+            Rules are snapshotted into each release. Saving one changes nothing live until the next build.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          <SegmentedField
+            data-testid="ck-rule-match"
+            label="Match"
+            value={match}
+            options={MATCH_OPTIONS}
+            help={
+              match === 'prefix'
+                ? 'Covers the path and everything below it.'
+                : 'Covers exactly this path and nothing below it.'
+            }
+            onChange={setMatch}
+          />
+
+          <PathField
+            data-testid="ck-rule-path"
+            label="Path"
+            required
+            help="A published path on this site, for example /de/internal."
+            value={path}
+            onChange={setPath}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-rule-groups"
+            label="Groups"
+            value={groupSlugs}
+            isLoading={groupsQuery.isPending}
+            optionsError={groupsQuery.error}
+            emptyMessage="No groups on this site yet"
+            options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
+            onChange={(next) => setGroupSlugs([...next])}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-rule-users"
+            label="Readers"
+            help="Named directly, independent of any group."
+            value={userIds}
+            isLoading={readersQuery.isPending}
+            optionsError={readersQuery.error}
+            emptyMessage="No readers on this site yet"
+            options={readers.map((reader) => ({
+              value: reader.id,
+              label: reader.display_name || reader.username,
+              hint: reader.username,
+            }))}
+            onChange={(next) => setUserIds([...next])}
+          />
+
+          {audienceEmpty ? (
+            <p data-testid="ck-rule-audience-error" className="text-sm text-chart-5">
+              A rule needs at least one group or one reader — the server rejects an empty audience, and a rule nobody
+              matches would lock the path away from everyone.
+            </p>
+          ) : null}
+
+          {save.error ? (
+            <Alert variant="destructive" data-testid="ck-rule-error">
+              <TriangleAlert />
+              <AlertTitle>The rule was not saved</AlertTitle>
+              <AlertDescription>
+                {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-rule-cancel" disabled={save.isPending} onClick={onClose}>
             Cancel
           </Button>
@@ -92,76 +183,8 @@ function RuleDialog({
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save rule' : 'Create rule'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <SegmentedField
-          data-testid="ck-rule-match"
-          label="Match"
-          value={match}
-          options={MATCH_OPTIONS}
-          help={
-            match === 'prefix'
-              ? 'Covers the path and everything below it.'
-              : 'Covers exactly this path and nothing below it.'
-          }
-          onChange={setMatch}
-        />
-
-        <PathField
-          data-testid="ck-rule-path"
-          label="Path"
-          required
-          help="A published path on this site, for example /de/internal."
-          value={path}
-          onChange={setPath}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-rule-groups"
-          label="Groups"
-          value={groupSlugs}
-          isLoading={groupsQuery.isPending}
-          optionsError={groupsQuery.error}
-          emptyMessage="No groups on this site yet"
-          options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
-          onChange={(next) => setGroupSlugs([...next])}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-rule-users"
-          label="Readers"
-          help="Named directly, independent of any group."
-          value={userIds}
-          isLoading={readersQuery.isPending}
-          optionsError={readersQuery.error}
-          emptyMessage="No readers on this site yet"
-          options={readers.map((reader) => ({
-            value: reader.id,
-            label: reader.display_name || reader.username,
-            hint: reader.username,
-          }))}
-          onChange={(next) => setUserIds([...next])}
-        />
-
-        {audienceEmpty ? (
-          <p data-testid="ck-rule-audience-error" className="text-sm text-chart-5">
-            A rule needs at least one group or one reader — the server rejects an empty audience, and a rule nobody
-            matches would lock the path away from everyone.
-          </p>
-        ) : null}
-
-        {save.error ? (
-          <Alert variant="destructive" data-testid="ck-rule-error">
-            <TriangleAlert />
-            <AlertTitle>The rule was not saved</AlertTitle>
-            <AlertDescription>
-              {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

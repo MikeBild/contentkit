@@ -4,8 +4,16 @@ import { useMemo, useState } from 'react'
 import { ck } from '@/api/ck'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { Spinner } from '@/components/ui/spinner'
 import { Steps, type StepDescriptor } from '@/components/ui/steps'
 import { useToast } from '@/components/ui/toast'
 import { keys } from '@/lib/query'
@@ -176,14 +184,58 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
       {isOpen ? (
         <Dialog
           open
-          size="lg"
-          data-testid="ck-site-wizard"
-          title="New site"
-          description="Four decisions, one request. The first two are the ones that are expensive to change afterwards."
-          busy={create.isPending}
-          onClose={close}
-          footer={
-            <DialogActions className="w-full justify-between">
+          onOpenChange={(next) => {
+            // Four decisions go out as one request. Until it answers there is
+            // no site to look at and no rejection to correct, so the wizard is
+            // not dismissable — and Cancel below stands down with it.
+            if (create.isPending) return
+            if (!next) close()
+          }}
+        >
+          <DialogContent
+            data-testid="ck-site-wizard"
+            className="sm:max-w-2xl"
+            closeDisabled={create.isPending}
+            onEscapeKeyDown={(event) => {
+              if (create.isPending) event.preventDefault()
+            }}
+            onPointerDownOutside={(event) => {
+              if (create.isPending) event.preventDefault()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>New site</DialogTitle>
+              <DialogDescription>
+                Four decisions, one request. The first two are the ones that are expensive to change afterwards.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="scrollbar-thin flex flex-col gap-5 overflow-y-auto">
+              <Steps data-testid="ck-site-wizard-steps" steps={stepList} value={step} onChange={setStep} />
+
+              {step === 'purpose' ? <PurposeStep draft={draft} onChange={setDraft} /> : null}
+              {step === 'home' ? <HomeStep draft={draft} onChange={setDraft} slug={slug} takenSlugs={takenSlugs} /> : null}
+              {step === 'languages' ? <LanguagesStep draft={draft} onChange={setDraft} /> : null}
+              {step === 'ready' ? <ReadyStep draft={draft} slug={slug} extra={extra} /> : null}
+
+              {/*
+                One request, so a rejection is a rejection: nothing exists to
+                reconcile, and the same dialog can be corrected and sent again.
+              */}
+              {create.error ? (
+                <Alert variant="destructive" data-testid="ck-site-wizard-error">
+                  <TriangleAlert />
+                  <AlertTitle>The site was not created</AlertTitle>
+                  <AlertDescription>
+                    {create.error instanceof Error ? create.error.message : 'Could not create the site'} — nothing was
+                    created. Correct the value it names and send it again.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
+            {/* `sm:justify-between` rather than the footer's own `sm:justify-end`:
+                Back is a navigation and belongs at the far edge, away from the
+                two controls that answer the dialog. Layout only. */}
+            <DialogFooter className="sm:justify-between">
               <Button
                 variant="ghost"
                 size="sm"
@@ -194,7 +246,13 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                 Back
               </Button>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" data-testid="site-create-cancel" onClick={close}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="site-create-cancel"
+                  disabled={create.isPending}
+                  onClick={close}
+                >
                   Cancel
                 </Button>
                 {step === 'ready' ? (
@@ -207,6 +265,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                     disabled={create.isPending || Boolean(firstProblem)}
                     onClick={() => create.mutate()}
                   >
+                    {create.isPending ? <Spinner data-icon="inline-start" /> : null}
                     {create.isPending
                       ? 'Creating…'
                       : writesPreset
@@ -224,32 +283,8 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                   </Button>
                 )}
               </div>
-            </DialogActions>
-          }
-        >
-          <div className="flex flex-col gap-5">
-            <Steps data-testid="ck-site-wizard-steps" steps={stepList} value={step} onChange={setStep} />
-
-            {step === 'purpose' ? <PurposeStep draft={draft} onChange={setDraft} /> : null}
-            {step === 'home' ? <HomeStep draft={draft} onChange={setDraft} slug={slug} takenSlugs={takenSlugs} /> : null}
-            {step === 'languages' ? <LanguagesStep draft={draft} onChange={setDraft} /> : null}
-            {step === 'ready' ? <ReadyStep draft={draft} slug={slug} extra={extra} /> : null}
-
-            {/*
-              One request, so a rejection is a rejection: nothing exists to
-              reconcile, and the same dialog can be corrected and sent again.
-            */}
-            {create.error ? (
-              <Alert variant="destructive" data-testid="ck-site-wizard-error">
-                <TriangleAlert />
-                <AlertTitle>The site was not created</AlertTitle>
-                <AlertDescription>
-                  {create.error instanceof Error ? create.error.message : 'Could not create the site'} — nothing was
-                  created. Correct the value it names and send it again.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-          </div>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
       ) : null}
     </>

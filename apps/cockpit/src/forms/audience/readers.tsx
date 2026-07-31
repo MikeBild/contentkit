@@ -6,7 +6,14 @@ import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EntityMultiSelect, RevealOnce, SecretField, SwitchField, TextField, UsernameField } from '@/forms/fields'
@@ -109,18 +116,134 @@ function ReaderDialog({
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={save.isPending}
-      data-testid="ck-reader-dialog"
-      title={editing ? `Edit ${reader?.username}` : 'New reader'}
-      description={
-        editing
-          ? 'A reader signs in to the published site. The username cannot be changed after creation.'
-          : 'A reader signs in to the published site with this username and password.'
-      }
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // A password change or a deactivation ends every session this reader
+        // holds. Neither is undone by closing the box it was asked for in, so
+        // the box stays until the server has answered.
+        if (save.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-reader-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={save.isPending}
+        onEscapeKeyDown={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{editing ? `Edit ${reader?.username}` : 'New reader'}</DialogTitle>
+          <DialogDescription>
+            {editing
+              ? 'A reader signs in to the published site. The username cannot be changed after creation.'
+              : 'A reader signs in to the published site with this username and password.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          {issued ? (
+            <RevealOnce
+              data-testid="ck-reader-password-issued"
+              title="Hand this password over now"
+              description="ContentKit stores only a hash of it. Nothing here or anywhere else can show it again."
+              value={issued}
+              onDismiss={() => {
+                setIssued(null)
+                onClose()
+              }}
+            />
+          ) : null}
+
+          {editing ? (
+            <TextField
+              data-testid="ck-reader-username"
+              label="Username"
+              value={draft.username}
+              disabled
+              help="Fixed at creation."
+              about="Delete and recreate the reader to change it."
+              onChange={() => {}}
+            />
+          ) : (
+            <UsernameField
+              data-testid="ck-reader-username"
+              label="Username"
+              required
+              help="What the reader types on the site's sign-in form."
+              value={draft.username}
+              onChange={(username) => setDraft({ ...draft, username })}
+            />
+          )}
+
+          <TextField
+            data-testid="ck-reader-display-name"
+            label="Display name"
+            value={draft.display_name}
+            fallback="Empty falls back to the username."
+            onChange={(display_name) => setDraft({ ...draft, display_name })}
+          />
+
+          <SecretField
+            data-testid="ck-reader-password"
+            label="Password"
+            required={!editing}
+            help={editing ? 'Leave empty to keep the current password.' : undefined}
+            value={draft.password}
+            generate={() => {
+              const password = generatePassword()
+              setGenerated(password)
+              return password
+            }}
+            onChange={(password) => setDraft({ ...draft, password })}
+          />
+
+          <SwitchField
+            data-testid="ck-reader-active"
+            label="Active"
+            value={draft.active}
+            onLabel="Can sign in"
+            offLabel="Blocked from signing in"
+            onChange={(active) => setDraft({ ...draft, active })}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-reader-groups"
+            label="Groups"
+            help="Rules grant access to groups."
+            about="A reader in no group is only reachable by a rule naming them directly."
+            value={draft.groups}
+            isLoading={groupsQuery.isPending}
+            optionsError={groupsQuery.error}
+            emptyMessage="No groups on this site yet"
+            options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
+            onChange={(groups) => setDraft({ ...draft, groups: [...groups] })}
+          />
+
+          {revokes ? (
+            <Alert data-testid="ck-reader-revoke-warning">
+              <TriangleAlert />
+              <AlertTitle>Saving signs this reader out</AlertTitle>
+              <AlertDescription>
+                Saving this revokes every session <strong>{reader?.username}</strong> currently holds. They are signed out
+                of the published site immediately and must sign in again.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {save.error ? (
+            <Alert variant="destructive" data-testid="ck-reader-error">
+              <TriangleAlert />
+              <AlertTitle>The reader was not saved</AlertTitle>
+              <AlertDescription>
+                {save.error instanceof Error ? save.error.message : 'Could not save the reader'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-reader-cancel" disabled={save.isPending} onClick={onClose}>
             {issued ? 'Done' : 'Cancel'}
           </Button>
@@ -128,109 +251,8 @@ function ReaderDialog({
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save reader' : 'Create reader'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        {issued ? (
-          <RevealOnce
-            data-testid="ck-reader-password-issued"
-            title="Hand this password over now"
-            description="ContentKit stores only a hash of it. Nothing here or anywhere else can show it again."
-            value={issued}
-            onDismiss={() => {
-              setIssued(null)
-              onClose()
-            }}
-          />
-        ) : null}
-
-        {editing ? (
-          <TextField
-            data-testid="ck-reader-username"
-            label="Username"
-            value={draft.username}
-            disabled
-            help="Fixed at creation."
-            about="Delete and recreate the reader to change it."
-            onChange={() => {}}
-          />
-        ) : (
-          <UsernameField
-            data-testid="ck-reader-username"
-            label="Username"
-            required
-            help="What the reader types on the site's sign-in form."
-            value={draft.username}
-            onChange={(username) => setDraft({ ...draft, username })}
-          />
-        )}
-
-        <TextField
-          data-testid="ck-reader-display-name"
-          label="Display name"
-          value={draft.display_name}
-          fallback="Empty falls back to the username."
-          onChange={(display_name) => setDraft({ ...draft, display_name })}
-        />
-
-        <SecretField
-          data-testid="ck-reader-password"
-          label="Password"
-          required={!editing}
-          help={editing ? 'Leave empty to keep the current password.' : undefined}
-          value={draft.password}
-          generate={() => {
-            const password = generatePassword()
-            setGenerated(password)
-            return password
-          }}
-          onChange={(password) => setDraft({ ...draft, password })}
-        />
-
-        <SwitchField
-          data-testid="ck-reader-active"
-          label="Active"
-          value={draft.active}
-          onLabel="Can sign in"
-          offLabel="Blocked from signing in"
-          onChange={(active) => setDraft({ ...draft, active })}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-reader-groups"
-          label="Groups"
-          help="Rules grant access to groups."
-          about="A reader in no group is only reachable by a rule naming them directly."
-          value={draft.groups}
-          isLoading={groupsQuery.isPending}
-          optionsError={groupsQuery.error}
-          emptyMessage="No groups on this site yet"
-          options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
-          onChange={(groups) => setDraft({ ...draft, groups: [...groups] })}
-        />
-
-        {revokes ? (
-          <Alert data-testid="ck-reader-revoke-warning">
-            <TriangleAlert />
-            <AlertTitle>Saving signs this reader out</AlertTitle>
-            <AlertDescription>
-              Saving this revokes every session <strong>{reader?.username}</strong> currently holds. They are signed out
-              of the published site immediately and must sign in again.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {save.error ? (
-          <Alert variant="destructive" data-testid="ck-reader-error">
-            <TriangleAlert />
-            <AlertTitle>The reader was not saved</AlertTitle>
-            <AlertDescription>
-              {save.error instanceof Error ? save.error.message : 'Could not save the reader'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

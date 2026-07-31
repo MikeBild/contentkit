@@ -1,14 +1,19 @@
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
-import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   InputGroup,
   InputGroupAddon,
 } from "@/components/ui/input-group"
-import { SearchIcon, CheckIcon, XIcon } from "lucide-react"
+import { SearchIcon, CheckIcon } from "lucide-react"
 
 function Command({
   className,
@@ -27,24 +32,28 @@ function Command({
 }
 
 /**
- * The one place this file differs from what `shadcn add command` writes.
+ * The palette's modal, back on the console's one Dialog.
  *
- * Stock composes `CommandDialog` out of `@/components/ui/dialog`'s `Dialog`,
- * `DialogContent`, `DialogHeader`, `DialogTitle` and `DialogDescription`. This
- * console's `ui/dialog.tsx` is still its own overlay — `Dialog` there takes
- * `title`/`onClose`/`size` and renders a panel, not a Radix Root — so those five
- * names do not exist and the stock file does not compile here. Rather than
- * rewrite twelve `<Dialog title=… onClose=…>` call sites from inside the
- * palette, the modal is built on the same Radix primitive shadcn's own dialog is
- * built on, with the same classes `ui/sheet.tsx` and `ui/alert-dialog.tsx` use.
- * The composition callers write is unchanged: `CommandDialog > Command >
- * CommandInput + CommandList`, and the `title`/`description`/`showCloseButton`
- * props behave as documented.
+ * This function used to build its own overlay on `radix-ui` directly, and the
+ * reason was recorded in SHADCN-MIGRATION.md §7: `ui/dialog.tsx` was still the
+ * console's hand-rolled panel, so `Dialog`/`DialogContent`/`DialogHeader`/
+ * `DialogTitle`/`DialogDescription` — the five names stock `command.tsx`
+ * composes out of — did not exist, and `shadcn add command` wrote a file that
+ * did not compile here. That was a workaround with an explicit end condition:
+ * vendor the real Dialog and come back. It is vendored, so this is back.
  *
- * The `sr-only` title and description are rendered INSIDE the content rather
- * than beside it, which is the one thing stock gets wrong: Radix wires them by
- * context either way, but a labelling element outside the dialog is not in the
- * accessibility subtree it labels.
+ * One thing stays deliberately unlike stock. Stock renders the `sr-only`
+ * `DialogHeader` **beside** `DialogContent`, as a sibling; here it is the first
+ * child **inside** it. Radix wires `aria-labelledby`/`aria-describedby` by
+ * context either way, so both are "labelled" — but a labelling element outside
+ * the dialog is not in the subtree the dialog exposes, and a reader that walks
+ * into the dialog to re-read its name finds nothing there. Inside costs nothing
+ * and is true from either direction.
+ *
+ * `showCloseButton` defaults to `false`: Escape closes the palette, every row is
+ * an answer, and an `X` in the corner of a search box is a target nobody aims
+ * for. Callers that want one get the derived `<testid>-close` from
+ * `DialogContent`, like every other dialog in the console.
  */
 function CommandDialog({
   title = "Command Palette",
@@ -54,7 +63,7 @@ function CommandDialog({
   showCloseButton = false,
   "data-testid": testId = "ck-command-dialog",
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Root> & {
+}: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
@@ -62,43 +71,23 @@ function CommandDialog({
   "data-testid"?: string
 }) {
   return (
-    <DialogPrimitive.Root data-slot="dialog" {...props}>
-      <DialogPrimitive.Portal data-slot="dialog-portal">
-        <DialogPrimitive.Overlay
-          data-slot="dialog-overlay"
-          className="fixed inset-0 z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
-        />
-        <DialogPrimitive.Content
-          data-slot="dialog-content"
-          data-testid={testId}
-          className={cn(
-            "fixed top-1/3 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-xl! bg-popover p-0 text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-            className
-          )}
-        >
-          <DialogPrimitive.Title className="sr-only">
-            {title}
-          </DialogPrimitive.Title>
-          <DialogPrimitive.Description className="sr-only">
-            {description}
-          </DialogPrimitive.Description>
-          {children}
-          {showCloseButton ? (
-            <DialogPrimitive.Close asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Close"
-                data-testid={`${testId}-close`}
-                className="absolute top-2 right-2"
-              >
-                <XIcon />
-              </Button>
-            </DialogPrimitive.Close>
-          ) : null}
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+    <Dialog {...props}>
+      <DialogContent
+        data-testid={testId}
+        showCloseButton={showCloseButton}
+        // Layout only, and every one of these overrides a value in
+        // `DialogContent`'s own base: a palette sits above the middle of the
+        // screen so the list has room to grow downwards, it is wider than a
+        // form dialog, and `Command` brings its own padding.
+        className={cn("top-1/3 translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-lg", className)}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   )
 }
 

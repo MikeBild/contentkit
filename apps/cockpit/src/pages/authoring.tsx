@@ -8,7 +8,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
@@ -227,67 +233,79 @@ function PublishedDetail({
   return (
     // Was a hand-rolled `fixed inset-0 z-50 … bg-black/40` overlay: no focus
     // trap, no Escape, no accessible name, and a black tint written as a colour
-    // literal. The console's own Dialog supplies all four, and the panel keeps
-    // the id — `published-dialog` now names the panel rather than the backdrop,
+    // literal. The vendored Radix Dialog supplies all four, and the panel keeps
+    // the id — `published-dialog` names the panel rather than the backdrop,
     // which is the element a browser test wants anyway.
     <Dialog
       open
-      size="xl"
-      onClose={onClose}
-      data-testid="published-dialog"
-      title={`${target.kind} · ${target.locale} · ${target.slug}`}
-      footer={
-        <Button data-testid="published-close" variant="outline" onClick={onClose}>
-          Close
-        </Button>
-      }
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
     >
-      <div className="mb-3 flex gap-1">
-        {(['rendered', 'markdown', 'semantic', 'diagnostics', 'composition'] as const).map((value) => (
-          <Button
-            key={value}
-            data-testid={`published-tab-${value}`}
-            size="sm"
-            variant={tab === value ? 'default' : 'ghost'}
-            onClick={() => setTab(value)}
-          >
-            {value}
+      {/* A reader, not a writer: nothing is in flight, so no busy guard. The
+          heading is the document's own coordinates and there is no second
+          sentence to add, so the description is explicitly declined rather than
+          invented. */}
+      <DialogContent data-testid="published-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>
+            {target.kind} · {target.locale} · {target.slug}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-3 overflow-y-auto">
+          <div className="flex gap-1">
+            {(['rendered', 'markdown', 'semantic', 'diagnostics', 'composition'] as const).map((value) => (
+              <Button
+                key={value}
+                data-testid={`published-tab-${value}`}
+                size="sm"
+                variant={tab === value ? 'default' : 'ghost'}
+                onClick={() => setTab(value)}
+              >
+                {value}
+              </Button>
+            ))}
+          </div>
+          {document.isPending ? (
+            <SkeletonText lines={10} label="Loading the published document…" data-testid="published-skeleton" />
+          ) : document.error ? (
+            <Alert variant="destructive" data-testid="published-error">
+              <TriangleAlert />
+              <AlertTitle>This document could not be read</AlertTitle>
+              <AlertDescription>
+                {document.error instanceof Error ? document.error.message : 'Could not load the document'}
+              </AlertDescription>
+            </Alert>
+          ) : tab === 'rendered' ? (
+                // The release's charts ship as a <picture> with both palettes, so
+                // they follow the operating system while the surrounding surface
+                // follows the console — the one place the two can disagree.
+            <ContentHtml
+              className="scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border p-4"
+              testId="published-rendered"
+              scheme={scheme}
+              html={String(data?.html ?? '')}
+            />
+          ) : tab === 'composition' ? (
+            <img
+              className="w-full rounded-lg border border-border"
+              src={ck.published.compositionUrl(site, target.kind, target.locale, target.slug, 'svg')}
+              alt="Rendered composition"
+            />
+          ) : (
+            <pre className="scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
+              {tab === 'markdown'
+                ? String(data?.markdown ?? '')
+                : JSON.stringify(tab === 'semantic' ? data?.semantic : data?.diagnostics, null, 2)}
+            </pre>
+          )}
+        </div>
+        <DialogFooter>
+          <Button data-testid="published-close" variant="outline" onClick={onClose}>
+            Close
           </Button>
-        ))}
-      </div>
-      {document.isPending ? (
-        <SkeletonText lines={10} label="Loading the published document…" data-testid="published-skeleton" />
-      ) : document.error ? (
-        <Alert variant="destructive" data-testid="published-error">
-          <TriangleAlert />
-          <AlertTitle>This document could not be read</AlertTitle>
-          <AlertDescription>
-            {document.error instanceof Error ? document.error.message : 'Could not load the document'}
-          </AlertDescription>
-        </Alert>
-      ) : tab === 'rendered' ? (
-            // The release's charts ship as a <picture> with both palettes, so
-            // they follow the operating system while the surrounding surface
-            // follows the console — the one place the two can disagree.
-        <ContentHtml
-          className="scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border p-4"
-          testId="published-rendered"
-          scheme={scheme}
-          html={String(data?.html ?? '')}
-        />
-      ) : tab === 'composition' ? (
-        <img
-          className="w-full rounded-lg border border-border"
-          src={ck.published.compositionUrl(site, target.kind, target.locale, target.slug, 'svg')}
-          alt="Rendered composition"
-        />
-      ) : (
-        <pre className="scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-          {tab === 'markdown'
-            ? String(data?.markdown ?? '')
-            : JSON.stringify(tab === 'semantic' ? data?.semantic : data?.diagnostics, null, 2)}
-        </pre>
-      )}
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -654,55 +672,77 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
   const data = descriptor.data
 
   return (
-    <Dialog open size="xl" onClose={onClose} data-testid="pattern-dialog" title={pattern}>
-      {descriptor.isPending ? (
-        <SkeletonFields fields={5} label="Loading the pattern…" data-testid="pattern-skeleton" />
-      ) : descriptor.error ? (
-        <Alert variant="destructive" data-testid="pattern-error">
-          <TriangleAlert />
-          <AlertTitle>This pattern could not be read</AlertTitle>
-          <AlertDescription>
-            {descriptor.error instanceof Error ? descriptor.error.message : 'Could not load the pattern'}
-          </AlertDescription>
-        </Alert>
-      ) : data ? (
-        <div className="flex flex-col gap-4">
-          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
-            <dt className="text-muted-foreground">Category</dt>
-            <dd>{data.category}</dd>
-            <dt className="text-muted-foreground">Scope</dt>
-            <dd>{data.scope}</dd>
-            <dt className="text-muted-foreground">Status</dt>
-            <dd>{data.status}</dd>
-            <dt className="text-muted-foreground">Version</dt>
-            <dd>{data.version}</dd>
-            <dt className="text-muted-foreground">Accepts</dt>
-            <dd>
-              {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} items
-            </dd>
-            <dt className="text-muted-foreground">Outputs</dt>
-            <dd>{data.capabilities.outputs.join(', ')}</dd>
-            <dt className="text-muted-foreground">Question</dt>
-            <dd>{data.narrative.question}</dd>
-            <dt className="text-muted-foreground">Reader takeaway</dt>
-            <dd>{data.narrative.reader_takeaway}</dd>
-          </dl>
-          <Bullets label="Story arc" items={data.narrative.story_arc} />
-          <Bullets label="Fallbacks" items={data.fallbacks} />
-          <div>
-            <h4 className="text-xs font-medium text-muted-foreground">Slots</h4>
-            <ul className="mt-1 flex flex-col gap-0.5 text-sm">
-              {data.slots.map((slot) => (
-                <li key={slot.name}>
-                  <span className="font-mono text-xs">{slot.name}</span> · {slot.accepts.join(', ')} · {slot.min}–
-                  {slot.max}
-                  {slot.required ? ' · required' : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
+      {/* A registry reader: nothing is in flight, so no busy guard.
+          `aria-describedby={undefined}` because this dialog has no descriptive
+          sentence — the descriptor itself is the content. Radix warns about a
+          missing Description otherwise, and inventing one to silence a warning
+          would put a sentence on screen that says nothing. */}
+      <DialogContent data-testid="pattern-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{pattern}</DialogTitle>
+        </DialogHeader>
+        <div className="scrollbar-thin overflow-y-auto">
+          {descriptor.isPending ? (
+            <SkeletonFields fields={5} label="Loading the pattern…" data-testid="pattern-skeleton" />
+          ) : descriptor.error ? (
+            <Alert variant="destructive" data-testid="pattern-error">
+              <TriangleAlert />
+              <AlertTitle>This pattern could not be read</AlertTitle>
+              <AlertDescription>
+                {descriptor.error instanceof Error ? descriptor.error.message : 'Could not load the pattern'}
+              </AlertDescription>
+            </Alert>
+          ) : data ? (
+            <div className="flex flex-col gap-4">
+              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
+                <dt className="text-muted-foreground">Category</dt>
+                <dd>{data.category}</dd>
+                <dt className="text-muted-foreground">Scope</dt>
+                <dd>{data.scope}</dd>
+                <dt className="text-muted-foreground">Status</dt>
+                <dd>{data.status}</dd>
+                <dt className="text-muted-foreground">Version</dt>
+                <dd>{data.version}</dd>
+                <dt className="text-muted-foreground">Accepts</dt>
+                <dd>
+                  {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} items
+                </dd>
+                <dt className="text-muted-foreground">Outputs</dt>
+                <dd>{data.capabilities.outputs.join(', ')}</dd>
+                <dt className="text-muted-foreground">Question</dt>
+                <dd>{data.narrative.question}</dd>
+                <dt className="text-muted-foreground">Reader takeaway</dt>
+                <dd>{data.narrative.reader_takeaway}</dd>
+              </dl>
+              <Bullets label="Story arc" items={data.narrative.story_arc} />
+              <Bullets label="Fallbacks" items={data.fallbacks} />
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground">Slots</h4>
+                <ul className="mt-1 flex flex-col gap-0.5 text-sm">
+                  {data.slots.map((slot) => (
+                    <li key={slot.name}>
+                      <span className="font-mono text-xs">{slot.name}</span> · {slot.accepts.join(', ')} · {slot.min}–
+                      {slot.max}
+                      {slot.required ? ' · required' : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        <DialogFooter>
+          <Button variant="outline" size="sm" data-testid="pattern-close" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -712,35 +752,54 @@ function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void })
   const data = detail.data
 
   return (
-    <Dialog open size="xl" onClose={onClose} data-testid="guide-dialog" title={data?.title ?? guide}>
-      {detail.isPending ? (
-        <SkeletonFields fields={5} label="Loading the guide…" data-testid="guide-skeleton" />
-      ) : detail.error ? (
-        <Alert variant="destructive" data-testid="guide-error">
-          <TriangleAlert />
-          <AlertTitle>This guide could not be read</AlertTitle>
-          <AlertDescription>
-            {detail.error instanceof Error ? detail.error.message : 'Could not load the guide'}
-          </AlertDescription>
-        </Alert>
-      ) : data ? (
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{data.summary}</p>
-          <Bullets label="Use when" items={data.selection.use_when} />
-          <Bullets label="Reject when" items={data.selection.reject_when} />
-          <Bullets label="Required input" items={data.input_contract.required} />
-          <Bullets label="Optional input" items={data.input_contract.optional} />
-          <Bullets label="Constraints" items={data.input_contract.constraints} />
-          <Bullets label="Guidance" items={data.authoring.guidance} />
-          <div>
-            <h4 className="text-xs font-medium text-muted-foreground">Syntax</h4>
-            <pre className="scrollbar-thin mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-              {data.authoring.syntax}
-            </pre>
-          </div>
-          <Bullets label="Compatible patterns" items={data.compatible_patterns} />
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
+      {/* Same as the pattern viewer: a reader, and the guide's own summary is
+          the first thing in the body, so there is no separate description. */}
+      <DialogContent data-testid="guide-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{data?.title ?? guide}</DialogTitle>
+        </DialogHeader>
+        <div className="scrollbar-thin overflow-y-auto">
+          {detail.isPending ? (
+            <SkeletonFields fields={5} label="Loading the guide…" data-testid="guide-skeleton" />
+          ) : detail.error ? (
+            <Alert variant="destructive" data-testid="guide-error">
+              <TriangleAlert />
+              <AlertTitle>This guide could not be read</AlertTitle>
+              <AlertDescription>
+                {detail.error instanceof Error ? detail.error.message : 'Could not load the guide'}
+              </AlertDescription>
+            </Alert>
+          ) : data ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">{data.summary}</p>
+              <Bullets label="Use when" items={data.selection.use_when} />
+              <Bullets label="Reject when" items={data.selection.reject_when} />
+              <Bullets label="Required input" items={data.input_contract.required} />
+              <Bullets label="Optional input" items={data.input_contract.optional} />
+              <Bullets label="Constraints" items={data.input_contract.constraints} />
+              <Bullets label="Guidance" items={data.authoring.guidance} />
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground">Syntax</h4>
+                <pre className="scrollbar-thin mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
+                  {data.authoring.syntax}
+                </pre>
+              </div>
+              <Bullets label="Compatible patterns" items={data.compatible_patterns} />
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        <DialogFooter>
+          <Button variant="outline" size="sm" data-testid="guide-close" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

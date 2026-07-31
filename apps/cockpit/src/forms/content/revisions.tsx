@@ -2,7 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck, type Revision } from '@/api/ck'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
@@ -94,22 +101,36 @@ export function Revisions({
       {compared ? (
         <Dialog
           open
-          size="xl"
-          data-testid={`${testId}-diff`}
-          title="What changed"
-          description={
-            compared.older
-              ? `Against the revision from ${formatDate(compared.older.created_at)}.`
-              : 'This is the first revision, so everything in it is new.'
-          }
-          onClose={() => setCompared(null)}
-          footer={
-            <Button size="sm" variant="outline" data-testid={`${testId}-diff-close`} onClick={() => setCompared(null)}>
-              Close
-            </Button>
-          }
+          onOpenChange={(next) => {
+            if (!next) setCompared(null)
+          }}
         >
-          <DiffList before={compared.older?.markdown ?? ''} after={compared.newer.markdown ?? ''} />
+          {/* Nothing is in flight here — this reads two revisions that are
+              already stored — so there is no busy guard and Escape, the
+              backdrop and the X all close it. */}
+          <DialogContent data-testid={`${testId}-diff`} className="sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>What changed</DialogTitle>
+              <DialogDescription>
+                {compared.older
+                  ? `Against the revision from ${formatDate(compared.older.created_at)}.`
+                  : 'This is the first revision, so everything in it is new.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="scrollbar-thin overflow-y-auto">
+              <DiffList before={compared.older?.markdown ?? ''} after={compared.newer.markdown ?? ''} />
+            </div>
+            <DialogFooter>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid={`${testId}-diff-close`}
+                onClick={() => setCompared(null)}
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
       ) : null}
     </div>

@@ -137,6 +137,50 @@ const named = (kase) => `${kase.suite} ${kase.title}`
  * they are what stops a case being emptied while keeping its title.
  */
 const CONTRACTS = [
+  // ── The console's one Dialog: components/ui/dialog.tsx ─────────────────────
+  //
+  // Added when `ui/dialog.tsx` stopped being the console's own `role="dialog"`
+  // div and became the vendored Radix Dialog. Every claim here was true of the
+  // old file as prose and false as behaviour, and a source-reading test could
+  // not tell the two apart — which is why these are pinned the moment the
+  // replacement lands rather than at some later tidying.
+  {
+    id: 'dialog/is-modal-by-hiding-the-page-not-by-saying-so',
+    promise:
+      'The dialog is named by its own DialogTitle and the rest of the document is genuinely aria-hidden — not an aria-modal written onto a panel while the page underneath stays readable.',
+    incident:
+      'The hand-rolled overlay carried aria-modal="true" and hid nothing; every test it had asserted the attribute.',
+    title: /is a real modal/i,
+    asserts: [/getByRole\(['"]dialog/, /aria-hidden/],
+    min: 1,
+  },
+  {
+    id: 'dialog/not-dismissable-while-a-mutation-is-in-flight',
+    promise:
+      'While the request is in the air, neither Escape nor a click on the backdrop nor the X closes the dialog, and the X says so by being disabled.',
+    incident:
+      'The overlay this replaces dismissed on any mousedown that reached the backdrop, including one that began as a drag inside the panel.',
+    title: /cannot be dismissed/i,
+    asserts: [/\{Escape\}/, /dialog-overlay/, /toBeDisabled/],
+    min: 1,
+  },
+  {
+    id: 'dialog/the-guard-lifts-when-the-request-answers',
+    promise: 'Once the mutation settles the dialog is dismissable again — a guard that never lifts is a trap.',
+    title: /dismissed again the moment/i,
+    asserts: [/toBeEnabled/, /not\.toBeInTheDocument/],
+    min: 1,
+  },
+  {
+    id: 'dialog/focus-returns-to-the-opener',
+    promise:
+      'Closing hands focus back to the control that opened it. Radix cancels its own restore in favour of a DialogTrigger ref, and no dialog in this console uses a DialogTrigger, so without the local handler focus lands on <body>.',
+    incident: 'Every one of the sixteen converted call sites dropped focus on <body> until this was added.',
+    title: /returns focus to the control that opened it/i,
+    asserts: [/activeElement/, /toBe\(trigger\)/],
+    min: 1,
+  },
+
   // ── The confirmation dialog: components/confirm.tsx ────────────────────────
   {
     id: 'confirm/focus-enters-the-dialog',
@@ -424,6 +468,7 @@ const CONTRACTS = [
 /** The modules a contract above actually asserts against. Everything else is grep. */
 const COVERED_SUBJECTS = [
   'components/confirm.tsx',
+  'components/ui/dialog.tsx',
   'components/ui/progress.tsx',
   'components/ui/spinner.tsx',
   'forms/fields/field.tsx',
@@ -480,9 +525,8 @@ const UNCOVERED = [
   {
     id: 'dialogs/every-modal-except-the-confirmation',
     missing:
-      'Seventeen `<Dialog>` sites across fourteen modules — the credential dialogs, the reader and group editors, the webhook and identity editors, the preview dialog, the revision viewer, the site conflict dialog, the pattern and guide viewers. components/confirm.tsx is the ONLY one with a rendering test; the other seventeen are graded by "the string DialogTitle is present".',
+      'The COMPONENT is covered now — `components/ui/dialog.test.tsx` renders it and asks the DOM about modality, the busy guard and focus restore — but the sixteen CALL SITES still are not. Whether the identity editor actually passes its own `isPending` into `onOpenChange`, whether the wizard keeps the operator on the step they were on, whether the reader dialog surfaces the issued password before it closes: every one of those is a property of the call site and is graded by "the string DialogContent is present".',
     where: [
-      'components/ui/dialog.tsx',
       'components/ui/alert-dialog.tsx',
       'forms/audience/*.tsx',
       'forms/platform/*.tsx',

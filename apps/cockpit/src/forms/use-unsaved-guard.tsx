@@ -1,6 +1,14 @@
 import { useBlocker } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
 
 /**
  * Stops a navigation away from unsaved work, and asks rather than decides.
@@ -44,14 +52,32 @@ export function useUnsavedGuard({
     blocker.status === 'blocked' ? (
       <Dialog
         open
-        size="sm"
-        data-testid="ck-unsaved-guard"
-        title="Unsaved changes"
-        description="Leaving now discards everything changed on this page since the last save."
-        onClose={blocker.reset}
-        busy={isSaving}
-        footer={
-          <>
+        onOpenChange={(next) => {
+          // A save that is still in the air is not a save that can be taken
+          // back, and the navigation it was going to unblock is not settled
+          // either: the only thing that ends this dialog then is the answer.
+          if (isSaving) return
+          if (!next) blocker.reset()
+        }}
+      >
+        <DialogContent
+          data-testid="ck-unsaved-guard"
+          className="sm:max-w-md"
+          closeDisabled={isSaving}
+          onEscapeKeyDown={(event) => {
+            if (isSaving) event.preventDefault()
+          }}
+          onPointerDownOutside={(event) => {
+            if (isSaving) event.preventDefault()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Unsaved changes</DialogTitle>
+            <DialogDescription>
+              Leaving now discards everything changed on this page since the last save.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
             <Button variant="outline" size="sm" data-testid="ck-unsaved-stay" disabled={isSaving} onClick={blocker.reset}>
               Stay
             </Button>
@@ -81,12 +107,13 @@ export function useUnsavedGuard({
                   blocker.proceed()
                 }}
               >
+                {isSaving ? <Spinner data-icon="inline-start" /> : null}
                 {isSaving ? 'Saving…' : 'Save and leave'}
               </Button>
             ) : null}
-          </>
-        }
-      />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     ) : null
 
   return { prompt, isBlocked: blocker.status === 'blocked' }

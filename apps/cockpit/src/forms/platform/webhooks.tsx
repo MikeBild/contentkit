@@ -6,7 +6,14 @@ import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -81,14 +88,81 @@ function EndpointDialog({
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={save.isPending}
-      data-testid="ck-webhook-dialog"
-      title={editing ? 'Edit endpoint' : 'New webhook endpoint'}
-      description="ContentKit signs every delivery with Standard Webhooks headers. The receiver must be reachable over https."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // Creating an endpoint is the only moment its signing secret exists
+        // outside the database, and `onIssued` is what surfaces it. A dismissal
+        // mid-flight would leave an endpoint nobody can verify deliveries from.
+        if (save.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-webhook-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={save.isPending}
+        onEscapeKeyDown={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{editing ? 'Edit endpoint' : 'New webhook endpoint'}</DialogTitle>
+          <DialogDescription>
+            ContentKit signs every delivery with Standard Webhooks headers. The receiver must be reachable over https.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          <UrlField
+            data-testid="ck-webhook-url"
+            label="URL"
+            required
+            protocols={['https:']}
+            help="Where deliveries are POSTed."
+            about="Private and loopback addresses are refused."
+            value={url}
+            onChange={setUrl}
+          />
+
+          <EnumMultiSelect
+            data-testid="ck-webhook-events"
+            label="Events"
+            help="Which events reach this endpoint."
+            value={events}
+            options={EVENT_OPTIONS}
+            allEmptyMeans={{ allLabel: 'All events', someLabel: 'Only these events' }}
+            onChange={(next) => setEvents([...next])}
+          />
+
+          <TextField
+            data-testid="ck-webhook-description"
+            label="Description"
+            value={description}
+            fallback="Only a label for this list."
+            onChange={setDescription}
+          />
+
+          <TriToggle
+            data-testid="ck-webhook-enabled"
+            label="Enabled"
+            help="Re-enabling also clears the consecutive-failure counter that auto-paused it."
+            defaultLabel="its stored state"
+            value={enabled}
+            onChange={setEnabled}
+          />
+
+          {save.error ? (
+            <Alert variant="destructive" data-testid="ck-webhook-error">
+              <TriangleAlert />
+              <AlertTitle>The endpoint was not saved</AlertTitle>
+              <AlertDescription>
+                {save.error instanceof Error ? save.error.message : 'Could not save the endpoint'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-webhook-cancel" disabled={save.isPending} onClick={onClose}>
             Cancel
           </Button>
@@ -96,58 +170,8 @@ function EndpointDialog({
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save endpoint' : 'Create endpoint'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <UrlField
-          data-testid="ck-webhook-url"
-          label="URL"
-          required
-          protocols={['https:']}
-          help="Where deliveries are POSTed."
-          about="Private and loopback addresses are refused."
-          value={url}
-          onChange={setUrl}
-        />
-
-        <EnumMultiSelect
-          data-testid="ck-webhook-events"
-          label="Events"
-          help="Which events reach this endpoint."
-          value={events}
-          options={EVENT_OPTIONS}
-          allEmptyMeans={{ allLabel: 'All events', someLabel: 'Only these events' }}
-          onChange={(next) => setEvents([...next])}
-        />
-
-        <TextField
-          data-testid="ck-webhook-description"
-          label="Description"
-          value={description}
-          fallback="Only a label for this list."
-          onChange={setDescription}
-        />
-
-        <TriToggle
-          data-testid="ck-webhook-enabled"
-          label="Enabled"
-          help="Re-enabling also clears the consecutive-failure counter that auto-paused it."
-          defaultLabel="its stored state"
-          value={enabled}
-          onChange={setEnabled}
-        />
-
-        {save.error ? (
-          <Alert variant="destructive" data-testid="ck-webhook-error">
-            <TriangleAlert />
-            <AlertTitle>The endpoint was not saved</AlertTitle>
-            <AlertDescription>
-              {save.error instanceof Error ? save.error.message : 'Could not save the endpoint'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
