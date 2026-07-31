@@ -502,6 +502,40 @@ const CONTRACTS = [
     asserts: [/getByRole\(['"]progressbar/, /not\.toHaveAttribute\(['"]aria-valuenow/],
     min: 1,
   },
+  // ── "Save and leave", when the save says no ────────────────────────────────
+  //
+  // The only finding in this whole migration that destroyed something, and it
+  // predated the migration: the guard awaited onSave() in a try/catch and left
+  // unless something was thrown, while neither caller throws — use-form's save()
+  // and site-settings' attemptSave() both return `false`. So a failed save was
+  // indistinguishable from a successful one and the guard navigated away with the
+  // edits. Pinned as three cases because the failure is a three-way decision and
+  // only one of the three was ever exercised.
+  {
+    id: 'unsaved-guard/a-failed-save-does-not-leave',
+    promise:
+      'A save that resolves false keeps the operator in the dialog. That is how both callers report failure; neither throws.',
+    incident:
+      'The guard read every non-throwing answer as success and called proceed(), discarding the edits it exists to protect.',
+    title: /STAYS PUT when the save resolves false/i,
+    asserts: [/Promise\.resolve\(false\)/, /not\.toHaveBeenCalled/],
+    min: 1,
+  },
+  {
+    id: 'unsaved-guard/a-thrown-save-does-not-leave',
+    promise: 'A save that throws also keeps the operator in the dialog — the one case the old code did handle.',
+    title: /stays put when the save throws/i,
+    asserts: [/Promise\.reject/, /not\.toHaveBeenCalled/],
+    min: 1,
+  },
+  {
+    id: 'unsaved-guard/a-successful-save-leaves',
+    promise:
+      'A save that succeeds leaves, including a caller that resolves with nothing — the declared return type is unknown, so only an explicit false is a refusal. Reading absence as failure would strand an operator after a save that worked.',
+    title: /leaves when the (save succeeds|caller resolves with nothing)/i,
+    asserts: [/toHaveBeenCalledOnce/],
+    min: 2,
+  },
 ]
 
 /** The modules a contract above actually asserts against. Everything else is grep. */

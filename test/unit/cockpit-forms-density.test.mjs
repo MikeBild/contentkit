@@ -549,6 +549,13 @@ const FLOOR = {
    * field ought to model a legal one — which is the half that has meaning here.
    */
   'fields/field.test.tsx': 0,
+  /**
+   * Zero for the same reason as `fields/field.test.tsx`: a co-located DOM test is
+   * a `.tsx` under `forms/`, so the walk finds it and it has to be declared, but
+   * its strings are fixtures rather than anything an operator reads. Freezing them
+   * would mean a test could not change the sentence on a button it renders.
+   */
+  'use-unsaved-guard.test.tsx': 0,
 }
 
 describe('cockpit forms — text density', () => {

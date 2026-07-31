@@ -96,14 +96,24 @@ export function useUnsavedGuard({
                 data-testid="ck-unsaved-save"
                 disabled={isSaving}
                 onClick={async () => {
+                  // `false` is a failed save, and it is the only way either caller
+                  // reports one: use-form's save() returns false on a validation
+                  // error and on a rejected request, and site-settings' attemptSave()
+                  // does the same. Neither throws. So a try/catch alone saw every
+                  // failure as a success and called proceed() — navigating away and
+                  // discarding the very edits the operator had just asked to keep,
+                  // in the two most write-heavy pages in the console.
+                  //
+                  // Anything other than `false` is success, so a caller that resolves
+                  // with nothing still works; only an explicit refusal keeps us here.
+                  let saved: unknown = false
                   try {
-                    await onSave()
+                    saved = await onSave()
                   } catch {
-                    // The save failed and said so through its own error path.
-                    // Staying put is the only safe outcome: proceeding here
-                    // would discard the very edits the operator asked to keep.
+                    // A thrown failure reported itself through its own error path.
                     return
                   }
+                  if (saved === false) return
                   blocker.proceed()
                 }}
               >
