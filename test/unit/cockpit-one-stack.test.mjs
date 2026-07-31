@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -81,6 +81,13 @@ assert.deepEqual(
  * specifier is a package and not this tree's business, so it answers `null`;
  * a local specifier that matches no file answers `undefined`, which is the
  * failure the first test is looking for.
+ *
+ * A directory is not an answer, which is why `isFile()` and not `existsSync()`.
+ * `@/forms/fields` names a folder *and* the barrel inside it, and stopping at
+ * the folder is the difference between "one component reached two ways" and a
+ * reported second stack: the barrel would resolve to `forms/fields` while
+ * `./text` resolved to `forms/fields/text.tsx`, and `TextField` would be filed
+ * under two modules for no reason but the order of this list.
  */
 function resolveImport(from, specifier) {
   const base = specifier.startsWith('@/')
@@ -97,14 +104,50 @@ function resolveImport(from, specifier) {
     join(base, 'index.tsx'),
     join(base, 'index.ts'),
   ])
-    if (existsSync(candidate)) return candidate
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
   return undefined
 }
 
 /**
- * Every named import in the tree, as `{ file, specifier, target, name, alias }`.
+ * Every specifier in the tree, whatever syntax carried it.
  *
- * Type-only imports are dropped — both the `import type {…}` form and an inline
+ * `from '…'` covers static imports, `export … from '…'` and type-only forms;
+ * the other two patterns pick up `import('…')` (content/lazy.tsx splits the
+ * editor out that way) and the side-effect `import '…'`. This list exists for
+ * one question only — does the file on the other end still exist — and that
+ * question has nothing to do with which form was used, so it is asked once over
+ * all of them rather than four times over four regexes that could each be the
+ * one nobody updated.
+ */
+function everySpecifier() {
+  const found = []
+  for (const file of sources) {
+    for (const match of file.src.matchAll(/\bfrom\s*["']([^"']+)["']/g)) found.push({ file: file.id, path: file.path, specifier: match[1] })
+    for (const match of file.src.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) found.push({ file: file.id, path: file.path, specifier: match[1] })
+    for (const match of file.src.matchAll(/^[ \t]*import\s+["']([^"']+)["']/gm)) found.push({ file: file.id, path: file.path, specifier: match[1] })
+  }
+  return found.map((entry) => ({ ...entry, target: resolveImport(entry.path, entry.specifier) }))
+}
+
+/**
+ * Every value a module pulls in under a name of its own, as
+ * `{ file, specifier, target, name, alias, form }`.
+ *
+ * Three forms, because a second stack can arrive in any of them and only the
+ * first was ever read here:
+ *
+ *  - `named` — `import { Button } from '…'`, with `alias` set for the
+ *    `Button as UiButton` spelling;
+ *  - `default` — `import Button from '…'`. This is the hole the last two rounds
+ *    fell through. A hand-rolled button that is `export default` and imported
+ *    without braces produces no brace to grep for, collides with no name in the
+ *    importing file, and typechecks perfectly — and it was on screen next to a
+ *    shadcn one twice;
+ *  - `namespace` — `import * as Ui from '…'`. This one cannot be graded by name
+ *    at all: `Ui.Button` is a property access, not an import, so the check below
+ *    would see one binding called `Ui` and nothing else. It gets its own test.
+ *
+ * Type-only imports are dropped — both `import type {…}` and an inline
  * `{ type Choice }`. A type and a component may legitimately share a name in two
  * modules (`ReleaseChain` is the derived state in lib/ and the component in
  * ui/), and nothing renders twice because of it. Only values reach the screen.
@@ -115,24 +158,102 @@ function resolveImport(from, specifier) {
  * stack — `ui/skeleton.tsx` importing a module that no longer exists is the
  * mutation that found it. Same trap cockpit-primitives.test.mjs records.
  */
-function namedImports() {
+function bindings() {
   const found = []
   for (const file of sources) {
-    for (const match of file.src.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g)) {
+    for (const match of file.src.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s*["']([^"']+)["']/g)) {
       if (match[1]) continue
       const target = resolveImport(file.path, match[3])
       for (const piece of match[2].split(',')) {
         const spec = piece.trim()
         if (!spec || /^type\s/.test(spec)) continue
         const [name, alias] = spec.split(/\s+as\s+/).map((part) => part.trim())
-        found.push({ file: file.id, specifier: match[3], target, name, alias })
+        found.push({ file: file.id, specifier: match[3], target, name, alias, form: 'named' })
       }
     }
+    // `import Button from '…'` and `import Button, { … } from '…'`. `(?!type\s)`
+    // keeps `import type Foo from` out; `(?!\*)` leaves the namespace form to the
+    // pattern below.
+    for (const match of file.src.matchAll(
+      /import\s+(?!type\s)(?!\*)([A-Za-z_$][\w$]*)\s*(?:,\s*(?:\{[^}]*\}|\*\s+as\s+[\w$]+)\s*)?from\s*["']([^"']+)["']/g,
+    ))
+      found.push({
+        file: file.id,
+        specifier: match[2],
+        target: resolveImport(file.path, match[2]),
+        name: match[1],
+        alias: undefined,
+        form: 'default',
+      })
+    for (const match of file.src.matchAll(/import\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\*\s+as\s+([\w$]+)\s+from\s*["']([^"']+)["']/g))
+      found.push({
+        file: file.id,
+        specifier: match[2],
+        target: resolveImport(file.path, match[2]),
+        name: match[1],
+        alias: undefined,
+        form: 'namespace',
+      })
   }
   return found
 }
 
-const imports = namedImports()
+/**
+ * Where each module forwards a name it does not declare: `export { X } from '…'`
+ * and `export { X as Y } from '…'`.
+ *
+ * Without this the check below grades the *specifier* rather than the component.
+ * That is wrong in both directions, and the tree contains one of each:
+ *
+ *  - a false alarm — `forms/fields/index.ts` is a barrel, so `TextField` reads as
+ *    "imported from `forms/fields` and from `forms/fields/text.tsx`". Those are
+ *    one component behind two spellings and nothing renders twice;
+ *  - a miss, and the more expensive one — a file that re-exports a second
+ *    `Button` launders it. Every page then imports `Button` from one specifier,
+ *    every page is internally consistent, and two differently-shaped buttons are
+ *    still on one screen. Grading the spelling cannot see that; following the
+ *    forward to where the component is *declared* sees both cases correctly.
+ */
+function forwardTable() {
+  const table = new Map()
+  for (const file of sources) {
+    const named = new Map()
+    for (const match of file.src.matchAll(/export\s+(type\s+)?\{([^}]*)\}\s+from\s*["']([^"']+)["']/g)) {
+      if (match[1]) continue
+      const target = resolveImport(file.path, match[3])
+      for (const piece of match[2].split(',')) {
+        const spec = piece.trim()
+        if (!spec || /^type\s/.test(spec)) continue
+        const [original, alias] = spec.split(/\s+as\s+/).map((part) => part.trim())
+        named.set(alias ?? original, { target, original })
+      }
+    }
+    if (named.size > 0) table.set(file.path, named)
+  }
+  return table
+}
+
+const forwards = forwardTable()
+
+/**
+ * The file that actually declares `name`, walking every `export … from` hop.
+ *
+ * `seen` is not defensive tidying: a barrel that re-exports from a module which
+ * re-exports back is a legal cycle in ESM, and an unguarded walk would hang the
+ * suite rather than fail it.
+ */
+function declaringModule(target, name, seen = new Set()) {
+  if (target === null || target === undefined) return target
+  const key = `${target} ${name}`
+  if (seen.has(key)) return target
+  seen.add(key)
+  const forwarded = forwards.get(target)?.get(name)
+  if (!forwarded) return target
+  return declaringModule(forwarded.target, forwarded.original, seen)
+}
+
+const specifiers = everySpecifier()
+const imports = bindings().map((entry) => ({ ...entry, origin: declaringModule(entry.target, entry.name) }))
 
 /**
  * The modules this phase removed, and what took each one over.
@@ -153,14 +274,16 @@ const REMOVED = [
 describe('the cockpit runs on one component stack', () => {
   test('no module imports a file that does not exist', () => {
     // Deduplicated: one dead module imported for three of its exports is one
-    // broken import to fix, not three.
+    // broken import to fix, not three. Read off `specifiers`, so a `export … from`
+    // or a lazy `import('…')` left pointing at a deleted module fails here too —
+    // neither carries a brace this file used to be looking for.
     const dangling = [
       ...new Set(
-        imports
+        specifiers
           .filter((entry) => entry.target === undefined)
           .map((entry) => `${entry.file} imports '${entry.specifier}', which resolves to no file`),
       ),
-    ]
+    ].sort()
     assert.deepEqual(dangling, [], dangling.join('\n'))
   })
 
@@ -173,26 +296,33 @@ describe('the cockpit runs on one component stack', () => {
       )
   })
 
-  test('every component name is imported from exactly one module', () => {
+  test('every component name is declared by exactly one module', () => {
     // The dual-stack defect in its general form. `Button` resolving to
     // ui/button.tsx in thirty files and to ui/primitives.tsx in three is what
     // put two differently-shaped buttons on one screen, and no per-file test
     // could see it — each file was internally consistent.
+    //
+    // Grouped by `origin`, the module that declares the component, not by the
+    // specifier that was typed: a barrel is one component under two spellings and
+    // is not a finding, while a re-export of a second `Button` is two components
+    // under one spelling and is exactly the finding. `default` bindings count —
+    // `import Button from '…'` is the form both earlier rounds missed.
     const owners = new Map()
     for (const entry of imports) {
-      if (entry.target === undefined || entry.target === null) continue
+      if (entry.form === 'namespace') continue // graded by the test below
+      if (entry.origin === undefined || entry.origin === null) continue
       if (!/^[A-Z]/.test(entry.name)) continue
       if (!owners.has(entry.name)) owners.set(entry.name, new Map())
-      const byTarget = owners.get(entry.name)
-      if (!byTarget.has(entry.target)) byTarget.set(entry.target, new Set())
-      byTarget.get(entry.target).add(entry.file)
+      const byOrigin = owners.get(entry.name)
+      if (!byOrigin.has(entry.origin)) byOrigin.set(entry.origin, new Set())
+      byOrigin.get(entry.origin).add(`${entry.file} via '${entry.specifier}'`)
     }
     const split = []
-    for (const [name, byTarget] of [...owners].sort())
-      if (byTarget.size > 1)
+    for (const [name, byOrigin] of [...owners].sort())
+      if (byOrigin.size > 1)
         split.push(
-          `${name} is imported from ${byTarget.size} modules: ` +
-            [...byTarget].map(([target, users]) => `${rel(target)} (${[...users].sort().join(', ')})`).join(' — and '),
+          `${name} is declared by ${byOrigin.size} modules: ` +
+            [...byOrigin].map(([target, users]) => `${rel(target)} (${[...users].sort().join(', ')})`).join(' — and '),
         )
     assert.deepEqual(split, [], `two stacks:\n${split.join('\n')}`)
   })
@@ -201,11 +331,28 @@ describe('the cockpit runs on one component stack', () => {
     // `Button as UiButton` is the tell rather than the disease: a rename is how a
     // file holds two stacks at once without the compiler objecting. The previous
     // test would fail on the same three files, but the message would say two
-    // modules own `Button` — this one names the line to delete.
+    // modules declare `Button` — this one names the line to delete.
     const aliased = imports
       .filter((entry) => entry.alias && entry.target)
       .map((entry) => `${entry.file}: '${entry.name} as ${entry.alias}' from '${entry.specifier}'`)
     assert.deepEqual(aliased, [], `a renamed local component is a second stack in disguise:\n${aliased.join('\n')}`)
+  })
+
+  test('nothing namespace-imports a module of this tree', () => {
+    // `import * as Ui from '@/components/ui/legacy'` then `<Ui.Button/>` is the
+    // one shape the check above is blind to by construction: the only binding is
+    // `Ui`, and `Button` never appears as an import anywhere. It is also the
+    // easiest way to bring a whole second stack in on one line. `import * as
+    // React from "react"` is untouched — a bare specifier is a package and not
+    // this tree's business, which is why the rule is written over local targets.
+    const wholesale = imports
+      .filter((entry) => entry.form === 'namespace' && entry.target)
+      .map((entry) => `${entry.file}: 'import * as ${entry.name}' from '${entry.specifier}'`)
+    assert.deepEqual(
+      wholesale,
+      [],
+      `import the components you use by name — a namespace binding hides which stack they came from:\n${wholesale.join('\n')}`,
+    )
   })
 })
 

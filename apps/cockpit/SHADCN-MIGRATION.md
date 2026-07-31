@@ -82,19 +82,31 @@ class** (the CVA sizes them per button size).
 >   still import `Dialog`/`DialogActions` from it with the `title`/`onClose`/`size` props
 >   §4 says are gone. This is the largest single piece left, and it is what forced the
 >   deviation recorded in §7.
-> - **`components/ui/primitives.tsx` and `components/ui/empty-state.tsx` are back**, so
->   `test/unit/cockpit-one-stack.test.mjs` is red on both counts. Five modules still
->   import `Button`/`Table`/`TableState` from primitives: `components/session-gate.tsx`,
->   `components/ui/copy-button.tsx`, `components/ui/data-table.tsx`,
->   `components/ui/dialog.tsx`, `components/ui/pagination.tsx`. `app/shell.tsx` and
->   `components/ui/command-palette.tsx` came off it on 2026-07-31.
+> - ~~**`components/ui/primitives.tsx` and `components/ui/empty-state.tsx` are back**~~ —
+>   **deleted again 2026-07-31, and this time nothing is left importing either.** The
+>   five modules that still reached into primitives came off it in the same change:
+>   `components/session-gate.tsx`, `components/ui/copy-button.tsx`,
+>   `components/ui/data-table.tsx`, `components/ui/dialog.tsx`,
+>   `components/ui/pagination.tsx` (`app/shell.tsx` and `ui/command-palette.tsx` had
+>   already). `ui/skeleton.tsx` was the one that had to go first: it took `TD`/`TR` from
+>   primitives, so the *new* stack depended on the old one and no amount of call-site
+>   work could delete the file. `grep -rl components/ui/primitives apps/cockpit/src`
+>   returns nothing.
 > - **`ui/progress.tsx` and `ui/spinner.tsx` are the pre-migration versions**, which is
 >   every remaining failure in the vitest suite and §26.2 / §26.3 in the Node one.
-> - `forms/fields/` is imported both through its barrel and by file path, which
->   one-stack reads as two modules owning one name.
+> - `ui/toast.tsx`, `ui/chip.tsx` and `ui/segmented.tsx` are the pre-migration versions
+>   too — five subtests of *the components the console stopped hand-rolling* in
+>   `cockpit-lists.test.mjs`, and the `confirm` suite with them.
+> - ~~`forms/fields/` is imported both through its barrel and by file path, which
+>   one-stack reads as two modules owning one name.~~ **Not a finding, and no longer
+>   reported as one.** One-stack now follows `export … from` to the module that
+>   *declares* each name, so a barrel and a direct path agree; `forms/fields/field.test.tsx`
+>   keeps its by-path imports, which `cockpit-behavioural-floor.test.mjs` needs in order
+>   to prove those modules are really rendered.
 >
 > Green as of 2026-07-31: `tsc --noEmit` reports nothing outside
-> `ui/progress.test.tsx`, and `cockpit-navigation.test.mjs` is 33/33.
+> `ui/progress.test.tsx`, `cockpit-navigation.test.mjs` is 33/33, and
+> `cockpit-one-stack.test.mjs` is 7/7.
 
 **Exports that no longer exist**
 
@@ -1477,7 +1489,8 @@ The list this document exists for. Each row was verified in the installed source
 | 36 | `InputGroupAddon` is inert | It installs an input-focusing `onClick` that your own `onClick` silently replaces. |
 | 37 | `data-table` is a component you can add | Not in the registry (`Component data-table not found`). It is a guide over `@tanstack/react-table`, **which is not installed here — do not install it.** §14 |
 | 38 | `ui/data-table.tsx` is the shadcn data-table | It is the console's own cursor/capability table. Since 2026-07-30 it stands on `ui/table.tsx` + `@/forms/table-state`; `ui/primitives.tsx` is deleted. §14 |
-| 38b | `ui/primitives.tsx` still exists | **Deleted 2026-07-30.** Its `Button/Card/Input/Textarea/Select/Label/Badge` are the shadcn files, its `Table/THead/TBody/TR/TH/TD` are `ui/table.tsx`, its `TableState` is `@/forms/table-state`, its `Badge tone=` is `@/forms/status-badge`. One stack, guarded by `test/unit/cockpit-one-stack.test.mjs`. |
+| 38b | `ui/primitives.tsx` still exists | **Deleted 2026-07-30, restored by the reset, deleted again 2026-07-31 — this time with nothing importing it.** Its `Button/Card/Input/Textarea/Select/Label/Badge` are the shadcn files, its `Table/THead/TBody/TR/TH/TD` are `ui/table.tsx`, its `TableState` is `@/forms/table-state` (moved, not deleted — the four-state discipline is the point of it and `shadcn add table-state` has nothing to answer with), its `Badge tone=` is `@/forms/status-badge`. `ui/empty-state.tsx` went with it, replaced by `ui/empty.tsx`. One stack, guarded by `test/unit/cockpit-one-stack.test.mjs`. |
+| 38c | one-stack grades the *specifier* a component was imported by | It grades the module that **declares** it, following `export … from`. That is what makes a barrel (`@/forms/fields`) not a finding and a laundering re-export (`export { Button } from './legacy'`) still one. It also reads `import Button from`, `import * as Ui from` and `import { Button as UiButton }` — a second stack arriving in any of those forms was invisible to the brace-only reader that shipped first. |
 | 39 | `DatePicker` is a component | There is none — `Popover > PopoverTrigger asChild > Button` + `PopoverContent className="w-auto p-0" > Calendar`. §15 |
 | 40 | Calendar bounds are `fromDate`/`toDate`/`fromYear`/`toYear` | react-day-picker v10 uses **`startMonth`/`endMonth`**; the v8 names are gone. |
 | 41 | Calendar `classNames` keys are camelCase | **snake_case** (`month_grid`, `button_previous`, `range_start`, …); `components` keys are PascalCase. |

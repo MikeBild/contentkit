@@ -567,7 +567,6 @@ const UNCOVERED = [
       'components/ui/sonner.tsx',
       'components/ui/alert.tsx',
       'components/ui/empty.tsx',
-      'components/ui/empty-state.tsx',
       'components/ui/skeleton.tsx',
     ],
   },
@@ -609,7 +608,6 @@ const UNCOVERED = [
       'components/ui/scroll-area.tsx',
       'components/ui/input-group.tsx',
       'components/ui/field.tsx',
-      'components/ui/primitives.tsx',
     ],
   },
   {

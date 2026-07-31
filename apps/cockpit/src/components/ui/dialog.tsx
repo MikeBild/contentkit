@@ -2,13 +2,13 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, type ComponentProps, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { Button } from './primitives'
+import { Button } from './button'
 
-// shadcn-shaped, vendored: same reason as primitives.tsx, plus one of its own —
-// the console had five hand-built `fixed inset-0 z-50` modals and not one of
-// them handled Escape or kept the focus inside. Radix would bring a portal we
-// do not need (nothing here clips or transforms) in exchange for a dependency
-// tree; the two behaviours that were actually missing are below.
+// The console's own overlay, still: twelve modules pass it `title`/`onClose`/
+// `size`, which Radix's `DialogContent` does not have, and replacing it is its
+// own phase (see §4 and §13 of SHADCN-MIGRATION.md). What is no longer its own
+// is the button in the header — that comes from `./button` with everything else
+// in the console, so the close control is the same control everywhere.
 
 const panelVariants = cva(
   'relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl',
@@ -164,7 +164,10 @@ function Overlay({
             disabled={busy}
             onClick={close}
           >
-            <X className="h-4 w-4" />
+            {/* Icon-only, so no `data-icon`: it adjusts the padding on the side
+                a label sits on, and there is no label. No size class either —
+                the Button CVA sizes an unsized svg. */}
+            <X />
           </Button>
         </header>
         <div className="scrollbar-thin flex-1 overflow-y-auto p-5">{children}</div>
@@ -196,9 +199,7 @@ export function Sheet({
   'data-testid': testId = 'ck-sheet',
   ...props
 }: OverlayProps & VariantProps<typeof sheetVariants>) {
-  return (
-    <Overlay {...props} align="" panelClassName={cn(sheetVariants({ side }), className)} testId={testId} />
-  )
+  return <Overlay {...props} align="" panelClassName={cn(sheetVariants({ side }), className)} testId={testId} />
 }
 
 /** The row a dialog's footer almost always wants: cancel on the left, act on the right. */

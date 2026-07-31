@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { TriangleAlert } from 'lucide-react'
 import { type ReactNode } from 'react'
 import { ck } from '@/api/ck'
 import { ApiError, setCsrfToken } from '@/api/client'
-import { Button } from '@/components/ui/primitives'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { SessionContext } from '@/lib/session'
 
 /** Blocks the whole console until the session is known: no half-authenticated UI. */
@@ -44,7 +46,18 @@ export function SessionGate({ children }: { children: ReactNode }) {
   if (query.error) {
     return (
       <Splash>
-        <p className="text-chart-5">{query.error instanceof Error ? query.error.message : 'Sign-in failed'}</p>
+        {/* An Alert rather than red text: this is the one screen with nothing
+            else on it, so the failure has to read as a failure without a
+            surrounding page to contrast against — and `role="alert"` announces
+            it, which a coloured paragraph never did. */}
+        <Alert variant="destructive" data-testid="session-error" className="max-w-md">
+          {/* Direct child, before the title: the CVA re-grids on `has-[>svg]`. */}
+          <TriangleAlert />
+          <AlertTitle>Sign-in failed</AlertTitle>
+          <AlertDescription data-testid="session-error-message">
+            {query.error instanceof Error ? query.error.message : 'The console could not reach the session endpoint.'}
+          </AlertDescription>
+        </Alert>
         <Button data-testid="session-retry" variant="outline" onClick={() => query.refetch()}>
           Try again
         </Button>
