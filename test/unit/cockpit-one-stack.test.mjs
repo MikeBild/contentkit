@@ -332,6 +332,87 @@ describe('the cockpit runs on one component stack', () => {
     assert.deepEqual(split, [], `two stacks:\n${split.join('\n')}`)
   })
 
+  test('a name is exported by exactly one module, whether or not anything imports it', () => {
+    /**
+     * Old scope: names that something *imports*. New scope: names that something
+     * *exports*.
+     *
+     * The test above grades the import graph, which means a second component is
+     * invisible to it until a file imports it — and the last round shipped
+     * exactly that: `ui/dialog.tsx` exported a `Sheet` that nothing imported,
+     * while `ui/sheet.tsx` exported the real one. Two `Sheet`s in the tree, one
+     * of them dead, and every check here green, because "which module declares
+     * Sheet" was only ever asked of the module somebody had typed. It is how the
+     * one-stack test gets beaten the next time someone autocompletes: the import
+     * that revives the dead one is a single character of tab-completion away, and
+     * nothing between here and the screen would object.
+     *
+     * So: declarations, not imports. `export … from` is not a declaration — a
+     * barrel forwards a component it does not own, and `forms/fields/index.ts`
+     * would otherwise read as a second stack every time. Neither is `export { X }`
+     * of an `X` the module imported: that is the same forward with the hop split
+     * over two lines.
+     */
+    const dynamic = new Map(
+      sources.map((file) => [
+        file.id,
+        new Set(
+          [...file.src.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)]
+            .map((match) => resolveImport(file.path, match[1]))
+            .filter((target) => typeof target === 'string')
+            .map((target) => rel(target)),
+        ),
+      ]),
+    )
+
+    const owners = new Map()
+    for (const file of sources) {
+      const imported = new Set(
+        [...file.src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s*["'][^"']+["']/g)].flatMap((match) =>
+          match[1].split(',').map((piece) => (piece.trim().split(/\s+as\s+/).pop() ?? '').trim()),
+        ),
+      )
+      const declared = new Set()
+      // `export function X` / `export const X` / `export class X`. Types are not
+      // components: `export type` and `export interface` never reach the screen,
+      // and lib/release-chain.ts's `ReleaseChain` type sharing a name with
+      // ui/release-chain.tsx's component renders nothing twice.
+      for (const match of file.src.matchAll(/^\s*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([\w$]+)/gm))
+        declared.add(match[1])
+      for (const match of file.src.matchAll(/^\s*export\s+\{([^}]*)\}(?!\s*from)/gm))
+        for (const piece of match[1].split(',')) {
+          const spec = piece.trim()
+          if (!spec || /^type\s/.test(spec)) continue
+          const name = (spec.split(/\s+as\s+/).pop() ?? '').trim()
+          if (!imported.has(name)) declared.add(name)
+        }
+      for (const name of declared) {
+        if (!/^[A-Z]/.test(name)) continue
+        if (!owners.has(name)) owners.set(name, new Set())
+        owners.get(name).add(file.id)
+      }
+    }
+
+    /**
+     * The one shape that is two declarations of a name on purpose: a lazy
+     * boundary. `content/lazy.tsx` declares `ContentHtml` and `Draft` as Suspense
+     * wrappers around `import('./ContentHtml')` and `import('./draft')`, which
+     * declare them eagerly — one component behind a code split, and every
+     * importer in the console reaches it through the wrapper.
+     *
+     * Granted by the dynamic import, not by a filename: a module that shadows a
+     * name it does not load is the defect, and stays reported.
+     */
+    const split = []
+    for (const [name, modules] of [...owners].sort()) {
+      if (modules.size < 2) continue
+      const ids = [...modules].sort()
+      if (ids.some((id) => ids.some((other) => other !== id && dynamic.get(id)?.has(other)))) continue
+      split.push(`${name} is exported by ${ids.length} modules: ${ids.join(' — and ')}`)
+    }
+    assert.deepEqual(split, [], `one name, one module — a dead export squatting a live name is still two:\n${split.join('\n')}`)
+  })
+
   test('nothing aliases a component of this tree around a collision', () => {
     // `Button as UiButton` is the tell rather than the disease: a rename is how a
     // file holds two stacks at once without the compiler objecting. The previous

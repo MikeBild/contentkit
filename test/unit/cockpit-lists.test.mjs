@@ -1,7 +1,7 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
@@ -30,6 +30,26 @@ const here = fileURLToPath(import.meta.url)
 const root = dirname(dirname(dirname(here)))
 const cockpit = join(root, 'apps', 'cockpit', 'src')
 const source = (...parts) => readFileSync(join(cockpit, ...parts), 'utf8')
+
+/**
+ * Every `.ts`/`.tsx` in the console, with its path.
+ *
+ * One rule below is about the whole tree rather than about lists: a severity
+ * painted with a chart colour is the same defect in a shared component as it is
+ * on a page, and reading only `pages` is what let thirty of them stand.
+ * `content/site.scoped.css` and the rest of the generated output are not read —
+ * this walk takes source only, so it sees the same files on a clean checkout as
+ * it does after a build.
+ */
+const allSources = (function walk(dir) {
+  const out = []
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...walk(path))
+    else if (/\.tsx?$/.test(entry.name)) out.push(path)
+  }
+  return out
+})(cockpit).map((path) => ({ id: relative(cockpit, path).split(sep).join('/'), src: readFileSync(path, 'utf8') }))
 
 const dataTable = source('components', 'ui', 'data-table.tsx')
 const contentPage = source('pages', 'content.tsx')
@@ -1005,16 +1025,37 @@ describe('the components the console stopped hand-rolling', () => {
       assert.doesNotMatch(text, /chart-\d/, `${name} must take its colour from the component, not a chart series`)
   })
 
-  test('no page paints a severity with a chart colour', () => {
-    // `chart-3`/`chart-5` were doing the work of warning and destructive across
-    // seven pages. They are series in a graph; index.css maps --destructive onto
-    // the same value, and the name is the whole difference between a token and a
-    // literal. Comments are stripped, because two of these files explain the swap.
+  test('nothing in the console paints a severity with a chart colour', () => {
+    /**
+     * Old scope: the eight files in `pages`.
+     * New scope: every `.ts`/`.tsx` under apps/cockpit/src.
+     *
+     * The eight pages were cleaned and the rule was then written around them, so
+     * it passed over thirty of these — every one of them in a shared component or
+     * a form, which is to say in the code the eight pages render. A rule that
+     * walks the caller and not the callee grades the diff that produced it.
+     *
+     * What is a violation and what is not, because a chart is allowed its own
+     * colours: a chart series reaches the screen as the CSS variable
+     * `var(--color-chart-N)` — that is how overview.tsx strokes its sparkline,
+     * and it is untouched here. A severity reaches it as a Tailwind utility on
+     * something that is not a graph: `text-chart-5` on a failure count,
+     * `bg-chart-3` on a warning dot, `border-chart-5` on an invalid input. Those
+     * are `--destructive` and the warning tone spelled as a series index, and
+     * index.css maps `--destructive` onto the same value — which is exactly what
+     * makes the substitution invisible on screen and wrong in the source.
+     */
     const offenders = []
-    for (const name of pages)
-      for (const [hit] of code(source('pages', `${name}.tsx`)).matchAll(/(?:text|bg|border)-chart-[35]\S*/g))
-        offenders.push(`${name}.tsx: ${hit}`)
-    assert.deepEqual(offenders, [], 'route these through Alert, Badge or the destructive token')
+    // The class alone, opacity modifier included: `bg-chart-5/5` is the same
+    // decision as `bg-chart-5`, and the rest of the line is not the finding.
+    const utility =
+      /(?:text|bg|border|ring|fill|stroke|from|via|to|outline|divide|decoration|accent|caret)-chart-[35](?:\/\d+)?/g
+    for (const file of allSources) for (const [hit] of code(file.src).matchAll(utility)) offenders.push(`${file.id}: ${hit}`)
+    assert.deepEqual(
+      offenders,
+      [],
+      `route these through Alert, Badge, Progress’s tone or the destructive token:\n${offenders.join('\n')}`,
+    )
   })
 
   test('no page hand-writes a pulsing rectangle', () => {

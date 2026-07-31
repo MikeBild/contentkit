@@ -1,7 +1,7 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
@@ -28,13 +28,16 @@ import { fileURLToPath } from 'node:url'
  *    being answered with a delete key, and it is the mutation this file is built
  *    around.
  *
- * Only committed files are read, and only source under apps/cockpit/src/forms —
- * nothing here touches a generated artefact.
+ * Only committed files are read, and the density rules read only source under
+ * apps/cockpit/src/forms. One rule does not: a native `title=` used as a tooltip
+ * is unreachable by keyboard in any directory, so that test walks the whole of
+ * apps/cockpit/src. Nothing here touches a generated artefact.
  */
 
 const here = fileURLToPath(import.meta.url)
 const root = dirname(dirname(dirname(here)))
-const formsDir = join(root, 'apps', 'cockpit', 'src', 'forms')
+const cockpit = join(root, 'apps', 'cockpit', 'src')
+const formsDir = join(cockpit, 'forms')
 
 function walk(dir) {
   const out = []
@@ -48,6 +51,31 @@ function walk(dir) {
 
 export const FILES = walk(formsDir).map((path) => ({
   id: relative(formsDir, path).split(sep).join('/'),
+  path,
+  src: readFileSync(path, 'utf8'),
+}))
+
+/**
+ * Every `.tsx` in the console, not only the forms.
+ *
+ * The density budgets below are about forms and stay about forms — a page is
+ * allowed a paragraph a field is not. One rule in this file was never about
+ * forms at all: a native `title=` is invisible on touch and unreachable by
+ * keyboard *wherever* it is written, and enforcing it under src/forms while
+ * nine of them sat in the shell, the pages and the shared components meant the
+ * suite certified the directory that happened to be clean. A rule enforced in
+ * one directory is not a rule, so that one test reads this list instead.
+ */
+export const ALL = (function walkTree(dir) {
+  const out = []
+  for (const entry of readdirSync(dir).sort()) {
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory()) out.push(...walkTree(path))
+    else if (path.endsWith('.tsx')) out.push(path)
+  }
+  return out
+})(cockpit).map((path) => ({
+  id: relative(cockpit, path).split(sep).join('/'),
   path,
   src: readFileSync(path, 'utf8'),
 }))
@@ -275,6 +303,67 @@ function spans(src, name) {
     out.push({ start: match.index, end, openTag, body: src.slice(bodyStart, cursor) })
   }
   return out
+}
+
+/**
+ * Where a component used in `file` is declared, as an absolute path, or null for
+ * a package (`Link` from @tanstack/react-router is not this tree's business).
+ */
+function resolveFrom(fromPath, specifier) {
+  const base = specifier.startsWith('@/')
+    ? join(cockpit, specifier.slice(2))
+    : specifier.startsWith('.')
+      ? resolve(dirname(fromPath), specifier)
+      : null
+  if (base === null) return null
+  for (const candidate of [base, `${base}.tsx`, `${base}.ts`, join(base, 'index.tsx'), join(base, 'index.ts')])
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  return null
+}
+
+/**
+ * The declaration of `name`, from its keyword to the closing brace in column one.
+ *
+ * `'\n}\n'` and not `'\n}'`: a component that destructures its props over several
+ * lines closes that pattern with a `}` in column one too — `}: ChipProps) {` —
+ * and stopping there returns the signature instead of the component. `Chip`
+ * spreads onto a `<Badge>` two lines below that point, so the shorter read said
+ * "takes no props it forwards" about a component that forwards all of them.
+ */
+function definitionOf(src, name) {
+  const at = src.search(new RegExp(`(?:export\\s+)?(?:function|const)\\s+${name}\\b`))
+  if (at < 0) return null
+  const end = src.indexOf('\n}\n', at)
+  return src.slice(at, end < 0 ? src.length : end + 3)
+}
+
+/**
+ * Does `<Name title=…>` end up as a native tooltip?
+ *
+ * Yes when the component never names `title` in its own declaration *and*
+ * spreads the rest of its props onto something — `{...props}` on a `<span>`, or
+ * on a Radix primitive that does the same one level down. A component that
+ * destructures `title` has taken it as a heading and is rendering it somewhere
+ * this rule has no opinion about.
+ *
+ * Both conditions, deliberately: a false alarm here would be a rule about
+ * component prop names, which is not what this is. The cost is that a
+ * forwarding component whose declaration happens to contain the word `title`
+ * for another reason is missed — reported rather than papered over.
+ */
+function forwardsToDom(file, name) {
+  const local = definitionOf(file.src, name)
+  let declaration = local
+  if (!declaration) {
+    const importing = [...file.src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s*["']([^"']+)["']/g)].find(
+      ([, names]) => names.split(',').some((piece) => (piece.split(/\s+as\s+/).pop() ?? '').trim() === name),
+    )
+    const home = importing ? resolveFrom(file.path, importing[2]) : null
+    if (home === null) return false
+    declaration = definitionOf(stripComments(readFileSync(home, 'utf8')), name)
+  }
+  if (!declaration) return false
+  return !/\btitle\b/.test(stripComments(declaration)) && /\{\s*\.\.\.[\w$]+\s*\}/.test(declaration)
 }
 
 /**
@@ -598,17 +687,40 @@ describe('cockpit forms — text density', () => {
     assert.deepEqual(wrappers, [], `use FieldDescription, Alert or a Popover:\n${wrappers.join('\n')}`)
   })
 
-  test('no native title attribute is used as a tooltip', () => {
+  test('no native title attribute is used as a tooltip, anywhere in the console', () => {
+    /**
+     * Old scope: the twelve element names hard-coded above, under src/forms only.
+     * New scope: every `.tsx` under apps/cockpit/src, every tag in it.
+     *
+     * Two holes closed at once, and the second is why the first was survivable.
+     *
+     *  - The directory. Nine native titles sat outside src/forms — two in the
+     *    shell, one on an overview `<dt>`, the rest in shared components — and
+     *    the guard never walked there. A tooltip is no more reachable by
+     *    keyboard in app/ than it is in forms/.
+     *  - The element list. `<time>` and `<dt>` were not on it, so two of the
+     *    twelve would have passed even inside the directory that was walked.
+     *    Tag names are now read off the file: anything lowercase is a DOM
+     *    element, and there is no list to forget to extend.
+     *
+     * `title` stays a perfectly good prop name on a component — `Page`, `Group`,
+     * `Confirm` and `RevealOnce` all take a heading called that, and each of them
+     * *names* `title` in its own signature. What is not fine is a component that
+     * never mentions `title` and spreads its props onto a DOM node: `<Chip
+     * title=…>`, `<AppLink title=…>` and `<ToggleGroupItem title=…>` are native
+     * tooltips with a capital letter in front of them, and the old rule — which
+     * looked only at lowercase names — missed all three inside its own directory.
+     */
     const native = []
-    // Only DOM elements. `title` is a perfectly good prop name on a component —
-    // a Group, a Card, a Dialog all take a heading called that — and this rule
-    // is about the browser's own tooltip, which no keyboard and no touch screen
-    // can reach.
-    for (const file of FILES) {
+    for (const file of ALL) {
       const body = stripComments(file.src)
-      for (const name of ['div', 'span', 'button', 'a', 'li', 'label', 'input', 'p', 'td', 'th', 'svg', 'textarea']) {
+      const tags = [...new Set([...body.matchAll(/<([A-Za-z][\w.]*)(?=[\s/>])/g)].map((match) => match[1]))]
+      for (const name of tags) {
+        const dom = /^[a-z]/.test(name)
+        if (!dom && !forwardsToDom(file, name)) continue
         for (const span of spans(body, name)) {
-          if (/\btitle=/.test(span.openTag)) native.push(`${file.id}: <${name} title=…>`)
+          if (!/\btitle=/.test(span.openTag)) continue
+          native.push(`${file.id}: <${name} title=…>${dom ? '' : ' — spreads its props onto a DOM node'}`)
         }
       }
     }
