@@ -1,7 +1,7 @@
-import { Input } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 /** A token value is one string for both schemes, or one per scheme. */
@@ -44,14 +44,14 @@ export function ColorField({ value, onChange, ...shell }: FieldShellProps & Valu
         <div className="flex items-center gap-2">
           <span
             aria-hidden
-            className="h-9 w-9 shrink-0 rounded-lg border border-border"
+            className="size-9 shrink-0 rounded-lg border border-border"
             style={{ background: value || 'transparent' }}
           />
           <Input
             {...control}
             value={value}
             placeholder="#0f172a"
-            className={cn('font-mono', invalidBorder(error))}
+            className="font-mono"
             onChange={(event) => onChange(event.target.value)}
           />
           <input
@@ -61,7 +61,7 @@ export function ColorField({ value, onChange, ...shell }: FieldShellProps & Valu
             disabled={control.disabled}
             value={pickable}
             onChange={(event) => onChange(event.target.value)}
-            className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-border bg-background"
+            className="size-9 shrink-0 cursor-pointer rounded-lg border border-border bg-background"
           />
         </div>
       )}
@@ -145,7 +145,7 @@ export function FontFamilyField({ value, onChange, ...shell }: FieldShellProps &
             {...control}
             value={value}
             placeholder="Inter, system-ui, sans-serif"
-            className={cn('font-mono', invalidBorder(error))}
+            className="font-mono"
             onChange={(event) => onChange(event.target.value)}
           />
           <p

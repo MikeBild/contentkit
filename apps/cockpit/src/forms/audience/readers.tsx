@@ -1,24 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type AccessGroup, type AccessUser, type ReaderInput } from '@/api/ck'
 import { Confirm } from '@/components/confirm'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogActions } from '@/components/ui/dialog'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EntityMultiSelect, RevealOnce, SecretField, SwitchField, TextField, UsernameField } from '@/forms/fields'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 
@@ -132,12 +125,13 @@ function ReaderDialog({
             {issued ? 'Done' : 'Cancel'}
           </Button>
           <Button data-testid="ck-reader-submit" disabled={!canSave} onClick={() => save.mutate()}>
+            {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save reader' : 'Create reader'}
           </Button>
         </DialogActions>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         {issued ? (
           <RevealOnce
             data-testid="ck-reader-password-issued"
@@ -157,7 +151,8 @@ function ReaderDialog({
             label="Username"
             value={draft.username}
             disabled
-            help="Fixed at creation. Delete and recreate the reader to change it."
+            help="Fixed at creation."
+            about="Delete and recreate the reader to change it."
             onChange={() => {}}
           />
         ) : (
@@ -205,7 +200,8 @@ function ReaderDialog({
         <EntityMultiSelect
           data-testid="ck-reader-groups"
           label="Groups"
-          help="Rules grant access to groups. A reader in no group is only reachable by a rule naming them directly."
+          help="Rules grant access to groups."
+          about="A reader in no group is only reachable by a rule naming them directly."
           value={draft.groups}
           isLoading={groupsQuery.isPending}
           optionsError={groupsQuery.error}
@@ -215,16 +211,24 @@ function ReaderDialog({
         />
 
         {revokes ? (
-          <p data-testid="ck-reader-revoke-warning" className="rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-xs text-chart-3">
-            Saving this revokes every session <strong>{reader?.username}</strong> currently holds. They are signed out
-            of the published site immediately and must sign in again.
-          </p>
+          <Alert data-testid="ck-reader-revoke-warning">
+            <TriangleAlert />
+            <AlertTitle>Saving signs this reader out</AlertTitle>
+            <AlertDescription>
+              Saving this revokes every session <strong>{reader?.username}</strong> currently holds. They are signed out
+              of the published site immediately and must sign in again.
+            </AlertDescription>
+          </Alert>
         ) : null}
 
         {save.error ? (
-          <p data-testid="ck-reader-error" className="text-sm text-chart-5">
-            {save.error instanceof Error ? save.error.message : 'Could not save the reader'}
-          </p>
+          <Alert variant="destructive" data-testid="ck-reader-error">
+            <TriangleAlert />
+            <AlertTitle>The reader was not saved</AlertTitle>
+            <AlertDescription>
+              {save.error instanceof Error ? save.error.message : 'Could not save the reader'}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </Dialog>
@@ -263,31 +267,32 @@ export function ReadersCard({ site }: { site: string }) {
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Username</TH>
-              <TH>Display name</TH>
-              <TH>Active</TH>
-              <TH>Groups</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Username</TableHead>
+              <TableHead>Display name</TableHead>
+              <TableHead>Active</TableHead>
+              <TableHead>Groups</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={5}
               isLoading={readers.isPending}
               error={readers.error}
               isEmpty={rows.length === 0}
               onRetry={() => readers.refetch()}
-              emptyMessage="No readers. The site is public unless a rule says otherwise."
+              emptyTitle="No readers"
+              emptyMessage="The site is public unless a rule says otherwise."
             >
               {rows.map((reader) => (
-                <TR key={reader.id} data-testid="ck-reader-row" data-user={reader.id}>
-                  <TD className="font-medium">{reader.username}</TD>
-                  <TD className="text-muted-foreground">{reader.display_name}</TD>
-                  <TD>{reader.active ? <Badge tone="success">active</Badge> : <Badge>disabled</Badge>}</TD>
-                  <TD className="text-muted-foreground">{reader.groups?.join(', ') || '—'}</TD>
-                  <TD className="flex gap-2">
+                <TableRow key={reader.id} data-testid="ck-reader-row" data-user={reader.id}>
+                  <TableCell className="font-medium">{reader.username}</TableCell>
+                  <TableCell className="text-muted-foreground">{reader.display_name}</TableCell>
+                  <TableCell>{reader.active ? <StatusBadge tone="success">active</StatusBadge> : <StatusBadge>disabled</StatusBadge>}</TableCell>
+                  <TableCell className="text-muted-foreground">{reader.groups?.join(', ') || '—'}</TableCell>
+                  <TableCell className="flex gap-2">
                     {writable ? (
                       <>
                         <Button
@@ -350,11 +355,11 @@ export function ReadersCard({ site }: { site: string }) {
                         </Confirm>
                       </>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
 

@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { describe, expect, it } from 'vitest'
 
+// Past the barrel, deliberately: `cockpit-behavioural-floor.test.mjs` proves a
+// module is really rendered by finding the test that imports it, directly or one
+// hop away, and `@/forms/fields` is two hops from `field.tsx`. The four
+// specifiers below are what makes the coverage claim checkable.
 import { EnumSelect, SwitchField } from './choice'
 import { ScopePicker } from './scopes'
 import { TextField } from './text'

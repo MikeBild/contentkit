@@ -1,10 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { InfoIcon, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { ck } from '@/api/ck'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogActions } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/primitives'
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Steps, type StepDescriptor } from '@/components/ui/steps'
 import { useToast } from '@/components/ui/toast'
+import { keys } from '@/lib/query'
+import { useSite } from '@/lib/site'
 import { PRESENTATION_PRESET, type PresentationPreset } from '../contracts/enums.generated'
 import {
   ChoiceCards,
@@ -16,8 +21,6 @@ import {
   checkUrl,
   type Choice,
 } from '../fields'
-import { keys } from '@/lib/query'
-import { useSite } from '@/lib/site'
 import {
   BCP47,
   EMPTY_DRAFT,
@@ -237,10 +240,14 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
               reconcile, and the same dialog can be corrected and sent again.
             */}
             {create.error ? (
-              <p data-testid="ck-site-wizard-error" className="text-sm text-chart-5">
-                {create.error instanceof Error ? create.error.message : 'Could not create the site'} — nothing was
-                created. Correct the value it names and send it again.
-              </p>
+              <Alert variant="destructive" data-testid="ck-site-wizard-error">
+                <TriangleAlert />
+                <AlertTitle>The site was not created</AlertTitle>
+                <AlertDescription>
+                  {create.error instanceof Error ? create.error.message : 'Could not create the site'} — nothing was
+                  created. Correct the value it names and send it again.
+                </AlertDescription>
+              </Alert>
             ) : null}
           </div>
         </Dialog>
@@ -261,7 +268,8 @@ function PurposeStep({ draft, onChange }: StepProps) {
         label="Presentation preset"
         required
         data-testid="ck-site-wizard-preset"
-        help="It decides the layout a page gets when it names none, and the URL that page is published under. Changing it later moves every one of those URLs, so it is asked first."
+        help="It decides the layout a page gets when it names none, and the URL that page is published under."
+        about="Changing it later moves every one of those URLs, so it is asked first."
         options={PRESET_CARDS}
         value={draft.preset}
         onChange={(preset) => onChange({ ...draft, preset })}
@@ -272,7 +280,8 @@ function PurposeStep({ draft, onChange }: StepProps) {
             label="First documentation version"
             required
             data-testid="ck-site-wizard-docs-version-id"
-            help="Appears in the URL and in each page's docsVersion. The server refuses the product-docs preset without one."
+            help="Appears in the URL and in each page's docsVersion."
+            about="The server refuses the product-docs preset without one."
             value={draft.docsVersion.id}
             onChange={(id) => onChange({ ...draft, docsVersion: { ...draft.docsVersion, id } })}
           />
@@ -317,7 +326,8 @@ function HomeStep({
         label="Base URL"
         required
         data-testid="ck-site-wizard-base-url"
-        help="Every canonical link, feed URL, sitemap entry and share target this site serves is built from it. Two sites pointing at the same base URL would claim the same canonical links, and a hostname can only be mapped to one site — so keep it to this site alone."
+        help="Every canonical link, feed URL, sitemap entry and share target this site serves is built from it."
+        about="Two sites pointing at the same base URL would claim the same canonical links, and a hostname can only be mapped to one site — so keep it to this site alone."
         value={draft.base_url}
         onChange={(base_url) => onChange({ ...draft, base_url })}
       />
@@ -325,7 +335,8 @@ function HomeStep({
         label="Slug"
         required
         data-testid="ck-site-wizard-slug"
-        help="The site's identifier in every API path and in ?site= in this console. It is unique across the installation, cut to 96 characters by the server, and cannot be changed afterwards."
+        help="The site's identifier in every API path and in ?site= in this console."
+        about="It is unique across the installation, cut to 96 characters by the server, and cannot be changed afterwards."
         derivedFrom={draft.name}
         siblings={takenSlugs}
         value={draft.slug}
@@ -354,7 +365,8 @@ function LanguagesStep({ draft, onChange }: StepProps) {
         label="Default locale"
         required
         data-testid="ck-site-wizard-default-locale"
-        help="Where “/” redirects to, the locale the 404 page is served in, and the one locale row that always exists. A tag content cannot carry — “EN”, “german” — is refused here rather than by the server."
+        help="Where “/” redirects to, the locale the 404 page is served in, and the one locale row that always exists."
+        about="A tag content cannot carry — “EN”, “german” — is refused here rather than by the server."
         locales={SUGGESTED_LOCALES}
         value={draft.default_locale}
         onChange={(default_locale) => onChange({ ...draft, default_locale })}
@@ -362,7 +374,7 @@ function LanguagesStep({ draft, onChange }: StepProps) {
       <TagListField
         label="Additional languages"
         data-testid="ck-site-wizard-extra-locales"
-        help={`One page tree is built per locale, and all of them are part of the same POST /v1/sites. At most ${SITE_LOCALE_MAX} in total, the default included.`}
+        about={`One page tree is built per locale, and all of them are part of the same POST /v1/sites. At most ${SITE_LOCALE_MAX} in total, the default included.`}
         fallback="Empty means one locale — the default."
         placeholder="de, fr — Enter to add"
         validate={(entry) =>
@@ -375,18 +387,38 @@ function LanguagesStep({ draft, onChange }: StepProps) {
         value={draft.locales}
         onChange={(locales) => onChange({ ...draft, locales: [...locales] })}
       />
-      <p className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
-        Languages can be added later, in the Languages section of this site's settings: it lists the locale rows, adds
-        one and removes one. Removing is refused while the locale is the default locale or while it still carries
-        published or scheduled content, and no content is ever deleted by it. Nothing is served under a new locale until
-        the next release is built.
+      {/* This step's explanation, which is the same three sentences whatever is
+          typed above it — so it waits behind the affordance rather than filling
+          the step. What *this* draft does is the one line that stays on screen. */}
+      <div className="flex items-center gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              data-testid="ck-site-wizard-languages-about"
+              aria-label="What can be changed about languages later"
+            >
+              <InfoIcon />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" data-testid="ck-site-wizard-languages-about-content">
+            <PopoverTitle>Adding a language later</PopoverTitle>
+            <PopoverDescription>
+              Languages can be added later, in the Languages section of this site's settings: it lists the locale
+              rows, adds one and removes one.
+              Removing is refused while the locale is the default locale or while it still carries
+              published or scheduled content, and no content is ever deleted by it.
+              Nothing is served under a new locale until the next release is built.
+            </PopoverDescription>
+          </PopoverContent>
+        </Popover>
         {extra.length ? (
-          <>
-            {' '}
+          <span className="text-xs text-muted-foreground" data-testid="ck-site-wizard-extra-locale-count">
             These {extra.length === 1 ? 'one' : extra.length} are created with the site.
-          </>
+          </span>
         ) : null}
-      </p>
+      </div>
     </div>
   )
 }
@@ -428,32 +460,39 @@ function ReadyStep({ draft, slug, extra }: { draft: SiteDraft; slug: string; ext
         ))}
       </dl>
 
-      <div data-testid="ck-site-wizard-requests" className="rounded-lg border border-border p-3">
-        <p className="text-xs font-medium">One request</p>
-        <p className="mt-1 font-mono text-xs text-muted-foreground">POST /v1/sites — {slug || '—'}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
+      <Alert data-testid="ck-site-wizard-requests">
+        <InfoIcon />
+        <AlertTitle>One request</AlertTitle>
+        <AlertDescription>
+          <span className="block font-mono">POST /v1/sites — {slug || '—'}</span>
           It carries the row, {locales.length === 1 ? 'its locale row' : `all ${locales.length} locale rows`}
           {extra.length ? ` (${extra.join(', ')} beside the default)` : ''}
           {draft.preset === 'portfolio' ? ' and no settings' : ` and settings.presentation.preset = ${draft.preset}`}.
           Either everything is written or nothing is.
-        </p>
-      </div>
+        </AlertDescription>
+      </Alert>
 
       {/*
         The one thing the old dialog never said. A site is not a live site: it is
         a row with a build matrix, and content changes nothing that a reader can
-        see until a release is built from it and that release is activated.
+        see until a release is built from it and that release is activated. Three
+        numbered steps inside an Alert, because the consequence is the point and a
+        list is what a reader scans.
       */}
-      <ol
-        data-testid="ck-site-wizard-next-steps"
-        className="flex list-inside list-decimal flex-col gap-1 rounded-lg border border-accent/30 bg-accent/10 p-3 text-xs"
-      >
-        <li>
-          Add content — pages, posts and decks. Nothing about them reaches a reader yet, whatever their revision says.
-        </li>
-        <li>Build a release. It renders every locale tree from what is published at that moment.</li>
-        <li>Activate that release. This is the step that changes what the site serves.</li>
-      </ol>
+      <Alert data-testid="ck-site-wizard-after">
+        <InfoIcon />
+        <AlertTitle>A new site serves nothing yet</AlertTitle>
+        <AlertDescription>
+          <ol data-testid="ck-site-wizard-next-steps" className="flex list-inside list-decimal flex-col gap-1">
+            <li>
+              Add content — pages, posts and decks. Nothing about them reaches a reader yet, whatever their revision
+              says.
+            </li>
+            <li>Build a release. It renders every locale tree from what is published at that moment.</li>
+            <li>Activate that release. This is the step that changes what the site serves.</li>
+          </ol>
+        </AlertDescription>
+      </Alert>
     </div>
   )
 }

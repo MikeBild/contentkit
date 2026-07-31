@@ -1,8 +1,9 @@
-import { Input } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { DATE_PRESETS, presetInstant } from './date-value'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 /**
@@ -57,7 +58,6 @@ export function NumberField({
             className={cn(
               'flex h-9 flex-1 items-center rounded-lg border border-border bg-background px-3 focus-within:ring-2 focus-within:ring-accent',
               value === undefined && allowUnset && 'opacity-50',
-              invalidBorder(error),
             )}
           >
             <Input
@@ -107,7 +107,7 @@ export function DimensionField({ value, onChange, ...shell }: FieldShellProps & 
           {...control}
           value={value}
           placeholder="0"
-          className={cn('font-mono', invalidBorder(error))}
+          className="font-mono"
           onChange={(event) => onChange(event.target.value.trim())}
         />
       )}
@@ -156,23 +156,24 @@ export function DateTimeField({
           <Input
             {...control}
             type="datetime-local"
-            className={cn('w-auto flex-1', invalidBorder(error))}
+            className="w-auto flex-1"
             value={toLocalInput(parsed)}
             onChange={(event) =>
               onChange(event.target.value ? new Date(event.target.value).toISOString() : undefined)
             }
           />
           {DATE_PRESETS.map((preset) => (
-            <button
+            <Button
               key={preset.label}
               type="button"
+              variant="outline"
+              size="xs"
               data-testid={`${control['data-testid']}-preset-${preset.days ?? 'never'}`}
               disabled={control.disabled}
               onClick={() => onChange(presetInstant(preset.days))}
-              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {preset.days === null ? unsetLabel : preset.label}
-            </button>
+            </Button>
           ))}
         </div>
       )}

@@ -1,25 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ck, type AccessGroup, type AccessRule, type AccessUser, type RuleInput } from '@/api/ck'
 import { Confirm } from '@/components/confirm'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogActions } from '@/components/ui/dialog'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ACCESS_RULE_MATCH, type AccessRuleMatch } from '@/forms/contracts/enums.generated'
 import { EntityMultiSelect, PathField, SegmentedField } from '@/forms/fields'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 
@@ -96,12 +89,13 @@ function RuleDialog({
             disabled={save.isPending || audienceEmpty || !path}
             onClick={() => save.mutate()}
           >
+            {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save rule' : 'Create rule'}
           </Button>
         </DialogActions>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <SegmentedField
           data-testid="ck-rule-match"
           label="Match"
@@ -159,9 +153,13 @@ function RuleDialog({
         ) : null}
 
         {save.error ? (
-          <p data-testid="ck-rule-error" className="text-sm text-chart-5">
-            {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
-          </p>
+          <Alert variant="destructive" data-testid="ck-rule-error">
+            <TriangleAlert />
+            <AlertTitle>The rule was not saved</AlertTitle>
+            <AlertDescription>
+              {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </Dialog>
@@ -224,16 +222,16 @@ export function RulesCard({
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Match</TH>
-              <TH>Path</TH>
-              <TH>Groups</TH>
-              <TH>Readers</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Match</TableHead>
+              <TableHead>Path</TableHead>
+              <TableHead>Groups</TableHead>
+              <TableHead>Readers</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={5}
               isLoading={rules.isPending}
@@ -243,20 +241,20 @@ export function RulesCard({
               emptyMessage="No rules — everything published is public."
             >
               {rows.map((rule) => (
-                <TR key={rule.id} data-testid="ck-rule-row" data-rule={rule.id}>
-                  <TD>
-                    <Badge tone="info">{rule.match}</Badge>
-                  </TD>
-                  <TD className="font-mono text-xs">{rule.path}</TD>
-                  <TD className="text-muted-foreground">{rule.group_slugs?.join(', ') || '—'}</TD>
-                  <TD className="text-muted-foreground">
+                <TableRow key={rule.id} data-testid="ck-rule-row" data-rule={rule.id}>
+                  <TableCell>
+                    <StatusBadge tone="info">{rule.match}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{rule.path}</TableCell>
+                  <TableCell className="text-muted-foreground">{rule.group_slugs?.join(', ') || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {rule.user_ids?.length
                       ? rule.user_ids
                           .map((id) => readerRows.find((reader) => reader.id === id)?.username ?? id.slice(0, 8))
                           .join(', ')
                       : '—'}
-                  </TD>
-                  <TD className="flex gap-2">
+                  </TableCell>
+                  <TableCell className="flex gap-2">
                     {writable ? (
                       <>
                         <Button
@@ -292,11 +290,11 @@ export function RulesCard({
                         </Confirm>
                       </>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
 

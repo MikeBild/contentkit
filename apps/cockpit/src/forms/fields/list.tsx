@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Chip } from '@/components/ui/chip'
 import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox'
-import { Input } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/input'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
 import type { Choice } from './choice'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 const BCP47 = /^[a-z]{2}(?:-[a-z]{2})?$/i
@@ -89,7 +90,6 @@ export function TagListField({
         <div
           className={cn(
             'flex min-h-9 w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 focus-within:ring-2 focus-within:ring-accent',
-            invalidBorder(error),
           )}
         >
           {value.map((entry, index) => (
@@ -156,29 +156,31 @@ export function EnumMultiSelect<T extends string>({
     <FieldShell {...shell}>
       {(control) => (
         <div className="flex flex-col gap-2">
+          {/* Two mutually exclusive readings of the same list, which is a
+              ToggleGroup — the loop of `role="radio"` buttons with a hand-rolled
+              `aria-checked` and a hand-rolled active border was the same control
+              built by hand, roving focus and all. */}
           {allEmptyMeans ? (
-            <div role="radiogroup" aria-labelledby={control.id} className="grid gap-2 sm:grid-cols-2">
-              {[
-                { key: 'all', label: allEmptyMeans.allLabel, active: all },
-                { key: 'some', label: allEmptyMeans.someLabel, active: !all },
-              ].map((card) => (
-                <button
-                  key={card.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={card.active}
-                  disabled={control.disabled}
-                  data-testid={`${control['data-testid']}-${card.key}`}
-                  onClick={() => onChange(card.key === 'all' ? [] : value.length ? [...value] : [options[0]!.value])}
-                  className={cn(
-                    'rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                    card.active ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
-                  )}
-                >
-                  {card.label}
-                </button>
-              ))}
-            </div>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              spacing={0}
+              aria-labelledby={control.id}
+              disabled={control.disabled}
+              value={all ? 'all' : 'some'}
+              onValueChange={(next) => {
+                if (!next) return
+                onChange(next === 'all' ? [] : value.length ? [...value] : [options[0]!.value])
+              }}
+            >
+              <ToggleGroupItem value="all" data-testid={`${control['data-testid']}-all`}>
+                {allEmptyMeans.allLabel}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="some" data-testid={`${control['data-testid']}-some`}>
+                {allEmptyMeans.someLabel}
+              </ToggleGroupItem>
+            </ToggleGroup>
           ) : null}
           {allEmptyMeans && all ? null : (
             <MultiCombobox

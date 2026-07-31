@@ -1,9 +1,10 @@
 import { Eye, EyeOff } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Button, Input } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 /**
@@ -44,19 +45,19 @@ export function SecretField({
               autoComplete="new-password"
               spellCheck={false}
               value={value}
-              className={cn('font-mono', invalidBorder(error))}
+              className="font-mono"
               onChange={(event) => onChange(event.target.value)}
             />
             <Button
               type="button"
               variant="outline"
-              size="icon"
+              size="icon-sm"
               aria-label={revealed ? 'Hide' : 'Reveal'}
               data-testid={`${control['data-testid']}-reveal`}
               disabled={control.disabled}
               onClick={() => setRevealed((state) => !state)}
             >
-              {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {revealed ? <EyeOff /> : <Eye />}
             </Button>
             {generate ? (
               <Button

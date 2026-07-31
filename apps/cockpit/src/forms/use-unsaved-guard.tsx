@@ -1,6 +1,6 @@
 import { useBlocker } from '@tanstack/react-router'
+import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/primitives'
 
 /**
  * Stops a navigation away from unsaved work, and asks rather than decides.

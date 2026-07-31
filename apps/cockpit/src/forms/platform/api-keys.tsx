@@ -1,24 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { InfoIcon, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type ApiKey } from '@/api/ck'
 import { Confirm } from '@/components/confirm'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogActions } from '@/components/ui/dialog'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DateTimeField, EntityMultiSelect, RevealOnce, ScopePicker, TextField } from '@/forms/fields'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan, useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
@@ -72,18 +66,20 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
             Cancel
           </Button>
           <Button data-testid="ck-api-key-submit" disabled={!canCreate} onClick={() => create.mutate()}>
+            {create.isPending ? <Spinner data-icon="inline-start" /> : null}
             {create.isPending ? 'Creating…' : 'Create key'}
           </Button>
         </DialogActions>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <TextField
           data-testid="ck-api-key-name"
           label="Name"
           required
           maxLength={120}
-          help="Who or what holds this key. It is the only label the audit trail can show."
+          help="Who or what holds this key."
+          about="It is the only label the audit trail can show."
           value={name}
           onChange={setName}
         />
@@ -92,7 +88,8 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
           data-testid="ck-api-key-scopes"
           label="Scopes"
           required
-          help="What this key may do. `authorize()` has no hierarchy — every scope has to be granted explicitly."
+          help="What this key may do."
+          about="`authorize()` has no hierarchy — every scope has to be granted explicitly."
           value={scopes}
           ceiling={session.product_scopes}
           onChange={setScopes}
@@ -102,7 +99,7 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
           data-testid="ck-api-key-sites"
           label="Sites"
           required={mustScopeToSites}
-          help="Which sites the key may reach."
+          definition="Which sites the key may reach."
           fallback={
             mustScopeToSites
               ? 'Your own access is restricted, so the key has to name at least one of your sites.'
@@ -123,9 +120,13 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
         />
 
         {create.error ? (
-          <p data-testid="ck-api-key-error" className="text-sm text-chart-5">
-            {create.error instanceof Error ? create.error.message : 'Could not create the key'}
-          </p>
+          <Alert variant="destructive" data-testid="ck-api-key-error">
+            <TriangleAlert />
+            <AlertTitle>The key was not created</AlertTitle>
+            <AlertDescription>
+              {create.error instanceof Error ? create.error.message : 'Could not create the key'}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </Dialog>
@@ -152,12 +153,29 @@ export function ApiKeysCard() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <div>
-          <CardTitle>API keys</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            There is no update endpoint by design — a key's authority is fixed at issue. To change one, revoke it and
-            issue a replacement.
-          </p>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1">
+            <CardTitle>API keys</CardTitle>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  data-testid="ck-api-keys-about"
+                  aria-label="How a key's authority is changed"
+                >
+                  <InfoIcon />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" data-testid="ck-api-keys-about-content">
+                <PopoverTitle>Keys are issued, never edited</PopoverTitle>
+                <PopoverDescription>To change one, revoke it and issue a replacement.</PopoverDescription>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <CardDescription>
+            There is no update endpoint by design — a key's authority is fixed at issue.
+          </CardDescription>
         </div>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-api-key-new" onClick={() => setCreating(true)}>
@@ -165,7 +183,7 @@ export function ApiKeysCard() {
           </Button>
         ) : null}
       </CardHeader>
-      <CardContent className="space-y-3 p-0">
+      <CardContent className="flex flex-col gap-3 p-0">
         {issued ? (
           <div className="px-5 pt-3">
             <RevealOnce
@@ -178,19 +196,19 @@ export function ApiKeysCard() {
           </div>
         ) : null}
         <Table>
-          <THead>
-            <TR>
-              <TH>Name</TH>
-              <TH>Prefix</TH>
-              <TH>Scopes</TH>
-              <TH>Sites</TH>
-              <TH>Expires</TH>
-              <TH>Created</TH>
-              <TH>Last used</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Prefix</TableHead>
+              <TableHead>Scopes</TableHead>
+              <TableHead>Sites</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={8}
               isLoading={apiKeys.isPending}
@@ -202,25 +220,25 @@ export function ApiKeysCard() {
               {rows.map((key) => {
                 const state = keyState(key)
                 return (
-                  <TR key={key.id} data-testid="ck-api-key-row" data-key={key.id}>
-                    <TD className="font-medium">{key.name}</TD>
-                    <TD className="font-mono text-xs text-muted-foreground">{key.key_prefix}</TD>
-                    <TD className="max-w-[18rem] text-xs text-muted-foreground">{key.scopes?.join(', ')}</TD>
-                    <TD className="text-xs text-muted-foreground">
+                  <TableRow key={key.id} data-testid="ck-api-key-row" data-key={key.id}>
+                    <TableCell className="font-medium">{key.name}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{key.key_prefix}</TableCell>
+                    <TableCell className="max-w-[18rem] text-xs text-muted-foreground">{key.scopes?.join(', ')}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {key.site_ids?.length
                         ? key.site_ids
                             .map((id) => sites.find((site) => site.id === id)?.slug ?? id.slice(0, 8))
                             .join(', ')
                         : 'every site'}
-                    </TD>
-                    <TD className="whitespace-nowrap text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
                       {key.expires_at ? formatDate(key.expires_at) : 'never'}
-                    </TD>
-                    <TD className="whitespace-nowrap text-muted-foreground">{formatDate(key.created_at)}</TD>
-                    <TD className="whitespace-nowrap text-muted-foreground">{formatDate(key.last_used_at)}</TD>
-                    <TD>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(key.created_at)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(key.last_used_at)}</TableCell>
+                    <TableCell>
                       {key.revoked_at || !writable ? (
-                        <Badge tone={state.tone}>{state.label}</Badge>
+                        <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
                       ) : (
                         <Confirm
                           title="Revoke this key?"
@@ -245,12 +263,12 @@ export function ApiKeysCard() {
                           )}
                         </Confirm>
                       )}
-                    </TD>
-                  </TR>
+                    </TableCell>
+                  </TableRow>
                 )
               })}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
 

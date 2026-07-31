@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getIn, sameValue, setIn } from './path'
-import { useBaseline, useDirty } from './use-dirty'
 import type { FieldErrors, ValidationContext } from './contracts/contract'
 import { errorsFromResponse, mergeErrors } from './contracts/validators'
+import { getIn, sameValue, setIn } from './path'
+import { useBaseline, useDirty } from './use-dirty'
 
 export type SectionTone = 'neutral' | 'ok' | 'warning' | 'error'
 

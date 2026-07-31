@@ -1,9 +1,14 @@
+import { CircleCheck, FileQuestion, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ck, type RenderResult } from '@/api/ck'
-import { Badge, Button } from '@/components/ui/primitives'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 import { ContentHtml, useContentScheme } from '@/content/lazy'
-import { contentRoute, effectiveLayout } from './fields'
+import { StatusBadge } from '@/forms/status-badge'
 import { SEMANTIC_DIRECTIVES } from './body'
+import { contentRoute, effectiveLayout } from './fields'
 import type { FrontmatterUI } from './frontmatter'
 
 /**
@@ -82,7 +87,7 @@ export function StructurePane({
                 className="flex items-center gap-2 truncate"
                 style={{ paddingLeft: `${(entry.depth - 1) * 0.75}rem` }}
               >
-                <Badge tone={entry.tone}>{entry.tag}</Badge>
+                <StatusBadge tone={entry.tone}>{entry.tag}</StatusBadge>
                 <span className="truncate">{entry.text}</span>
                 <span className="ml-auto shrink-0 text-muted-foreground">{entry.line}</span>
               </li>
@@ -220,25 +225,27 @@ export function ServerPreview({
         <span data-testid={`${testId}-state`}>{isPending ? 'Rendering…' : error ? 'Rejected' : 'Rendered'}</span>
         {result ? (
           <>
-            {result.chart_count ? <Badge tone="info">{result.chart_count} charts</Badge> : null}
-            {result.has_mermaid ? <Badge tone="info">diagrams</Badge> : null}
+            {result.chart_count ? <StatusBadge tone="info">{result.chart_count} charts</StatusBadge> : null}
+            {result.has_mermaid ? <StatusBadge tone="info">diagrams</StatusBadge> : null}
           </>
         ) : null}
       </div>
 
       {error ? (
-        <p data-testid={`${testId}-error`} className="rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5">
-          {error}
-        </p>
+        <Alert variant="destructive" data-testid={`${testId}-error`}>
+          <TriangleAlert />
+          <AlertTitle>The render was refused</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
 
       {diagnostics.length ? (
         <ul data-testid={`${testId}-diagnostics`} className="flex flex-col gap-1">
           {diagnostics.map((entry, index) => (
             <li key={index} className="flex items-start gap-2 rounded-lg border border-border p-2 text-xs">
-              <Badge tone={entry.severity === 'error' ? 'danger' : entry.severity === 'warning' ? 'warning' : 'neutral'}>
+              <StatusBadge tone={entry.severity === 'error' ? 'danger' : entry.severity === 'warning' ? 'warning' : 'neutral'}>
                 {entry.code}
-              </Badge>
+              </StatusBadge>
               <span className="min-w-0 flex-1">{entry.message ?? entry.code}</span>
             </li>
           ))}
@@ -281,9 +288,15 @@ export function ValidatePane({
 
   if (!applicable) {
     return (
-      <p data-testid={`${testId}-not-applicable`} className="text-xs text-muted-foreground">
-        Only compositions and decks have a structural validator. This document has neither.
-      </p>
+      <Empty className="border" data-testid={`${testId}-not-applicable`}>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FileQuestion />
+          </EmptyMedia>
+          <EmptyTitle>Nothing to validate</EmptyTitle>
+          <EmptyDescription>Only compositions and decks have a structural validator.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     )
   }
 
@@ -308,6 +321,7 @@ export function ValidatePane({
           }
         }}
       >
+        {isPending ? <Spinner data-icon="inline-start" /> : null}
         {isPending ? 'Validating…' : kind === 'deck' ? 'Validate the deck' : 'Validate the composition'}
       </Button>
       {verdict ? (
@@ -315,16 +329,10 @@ export function ValidatePane({
         // validators describe their success body in prose only, so there is no
         // generated type for it — and asserting one by hand is exactly the
         // guessing that has already broken this console twice.
-        <p
-          data-testid={`${testId}-verdict`}
-          className={
-            verdict.ok
-              ? 'rounded-lg border border-chart-2/30 bg-chart-2/10 p-3 text-xs text-chart-2'
-              : 'rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5'
-          }
-        >
-          {verdict.message}
-        </p>
+        <Alert variant={verdict.ok ? 'default' : 'destructive'} data-testid={`${testId}-verdict`}>
+          {verdict.ok ? <CircleCheck /> : <TriangleAlert />}
+          <AlertDescription>{verdict.message}</AlertDescription>
+        </Alert>
       ) : null}
     </div>
   )

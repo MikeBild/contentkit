@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { InfoIcon, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type ContentItem, type Preview } from '@/api/ck'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui/primitives'
+import { Dialog, DialogActions } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { Spinner } from '@/components/ui/spinner'
 import { EntityMultiSelect, NumberField, SlugField, TextField } from '@/forms/fields'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
@@ -71,18 +76,20 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
             disabled={create.isPending || slug.length < 3 || hours === undefined}
             onClick={() => create.mutate()}
           >
+            {create.isPending ? <Spinner data-icon="inline-start" /> : null}
             {create.isPending ? 'Building…' : 'Build preview'}
           </Button>
         </DialogActions>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <SlugField
           data-testid="ck-preview-slug"
           label="Name"
           required
           derivedFrom={reason}
-          help="Appears in the preview URL. Reusing a name atomically replaces the previous preview under it."
+          help="Appears in the preview URL."
+          about="Reusing a name atomically replaces the previous preview under it."
           value={slug}
           onChange={setSlug}
         />
@@ -90,7 +97,7 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
         <EntityMultiSelect
           data-testid="ck-preview-items"
           label="Documents to overlay"
-          help="Their newest revision is built on top of what is published. One revision per document."
+          about="Their newest revision is built on top of what is published. One revision per document."
           fallback="Empty previews the published set exactly as it stands."
           value={itemIds}
           isLoading={content.isPending}
@@ -126,9 +133,13 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
         />
 
         {create.error ? (
-          <p data-testid="ck-preview-error" className="text-sm text-chart-5">
-            {create.error instanceof Error ? create.error.message : 'Could not build the preview'}
-          </p>
+          <Alert variant="destructive" data-testid="ck-preview-error">
+            <TriangleAlert />
+            <AlertTitle>The preview was not built</AlertTitle>
+            <AlertDescription>
+              {create.error instanceof Error ? create.error.message : 'Could not build the preview'}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </Dialog>
@@ -142,17 +153,16 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
  */
 function PreviewLinks({ preview, onDismiss }: { preview: Preview; onDismiss: () => void }) {
   return (
-    <div
-      data-testid="ck-preview-links"
-      role="alert"
-      className="mb-4 rounded-xl border border-chart-3/30 bg-chart-3/10 p-4"
-    >
-      <h3 className="text-sm font-semibold">Preview built</h3>
-      <p className="mt-1 text-sm text-muted-foreground">
+    // An `Alert`, not a `div` painted amber and told to announce itself: the
+    // component already carries `role="alert"`, the border and the icon grid.
+    <Alert data-testid="ck-preview-links" className="mb-4">
+      <TriangleAlert />
+      <AlertTitle>Preview built</AlertTitle>
+      <AlertDescription>
         It expires in {Math.round(preview.expires_in / HOUR_SECONDS)} hours. The invitation is a secret: the first
         person who opens it is signed in to the preview.
-      </p>
-      <dl className="mt-3 space-y-2 text-xs">
+      </AlertDescription>
+      <dl className="mt-3 flex flex-col gap-2 text-xs">
         <div>
           <dt className="text-muted-foreground">Preview URL</dt>
           <dd className="mt-1 flex items-center gap-2">
@@ -177,7 +187,7 @@ function PreviewLinks({ preview, onDismiss }: { preview: Preview; onDismiss: () 
           Dismiss
         </Button>
       </div>
-    </div>
+    </Alert>
   )
 }
 
@@ -189,12 +199,32 @@ export function PreviewsCard({ site }: { site: string }) {
   return (
     <Card className="mb-4">
       <CardHeader className="flex-row items-center justify-between">
-        <div>
-          <CardTitle>Previews</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            A real build of unpublished work, reachable only through an invitation and only until it expires. Delete one
-            from the release list below.
-          </p>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1">
+            <CardTitle>Previews</CardTitle>
+            {/* The second sentence is a pointer to another part of the page, not
+                something to read before acting — so it waits behind the
+                affordance instead of sitting under the heading. */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  data-testid="ck-previews-about"
+                  aria-label="What a preview is and where to delete one"
+                >
+                  <InfoIcon />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" data-testid="ck-previews-about-content">
+                <PopoverTitle>Previews are temporary builds</PopoverTitle>
+                <PopoverDescription>Delete one from the release list below.</PopoverDescription>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <CardDescription>
+            A real build of unpublished work, reachable only through an invitation and only until it expires.
+          </CardDescription>
         </div>
         {can('release:preview') || can('release:write') ? (
           <Button size="sm" variant="outline" data-testid="ck-preview-new" onClick={() => setCreating(true)}>

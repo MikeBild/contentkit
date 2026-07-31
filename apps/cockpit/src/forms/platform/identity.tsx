@@ -1,26 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { InfoIcon, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type GrantInput, type IdentityGrant, type IdentityGrantConflict } from '@/api/ck'
 import { ApiError } from '@/api/client'
 import { Confirm } from '@/components/confirm'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogActions } from '@/components/ui/dialog'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { OPERATOR_ROLE, type OperatorRole } from '@/forms/contracts/enums.generated'
 import { ChoiceCards, EntityMultiSelect, EnumSelect, ScopePicker, TextField } from '@/forms/fields'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan, useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
@@ -145,17 +139,22 @@ function GrantDialog({
             Cancel
           </Button>
           <Button data-testid="ck-grant-submit" disabled={!canSave} onClick={() => save.mutate()}>
+            {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : restoring ? 'Restore grant' : editing ? 'Save grant' : 'Create grant'}
           </Button>
         </DialogActions>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         {restoring ? (
-          <p data-testid="ck-grant-restore-note" className="rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-xs text-chart-3">
-            This grant is revoked. Saving restores it — the only way to bring a revoked grant back. The holder can sign
-            in again from the next request; the sessions and tokens revoked with it are not restored.
-          </p>
+          <Alert data-testid="ck-grant-restore-note">
+            <TriangleAlert />
+            <AlertTitle>This grant is revoked</AlertTitle>
+            <AlertDescription>
+              Saving restores it — the only way to bring a revoked grant back. The holder can sign in again from the
+              next request; the sessions and tokens revoked with it are not restored.
+            </AlertDescription>
+          </Alert>
         ) : null}
 
         {editing ? (
@@ -164,7 +163,8 @@ function GrantDialog({
             label="Subject"
             value={`${grant?.provider_id ?? ''} · ${grant?.subject ?? ''}`}
             disabled
-            help="The provider's immutable identifier for this person. It is what the grant is keyed on and cannot be changed."
+            help="The provider's immutable identifier for this person."
+            about="It is what the grant is keyed on and cannot be changed."
             onChange={() => {}}
           />
         ) : (
@@ -192,7 +192,8 @@ function GrantDialog({
               label="Issuer"
               value={issuer}
               disabled
-              help="Filled from the provider. The server rejects a grant whose issuer does not match it exactly."
+              help="Filled from the provider."
+              about="The server rejects a grant whose issuer does not match it exactly."
               onChange={() => {}}
             />
 
@@ -211,7 +212,8 @@ function GrantDialog({
           data-testid="ck-grant-email"
           label="Email"
           value={draft.email}
-          fallback="Only a label. Access is decided by the subject."
+          fallback="Only a label."
+          about="Access is decided by the subject."
           onChange={(email) => setDraft({ ...draft, email })}
         />
 
@@ -255,7 +257,8 @@ function GrantDialog({
             data-testid="ck-grant-scopes"
             label="Product scopes"
             required
-            help="The ceiling. Nothing this identity does can exceed it, whatever token it holds."
+            help="The ceiling."
+            about="Nothing this identity does can exceed it, whatever token it holds."
             value={draft.product_scopes}
             ceiling={session.product_scopes}
             onChange={(product_scopes) => setDraft({ ...draft, product_scopes })}
@@ -265,7 +268,7 @@ function GrantDialog({
         <EntityMultiSelect
           data-testid="ck-grant-sites"
           label="Sites"
-          help="Which sites this identity may reach."
+          definition="Which sites this identity may reach."
           fallback="Empty means every site."
           value={draft.site_ids}
           options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
@@ -274,16 +277,24 @@ function GrantDialog({
         />
 
         {conflict ? (
-          <p data-testid="ck-grant-conflict" className="rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-sm text-chart-3">
-            {/* The server's own sentence: it already says whether the existing
-                grant needs editing or restoring, and paraphrasing it would only
-                add a second version to keep in step. */}
-            {conflict.hint ?? 'A grant for this subject already exists.'}
-          </p>
+          <Alert data-testid="ck-grant-conflict">
+            <TriangleAlert />
+            <AlertTitle>A grant for this subject already exists</AlertTitle>
+            <AlertDescription>
+              {/* The server's own sentence: it already says whether the existing
+                  grant needs editing or restoring, and paraphrasing it would only
+                  add a second version to keep in step. */}
+              {conflict.hint ?? 'A grant for this subject already exists.'}
+            </AlertDescription>
+          </Alert>
         ) : save.error ? (
-          <p data-testid="ck-grant-error" className="text-sm text-chart-5">
-            {save.error instanceof Error ? save.error.message : 'Could not save the grant'}
-          </p>
+          <Alert variant="destructive" data-testid="ck-grant-error">
+            <TriangleAlert />
+            <AlertTitle>The grant was not saved</AlertTitle>
+            <AlertDescription>
+              {save.error instanceof Error ? save.error.message : 'Could not save the grant'}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </Dialog>
@@ -308,12 +319,29 @@ export function IdentityGrantsCard() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <div>
-          <CardTitle>Identity grants</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            The stored product-scope ceiling is the only truth. Shrinking it takes effect on the very next request,
-            without reissuing anything.
-          </p>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1">
+            <CardTitle>Identity grants</CardTitle>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  data-testid="ck-grants-about"
+                  aria-label="When a change to the ceiling takes effect"
+                >
+                  <InfoIcon />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" data-testid="ck-grants-about-content">
+                <PopoverTitle>Shrinking a ceiling is immediate</PopoverTitle>
+                <PopoverDescription>
+                  It takes effect on the very next request, without reissuing anything.
+                </PopoverDescription>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <CardDescription>The stored product-scope ceiling is the only truth.</CardDescription>
         </div>
         <Button size="sm" variant="outline" data-testid="ck-grant-new" onClick={() => setEditing({})}>
           New grant
@@ -321,18 +349,18 @@ export function IdentityGrantsCard() {
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Subject</TH>
-              <TH>Provider</TH>
-              <TH>Role</TH>
-              <TH>Ceiling</TH>
-              <TH>Sites</TH>
-              <TH>Created</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Subject</TableHead>
+              <TableHead>Provider</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Ceiling</TableHead>
+              <TableHead>Sites</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={7}
               isLoading={grants.isPending}
@@ -342,28 +370,28 @@ export function IdentityGrantsCard() {
               emptyMessage="No identity grants."
             >
               {rows.map((grant) => (
-                <TR key={grant.id} data-testid="ck-grant-row" data-grant={grant.id}>
-                  <TD>
+                <TableRow key={grant.id} data-testid="ck-grant-row" data-grant={grant.id}>
+                  <TableCell>
                     <span className="font-medium">{grant.email || grant.subject}</span>
                     {grant.display_name ? (
                       <span className="block text-xs text-muted-foreground">{grant.display_name}</span>
                     ) : null}
-                  </TD>
-                  <TD className="text-muted-foreground">{grant.provider_id}</TD>
-                  <TD>
-                    <Badge tone={grant.role === 'admin' ? 'warning' : 'info'}>{grant.role ?? '—'}</Badge>
-                  </TD>
-                  <TD className="max-w-[18rem] text-xs text-muted-foreground">{grant.product_scopes?.join(', ')}</TD>
-                  <TD className="text-xs text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{grant.provider_id}</TableCell>
+                  <TableCell>
+                    <StatusBadge tone={grant.role === 'admin' ? 'warning' : 'info'}>{grant.role ?? '—'}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="max-w-[18rem] text-xs text-muted-foreground">{grant.product_scopes?.join(', ')}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
                     {grant.site_ids?.length
                       ? grant.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? id.slice(0, 8)).join(', ')
                       : 'every site'}
-                  </TD>
-                  <TD className="whitespace-nowrap text-muted-foreground">{formatDate(grant.created_at)}</TD>
-                  <TD className="flex gap-2">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(grant.created_at)}</TableCell>
+                  <TableCell className="flex gap-2">
                     {grant.revoked_at ? (
                       <>
-                        <Badge tone="danger">revoked</Badge>
+                        <StatusBadge tone="danger">revoked</StatusBadge>
                         <Button
                           size="sm"
                           variant="outline"
@@ -407,11 +435,11 @@ export function IdentityGrantsCard() {
                         </Confirm>
                       </>
                     )}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
 

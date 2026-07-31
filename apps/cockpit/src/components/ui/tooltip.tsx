@@ -1,56 +1,69 @@
-import { useId, useState, type ReactNode } from 'react'
-import { cn } from '@/lib/utils'
+"use client"
+
+import * as React from "react"
+import { Tooltip as TooltipPrimitive } from "radix-ui"
+
+import { cn } from "@/lib/utils"
 
 /**
- * Hover, focus and Escape — a tooltip that only answers to the mouse is a
- * tooltip half the operators never see.
+ * shadcn's `radix-nova` tooltip, vendored verbatim except for one line.
  *
- * Nothing in the console clips or transforms its overflow, so the bubble is an
- * absolutely positioned sibling rather than a portal with collision detection.
- * The rule that keeps this honest: a tooltip may never be the only place a
- * constraint is written. It repeats, it does not inform.
+ * Stock leans on the style sheet's `cn-tooltip-content` / `cn-tooltip-arrow`
+ * rules for the bubble's own padding and radius, and this project ships no such
+ * rules — `src/index.css` carries the palette and nothing else, so the class
+ * names are inert here and a stock tooltip renders as unpadded text on a solid
+ * block. The three utilities added below (`rounded-md px-2 py-1 text-xs`) are
+ * layout and type scale only; every colour still comes from the CVA's own
+ * `bg-foreground text-background`, which is why nothing here names one.
  */
-export function Tooltip({
-  content,
-  side = 'top',
-  children,
-  className,
-  'data-testid': testId = 'ck-tooltip',
-}: {
-  content: ReactNode
-  side?: 'top' | 'bottom'
-  children: ReactNode
-  className?: string
-  'data-testid'?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
 
+function TooltipProvider({
+  delayDuration = 0,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
-    <span
-      className={cn('relative inline-flex', className)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') setOpen(false)
-      }}
-    >
-      <span aria-describedby={open ? id : undefined}>{children}</span>
-      {open && content ? (
-        <span
-          role="tooltip"
-          id={id}
-          data-testid={testId}
-          className={cn(
-            'pointer-events-none absolute left-1/2 z-50 w-max max-w-xs -translate-x-1/2 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-foreground shadow-lg',
-            side === 'top' ? 'bottom-full mb-1' : 'top-full mt-1',
-          )}
-        >
-          {content}
-        </span>
-      ) : null}
-    </span>
+    <TooltipPrimitive.Provider
+      data-slot="tooltip-provider"
+      delayDuration={delayDuration}
+      {...props}
+    />
   )
 }
+
+function Tooltip({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+}
+
+function TooltipTrigger({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+}
+
+function TooltipContent({
+  className,
+  sideOffset = 0,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  return (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        data-slot="tooltip-content"
+        sideOffset={sideOffset}
+        className={cn(
+          "cn-tooltip-content z-50 w-fit max-w-xs origin-(--radix-tooltip-content-transform-origin) rounded-md px-2 py-1 text-xs bg-foreground text-background",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        <TooltipPrimitive.Arrow className="cn-tooltip-arrow z-50 size-2 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
+      </TooltipPrimitive.Content>
+    </TooltipPrimitive.Portal>
+  )
+}
+
+export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger }

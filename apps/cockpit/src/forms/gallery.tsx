@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/primitives'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSession } from '@/lib/session'
+import { CONTENT_KIND, PRESENTATION_PRESET, THEME_TOKENS, WEBHOOK_EVENT_TYPES } from './contracts/enums.generated'
 import {
   CarriedKeys,
   ChoiceCards,
@@ -35,7 +36,6 @@ import {
   UsernameField,
   choices,
 } from './fields'
-import { CONTENT_KIND, PRESENTATION_PRESET, THEME_TOKENS, WEBHOOK_EVENT_TYPES } from './contracts/enums.generated'
 
 interface DocVersion extends Record<string, unknown> {
   id: string

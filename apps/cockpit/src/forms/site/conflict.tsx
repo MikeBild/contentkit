@@ -1,6 +1,9 @@
+import { TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/primitives'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface SettingsConflict {
   /** The object the form was seeded from. */
@@ -74,24 +77,45 @@ export function ConflictDialog({
         </>
       }
     >
-      <p className="text-sm text-muted-foreground">
-        Reloading discards everything unsaved on this page. Overwriting keeps this page and removes their change.
-      </p>
+      {/* Two answers with opposite, irreversible consequences: an Alert, not a
+          grey line above the buttons. */}
+      <Alert data-testid="ck-site-conflict-consequences">
+        <TriangleAlert />
+        <AlertTitle>Both answers lose something</AlertTitle>
+        <AlertDescription>
+          Reloading discards everything unsaved on this page. Overwriting keeps this page and removes their change.
+        </AlertDescription>
+      </Alert>
       {showDiff ? (
         <ul data-testid="ck-site-conflict-list" className="mt-4 flex flex-col gap-1">
           {changes.map((change) => (
             <li key={change.path} className="rounded-lg border border-border p-2 text-xs">
               <div className="font-mono text-muted-foreground">{change.path}</div>
-              <div className="mt-1 grid gap-1 sm:grid-cols-2">
-                <span className="truncate" title={change.mine}>
-                  <span className="text-muted-foreground">loaded: </span>
-                  {change.mine}
-                </span>
-                <span className="truncate" title={change.theirs}>
-                  <span className="text-muted-foreground">now: </span>
-                  {change.theirs}
-                </span>
-              </div>
+              {/* The two values are truncated to keep the row one line, so the
+                  full value has to be reachable — and a native `title` is neither
+                  keyboard- nor touch-reachable. */}
+              <TooltipProvider>
+                <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-mine-${change.path}`}>
+                        <span className="text-muted-foreground">loaded: </span>
+                        {change.mine}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{change.mine}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-theirs-${change.path}`}>
+                        <span className="text-muted-foreground">now: </span>
+                        {change.theirs}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{change.theirs}</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
             </li>
           ))}
         </ul>

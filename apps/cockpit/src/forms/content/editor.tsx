@@ -1,13 +1,20 @@
+import { CircleCheck, InfoIcon, TriangleAlert } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { ck, type ContentItem, type Revision } from '@/api/ck'
-import { Card, CardContent, Button } from '@/components/ui/primitives'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { CopyButton } from '@/components/ui/copy-button'
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabPanel } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/toast'
+import { slugify } from '../fields'
+import { SaveBar, UnsavedPill } from '../save-bar'
+import { useForm } from '../use-form'
+import { useUnsavedGuard } from '../use-unsaved-guard'
+import { MarkdownBody } from './body'
 import { canonicalContent, validateContent, type ContentUI } from './contract'
 import { FrontmatterForm, effectiveLayout, type ContentForm } from './fields'
-import { MarkdownBody } from './body'
-import { ServerPreview, StructurePane, ValidatePane } from './preview'
 import {
   detect,
   emit,
@@ -16,10 +23,7 @@ import {
   roundtripDrift,
   FrontmatterError,
 } from './frontmatter'
-import { SaveBar, UnsavedPill } from '../save-bar'
-import { slugify } from '../fields'
-import { useForm } from '../use-form'
-import { useUnsavedGuard } from '../use-unsaved-guard'
+import { ServerPreview, StructurePane, ValidatePane } from './preview'
 
 type PreviewTab = 'structure' | 'rendered' | 'validate'
 
@@ -163,9 +167,27 @@ export function ContentEditor({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <UnsavedPill dirty={form.dirty} />
-          <span className="text-xs text-muted-foreground">
-            Revisions are immutable. Saving writes a new draft; nothing is live until a release carries it.
-          </span>
+          {/* Standing explanation, not a thing to read before every save: it is
+              the same two sentences whatever the document is, so it sits behind
+              an affordance instead of above every editor. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                data-testid="ck-content-immutability-info"
+                aria-label="What saving does to a revision"
+              >
+                <InfoIcon />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" data-testid="ck-content-immutability-content">
+              <PopoverTitle>Revisions are immutable</PopoverTitle>
+              <PopoverDescription>
+                Saving writes a new draft; nothing is live until a release carries it.
+              </PopoverDescription>
+            </PopoverContent>
+          </Popover>
         </div>
         <SaveBar
           data-testid="ck-content-save-bar"
@@ -192,13 +214,13 @@ export function ContentEditor({
       </div>
 
       {parsed.failure ? (
-        <Banner tone="error" testId="ck-content-parse-error">
+        <Banner tone="error" testId="ck-content-parse-error" title="The frontmatter does not parse">
           {parsed.failure} — the document cannot be edited here until its frontmatter parses.
         </Banner>
       ) : null}
 
       {drift.keys.length ? (
-        <Banner tone="error" testId="ck-content-drift">
+        <Banner tone="error" testId="ck-content-drift" title="This document is not editable here">
           This form does not read {drift.keys.map((key) => `“${key}”`).join(', ')} the way it is written, so
           saving would rewrite it. Editing is disabled for this document rather than changing an author's file silently.
           {drift.reason ? ` (${drift.reason})` : ''}
@@ -206,16 +228,23 @@ export function ContentEditor({
       ) : null}
 
       {form.unassignedError ? (
-        <Banner tone="error" testId="ck-content-server-error" onDismiss={form.clearUnassigned}>
+        <Banner
+          tone="error"
+          testId="ck-content-server-error"
+          title="The write was rejected"
+          onDismiss={form.clearUnassigned}
+        >
           The write was rejected and no revision was created: {form.unassignedError}
         </Banner>
       ) : null}
 
       {preview ? (
-        <div data-testid="ck-content-preview-built" className="rounded-xl border border-chart-2/30 bg-chart-2/10 p-3">
-          <p className="text-xs text-chart-2">
-            The preview is built. The invitation is a one-time secret: opening it creates the session and consumes it.
-          </p>
+        <Alert data-testid="ck-content-preview-built">
+          <CircleCheck />
+          <AlertTitle>The preview is built</AlertTitle>
+          <AlertDescription>
+            The invitation is a one-time secret: opening it creates the session and consumes it.
+          </AlertDescription>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <a
               href={preview.preview_url}
@@ -228,7 +257,7 @@ export function ContentEditor({
             </a>
             <CopyButton value={preview.invitation_url} data-testid="ck-content-invitation-copy" label="Copy invitation" />
           </div>
-        </div>
+        </Alert>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -305,32 +334,38 @@ function seed(revision: Revision): ContentUI {
   return { fm: detect(parsed.frontmatter), body: parsed.body }
 }
 
+/**
+ * The editor's callouts, which used to be a `div` painted with a chart colour.
+ * `Alert` already is that shape — `role="alert"`, its own border, the icon grid
+ * and `AlertAction` for the dismiss — and `destructive` is the only severity it
+ * has, which is exactly the two tones this component ever had.
+ */
 function Banner({
   tone,
   testId,
+  title,
   onDismiss,
   children,
 }: {
   tone: 'error' | 'warning'
   testId: string
+  /** What went wrong, in a heading. The children say the rest. */
+  title: string
   onDismiss?: () => void
   children: React.ReactNode
 }) {
   return (
-    <div
-      data-testid={testId}
-      className={
-        tone === 'error'
-          ? 'flex items-start justify-between gap-3 rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5'
-          : 'flex items-start justify-between gap-3 rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-xs text-chart-3'
-      }
-    >
-      <span className="min-w-0">{children}</span>
+    <Alert variant={tone === 'error' ? 'destructive' : 'default'} data-testid={testId}>
+      <TriangleAlert />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>{children}</AlertDescription>
       {onDismiss ? (
-        <Button variant="ghost" size="sm" data-testid={`${testId}-dismiss`} onClick={onDismiss}>
-          Dismiss
-        </Button>
+        <AlertAction>
+          <Button variant="ghost" size="sm" data-testid={`${testId}-dismiss`} onClick={onDismiss}>
+            Dismiss
+          </Button>
+        </AlertAction>
       ) : null}
-    </div>
+    </Alert>
   )
 }

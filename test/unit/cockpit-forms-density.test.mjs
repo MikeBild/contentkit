@@ -447,6 +447,19 @@ const FLOOR = {
   'status-badge.tsx': 0,
   'table-state.tsx': 2,
   'use-unsaved-guard.tsx': 4,
+  /**
+   * The DOM test that renders the shell, co-located with it — a `.tsx` under
+   * `forms/`, so the walk finds it, and it has to be declared or the first test
+   * below fails on a file nobody forgot.
+   *
+   * Zero, and deliberately not its 36. Every other entry here is a promise about
+   * a console someone reads; this file's sentences are fixtures ("Shown in the
+   * browser tab.", "Already taken") whose only job is to be findable in the
+   * accessibility tree, and freezing them would mean a test could not stop using
+   * one. It is still held to every *density* rule above — a fixture that models a
+   * field ought to model a legal one — which is the half that has meaning here.
+   */
+  'fields/field.test.tsx': 0,
 }
 
 describe('cockpit forms — text density', () => {

@@ -1,11 +1,15 @@
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Badge, Button, Input, Select } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { StatusBadge } from '@/forms/status-badge'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
+
 
 const KEY_GRAMMAR = /^[a-z][a-z0-9_]{0,63}$/
 
@@ -37,9 +41,24 @@ export function KeyValueField({
         <div className="flex flex-col gap-2" data-testid={control['data-testid']}>
           {entries.map(([key, entry]) => (
             <div key={key} className="flex items-center gap-2">
-              <span className="w-40 shrink-0 truncate font-mono text-xs text-muted-foreground" title={key}>
-                {key}
-              </span>
+              <TooltipProvider>
+                <Tooltip>
+                  {/* The row's key is truncated to keep the value box wide, so the
+                      full key has to be reachable somewhere. A native `title` is
+                      neither keyboard- nor touch-reachable; this trigger is a tab
+                      stop and says the same thing. */}
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      data-testid={`${control['data-testid']}-key-${key}`}
+                      className="w-40 shrink-0 truncate font-mono text-xs text-muted-foreground"
+                    >
+                      {key}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{key}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <Input
                 aria-label={`${valueLabel} for ${key}`}
                 data-testid={`${control['data-testid']}-value-${key}`}
@@ -49,8 +68,8 @@ export function KeyValueField({
               />
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                variant="destructive"
+                size="icon-sm"
                 aria-label={`Remove ${key}`}
                 data-testid={`${control['data-testid']}-remove-${key}`}
                 disabled={control.disabled}
@@ -59,7 +78,7 @@ export function KeyValueField({
                   onChange(rest)
                 }}
               >
-                <Trash2 className="h-3.5 w-3.5 text-chart-5" />
+                <Trash2 />
               </Button>
             </div>
           ))}
@@ -70,7 +89,7 @@ export function KeyValueField({
               data-testid={`${control['data-testid']}-new-key`}
               disabled={control.disabled}
               value={draftKey}
-              className={cn('w-40 shrink-0 font-mono text-xs', invalidBorder(keyError))}
+              className="w-40 shrink-0 font-mono text-xs"
               onChange={(event) => setDraftKey(event.target.value)}
             />
             <Button
@@ -84,7 +103,7 @@ export function KeyValueField({
                 setDraftKey('')
               }}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" />
               Add
             </Button>
           </div>
@@ -149,7 +168,7 @@ export function TokenMapField({
                       onChange(rest)
                     }}
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
+                    <RotateCcw data-icon="inline-start" />
                     Reset to default
                   </Button>
                 </div>
@@ -158,21 +177,36 @@ export function TokenMapField({
             ))}
 
           <div className="flex items-center gap-2">
+            {/* Radix spells "nothing picked" as the empty string on the root and
+                refuses it as an item's value, so the placeholder is the trigger's
+                own — which is also where the "every token is set" case belongs. */}
             <Select
-              aria-label="Token to add"
-              data-testid={`${control['data-testid']}-picker`}
               disabled={control.disabled || available.length === 0}
               value={picked}
-              className="flex-1"
-              onChange={(event) => setPicked(event.target.value)}
+              onValueChange={setPicked}
             >
-              <option value="">{available.length ? 'Add a token…' : 'Every token is set'}</option>
-              {available.map((token) => (
-                <option key={token.key} value={token.key} disabled={Boolean(token.unavailableReason)}>
-                  {token.label}
-                  {token.unavailableReason ? ' — not available' : ''}
-                </option>
-              ))}
+              <SelectTrigger
+                aria-label="Token to add"
+                data-testid={`${control['data-testid']}-picker`}
+                className="flex-1"
+              >
+                <SelectValue placeholder={available.length ? 'Add a token…' : 'Every token is set'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {available.map((token) => (
+                    <SelectItem
+                      key={token.key}
+                      value={token.key}
+                      disabled={Boolean(token.unavailableReason)}
+                      data-testid={`${control['data-testid']}-picker-${token.key}`}
+                    >
+                      {token.label}
+                      {token.unavailableReason ? ' — not available' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
             </Select>
             <Button
               type="button"
@@ -185,7 +219,7 @@ export function TokenMapField({
                 setPicked('')
               }}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" />
               Add
             </Button>
           </div>
@@ -195,9 +229,16 @@ export function TokenMapField({
               {tokens
                 .filter((token) => token.unavailableReason)
                 .map((token) => (
-                  <Tooltip key={token.key} content={token.unavailableReason}>
-                    <Badge className="opacity-60">{token.key}</Badge>
-                  </Tooltip>
+                  <TooltipProvider key={token.key}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span tabIndex={0} data-testid={`${control['data-testid']}-unavailable-${token.key}`}>
+                          <StatusBadge className="opacity-60">{token.key}</StatusBadge>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{token.unavailableReason}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 ))}
             </div>
           ) : null}
@@ -270,9 +311,20 @@ export function ExtraFieldsField({
         <div className="flex flex-col gap-2" data-testid={control['data-testid']}>
           {editable.map(([key, entry]) => (
             <div key={key} className="flex items-start gap-2" data-testid={`${control['data-testid']}-${key}`}>
-              <span className="w-40 shrink-0 truncate pt-2 font-mono text-xs text-muted-foreground" title={key}>
-                {key}
-              </span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      data-testid={`${control['data-testid']}-key-${key}`}
+                      className="w-40 shrink-0 truncate pt-2 font-mono text-xs text-muted-foreground"
+                    >
+                      {key}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{key}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <div className="flex-1">
                 <ExtraValue
                   testId={`${control['data-testid']}-${key}`}
@@ -283,8 +335,8 @@ export function ExtraFieldsField({
               </div>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                variant="destructive"
+                size="icon-sm"
                 aria-label={`Remove ${key}`}
                 data-testid={`${control['data-testid']}-remove-${key}`}
                 disabled={control.disabled}
@@ -293,7 +345,7 @@ export function ExtraFieldsField({
                   onChange(rest)
                 }}
               >
-                <Trash2 className="h-3.5 w-3.5 text-chart-5" />
+                <Trash2 />
               </Button>
             </div>
           ))}
@@ -305,21 +357,30 @@ export function ExtraFieldsField({
               data-testid={`${control['data-testid']}-new-key`}
               disabled={control.disabled}
               value={draftKey}
-              className={cn('w-40 shrink-0 font-mono text-xs', invalidBorder(keyError))}
+              className="w-40 shrink-0 font-mono text-xs"
               onChange={(event) => setDraftKey(event.target.value)}
             />
             <Select
-              aria-label="New field shape"
-              data-testid={`${control['data-testid']}-new-shape`}
               disabled={control.disabled}
               value={draftShape}
-              onChange={(event) => setDraftShape(event.target.value as ExtraShape)}
+              onValueChange={(next) => setDraftShape(next as ExtraShape)}
             >
-              {SHAPES.map((shape) => (
-                <option key={shape.value} value={shape.value}>
-                  {shape.label}
-                </option>
-              ))}
+              <SelectTrigger aria-label="New field shape" data-testid={`${control['data-testid']}-new-shape`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {SHAPES.map((shape) => (
+                    <SelectItem
+                      key={shape.value}
+                      value={shape.value}
+                      data-testid={`${control['data-testid']}-new-shape-${shape.value}`}
+                    >
+                      {shape.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
             </Select>
             <Button
               type="button"
@@ -332,7 +393,7 @@ export function ExtraFieldsField({
                 setDraftKey('')
               }}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" />
               Add
             </Button>
           </div>
@@ -452,13 +513,13 @@ export function CarriedKeys({
             <span className="min-w-0 flex-1 truncate font-mono">{describe(entry)}</span>
             <Button
               type="button"
-              variant="ghost"
-              size="icon"
+              variant="destructive"
+              size="icon-sm"
               aria-label={`Remove ${key}`}
               data-testid={`${testId}-remove-${key}`}
               onClick={() => onRemove(key)}
             >
-              <Trash2 className="h-3.5 w-3.5 text-chart-5" />
+              <Trash2 />
             </Button>
           </li>
         ))}

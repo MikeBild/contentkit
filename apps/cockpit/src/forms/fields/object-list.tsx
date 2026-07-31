@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Button } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { cn } from '@/lib/utils'
 import { FieldShell, type FieldShellProps } from './field'
 
@@ -75,9 +76,11 @@ export function ObjectListField<T extends Record<string, unknown>>({
       {(control) => (
         <div className="flex flex-col gap-2" data-testid={control['data-testid']}>
           {value.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-              {emptyMessage}
-            </p>
+            <Empty className="border" data-testid={`${control['data-testid']}-empty`}>
+              <EmptyHeader>
+                <EmptyTitle>{emptyMessage}</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           ) : null}
 
           {value.map((item, index) => {
@@ -116,35 +119,35 @@ export function ObjectListField<T extends Record<string, unknown>>({
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
+                      size="icon-sm"
                       aria-label="Move up"
                       data-testid={`${control['data-testid']}-up-${index}`}
                       disabled={control.disabled || index === 0}
                       onClick={() => move(index, -1)}
                     >
-                      <ArrowUp className="h-3.5 w-3.5" />
+                      <ArrowUp />
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
+                      size="icon-sm"
                       aria-label="Move down"
                       data-testid={`${control['data-testid']}-down-${index}`}
                       disabled={control.disabled || index === value.length - 1}
                       onClick={() => move(index, 1)}
                     >
-                      <ArrowDown className="h-3.5 w-3.5" />
+                      <ArrowDown />
                     </Button>
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon"
+                      variant="destructive"
+                      size="icon-sm"
                       aria-label="Remove"
                       data-testid={`${control['data-testid']}-remove-${index}`}
                       disabled={control.disabled}
                       onClick={() => onChange(value.filter((_, at) => at !== index))}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-chart-5" />
+                      <Trash2 />
                     </Button>
                   </div>
                 </div>
@@ -171,7 +174,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
               onChange([...value, exclusiveFlag && value.length === 0 ? { ...fresh, [exclusiveFlag.key]: true } : fresh])
             }}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" />
             {addLabel}
           </Button>
         </div>

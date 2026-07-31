@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck, type Revision } from '@/api/ck'
-import { Badge, Button, TBody, TD, TH, THead, TR, Table, TableState } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -34,17 +37,17 @@ export function Revisions({
   return (
     <div data-testid={testId} className="rounded-xl border border-border bg-surface">
       <Table>
-        <THead>
-          <TR>
-            <TH>Status</TH>
-            <TH>Slug</TH>
-            <TH>Created</TH>
-            <TH>Published</TH>
-            <TH>Source hash</TH>
-            <TH />
-          </TR>
-        </THead>
-        <TBody>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Status</TableHead>
+            <TableHead>Slug</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Published</TableHead>
+            <TableHead>Source hash</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           <TableState
             columns={6}
             isLoading={query.isPending}
@@ -54,15 +57,15 @@ export function Revisions({
             emptyMessage="No revisions yet."
           >
             {rows.map((revision, index) => (
-              <TR key={revision.id} data-testid={`${testId}-row`} data-revision={revision.id}>
-                <TD>
-                  <Badge tone={revision.status === 'published' ? 'success' : 'neutral'}>{revision.status}</Badge>
-                </TD>
-                <TD className="text-muted-foreground">{revision.slug}</TD>
-                <TD className="text-muted-foreground">{formatDate(revision.created_at)}</TD>
-                <TD className="text-muted-foreground">{formatDate(revision.published_at)}</TD>
-                <TD className="font-mono text-xs text-muted-foreground">{revision.source_sha256?.slice(0, 12)}</TD>
-                <TD className="flex gap-2">
+              <TableRow key={revision.id} data-testid={`${testId}-row`} data-revision={revision.id}>
+                <TableCell>
+                  <StatusBadge tone={revision.status === 'published' ? 'success' : 'neutral'}>{revision.status}</StatusBadge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{revision.slug}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(revision.created_at)}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(revision.published_at)}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{revision.source_sha256?.slice(0, 12)}</TableCell>
+                <TableCell className="flex gap-2">
                   <Button
                     size="sm"
                     variant="outline"
@@ -81,11 +84,11 @@ export function Revisions({
                   >
                     {index === 0 ? 'Open' : 'Restore into the editor'}
                   </Button>
-                </TD>
-              </TR>
+                </TableCell>
+              </TableRow>
             ))}
           </TableState>
-        </TBody>
+        </TableBody>
       </Table>
 
       {compared ? (

@@ -1,6 +1,6 @@
 // One import site for the field inventory, so a page never reaches past it into
 // a specific module and the set stays reviewable in one place.
-export { FieldShell, invalidBorder, type ControlProps, type FieldShellProps } from './field'
+export { FieldShell, type ControlProps, type FieldShellProps } from './field'
 export { normalisePath, PathField, slugify, SlugField, TextAreaField, TextField, UsernameField, type ValueProps } from './text'
 export { ChoiceCards, choices, EnumSelect, SegmentedField, SwitchField, TriToggle, type Choice } from './choice'
 export { DateTimeField, DimensionField, NumberField } from './number'

@@ -1,5 +1,5 @@
 import { Checkbox } from '@/components/ui/checkbox'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PRODUCT_SCOPES, type ProductScope } from '../contracts/enums.generated'
 import { FieldShell, type FieldShellProps } from './field'
@@ -97,9 +97,22 @@ export function ScopePicker({
             return held ? (
               <div key={scope}>{row}</div>
             ) : (
-              <Tooltip key={scope} content="You do not hold this scope yourself" className="block">
-                {row}
-              </Tooltip>
+              // A disabled checkbox is neither a hover nor a focus target, so the
+              // reason it is disabled would be unreachable through it. The wrapper
+              // is the trigger, and it is a tab stop so the sentence is not
+              // mouse-only. `TooltipProvider` is opened locally as well as at the
+              // app root: this picker is rendered inside dialogs that mount their
+              // own trees, and a missing provider throws rather than degrades.
+              <TooltipProvider key={scope}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0} className="block" data-testid={`${control['data-testid']}-${scope}-locked`}>
+                      {row}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>You do not hold this scope yourself</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )
           })}
         </div>

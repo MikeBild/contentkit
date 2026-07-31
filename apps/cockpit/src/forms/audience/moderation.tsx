@@ -3,26 +3,26 @@ import { Fragment, useState } from 'react'
 import { ck, type ContentItem } from '@/api/ck'
 import { AppLink } from '@/components/app-link'
 import { Confirm } from '@/components/confirm'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Select,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { COMMENT_STATUS, CONTACT_STATUS, type CommentStatus, type ContactStatus } from '@/forms/contracts/enums.generated'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { formatDate } from '@/lib/utils'
+
+/**
+ * "No filter" as a value a Select can hold.
+ *
+ * Radix spells *deselected* as the empty string and refuses it as an item's
+ * value, so the "all of them" row needs a name of its own. It is translated at
+ * both edges — the query still sees `''` — and no request or URL ever carries it.
+ */
+const ANY = '__ck_any__'
+
 
 /**
  * Every moderation list stores a `content_item_id` and nothing else, so on its
@@ -83,32 +83,43 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle>Comments</CardTitle>
         <Select
-          data-testid="ck-comment-status-filter"
-          aria-label="Filter comments by status"
-          value={status}
-          onChange={(event) => setStatus(event.target.value as CommentStatus | '')}
+          value={status || ANY}
+          onValueChange={(next) => setStatus(next === ANY ? '' : (next as CommentStatus))}
         >
-          <option value="">All statuses</option>
-          {COMMENT_STATUS.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
+          <SelectTrigger
+            data-testid="ck-comment-status-filter"
+            aria-label="Filter comments by status"
+            className="w-44"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={ANY} data-testid="ck-comment-status-filter-any">
+                All statuses
+              </SelectItem>
+              {COMMENT_STATUS.map((value) => (
+                <SelectItem key={value} value={value} data-testid={`ck-comment-status-filter-${value}`}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Author</TH>
-              <TH>Post</TH>
-              <TH>Comment</TH>
-              <TH>Status</TH>
-              <TH>Received</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Author</TableHead>
+              <TableHead>Post</TableHead>
+              <TableHead>Comment</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Received</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={6}
               isLoading={comments.isPending}
@@ -118,17 +129,17 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
               emptyMessage={status ? `No ${status} comments.` : 'Nothing waiting for moderation.'}
             >
               {rows.map((comment) => (
-                <TR key={comment.id} data-testid="ck-comment-row" data-comment={comment.id}>
-                  <TD>{comment.author_name || 'anonymous'}</TD>
-                  <TD className="text-muted-foreground">
+                <TableRow key={comment.id} data-testid="ck-comment-row" data-comment={comment.id}>
+                  <TableCell>{comment.author_name || 'anonymous'}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     <ContentTitle id={comment.content_item_id} item={titleFor(comment.content_item_id)} />
-                  </TD>
-                  <TD className="max-w-[28rem] whitespace-pre-wrap break-words">{comment.body}</TD>
-                  <TD>
-                    <Badge tone={COMMENT_TONE[comment.status]}>{comment.status}</Badge>
-                  </TD>
-                  <TD className="whitespace-nowrap text-muted-foreground">{formatDate(comment.created_at)}</TD>
-                  <TD className="flex gap-2">
+                  </TableCell>
+                  <TableCell className="max-w-[28rem] whitespace-pre-wrap break-words">{comment.body}</TableCell>
+                  <TableCell>
+                    <StatusBadge tone={COMMENT_TONE[comment.status]}>{comment.status}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(comment.created_at)}</TableCell>
+                  <TableCell className="flex gap-2">
                     {writable ? (
                       <>
                         {(['approved', 'rejected'] as const)
@@ -201,11 +212,11 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                         </Confirm>
                       </>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
     </Card>
@@ -242,16 +253,16 @@ export function ContactCard({ siteId }: { siteId: string }) {
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>From</TH>
-              <TH>Message</TH>
-              <TH>Status</TH>
-              <TH>Received</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>From</TableHead>
+              <TableHead>Message</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Received</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={5}
               isLoading={contact.isPending}
@@ -264,14 +275,14 @@ export function ContactCard({ siteId }: { siteId: string }) {
                 const open = expanded === submission.id
                 return (
                   <Fragment key={submission.id}>
-                    <TR data-testid="ck-contact-row" data-submission={submission.id}>
-                      <TD>
+                    <TableRow data-testid="ck-contact-row" data-submission={submission.id}>
+                      <TableCell>
                         <span className="font-medium">{submission.name || 'anonymous'}</span>
                         {submission.email ? (
                           <span className="block text-xs text-muted-foreground">{submission.email}</span>
                         ) : null}
-                      </TD>
-                      <TD className="max-w-[24rem]">
+                      </TableCell>
+                      <TableCell className="max-w-[24rem]">
                         {/*
                           A truncated message with a `title=` tooltip is
                           unreachable by keyboard and unreadable on touch, and a
@@ -287,12 +298,12 @@ export function ContactCard({ siteId }: { siteId: string }) {
                         >
                           {submission.body}
                         </button>
-                      </TD>
-                      <TD>
-                        <Badge tone={CONTACT_TONE[submission.status]}>{submission.status}</Badge>
-                      </TD>
-                      <TD className="whitespace-nowrap text-muted-foreground">{formatDate(submission.created_at)}</TD>
-                      <TD className="flex flex-wrap gap-2">
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge tone={CONTACT_TONE[submission.status]}>{submission.status}</StatusBadge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(submission.created_at)}</TableCell>
+                      <TableCell className="flex flex-wrap gap-2">
                         {writable ? (
                           <>
                             {CONTACT_STATUS.filter((next) => next !== submission.status).map((next) => (
@@ -337,20 +348,20 @@ export function ContactCard({ siteId }: { siteId: string }) {
                             </Confirm>
                           </>
                         ) : null}
-                      </TD>
-                    </TR>
+                      </TableCell>
+                    </TableRow>
                     {open ? (
-                      <TR data-testid={`ck-contact-body-${submission.id}`}>
-                        <TD colSpan={5} className="bg-muted/40">
+                      <TableRow data-testid={`ck-contact-body-${submission.id}`}>
+                        <TableCell colSpan={5} className="bg-muted/40">
                           <p className="whitespace-pre-wrap break-words text-sm">{submission.body}</p>
-                        </TD>
-                      </TR>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                   </Fragment>
                 )
               })}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
     </Card>
@@ -379,31 +390,39 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
     <Card>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle>Post feedback</CardTitle>
-        <Select
-          data-testid="ck-feedback-post-filter"
-          aria-label="Filter feedback by post"
-          value={post}
-          onChange={(event) => setPost(event.target.value)}
-        >
-          <option value="">All posts</option>
-          {(feedback.data ?? []).map((row) => (
-            <option key={row.content_item_id} value={row.content_item_id}>
-              {titleFor(row.content_item_id)?.title || row.content_item_id.slice(0, 12)}
-            </option>
-          ))}
+        <Select value={post || ANY} onValueChange={(next) => setPost(next === ANY ? '' : next)}>
+          <SelectTrigger data-testid="ck-feedback-post-filter" aria-label="Filter feedback by post" className="w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={ANY} data-testid="ck-feedback-post-filter-any">
+                All posts
+              </SelectItem>
+              {(feedback.data ?? []).map((row) => (
+                <SelectItem
+                  key={row.content_item_id}
+                  value={row.content_item_id}
+                  data-testid={`ck-feedback-post-filter-${row.content_item_id}`}
+                >
+                  {titleFor(row.content_item_id)?.title || row.content_item_id.slice(0, 12)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Post</TH>
-              <TH>Up</TH>
-              <TH>Down</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Post</TableHead>
+              <TableHead>Up</TableHead>
+              <TableHead>Down</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={4}
               isLoading={feedback.isPending}
@@ -413,13 +432,13 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
               emptyMessage="No votes yet."
             >
               {rows.map((row) => (
-                <TR key={row.content_item_id} data-testid="ck-feedback-row" data-post={row.content_item_id}>
-                  <TD>
+                <TableRow key={row.content_item_id} data-testid="ck-feedback-row" data-post={row.content_item_id}>
+                  <TableCell>
                     <ContentTitle id={row.content_item_id} item={titleFor(row.content_item_id)} />
-                  </TD>
-                  <TD className="tabular-nums text-chart-2">{row.up}</TD>
-                  <TD className="tabular-nums text-chart-5">{row.down}</TD>
-                  <TD>
+                  </TableCell>
+                  <TableCell className="tabular-nums text-chart-2">{row.up}</TableCell>
+                  <TableCell className="tabular-nums text-chart-5">{row.down}</TableCell>
+                  <TableCell>
                     {writable ? (
                       <Confirm
                         title="Reset this counter?"
@@ -450,11 +469,11 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                         )}
                       </Confirm>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
     </Card>

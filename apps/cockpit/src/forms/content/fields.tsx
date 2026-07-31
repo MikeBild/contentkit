@@ -1,9 +1,12 @@
-import { ChevronRight } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { ChevronRight, LayoutTemplate, Plus, Presentation } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { AppLink } from '@/components/app-link'
-import { Badge } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { RelativeTime } from '@/components/ui/relative-time'
-import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { StatusBadge } from '@/forms/status-badge'
 import { CONTENT_KIND } from '../contracts/enums.generated'
 import {
   DateField,
@@ -105,27 +108,40 @@ function Group({
   defaultOpen?: boolean
   children: ReactNode
 }) {
-  const [open, setOpen] = useState(Boolean(defaultOpen))
+  // A disclosure, drawn by the disclosure component: `Collapsible` owns the open
+  // state, `aria-expanded` and the trigger/content pairing that this section used
+  // to hand-roll around a `useState`.
   return (
-    <section data-testid={`ck-fm-group-${id}`} className="rounded-xl border border-border">
-      <button
-        type="button"
-        aria-expanded={open}
+    <Collapsible
+      defaultOpen={Boolean(defaultOpen)}
+      className="group/fm-group rounded-xl border border-border"
+      data-testid={`ck-fm-group-${id}`}
+    >
+      <CollapsibleTrigger
         data-testid={`ck-fm-group-${id}-toggle`}
-        onClick={() => setOpen((value) => !value)}
         className="flex w-full items-center gap-2 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        <ChevronRight className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-90')} />
+        <ChevronRight className="size-4 shrink-0 transition-transform group-data-open/fm-group:rotate-90" />
         <span className="text-sm font-medium">{title}</span>
+        {/* The marker used to be a bare count with nothing saying what was
+            counted. The sentence is one hover or one focus away rather than a
+            seventh line in a header that already carries five. */}
         {configured ? (
-          <Badge tone="info" data-testid={`ck-fm-group-${id}-configured`}>
-            {configured}
-          </Badge>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} data-testid={`ck-fm-group-${id}-configured`}>
+                  <StatusBadge tone="info">{configured}</StatusBadge>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Fields in this section that carry a value.</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : null}
         {description ? <span className="ml-auto truncate text-xs text-muted-foreground">{description}</span> : null}
-      </button>
-      {open ? <div className="flex flex-col gap-4 border-t border-border p-4">{children}</div> : null}
-    </section>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-4 border-t border-border p-4">{children}</CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -133,6 +149,7 @@ function Group({
 function TextListField({
   label,
   help,
+  about,
   testId,
   value,
   onChange,
@@ -143,6 +160,8 @@ function TextListField({
 }: {
   label: string
   help?: string
+  /** The paragraph behind the label's “more” affordance — see `FieldShellProps`. */
+  about?: string
   testId: string
   value: readonly string[]
   onChange: (value: string[]) => void
@@ -155,6 +174,7 @@ function TextListField({
     <ObjectListField
       label={label}
       help={help}
+      about={about}
       data-testid={testId}
       disabled={disabled}
       error={error}
@@ -228,7 +248,7 @@ export function FrontmatterForm({
           label="Slug"
           disabled={disabled}
           data-testid="ck-fm-slug"
-          help="The last segment of the URL. It follows the title until you edit it, and then stops."
+          about="The last segment of the URL. It follows the title until you edit it, and then stops."
           fallback="Unset is derived from the title on save."
           derivedFrom={fm.title}
           siblings={siblings}
@@ -241,7 +261,7 @@ export function FrontmatterForm({
             label="Kind"
             disabled={disabled}
             data-testid="ck-fm-kind"
-            help="Decides the URL prefix and which listings the document appears in."
+            definition="Decides the URL prefix and which listings the document appears in."
             fallback="Unset means page."
             allowEmpty
             placeholder="page (default)"
@@ -271,7 +291,7 @@ export function FrontmatterForm({
           rows={3}
           disabled={disabled}
           data-testid="ck-fm-summary"
-          help="Used in listings, the feed and the share cards."
+          definition="Used in listings, the feed and the share cards."
           fallback="Unset is excerpted from the first paragraph."
           value={fm.summary}
           error={error('summary')}
@@ -290,7 +310,7 @@ export function FrontmatterForm({
           label="Translation key"
           disabled={disabled}
           data-testid="ck-fm-translation-key"
-          help="What ties the locales of one document together, so a reader can switch language and stay on the page."
+          definition="What ties the locales of one document together, so a reader can switch language and stay on the page."
           fallback="Unset falls back to the slug."
           value={fm.translationKey}
           error={error('translationKey')}
@@ -331,7 +351,7 @@ export function FrontmatterForm({
           presets
           disabled={disabled}
           data-testid="ck-fm-date"
-          help="What the document is sorted and dated by. A date in the past is ordinary."
+          about="What the document is sorted and dated by. A date in the past is ordinary."
           fallback="Unset uses the moment the release is built."
           value={fm.date || undefined}
           error={error('date')}
@@ -342,7 +362,7 @@ export function FrontmatterForm({
             label="Scheduled for"
             disabled={disabled}
             data-testid="ck-fm-scheduled-at"
-            help="A revision with a future date is published by the scheduler, not by this save. The time of day is part of it."
+            about="A revision with a future date is published by the scheduler, not by this save. The time of day is part of it."
             fallback="Unset means it publishes with the next release."
             // The way back to empty, in this field's own words. The shared control
             // calls it "Never" because it was built for a credential that never
@@ -410,7 +430,7 @@ export function FrontmatterForm({
           label="Layout"
           disabled={disabled || fm.kind === 'deck'}
           data-testid="ck-fm-layout"
-          help={
+          about={
             fm.kind === 'deck'
               ? 'A deck has one layout and the server rejects any other, so this follows the kind.'
               : 'Decides the page template and, for docs and wiki, the URL shape.'
@@ -457,7 +477,8 @@ export function FrontmatterForm({
                 required
                 disabled={disabled}
                 data-testid="ck-fm-docs-version"
-                help="One of the versions this site configures. A version the site does not know fails the release."
+                help="One of the versions this site configures."
+                about="A version the site does not know fails the release."
                 allowEmpty
                 options={docsVersions.map((entry) => ({ value: entry.id, label: `${entry.label} (${entry.id})` }))}
                 value={fm.docsVersion}
@@ -481,7 +502,8 @@ export function FrontmatterForm({
               label="Parent"
               disabled={disabled}
               data-testid="ck-fm-parent"
-              help="The slug of the page above this one. It nests the URL as well as the navigation."
+              help="The slug of the page above this one."
+              about="It nests the URL as well as the navigation."
               value={fm.parent}
               error={error('parent')}
               onChange={(value) => set('parent', value)}
@@ -595,7 +617,8 @@ export function FrontmatterForm({
       <Group id="aids" title="Reader aids" configured={aidsConfigured ? `${aidsConfigured}` : undefined}>
         <TextListField
           label="TL;DR"
-          help="Three or four sentences above the article. Authored, never generated — they are also what machines read as the abstract."
+          help="Three or four sentences above the article."
+          about="Authored, never generated — they are also what machines read as the abstract."
           testId="ck-fm-tldr"
           disabled={disabled}
           value={fm.tldr}
@@ -643,7 +666,8 @@ export function FrontmatterForm({
           label="Related documents"
           disabled={disabled}
           data-testid="ck-fm-related"
-          help="Up to eight slugs in the same locale. Whether one resolves is decided at build time, where a broken reference is dropped with a warning."
+          help="Up to eight slugs in the same locale."
+          about="Whether one resolves is decided at build time, where a broken reference is dropped with a warning."
           max={8}
           value={fm.related}
           error={error('related')}
@@ -654,7 +678,8 @@ export function FrontmatterForm({
             label="Reader groups"
             disabled={disabled}
             data-testid="ck-fm-access"
-            help="Empty means the document is public. Naming a group puts it behind reader sign-in."
+            help="Empty means the document is public."
+            about="Naming a group puts it behind reader sign-in."
             allEmptyMeans={{ allLabel: 'Public — anyone may read it', someLabel: 'Restricted to the groups below' }}
             options={accessGroups.map((value) => ({ value, label: value }))}
             value={fm.access}
@@ -680,7 +705,8 @@ export function FrontmatterForm({
           label="extra"
           disabled={disabled}
           data-testid="ck-fm-extra"
-          help="Author-owned fields, passed through to the revision's metadata with their types intact. Consumers interpret them; ContentKit only bounds them."
+          help="Author-owned fields, passed through to the revision's metadata with their types intact."
+          about="Consumers interpret them; ContentKit only bounds them."
           maxBytes={16384}
           value={fm.extra}
           error={error('extra')}
@@ -737,22 +763,33 @@ function CompositionFields({
 
   if (!fm.hasComposition) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-        This document has no composition block. Adding one lets it declare its format, canvas and the narrative the
-        renderer builds around.{' '}
-        <button
-          type="button"
-          data-testid="ck-fm-composition-add"
-          disabled={disabled}
-          onClick={() => {
-            form.set('fm.hasComposition', true)
-            if (!composition.format) form.set('fm.composition', emptyComposition())
-          }}
-          className="text-accent underline disabled:opacity-50"
-        >
-          Add a composition block
-        </button>
-      </div>
+      <Empty className="border" data-testid="ck-fm-composition-empty">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <LayoutTemplate />
+          </EmptyMedia>
+          <EmptyTitle>This document has no composition block</EmptyTitle>
+          <EmptyDescription>
+            Adding one lets it declare its format, canvas and the narrative the renderer builds around.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="ck-fm-composition-add"
+            disabled={disabled}
+            onClick={() => {
+              form.set('fm.hasComposition', true)
+              if (!composition.format) form.set('fm.composition', emptyComposition())
+            }}
+          >
+            <Plus data-icon="inline-start" />
+            Add a composition block
+          </Button>
+        </EmptyContent>
+      </Empty>
     )
   }
 
@@ -814,7 +851,8 @@ function CompositionFields({
               label="Report series"
               disabled={disabled}
               data-testid="ck-fm-report-series"
-              help="One of the series this site configures. A preview or release rejects an id the site does not know."
+              help="One of the series this site configures."
+              about="A preview or release rejects an id the site does not know."
               allowEmpty
               options={reportSeries.map((entry) => ({ value: entry.id, label: `${entry.label} (${entry.id})` }))}
               value={fm.reportSeries}
@@ -895,7 +933,8 @@ function CompositionFields({
       />
       <TextListField
         label="Limitations"
-        help="What this document does not claim. Up to twelve, 300 characters each — and the one section a truthful composition is not allowed to omit silently."
+        help="What this document does not claim."
+        about="Up to twelve, 300 characters each — and the one section a truthful composition is not allowed to omit silently."
         testId="ck-fm-composition-limitations"
         disabled={disabled}
         max={12}
@@ -914,21 +953,33 @@ function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }
 
   if (!fm.hasDeck) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-        This deck uses the renderer's defaults.{' '}
-        <button
-          type="button"
-          data-testid="ck-fm-deck-add"
-          disabled={disabled}
-          onClick={() => {
-            form.set('fm.hasDeck', true)
-            if (!fm.deck.template) form.set('fm.deck', emptyDeck())
-          }}
-          className="text-accent underline disabled:opacity-50"
-        >
-          Configure the deck
-        </button>
-      </div>
+      <Empty className="border" data-testid="ck-fm-deck-empty">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Presentation />
+          </EmptyMedia>
+          <EmptyTitle>This deck uses the renderer's defaults</EmptyTitle>
+          {/* True of `hasDeck` by construction: the block is only emitted while
+              this is on, so an unconfigured deck writes no deck key at all. */}
+          <EmptyDescription>Nothing is written to the frontmatter until it is configured.</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="ck-fm-deck-add"
+            disabled={disabled}
+            onClick={() => {
+              form.set('fm.hasDeck', true)
+              if (!fm.deck.template) form.set('fm.deck', emptyDeck())
+            }}
+          >
+            <Plus data-icon="inline-start" />
+            Configure the deck
+          </Button>
+        </EmptyContent>
+      </Empty>
     )
   }
 
@@ -988,7 +1039,8 @@ function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }
         label="First slide"
         disabled={disabled}
         data-testid="ck-fm-deck-first-slide"
-        help="Slidev front-slide options, up to 32 fields. theme, routerMode and colorSchema are reserved and rejected."
+        help="Slidev front-slide options, up to 32 fields."
+        about="theme, routerMode and colorSchema are reserved and rejected."
         maxBytes={16384}
         value={fm.deck.firstSlide}
         error={error('firstSlide')}
