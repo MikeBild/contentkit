@@ -567,6 +567,9 @@ const SELECTION_NOTE = {
  */
 const DIMMED: readonly NavEntry['selection'][] = ['seeds', 'ignored']
 
+/** One caption, two wrappers — a reason to disclose is the only difference. */
+const NOTE_CLASS = 'px-2 pt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden'
+
 /** The switcher's caption for the open page, and the long reason behind it. */
 function switcherNote(open: NavEntry | undefined) {
   const mixture = MIXED.find((entry) => entry.label === open?.label)
@@ -628,14 +631,29 @@ export function Shell() {
                   isLoading={selection.isLoading}
                   error={selection.error}
                 />
+                {/*
+                 * The caption is always on screen; the long reason behind it is a
+                 * Tooltip when there is one. It used to be a native `title`, which
+                 * offered the explanation to a pointer and to nobody else — and
+                 * the operators most likely to be confused by a switcher that does
+                 * not reach the open page are not the ones with a mouse to spare.
+                 * The trigger is a tab stop, so the sentence is one Tab away.
+                 */}
                 {note.text ? (
-                  <div
-                    data-testid="site-switcher-note"
-                    title={note.reason}
-                    className="px-2 pt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
-                  >
-                    {note.text}
-                  </div>
+                  note.reason ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div tabIndex={0} data-testid="site-switcher-note" className={NOTE_CLASS}>
+                          {note.text}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent data-testid="site-switcher-note-reason">{note.reason}</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <div data-testid="site-switcher-note" className={NOTE_CLASS}>
+                      {note.text}
+                    </div>
+                  )
                 ) : null}
               </div>
             ) : null}
@@ -693,13 +711,20 @@ export function Shell() {
               </SidebarMenuItem>
             </SidebarMenu>
             <div className="flex flex-col gap-0.5 px-2 pb-1 group-data-[collapsible=icon]:hidden">
-              <div
-                data-testid="operator-name"
-                className="truncate text-xs text-muted-foreground"
-                title={session.subject}
-              >
-                {session.display_name || session.email || session.subject}
-              </div>
+              {/*
+               * The footer shows the friendliest name the session has; the subject
+               * is what an audit log and a support request are keyed by, so it has
+               * to stay reachable — by focus and by tap, not only by hover, which
+               * is what the native `title` here used to mean.
+               */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div tabIndex={0} data-testid="operator-name" className="truncate text-left text-xs text-muted-foreground">
+                    {session.display_name || session.email || session.subject}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent data-testid="operator-subject">{session.subject}</TooltipContent>
+              </Tooltip>
               <div data-testid="operator-role" className="truncate text-xs uppercase text-muted-foreground">
                 {session.role}
               </div>

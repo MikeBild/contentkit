@@ -91,7 +91,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
                 data-testid={`${control['data-testid']}-item-${index}`}
                 className={cn(
                   'rounded-lg border p-3',
-                  duplicate ? 'border-chart-5/40 bg-chart-5/5' : 'border-border bg-background',
+                  duplicate ? 'border-destructive/40 bg-destructive/5' : 'border-border bg-background',
                 )}
               >
                 <div className="mb-2 flex items-center gap-2">

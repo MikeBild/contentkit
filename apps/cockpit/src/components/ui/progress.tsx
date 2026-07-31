@@ -6,8 +6,8 @@ import { RelativeTime } from './relative-time'
 
 const TONES = {
   accent: 'bg-accent',
-  warning: 'bg-chart-3',
-  danger: 'bg-chart-5',
+  warning: 'bg-warning',
+  danger: 'bg-destructive',
 }
 
 /**

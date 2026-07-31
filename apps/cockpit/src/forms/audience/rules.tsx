@@ -155,7 +155,7 @@ function RuleDialog({
           />
 
           {audienceEmpty ? (
-            <p data-testid="ck-rule-audience-error" className="text-sm text-chart-5">
+            <p data-testid="ck-rule-audience-error" className="text-sm text-destructive">
               A rule needs at least one group or one reader — the server rejects an empty audience, and a rule nobody
               matches would lock the path away from everyone.
             </p>

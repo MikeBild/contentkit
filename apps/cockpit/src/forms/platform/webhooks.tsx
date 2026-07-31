@@ -247,7 +247,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                       <StatusBadge tone="warning">paused {formatDate(endpoint.disabled_at)}</StatusBadge>
                     )}
                     {endpoint.consecutive_failures ? (
-                      <span className="ml-2 text-xs text-chart-5">{endpoint.consecutive_failures} failures in a row</span>
+                      <span className="ml-2 text-xs text-destructive">{endpoint.consecutive_failures} failures in a row</span>
                     ) : null}
                   </TableCell>
                   <TableCell className="flex gap-2">
@@ -536,7 +536,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                             <dt className="text-muted-foreground">Response status</dt>
                             <dd>{delivery.response_status ?? '—'}</dd>
                             <dt className="text-muted-foreground">Last error</dt>
-                            <dd className="whitespace-pre-wrap break-words text-chart-5">
+                            <dd className="whitespace-pre-wrap break-words text-destructive">
                               {delivery.last_error ?? '—'}
                             </dd>
                             <dt className="text-muted-foreground">Payload</dt>

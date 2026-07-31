@@ -286,7 +286,12 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       aria-label="Toggle Sidebar"
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      // Stock ships a `title="Toggle Sidebar"` here as well. It is deleted rather
+      // than moved: the rail is `tabIndex={-1}` and four pixels wide, so the
+      // native tooltip was reachable by a pointer that had already found the
+      // control it names, and by nothing else. `aria-label` above carries the
+      // name for everyone the tooltip never reached, and `SidebarTrigger` is the
+      // labelled, focusable way to do the same thing.
       className={cn(
         "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",

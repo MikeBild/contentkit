@@ -75,7 +75,7 @@ export function SecretField({
           {value ? (
             <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn('h-full transition-all', strength < 0.5 ? 'bg-chart-3' : 'bg-chart-2')}
+                className={cn('h-full transition-all', strength < 0.5 ? 'bg-warning' : 'bg-chart-2')}
                 style={{ width: `${Math.round(strength * 100)}%` }}
               />
             </div>
@@ -113,7 +113,7 @@ export function RevealOnce({
   return (
     <div
       data-testid={testId}
-      className={cn('rounded-xl border border-chart-3/30 bg-chart-3/10 p-4', className)}
+      className={cn('rounded-xl border border-warning/30 bg-warning/10 p-4', className)}
       // The one-time value is important enough to be announced, not merely shown.
       role="alert"
     >

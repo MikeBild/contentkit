@@ -3,6 +3,7 @@ import { Chip } from '@/components/ui/chip'
 import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { Choice } from './choice'
 import { FieldShell, type FieldShellProps } from './field'
@@ -92,18 +93,43 @@ export function TagListField({
             'flex min-h-9 w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 focus-within:ring-2 focus-within:ring-accent',
           )}
         >
-          {value.map((entry, index) => (
-            <Chip
-              key={`${entry}-${index}`}
-              data-testid={`${control['data-testid']}-chip-${index}`}
-              invalid={Boolean(problems.get(index))}
-              title={problems.get(index)}
-              removeLabel={`Remove ${entry}`}
-              onRemove={control.disabled ? undefined : () => onChange(value.filter((_, at) => at !== index))}
-            >
-              {entry}
-            </Chip>
-          ))}
+          {value.map((entry, index) => {
+            const problem = problems.get(index)
+            const chip = (
+              <Chip
+                key={`${entry}-${index}`}
+                data-testid={`${control['data-testid']}-chip-${index}`}
+                invalid={Boolean(problem)}
+                removeLabel={`Remove ${entry}`}
+                onRemove={control.disabled ? undefined : () => onChange(value.filter((_, at) => at !== index))}
+              >
+                {entry}
+              </Chip>
+            )
+            // Which chip is wrong is `aria-invalid` and the destructive variant;
+            // *why* it is wrong used to be a native `title` on the chip, and
+            // `Chip` spreads its props onto the Badge span, so it was a native
+            // tooltip with a capital letter in front of it. The wrapper is the
+            // trigger, and it is a tab stop, because a chip is not one.
+            return problem ? (
+              <TooltipProvider key={`${entry}-${index}`}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      className="max-w-full rounded focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      data-testid={`${control['data-testid']}-chip-${index}-why`}
+                    >
+                      {chip}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{problem}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              chip
+            )
+          })}
           <Input
             {...control}
             value={draft}

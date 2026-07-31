@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { COMMENT_STATUS, CONTACT_STATUS, type CommentStatus, type ContactStatus } from '@/forms/contracts/enums.generated'
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
@@ -41,15 +42,26 @@ function useContentTitles(site: string) {
 }
 
 function ContentTitle({ id, item }: { id: string; item: ContentItem | undefined }) {
+  // The uuid is what the row is really keyed by, and the link shows a title
+  // instead. `AppLink` spreads its props onto an anchor, so the `title` this used
+  // to carry was a native tooltip wearing a component's capital letter: reachable
+  // by hover and by nothing else. The link is already a focus target, so it is
+  // the trigger and no tab stop is added.
   return (
-    <AppLink
-      to="/content"
-      data-testid={`ck-moderation-item-${id}`}
-      className="underline decoration-dotted underline-offset-2 hover:text-foreground"
-      title={id}
-    >
-      {item?.title || item?.slug || `${id.slice(0, 12)}…`}
-    </AppLink>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <AppLink
+            to="/content"
+            data-testid={`ck-moderation-item-${id}`}
+            className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+          >
+            {item?.title || item?.slug || `${id.slice(0, 12)}…`}
+          </AppLink>
+        </TooltipTrigger>
+        <TooltipContent>{id}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -437,7 +449,7 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                     <ContentTitle id={row.content_item_id} item={titleFor(row.content_item_id)} />
                   </TableCell>
                   <TableCell className="tabular-nums text-chart-2">{row.up}</TableCell>
-                  <TableCell className="tabular-nums text-chart-5">{row.down}</TableCell>
+                  <TableCell className="tabular-nums text-destructive">{row.down}</TableCell>
                   <TableCell>
                     {writable ? (
                       <Confirm

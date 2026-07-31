@@ -369,7 +369,14 @@ describe('the cockpit runs on one component stack', () => {
     for (const file of sources) {
       const imported = new Set(
         [...file.src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s*["'][^"']+["']/g)].flatMap((match) =>
-          match[1].split(',').map((piece) => (piece.trim().split(/\s+as\s+/).pop() ?? '').trim()),
+          match[1].split(',').map((piece) =>
+            (
+              piece
+                .trim()
+                .split(/\s+as\s+/)
+                .pop() ?? ''
+            ).trim(),
+          ),
         ),
       )
       const declared = new Set()
@@ -410,7 +417,11 @@ describe('the cockpit runs on one component stack', () => {
       if (ids.some((id) => ids.some((other) => other !== id && dynamic.get(id)?.has(other)))) continue
       split.push(`${name} is exported by ${ids.length} modules: ${ids.join(' — and ')}`)
     }
-    assert.deepEqual(split, [], `one name, one module — a dead export squatting a live name is still two:\n${split.join('\n')}`)
+    assert.deepEqual(
+      split,
+      [],
+      `one name, one module — a dead export squatting a live name is still two:\n${split.join('\n')}`,
+    )
   })
 
   test('nothing aliases a component of this tree around a collision', () => {

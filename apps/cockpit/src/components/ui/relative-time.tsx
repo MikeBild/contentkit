@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatExact, formatRelative, isoInstant, refreshAfter, relativeParts, type TimeInput } from '@/lib/relative-time'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 /**
@@ -8,9 +9,15 @@ import { cn } from '@/lib/utils'
  * Both halves are the requirement. The sentence is what the operator reads at a
  * glance; the instant is what they need the moment two rows have to be put in
  * order, and an audit trail whose timestamps have been rounded into prose is not
- * a trail. So the precision is kept in two places a browser already understands:
- * `title`, for the pointer, and `datetime` on a real `<time>`, for everything
- * else that reads the page.
+ * a trail. So the precision is kept in two places: `datetime` on a real `<time>`,
+ * for everything that reads the page as a machine, and a Tooltip for everything
+ * that reads it as a person.
+ *
+ * The tooltip replaced a native `title`, which is the same sentence offered to a
+ * pointer and to nobody else — not to a touch screen, not to a keyboard. The
+ * `<time>` is therefore a tab stop: a timestamp in an audit trail is exactly the
+ * kind of rounded-off fact an operator has to be able to open, and an affordance
+ * that only a mouse can open is one most of the people who need it cannot.
  *
  * The label re-renders on its own — a row that says "vor 3 Sekunden" for the next
  * ten minutes is worse than one that never claimed to be live — and the interval
@@ -48,14 +55,31 @@ export function RelativeTime({
       </span>
     )
 
-  return (
-    <time
-      dateTime={iso}
-      title={formatExact(value) ?? undefined}
-      data-testid={testId}
-      className={cn('whitespace-nowrap', className)}
-    >
+  const exact = formatExact(value)
+  const label = (
+    <time dateTime={iso} data-testid={testId} className={cn('whitespace-nowrap', className)}>
       {formatRelative(value, now)}
     </time>
+  )
+
+  // No instant to show is no disclosure to open: a trigger that opens an empty
+  // bubble is a tab stop that costs a keyboard user a keystroke and tells them
+  // nothing.
+  if (!exact) return label
+
+  // The provider is opened locally as well as at the app root, because timestamps
+  // are rendered inside dialogs that mount their own trees, and a missing
+  // provider throws rather than degrades.
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="rounded focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+            {label}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent data-testid={`${testId}-exact`}>{exact}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

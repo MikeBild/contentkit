@@ -39,7 +39,7 @@ export function TextField({
       hint={
         shell.hint ??
         (maxLength !== undefined ? (
-          <span className={over ? 'text-chart-5' : undefined}>
+          <span className={over ? 'text-destructive' : undefined}>
             {value.length}/{maxLength}
           </span>
         ) : undefined)
@@ -212,7 +212,7 @@ export function TextAreaField({
     <FieldShell
       {...shell}
       error={error}
-      hint={shell.hint ?? (budget ? <span className={error ? 'text-chart-5' : undefined}>{budget}</span> : undefined)}
+      hint={shell.hint ?? (budget ? <span className={error ? 'text-destructive' : undefined}>{budget}</span> : undefined)}
     >
       {(control) => (
         <Textarea

@@ -804,7 +804,15 @@ describe('Cockpit primitives: what the sources have to say', () => {
     const relative = ui('relative-time')
     assert.match(relative, /<time\b/, 'a relative label belongs in a <time> element')
     assert.match(relative, /dateTime=\{iso\}/, 'with the machine-readable instant on it')
-    assert.match(relative, /title=\{formatExact\(/, 'and the exact instant within reach of the pointer')
+    // "Within reach of the pointer" was the old wording, and a native
+    // `title={formatExact(…)}` was the old mechanism. It is within reach of a
+    // pointer and of nothing else, which is what the console-wide rule in
+    // cockpit-forms-density.test.mjs forbids; the instant now lives in a Tooltip
+    // whose trigger is a tab stop, so hover, focus and tap all reach it.
+    assert.match(relative, /formatExact\(value\)/, 'and the exact instant is still computed')
+    assert.match(relative, /<TooltipTrigger asChild>/, 'hung on a real trigger')
+    assert.match(relative, /<TooltipContent[^>]*>\{exact\}<\/TooltipContent>/, 'that opens onto it')
+    assert.doesNotMatch(relative, /\btitle=/, 'and never on a native title')
     assert.doesNotMatch(relative, /'de'|'en'|'de-DE'|'en-US'/, 'the locale is the browser’s')
   })
 

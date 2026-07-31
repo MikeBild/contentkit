@@ -10,11 +10,18 @@
    so the console and the sites it publishes read as one product rather than as a
    stock component demo. Keep the two in sync; a drift test compares all of them.
 
-   Five names have no counterpart in the design system and are derived here rather
+   Six names have no counterpart in the design system and are derived here rather
    than invented: `card` and `popover` take `surface`, `secondary` takes `muted`,
-   `destructive` takes chart_5 — already the palette's red — and `input` and `ring`
-   follow `border` and `accent`. A focus ring in a colour the product never uses
-   would be the one thing on screen belonging to no design system. */
+   `destructive` takes chart_5 — already the palette's red — `warning` takes chart_3
+   — already the palette's amber — and `input` and `ring` follow `border` and
+   `accent`. A focus ring in a colour the product never uses would be the one thing
+   on screen belonging to no design system.
+
+   `warning` is the newest of the six and it exists for the same reason
+   `destructive` does. A severity spelled `bg-chart-3` is the warning tone wearing a
+   chart series' name: it renders identically, so nothing on screen says it is
+   wrong, and the source then reads as though a graph had leaked into a save bar.
+   Two tones, two names, both derived from the one palette. */
 :root {
   --background: #ffffff;
   --foreground: #020817;
@@ -32,6 +39,7 @@
   --accent: #2563eb;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
+  --warning: #d97706;
   --border: #e2e8f0;
   --input: #e2e8f0;
   --ring: #2563eb;
@@ -70,6 +78,7 @@
   --accent: #60a5fa;
   --accent-foreground: #020817;
   --destructive: #f87171;
+  --warning: #fbbf24;
   --border: #334155;
   --input: #334155;
   --ring: #60a5fa;
@@ -110,6 +119,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

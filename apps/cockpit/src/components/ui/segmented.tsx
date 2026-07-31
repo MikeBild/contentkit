@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface SegmentedOption<T extends string> {
   value: T
@@ -21,6 +22,13 @@ export interface SegmentedOption<T extends string> {
  * `onKeyDown` at a time, and the pressed state it used to paint in a chart
  * colour. `spacing={0}` is the joined look: the items lose their gap and the
  * first and last take the group's radius.
+ *
+ * An option that cannot be picked says why, in a Tooltip rather than in a native
+ * `title` — and it is `aria-disabled` rather than `disabled` so that there is
+ * something left to hover, focus or tap. A `disabled` radio is removed from the
+ * roving tabindex, so the sentence explaining it was reachable by a pointer and
+ * by nothing else; the refusal itself moves into `onValueChange`, which is where
+ * `forms/fields/choice.tsx` already keeps it.
  */
 export function Segmented<T extends string>({
   options,
@@ -50,24 +58,41 @@ export function Segmented<T extends string>({
       // between two or three states has no "none of them", so an empty answer
       // keeps what was already chosen rather than unsetting the setting.
       onValueChange={(next) => {
-        if (next) onChange(next as T)
+        if (!next) return
+        // `aria-disabled` announces the refusal; this enforces it.
+        if (options.find((option) => option.value === next)?.disabled) return
+        onChange(next as T)
       }}
       disabled={disabled}
       aria-labelledby={labelledBy}
       data-testid={testId}
       className={className}
     >
-      {options.map((option) => (
-        <ToggleGroupItem
-          key={option.value}
-          value={option.value}
-          disabled={option.disabled}
-          title={option.disabled ? option.disabledReason : undefined}
-          data-testid={`${testId}-${option.value}`}
-        >
-          {option.label}
-        </ToggleGroupItem>
-      ))}
+      {options.map((option) => {
+        const item = (
+          <ToggleGroupItem
+            key={option.value}
+            value={option.value}
+            aria-disabled={option.disabled || undefined}
+            data-testid={`${testId}-${option.value}`}
+          >
+            {option.label}
+          </ToggleGroupItem>
+        )
+        // The provider is opened locally as well as at the app root: a segmented
+        // control is rendered inside dialogs that mount their own trees, and a
+        // missing provider throws rather than degrades.
+        return option.disabled && option.disabledReason ? (
+          <TooltipProvider key={option.value}>
+            <Tooltip>
+              <TooltipTrigger asChild>{item}</TooltipTrigger>
+              <TooltipContent>{option.disabledReason}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          item
+        )
+      })}
     </ToggleGroup>
   )
 }

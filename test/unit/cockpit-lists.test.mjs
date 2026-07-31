@@ -712,7 +712,14 @@ describe('the content list claims only what the API can do', () => {
     // not use it without that guarantee holding in the component itself.
     const relative = source('components', 'ui', 'relative-time.tsx')
     assert.match(relative, /dateTime=\{iso\}/, 'the exact instant stays in <time datetime>')
-    assert.match(relative, /title=\{formatExact/, 'and in the pointer title')
+    // The claim is unchanged — the precision survives the rounding — but the
+    // channel is not. This used to demand `title={formatExact(…)}`, which serves
+    // a pointer and nobody else, and it contradicted the console-wide rule in
+    // cockpit-forms-density.test.mjs that no DOM element carries a native title.
+    // A Tooltip keeps the instant reachable by hover, focus and tap alike.
+    assert.match(relative, /const exact = formatExact\(value\)/, 'the exact instant is still computed')
+    assert.match(relative, /<TooltipContent[^>]*>\{exact\}<\/TooltipContent>/, 'and shown in a disclosure')
+    assert.doesNotMatch(relative, /\btitle=/, 'never in a native tooltip — a pointer is not everyone')
   })
 
   test('the editor no longer renders the word "Loading…"', () => {
@@ -1050,7 +1057,8 @@ describe('the components the console stopped hand-rolling', () => {
     // decision as `bg-chart-5`, and the rest of the line is not the finding.
     const utility =
       /(?:text|bg|border|ring|fill|stroke|from|via|to|outline|divide|decoration|accent|caret)-chart-[35](?:\/\d+)?/g
-    for (const file of allSources) for (const [hit] of code(file.src).matchAll(utility)) offenders.push(`${file.id}: ${hit}`)
+    for (const file of allSources)
+      for (const [hit] of code(file.src).matchAll(utility)) offenders.push(`${file.id}: ${hit}`)
     assert.deepEqual(
       offenders,
       [],

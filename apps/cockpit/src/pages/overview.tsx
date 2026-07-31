@@ -9,6 +9,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/componen
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ReleaseChain } from '@/components/ui/release-chain'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { keys } from '@/lib/query'
 import { deriveReleaseChain } from '@/lib/release-chain'
 import { useCan } from '@/lib/session'
@@ -242,9 +243,27 @@ function StatCard({
             <dl className="mt-3 flex flex-col gap-1">
               {shown.map((metric) => (
                 <div key={metric.name} className="flex items-baseline justify-between gap-3">
-                  <dt className="truncate text-xs text-muted-foreground" title={metric.name}>
-                    {metric.name.replace(/_/g, ' ')}
-                  </dt>
+                  {/*
+                    The row prints the metric with its underscores rubbed out and
+                    truncated to the card's width, so the name the API actually
+                    reports — the one to search the docs or a log for — has to stay
+                    reachable. It was a native `title`, which is a pointer-only
+                    answer to a question a keyboard can also ask.
+                  */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <dt
+                          tabIndex={0}
+                          data-testid={`ck-overview-metric-${metric.name}`}
+                          className="truncate rounded text-xs text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                        >
+                          {metric.name.replace(/_/g, ' ')}
+                        </dt>
+                      </TooltipTrigger>
+                      <TooltipContent>{metric.name}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   <dd className="shrink-0 text-sm font-semibold tabular-nums">{format(metric)}</dd>
                 </div>
               ))}

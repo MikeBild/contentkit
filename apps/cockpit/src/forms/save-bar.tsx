@@ -86,8 +86,8 @@ export function UnsavedPill({
 const toneDot: Record<SectionTone, string> = {
   neutral: 'bg-muted-foreground/40',
   ok: 'bg-chart-2',
-  warning: 'bg-chart-3',
-  error: 'bg-chart-5',
+  warning: 'bg-warning',
+  error: 'bg-destructive',
 }
 
 /**
@@ -149,9 +149,9 @@ export function SectionNav<T extends string>({
               className={cn(
                 'truncate text-xs',
                 state.tone === 'error'
-                  ? 'text-chart-5'
+                  ? 'text-destructive'
                   : state.tone === 'warning'
-                    ? 'text-chart-3'
+                    ? 'text-warning'
                     : 'text-muted-foreground',
               )}
             >

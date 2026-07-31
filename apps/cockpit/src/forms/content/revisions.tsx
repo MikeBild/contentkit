@@ -158,7 +158,7 @@ export function DiffList({ before, after }: { before: string; after: string }) {
           className={cn(
             'flex gap-2 whitespace-pre-wrap break-words px-2 py-0.5',
             row.type === 'add' && 'bg-chart-2/10 text-chart-2',
-            row.type === 'remove' && 'bg-chart-5/10 text-chart-5',
+            row.type === 'remove' && 'bg-destructive/10 text-destructive',
             row.type === 'context' && 'text-muted-foreground',
           )}
         >

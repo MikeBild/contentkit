@@ -9,7 +9,15 @@ export interface ComboboxOption {
   /** One line saying what choosing this means. Shown next to the label, never instead of it. */
   hint?: string
   disabled?: boolean
-  /** Why it is disabled. The only place a tooltip carries weight here. */
+  /**
+   * Why it is disabled, shown in the hint's place on the row it belongs to.
+   *
+   * It used to be a native `title`, which put the one sentence explaining a dead
+   * option behind a hover — unreachable on a touch screen, and unreachable by a
+   * keyboard because the option it hung on is `disabled` and therefore not a
+   * focus target either. A reason nobody can read is not a reason, so it is on
+   * screen beside the option instead.
+   */
   disabledReason?: string
 }
 
@@ -76,7 +84,7 @@ function Listbox({
   if (isLoading) return <div className="px-3 py-2 text-xs text-muted-foreground">Loading…</div>
   if (error)
     return (
-      <div className="px-3 py-2 text-xs text-chart-5">
+      <div className="px-3 py-2 text-xs text-destructive">
         {error instanceof Error ? error.message : 'Options could not be loaded'}
       </div>
     )
@@ -100,32 +108,38 @@ function Listbox({
     )
   return (
     <>
-      {visible.map((option, index) => (
-        <button
-          key={option.value}
-          type="button"
-          role="option"
-          aria-selected={selected(option.value)}
-          disabled={option.disabled}
-          title={option.disabled ? option.disabledReason : undefined}
-          data-testid={`${testId}-option-${option.value}`}
-          onClick={() => onPick(option)}
-          className={cn(
-            'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50',
-            index === active ? 'bg-muted' : 'hover:bg-muted/60',
-          )}
-        >
-          <Check className={cn('h-3.5 w-3.5 shrink-0', selected(option.value) ? 'opacity-100' : 'opacity-0')} />
-          <span className="truncate">{option.label}</span>
-          {option.hint ? <span className="ml-auto truncate text-xs text-muted-foreground">{option.hint}</span> : null}
-        </button>
-      ))}
+      {visible.map((option, index) => {
+        // The aside is one slot with two occupants, and a dead option's reason
+        // outranks its hint: "what choosing this means" is not the sentence to
+        // read on a row that cannot be chosen. `forms/fields/choice.tsx` makes
+        // the same swap for the same reason.
+        const aside = (option.disabled ? option.disabledReason : undefined) ?? option.hint
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="option"
+            aria-selected={selected(option.value)}
+            disabled={option.disabled}
+            data-testid={`${testId}-option-${option.value}`}
+            onClick={() => onPick(option)}
+            className={cn(
+              'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50',
+              index === active ? 'bg-muted' : 'hover:bg-muted/60',
+            )}
+          >
+            <Check className={cn('h-3.5 w-3.5 shrink-0', selected(option.value) ? 'opacity-100' : 'opacity-0')} />
+            <span className="truncate">{option.label}</span>
+            {aside ? <span className="ml-auto truncate text-xs text-muted-foreground">{aside}</span> : null}
+          </button>
+        )
+      })}
     </>
   )
 }
 
 const SHELL =
-  'flex min-h-9 w-full items-center gap-1 rounded-lg border border-border bg-background px-2 text-sm focus-within:ring-2 focus-within:ring-accent aria-[invalid=true]:border-chart-5'
+  'flex min-h-9 w-full items-center gap-1 rounded-lg border border-border bg-background px-2 text-sm focus-within:ring-2 focus-within:ring-accent aria-[invalid=true]:border-destructive'
 
 /**
  * A searchable single-value picker.

@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react'
 import { AppLink } from '@/components/app-link'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ChainStep, ChainStepId, ChainTone, ReleaseChain as ReleaseChainState } from '@/lib/release-chain'
 import { cn } from '@/lib/utils'
 
@@ -35,16 +36,16 @@ const DOT: Record<ChainTone, string> = {
   done: 'bg-transparent border-border',
   idle: 'bg-transparent border-border border-dashed',
   unknown: 'bg-transparent border-muted-foreground border-dotted',
-  attention: 'bg-chart-3 border-chart-3',
-  blocked: 'bg-chart-5 border-chart-5',
+  attention: 'bg-warning border-warning',
+  blocked: 'bg-destructive border-destructive',
 }
 
 const TEXT: Record<ChainTone, string> = {
   done: 'text-muted-foreground',
   idle: 'text-muted-foreground',
   unknown: 'text-muted-foreground italic',
-  attention: 'text-chart-3',
-  blocked: 'text-chart-5',
+  attention: 'text-warning',
+  blocked: 'text-destructive',
 }
 
 export interface ReleaseChainProps {
@@ -96,11 +97,34 @@ export function ReleaseChain({
                 data-testid={`${testId}-step-${step.id}`}
                 data-state={step.state}
                 data-tone={step.tone}
-                title={`${step.label}: ${step.detail}`}
                 className={cn('flex items-center gap-1', TEXT[step.tone])}
               >
                 <Dot tone={step.tone} testId={`${testId}-dot-${step.id}`} />
-                <span className="whitespace-nowrap">{step.label}</span>
+                {/*
+                  The strip has room for the label and not for the detail, so the
+                  detail is a disclosure rather than a native `title`: the card
+                  variant below prints it, and a header that hides it behind a
+                  hover hides it from every operator not holding a mouse. The
+                  trigger is the label alone — wrapping the whole step would put
+                  this tooltip around RelativeTime's own, which is two bubbles for
+                  one hover. `TooltipProvider` is opened locally as well as at the
+                  app root: the strip renders in page headers with their own trees.
+                */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        tabIndex={0}
+                        className="rounded whitespace-nowrap focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      >
+                        {step.label}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent data-testid={`${testId}-detail-${step.id}`}>
+                      {step.label}: {step.detail}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 {/*
                   One date survives into the strip, and it is this one. A calm
                   chain has nothing to count, but "since when" is still a fact the
@@ -180,9 +204,9 @@ function Step({ step, testId }: { step: ChainStep; testId: string }) {
       className={cn(
         'flex flex-1 flex-col gap-1 rounded-lg border p-2 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         step.tone === 'blocked'
-          ? 'border-chart-5/40 bg-chart-5/5'
+          ? 'border-destructive/40 bg-destructive/5'
           : step.tone === 'attention'
-            ? 'border-chart-3/40 bg-chart-3/5'
+            ? 'border-warning/40 bg-warning/5'
             : 'border-border',
       )}
     >

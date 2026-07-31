@@ -1179,7 +1179,8 @@ Per house rules: never a hand-written `animate-pulse` div. Also available:
 
 > **This project's `ui/progress.tsx` is no longer the stock file** (2026-07-30). It keeps
 > the whole ContentKit contract — `value`, `max`, `label`, `valueLabel`, `tone`
-> (`accent | warning | danger`, painted with `bg-accent` / `bg-chart-3` / `bg-chart-5`),
+> (`accent | warning | danger`, painted with `bg-accent` / `bg-warning` / `bg-destructive`
+> — the chart-series spelling of those last two was retired on 2026-07-31, see §28),
 > `since`, `data-testid` — **on top of** Radix's Progress rather than instead of it:
 >
 > - The fraction is decided first, in `ui/progress-value.ts` (`progressPercent(value,
@@ -1623,3 +1624,66 @@ The list this document exists for. Each row was verified in the installed source
 | 68 | Stock `Progress` can express "unknown fraction" | `cockpit-primitives.test.mjs:740` requires an `aria-valuenow={fraction === null ? undefined : …}` branch that Radix Progress does not have. §26.2 |
 | 69 | Stock `Skeleton`/`Spinner` are accessible enough | `cockpit-primitives.test.mjs:756` requires `role="status"` + `aria-hidden="true"` on Skeleton and **two** `aria-hidden` Loader2 forms on Spinner. Stock has neither. §26.3 |
 | 70 | shadcn parts come with test ids | None of them do, and `ui/breadcrumb.tsx` still has zero — the assertion moved to the composition in `app/shell.tsx` instead (corrected 2026-07-30). The exceptions are `dialog.tsx`/`sheet.tsx`, whose close buttons now derive one from the panel's id. §26.4, §4 |
+
+---
+
+## 28. Two tone tokens, and no native tooltips — 2026-07-31
+
+Two guards were widened from the files they had been written around to the whole of
+`apps/cockpit/src`, and both then found real violations. The violations were the work;
+neither guard was narrowed.
+
+### 28.1 `--warning`, beside `--destructive`
+
+`test/unit/cockpit-lists.test.mjs` → *nothing in the console paints a severity with a
+chart colour*. It used to read the eight files in `pages`; those eight had been cleaned
+and the rule written around them, so it passed over **38** occurrences in the shared
+components and forms those pages render.
+
+A chart series reaches the screen as `var(--color-chart-N)` — that is how
+`pages/overview.tsx` strokes its sparkline, and it is untouched. A *severity* reached it
+as a Tailwind utility on something that is not a graph: `text-chart-5` on a failure
+count, `bg-chart-3` on a warning dot, `border-chart-5` on an invalid input. `index.css`
+already mapped `--destructive` onto chart_5's value, which is exactly why the
+substitution was invisible on screen and wrong in the source.
+
+`index.css` now derives **`--warning` from chart_3** the same way it derives
+`--destructive` from chart_5, and `@theme inline` maps `--color-warning`. Every
+`*-chart-5` utility became `*-destructive`, every `*-chart-3` became `*-warning`,
+opacity modifiers included (`bg-chart-5/5` → `bg-destructive/5`). Rendered pixels are
+unchanged; the source now says which of the two it means.
+
+`bg-chart-2` — the "passed"/"strong" green in `ui/steps.tsx`, `forms/save-bar.tsx` and
+`forms/fields/secret.tsx` — is deliberately **not** covered. The guard scopes itself to
+3 and 5, and a `--success` token nothing else asks for would be invention.
+
+### 28.2 No `title=` on anything that reaches the DOM
+
+`test/unit/cockpit-forms-density.test.mjs` → *no native title attribute is used as a
+tooltip, anywhere in the console*. Old scope: twelve hard-coded element names under
+`src/forms`. New scope: every tag in every `.tsx` under `apps/cockpit/src`, plus any
+capitalised component that never names `title` in its own declaration and spreads its
+props onto a DOM node — `<Chip title=…>`, `<AppLink title=…>`, `<ToggleGroupItem
+title=…>` are native tooltips with a capital letter in front of them.
+
+Eleven of them, and three different remedies, each one already precedented in this tree:
+
+| where | remedy |
+| --- | --- |
+| `app/shell.tsx` ×2, `pages/overview.tsx`, `ui/release-chain.tsx`, `ui/steps.tsx`, `ui/relative-time.tsx`, `forms/fields/list.tsx`, `forms/audience/moderation.tsx` | `TooltipProvider > Tooltip > TooltipTrigger asChild > <element tabIndex={0}>` + `TooltipContent` — the pattern `forms/fields/map.tsx` and `forms/fields/scopes.tsx` already use, and for the same stated reason |
+| `ui/combobox.tsx` | the reason is **visible** in the option's own aside slot, outranking its hint — `forms/fields/choice.tsx` makes the same swap |
+| `ui/segmented.tsx` | `aria-disabled` instead of `disabled`, so there is something left to focus, plus the Tooltip — `forms/fields/choice.tsx` again; the refusal moves into `onValueChange` |
+| `ui/sidebar.tsx` | deleted outright. Stock ships it, but the rail is `tabIndex={-1}` and four pixels wide: the tooltip only ever reached a pointer that had already found the control it names, and `aria-label` is still there |
+
+`TooltipTrigger` renders a `<button>` by default and forwards nothing focusable through
+`asChild`, so a non-interactive trigger needs `tabIndex={0}` of its own. A link or a
+button as the trigger needs none — `moderation.tsx` wraps an `AppLink`.
+
+### 28.3 A guard that contradicted two others
+
+`ui/relative-time.tsx` could not satisfy the widened rule: `cockpit-lists.test.mjs` and
+`cockpit-primitives.test.mjs` each *required* `title={formatExact(…)}` on the `<time>`.
+The claim behind those two — "the relative label never replaces the instant it
+summarises" — is right and is unchanged. The mechanism was not: a native title is the
+instant offered to a pointer and to nobody else. Both assertions now name the Tooltip
+instead, and both additionally assert that no `title=` comes back.
