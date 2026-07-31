@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 export interface StepDescriptor<T extends string> {
@@ -53,35 +54,59 @@ export function Steps<T extends string>({
         // "a name is required" on step one while the operator is still reading
         // step one is a complaint about something nobody has been asked yet.
         const problem = step.problem && index <= activeAt ? step.problem : undefined
+        // Why *this* step is closed is a fact about the step that blocks it, and
+        // that step may be scrolled out of the strip.
+        const blocking = unreachable ? steps[blockedAt]!.problem : undefined
+        const button = (
+          <button
+            type="button"
+            aria-current={active ? 'step' : undefined}
+            disabled={unreachable}
+            data-testid={`${testId}-${step.id}`}
+            onClick={() => onChange(step.id)}
+            className={cn(
+              'flex w-full flex-col gap-1 rounded-lg border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50',
+              active ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
+            )}
+          >
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <span
+                className={cn(
+                  'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] tabular-nums',
+                  passed ? 'bg-success text-background' : active ? 'bg-accent text-background' : 'bg-muted',
+                )}
+              >
+                {passed ? <Check className="h-3 w-3" /> : index + 1}
+              </span>
+              {step.label}
+            </span>
+            <span className={cn('truncate text-xs', problem ? 'text-warning' : 'text-muted-foreground')}>
+              {problem ?? step.summary ?? '—'}
+            </span>
+          </button>
+        )
         return (
           <li key={step.id} className="min-w-44 flex-1">
-            <button
-              type="button"
-              aria-current={active ? 'step' : undefined}
-              disabled={unreachable}
-              title={unreachable ? steps[blockedAt]!.problem : undefined}
-              data-testid={`${testId}-${step.id}`}
-              onClick={() => onChange(step.id)}
-              className={cn(
-                'flex w-full flex-col gap-1 rounded-lg border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50',
-                active ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
-              )}
-            >
-              <span className="flex items-center gap-2 text-sm font-medium">
-                <span
-                  className={cn(
-                    'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] tabular-nums',
-                    passed ? 'bg-chart-2 text-background' : active ? 'bg-accent text-background' : 'bg-muted',
-                  )}
-                >
-                  {passed ? <Check className="h-3 w-3" /> : index + 1}
-                </span>
-                {step.label}
-              </span>
-              <span className={cn('truncate text-xs', problem ? 'text-chart-3' : 'text-muted-foreground')}>
-                {problem ?? step.summary ?? '—'}
-              </span>
-            </button>
+            {blocking ? (
+              // A disabled button is neither a hover nor a focus target, so the
+              // sentence explaining it cannot hang on the button itself. The
+              // wrapper is the trigger and it is a tab stop, which is how
+              // `forms/fields/scopes.tsx` reaches the reason behind a locked
+              // checkbox. The provider is opened locally as well as at the app
+              // root: the wizard mounts inside a dialog with its own tree.
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0} className="block" data-testid={`${testId}-${step.id}-blocked`}>
+                      {button}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{blocking}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              button
+            )}
           </li>
         )
       })}

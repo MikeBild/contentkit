@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { TD, TR } from './primitives'
+import { TableCell, TableRow } from './table'
 
 /**
  * A placeholder shaped like the thing that is coming.
@@ -104,9 +104,15 @@ export function SkeletonFields({
 /**
  * Table rows, for a list whose header is already on screen.
  *
- * `TableState` in primitives.tsx renders one centred "Loading…" cell instead,
- * which collapses the table to a single row and then expands it — the same jump
- * as the editor's, in a place where the operator is aiming at a row action.
+ * The alternative is one centred "Loading…" cell, which collapses the table to a
+ * single row and then expands it — the same jump as the editor's, in a place
+ * where the operator is aiming at a row action.
+ *
+ * The row and cell are shadcn's `TableRow`/`TableCell` from `./table`, which is
+ * the only table markup in the console. This file used to reach into
+ * `./primitives` for a second `TR`/`TD` pair, and that import was the one edge
+ * keeping the old stack alive: everything else had moved off it, so nothing
+ * could delete it while `Skeleton` — the new stack — still depended on it.
  */
 export function SkeletonRows({
   rows = 5,
@@ -120,15 +126,15 @@ export function SkeletonRows({
   return (
     <>
       {Array.from({ length: Math.max(1, rows) }, (_unused, row) => (
-        <TR key={row} data-testid={row === 0 ? testId : undefined}>
+        <TableRow key={row} data-testid={row === 0 ? testId : undefined}>
           {Array.from({ length: Math.max(1, columns) }, (_column, column) => (
-            <TD key={column}>
+            <TableCell key={column}>
               {/* One announcement for the whole block, on its first cell. */}
               {row === 0 && column === 0 ? <span className="sr-only">Loading…</span> : null}
               <Skeleton className={cn('h-4', column === 0 ? 'w-40' : 'w-16')} />
-            </TD>
+            </TableCell>
           ))}
-        </TR>
+        </TableRow>
       ))}
     </>
   )

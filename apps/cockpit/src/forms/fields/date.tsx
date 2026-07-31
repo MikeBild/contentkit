@@ -1,7 +1,8 @@
-import { Input } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { dateState, fromDayInput, toDayInput, todayInput } from './date-value'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 /**
@@ -61,7 +62,7 @@ export function DateField({
               type="date"
               min={toDayInput(min)}
               max={toDayInput(max)}
-              className={cn('w-auto', state === 'unset' && 'text-muted-foreground', invalidBorder(error))}
+              className={cn('w-auto', state === 'unset' && 'text-muted-foreground')}
               value={toDayInput(value)}
               onChange={(event) => {
                 // An empty control is the unset state, not a failed parse: the
@@ -88,21 +89,24 @@ export function DateField({
               {state === 'set' ? 'Set' : state === 'invalid' ? 'Not a date' : 'Not set'}
             </span>
             {state === 'unset' ? null : (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="xs"
                 data-testid={`${control['data-testid']}-clear`}
                 disabled={control.disabled}
                 onClick={() => onChange(undefined)}
-                className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               >
                 Clear
-              </button>
+              </Button>
             )}
           </div>
 
           {presets ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               data-testid={`${control['data-testid']}-preset-today`}
               disabled={control.disabled}
               // The clock is read on the click and nowhere else — this is the
@@ -111,10 +115,9 @@ export function DateField({
               // cannot mean something the control does not: today's day, keeping
               // the time of day of an instant it replaces.
               onClick={() => onChange(fromDayInput(todayInput(), value))}
-              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
             >
               Today
-            </button>
+            </Button>
           ) : null}
         </div>
       )}

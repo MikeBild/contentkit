@@ -1,8 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, InfoIcon, Languages as LanguagesIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { ck } from '@/api/ck'
-import { Button } from '@/components/ui/primitives'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { StatusBadge } from '@/forms/status-badge'
 import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
 import { THEME_TOKENS, PRESENTATION_PRESET, REPORT_CADENCE } from '../contracts/enums.generated'
@@ -27,7 +33,6 @@ import {
   type TokenDefinition,
 } from '../fields'
 import type { useForm } from '../use-form'
-import { SUGGESTED_LOCALES } from './rules'
 import {
   ANALYTICS_PROVIDERS,
   AUDIO_PROVIDERS,
@@ -36,6 +41,7 @@ import {
   type SiteSectionId,
   type SiteSettingsUI,
 } from './contract'
+import { SUGGESTED_LOCALES } from './rules'
 
 export type SiteForm = ReturnType<typeof useForm<SiteSettingsUI>>
 
@@ -61,33 +67,29 @@ function SectionAlert({ form, paths }: { form: SiteForm; paths: readonly string[
   const messages = paths.map((path) => form.fieldError(path)).filter(Boolean)
   if (messages.length === 0) return null
   return (
-    <div
-      data-testid="ck-site-section-alert"
-      className="flex items-start gap-2 rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5"
-    >
-      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <div className="flex flex-col gap-1">
-        {messages.map((message) => (
-          <span key={message}>{message}</span>
-        ))}
-      </div>
-    </div>
+    <Alert variant="destructive" data-testid="ck-site-section-alert">
+      {/* Direct child of Alert and before the title: the CVA switches to a
+          two-column grid on `has-[>svg]`, and a wrapped icon breaks it. */}
+      <AlertTriangle />
+      <AlertTitle>This section was refused</AlertTitle>
+      <AlertDescription>
+        <div className="flex flex-col gap-1">
+          {messages.map((message) => (
+            <span key={message}>{message}</span>
+          ))}
+        </div>
+      </AlertDescription>
+    </Alert>
   )
 }
 
-function Note({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'warning' }) {
-  return (
-    <p
-      className={
-        tone === 'warning'
-          ? 'rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-xs text-chart-3'
-          : 'text-xs text-muted-foreground'
-      }
-    >
-      {children}
-    </p>
-  )
-}
+/**
+ * `Note` used to live here: a `<p>` with two tones, which is how a form grows
+ * its own private "explanatory text" slot and then fills it with paragraphs.
+ * Every one of its six call sites is now the component the sentence actually
+ * asked for — an `Alert` for a consequence, an `Empty` for "there is nothing
+ * here", a `Popover` for the paragraph the Languages section opens with.
+ */
 
 function Identity({ form, locales, disabled }: SectionProps) {
   const { identity } = form.values
@@ -110,7 +112,8 @@ function Identity({ form, locales, disabled }: SectionProps) {
           required
           disabled={disabled}
           data-testid="ck-site-default-locale"
-          help="Where “/” redirects to, and the locale the 404 page is served in. It must be one of the locales this site builds."
+          help="Where “/” redirects to, and the locale the 404 page is served in."
+          about="It must be one of the locales this site builds."
           locales={locales}
           value={identity.default_locale}
           error={form.fieldError('identity.default_locale')}
@@ -137,11 +140,14 @@ function Identity({ form, locales, disabled }: SectionProps) {
         error={form.fieldError('identity.description')}
         onChange={(value) => form.set('identity.description', value)}
       />
-      <Note>
-        Hostname mappings are not part of this form. The site read does not return them, and `domains` is a whole-list
-        write where an empty list removes every mapping — so the console never sends the key and the mappings stay as
-        they are.
-      </Note>
+      <Alert data-testid="ck-site-domains-note">
+        <InfoIcon />
+        <AlertTitle>Hostname mappings are not part of this form</AlertTitle>
+        <AlertDescription>
+          The site read does not return them, and `domains` is a whole-list write where an empty list removes every
+          mapping — so the console never sends the key and the mappings stay as they are.
+        </AlertDescription>
+      </Alert>
     </div>
   )
 }
@@ -218,17 +224,47 @@ function Languages({ disabled }: SectionProps) {
 
   return (
     <div data-testid="ck-site-locales" className="flex flex-col gap-4">
+      {/* The section's standing explanation — three claims that are true of every
+          locale row and of none in particular. On screen it was a paragraph
+          nobody reads twice; behind the affordance it is a paragraph anyone can
+          read once. */}
+      <div className="flex items-center gap-1">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              data-testid="ck-site-locales-about"
+              aria-label="What adding or removing a locale row does"
+            >
+              <InfoIcon />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" data-testid="ck-site-locales-about-content">
+            <PopoverTitle>Rows change nothing until the next release</PopoverTitle>
+            <PopoverDescription>
+              Adding or removing a row changes nothing a reader sees until the next release is built. Removing one is
+              refused while it is the default locale, and while it still carries published or scheduled content; the
+              refusal names the counts. Content is never deleted by it.
+            </PopoverDescription>
+          </PopoverContent>
+        </Popover>
+      </div>
       {rows.isPending ? (
         <p className="text-xs text-muted-foreground">Loading the locale rows…</p>
       ) : rows.error ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5">
-          <span data-testid="ck-site-locales-load-error">
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>The locale rows could not be read</AlertTitle>
+          <AlertDescription data-testid="ck-site-locales-load-error">
             {rows.error instanceof Error ? rows.error.message : 'Could not read the locale rows'}
-          </span>
-          <Button variant="ghost" size="sm" data-testid="ck-site-locales-retry" onClick={() => void rows.refetch()}>
-            Try again
-          </Button>
-        </div>
+          </AlertDescription>
+          <AlertAction>
+            <Button variant="ghost" size="sm" data-testid="ck-site-locales-retry" onClick={() => void rows.refetch()}>
+              Try again
+            </Button>
+          </AlertAction>
+        </Alert>
       ) : (
         <ul data-testid="ck-site-locales-list" className="flex flex-col gap-2">
           {stored.map((row) => {
@@ -242,9 +278,21 @@ function Languages({ disabled }: SectionProps) {
                 <span className="flex items-center gap-2">
                   <span className="font-mono">{row.locale}</span>
                   {isDefault ? (
-                    <span data-testid={`ck-site-locale-default-${row.locale}`} className="text-muted-foreground">
-                      default locale — “/” redirects here and the 404 page is built from it, so it cannot be removed
-                    </span>
+                    // A row's status, said as a badge, with the reason one hover
+                    // or one focus away — the sentence used to run the width of
+                    // the row on every locale list in the console.
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} data-testid={`ck-site-locale-default-${row.locale}`}>
+                            <StatusBadge tone="info">default locale</StatusBadge>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          “/” redirects here and the 404 page is built from it, so it cannot be removed.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   ) : null}
                 </span>
                 {isDefault ? null : removing === row.locale ? (
@@ -259,6 +307,7 @@ function Languages({ disabled }: SectionProps) {
                       data-testid={`ck-site-locale-remove-confirm-${row.locale}`}
                       onClick={() => remove.mutate(row.locale)}
                     >
+                      {remove.isPending ? <Spinner data-icon="inline-start" /> : null}
                       {remove.isPending ? 'Removing…' : 'Remove'}
                     </Button>
                     <Button
@@ -288,10 +337,19 @@ function Languages({ disabled }: SectionProps) {
             )
           })}
           {stored.length === 0 ? (
-            <li data-testid="ck-site-locales-empty" className="text-xs text-muted-foreground">
-              No locale rows are stored. The next release still builds{' '}
-              <span className="font-mono">{builds.join(', ') || defaultLocale}</span> — the documented fallback to
-              default_locale — so the build matrix is untracked rather than empty.
+            <li>
+              <Empty className="border" data-testid="ck-site-locales-empty">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <LanguagesIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>No locale rows are stored</EmptyTitle>
+                  <EmptyDescription>
+                    The next release still builds <span className="font-mono">{builds.join(', ') || defaultLocale}</span>{' '}
+                    — the documented fallback to default_locale — so the build matrix is untracked rather than empty.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             </li>
           ) : null}
         </ul>
@@ -303,7 +361,8 @@ function Languages({ disabled }: SectionProps) {
             label="Add a language"
             disabled={busy || full}
             data-testid="ck-site-locales-add"
-            help="One page tree is built per row. The tag is case-folded server-side; a locale the site already has is refused with 409, and content can only be ingested into a locale this list contains."
+            help="One page tree is built per row."
+            about="The tag is case-folded server-side; a locale the site already has is refused with 409, and content can only be ingested into a locale this list contains."
             // Filtered against the stored ROWS, not against what the site builds.
             // The two differ on exactly the site this editor exists to repair: a
             // site with no rows still builds its default locale through the
@@ -325,51 +384,54 @@ function Languages({ disabled }: SectionProps) {
           data-testid="ck-site-locales-add-submit"
           onClick={() => add.mutate(adding)}
         >
+          {add.isPending ? <Spinner data-icon="inline-start" /> : null}
           {add.isPending ? 'Adding…' : 'Add locale'}
         </Button>
       </div>
 
       {add.error ? (
-        <p
-          data-testid="ck-site-locales-add-error"
-          className="rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5"
-        >
-          {add.error instanceof Error ? add.error.message : 'The locale could not be added'}
-        </p>
+        <Alert variant="destructive" data-testid="ck-site-locales-add-error">
+          <AlertTriangle />
+          <AlertTitle>The locale was not added</AlertTitle>
+          <AlertDescription>
+            {add.error instanceof Error ? add.error.message : 'The locale could not be added'}
+          </AlertDescription>
+        </Alert>
       ) : null}
       {remove.error ? (
         // Verbatim: “locale en still has 2 published and 1 scheduled content
         // item(s)…” names what to do, and a rewritten version would drop the
         // counts that make it actionable.
-        <p
-          data-testid="ck-site-locales-remove-error"
-          className="rounded-lg border border-chart-5/30 bg-chart-5/10 p-3 text-xs text-chart-5"
-        >
-          {remove.error instanceof Error ? remove.error.message : 'The locale could not be removed'}
-        </p>
+        <Alert variant="destructive" data-testid="ck-site-locales-remove-error">
+          <AlertTriangle />
+          <AlertTitle>The locale was not removed</AlertTitle>
+          <AlertDescription>
+            {remove.error instanceof Error ? remove.error.message : 'The locale could not be removed'}
+          </AlertDescription>
+        </Alert>
       ) : null}
       {removed ? (
-        <p
-          data-testid="ck-site-locales-removed"
-          className="rounded-lg border border-chart-3/30 bg-chart-3/10 p-3 text-xs text-chart-3"
-        >
-          <span className="font-mono">{removed.locale}</span> is no longer built. {removed.draft_items} content{' '}
-          {removed.draft_items === 1 ? 'item stays' : 'items stay'} in it, unpublished and undeleted — nothing is served
-          from that locale until it is added back and a release is built.
-        </p>
+        <Alert data-testid="ck-site-locales-removed">
+          <AlertTriangle />
+          <AlertTitle>
+            <span className="font-mono">{removed.locale}</span> is no longer built
+          </AlertTitle>
+          <AlertDescription>
+            {removed.draft_items} content {removed.draft_items === 1 ? 'item stays' : 'items stay'} in it, unpublished
+            and undeleted — nothing is served from that locale until it is added back and a release is built.
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       {full ? (
-        <Note tone="warning">
-          {max} locale rows is the cap: every row adds a full page tree — home, listings, tags, feeds and a 404 — to
-          every release.
-        </Note>
+        <Alert data-testid="ck-site-locales-full">
+          <AlertTriangle />
+          <AlertDescription>
+            {max} locale rows is the cap: every row adds a full page tree — home, listings, tags, feeds and a 404 — to
+            every release.
+          </AlertDescription>
+        </Alert>
       ) : null}
-      <Note>
-        Adding or removing a row changes nothing a reader sees until the next release is built. Removing one is refused
-        while it is the default locale, and while it still carries published or scheduled content; the refusal names the
-        counts. Content is never deleted by it.
-      </Note>
     </div>
   )
 }
@@ -386,7 +448,7 @@ function Presentation({ form, disabled }: SectionProps) {
         label="Preset"
         disabled={disabled}
         data-testid="ck-site-preset"
-        help="Decides the navigation model and the default layout a document without an explicit one gets."
+        definition="Decides the navigation model and the default layout a document without an explicit one gets."
         fallback="Unset behaves as portfolio."
         options={PRESENTATION_PRESET.map((value) => ({ value, label: value }))}
         allowEmpty
@@ -441,7 +503,8 @@ function Presentation({ form, disabled }: SectionProps) {
         label="Report series"
         disabled={disabled}
         data-testid="ck-site-report-series"
-        help="A document selects one with reportSeries. Removing a series that documents still reference does not fail this save — it fails the next release."
+        help="A document selects one with reportSeries."
+        about="Removing a series that documents still reference does not fail this save — it fails the next release."
         max={32}
         emptyMessage="No series configured."
         addLabel="Add series"
@@ -526,7 +589,8 @@ function Theme({ form, disabled }: SectionProps) {
         label="Theme tokens"
         disabled={disabled}
         data-testid="ck-site-theme-tokens"
-        help="Each token applies to the page and to server-rendered report charts alike. A token left unset keeps the stock value."
+        help="Each token applies to the page and to server-rendered report charts alike."
+        about="A token left unset keeps the stock value."
         tokens={TOKENS}
         value={theme.tokens}
         error={form.fieldError('settings.theme.tokens')}
@@ -600,7 +664,8 @@ function Theme({ form, disabled }: SectionProps) {
         forbidMessage="“</style” would break out of the style element"
         disabled={disabled}
         data-testid="ck-site-custom-css"
-        help="Inlined verbatim into every page, after the tokens. The escape hatch for whatever the tokens do not cover."
+        help="Inlined verbatim into every page, after the tokens."
+        about="The escape hatch for whatever the tokens do not cover."
         value={theme.custom_css}
         error={form.fieldError('settings.theme.custom_css')}
         onChange={(value) => form.set('settings.theme.custom_css', value)}
@@ -637,7 +702,7 @@ function Branding({ form, base, disabled }: SectionProps) {
           label="Eyebrow"
           disabled={disabled}
           data-testid="ck-site-eyebrow"
-          help="The small line above the hero title."
+          definition="The small line above the hero title."
           fallback="Unset means no eyebrow."
           value={settings.eyebrow}
           error={form.fieldError('settings.eyebrow')}
@@ -725,7 +790,8 @@ function Seo({ form, base, disabled }: SectionProps) {
         label="Social links"
         disabled={disabled}
         data-testid="ck-site-socials"
-        help="Rendered in the footer with rel=me and published as schema.org sameAs. The key is the visible name."
+        help="Rendered in the footer with rel=me and published as schema.org sameAs."
+        about="The key is the visible name."
         keyLabel="Network"
         valueLabel="URL"
         value={settings.socials}
@@ -745,7 +811,7 @@ function Analytics({ form, disabled }: SectionProps) {
         label="Provider"
         disabled={disabled}
         data-testid="ck-site-analytics-provider"
-        help="Plausible is cookieless and loads one script. GA4 is withheld until the visitor consents and adds a consent control to the footer."
+        about="Plausible is cookieless and loads one script. GA4 is withheld until the visitor consents and adds a consent control to the footer."
         fallback="Unset means no analytics at all."
         allowEmpty
         placeholder="No analytics"
@@ -768,7 +834,8 @@ function Analytics({ form, disabled }: SectionProps) {
             required
             disabled={disabled}
             data-testid="ck-site-analytics-domain"
-            help="The data-domain the script is loaded with. Without it nothing is emitted at all."
+            help="The data-domain the script is loaded with."
+            about="Without it nothing is emitted at all."
             value={analytics.domain}
             error={form.fieldError('settings.analytics.domain')}
             onChange={(value) => form.set('settings.analytics.domain', value)}
@@ -790,7 +857,8 @@ function Analytics({ form, disabled }: SectionProps) {
           required
           disabled={disabled}
           data-testid="ck-site-analytics-id"
-          help="The G- id. Everything but letters, digits and hyphens is stripped before it reaches the page."
+          help="The G- id."
+          about="Everything but letters, digits and hyphens is stripped before it reaches the page."
           value={analytics.id}
           error={form.fieldError('settings.analytics.id')}
           onChange={(value) => form.set('settings.analytics.id', value)}
@@ -898,7 +966,14 @@ function Audio({ form, base, disabled }: SectionProps) {
         error={form.fieldError('settings.audio.enabled')}
         onChange={(value) => form.set('settings.audio.enabled', value)}
       />
-      {!on ? <Note>The rest of this section is stored but has no effect until read-aloud is on.</Note> : null}
+      {!on ? (
+        <Alert data-testid="ck-site-audio-off-note">
+          <InfoIcon />
+          <AlertDescription>
+            The rest of this section is stored but has no effect until read-aloud is on.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className={grid}>
         <EnumSelect
@@ -921,7 +996,7 @@ function Audio({ form, base, disabled }: SectionProps) {
           label="Voice"
           disabled={disabled}
           data-testid="ck-site-audio-voice"
-          help="The provider's voice name, for example de-DE-Chirp3-HD-Charon. Its language prefix decides the spoken language."
+          about="The provider's voice name, for example de-DE-Chirp3-HD-Charon. Its language prefix decides the spoken language."
           fallback="Unset uses the provider's default voice."
           value={audio.voice}
           error={form.fieldError('settings.audio.voice')}
@@ -970,7 +1045,8 @@ function Audio({ form, base, disabled }: SectionProps) {
           unsetLabel="No budget"
           disabled={disabled}
           data-testid="ck-site-audio-budget"
-          help="Narration stops for the month once the budget is spent. Unset is not zero — it means no ceiling at all."
+          help="Narration stops for the month once the budget is spent."
+          about="Unset is not zero — it means no ceiling at all."
           value={audio.monthly_char_budget}
           error={form.fieldError('settings.audio.monthly_char_budget')}
           onChange={(value) => form.set('settings.audio.monthly_char_budget', value)}
@@ -1062,7 +1138,8 @@ function Reader({ form, disabled }: SectionProps) {
           data-testid="ck-site-feedback-enabled"
           disabled={disabled}
           defaultLabel="off"
-          help="The thumbs-up/down widget under a post. It has to be switched on explicitly."
+          help="The thumbs-up/down widget under a post."
+          about="It has to be switched on explicitly."
           value={settings.feedback.enabled}
           error={form.fieldError('settings.feedback.enabled')}
           onChange={(value) => form.set('settings.feedback.enabled', value)}
@@ -1072,7 +1149,8 @@ function Reader({ form, disabled }: SectionProps) {
         label="Turnstile site key"
         disabled={disabled}
         data-testid="ck-site-turnstile"
-        help="The public half of the Cloudflare Turnstile pair, used by the comment and contact forms. The secret half is server configuration, not a setting."
+        help="The public half of the Cloudflare Turnstile pair, used by the comment and contact forms."
+        about="The secret half is server configuration, not a setting."
         warning={
           settings.comments.enabled !== false && !settings.turnstile_site_key
             ? 'Comments accept submissions with no challenge in front of them'
@@ -1088,7 +1166,8 @@ function Reader({ form, disabled }: SectionProps) {
           data-testid="ck-site-search-index-body"
           disabled={disabled}
           defaultLabel="off"
-          help="On makes the search index carry the whole article rather than title, summary and tags. It grows every release."
+          help="On makes the search index carry the whole article rather than title, summary and tags."
+          about="It grows every release."
           value={settings.search.index_body}
           error={form.fieldError('settings.search.index_body')}
           onChange={(value) => form.set('settings.search.index_body', value)}
@@ -1133,7 +1212,8 @@ function Reader({ form, disabled }: SectionProps) {
         data-testid="ck-site-ai-share-buttons"
         disabled={disabled}
         defaultLabel="on"
-        help="A link to the page's Markdown twin, a copy button and “open in …” deep links. Nothing here talks to any provider; the reader does, from their own account."
+        help="A link to the page's Markdown twin, a copy button and “open in …” deep links."
+        about="Nothing here talks to any provider; the reader does, from their own account."
         value={settings.ai.share_buttons}
         error={form.fieldError('settings.ai.share_buttons')}
         onChange={(value) => form.set('settings.ai.share_buttons', value)}
@@ -1160,19 +1240,31 @@ function Unmanaged({ form, disabled }: SectionProps) {
 
   if (leaves.length === 0) {
     return (
-      <Note>
-        Nothing here. Every key this site stores is rendered by one of the other sections — and anything a future
-        version or a script writes will appear here instead of being dropped by a save.
-      </Note>
+      <Empty className="border" data-testid="ck-site-carried-empty">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <InfoIcon />
+          </EmptyMedia>
+          <EmptyTitle>Nothing here</EmptyTitle>
+          <EmptyDescription>
+            Every key this site stores is rendered by one of the other sections — and anything a future version or a
+            script writes will appear here instead of being dropped by a save.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     )
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <Note>
-        These keys are not editable here, because a form that could edit an unknown shape would be a JSON box again.
-        They are preserved on every save, and removing one is the one change this section can make.
-      </Note>
+      <Alert data-testid="ck-site-carried-note">
+        <InfoIcon />
+        <AlertTitle>These keys are not editable here</AlertTitle>
+        <AlertDescription>
+          A form that could edit an unknown shape would be a JSON box again. They are preserved on every save, and
+          removing one is the one change this section can make.
+        </AlertDescription>
+      </Alert>
       <CarriedKeys
         data-testid="ck-site-carried"
         value={display}

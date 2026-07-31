@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { hasNext, hasPrevious, nextPage, pageNumber, previousPage, type CursorPage } from '@/lib/cursor'
 import { cn } from '@/lib/utils'
-import { Button } from './primitives'
+import { Button } from './button'
 import { Spinner } from './spinner'
 
 /**
@@ -65,7 +65,9 @@ export function Pagination({
           disabled={!back || isLoading}
           onClick={() => onChange(previousPage(page))}
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          {/* No size class — the Button CVA sizes it for `sm`. `inline-start`
+              is what pulls the left padding in so the glyph is not adrift. */}
+          <ChevronLeft data-icon="inline-start" />
           Previous
         </Button>
         <Button
@@ -79,7 +81,7 @@ export function Pagination({
           onClick={() => onChange(nextPage(page, nextCursor))}
         >
           Next
-          <ChevronRight className="h-3.5 w-3.5" />
+          <ChevronRight data-icon="inline-end" />
         </Button>
       </span>
     </nav>

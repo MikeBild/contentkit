@@ -1,33 +1,42 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { TriangleAlert } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { ck, type CreatedWebhookEndpoint, type WebhookEndpoint, type WebhookInput } from '@/api/ck'
 import { Confirm } from '@/components/confirm'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Select,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   WEBHOOK_DELIVERY_STATUS,
   WEBHOOK_EVENT_TYPES,
   type WebhookDeliveryStatus,
 } from '@/forms/contracts/enums.generated'
 import { EnumMultiSelect, RevealOnce, TextField, TriToggle, UrlField } from '@/forms/fields'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { formatDate } from '@/lib/utils'
+
+/**
+ * "No filter" as a value a Select can hold. Radix spells *deselected* as the
+ * empty string and refuses it as an item's value, so the "all of them" row needs
+ * a name of its own; it is translated back at both edges and never reaches a
+ * request.
+ */
+const ANY = '__ck_any__'
+
 
 const EVENT_OPTIONS = WEBHOOK_EVENT_TYPES.map((value) => ({
   value,
@@ -79,67 +88,90 @@ function EndpointDialog({
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={save.isPending}
-      data-testid="ck-webhook-dialog"
-      title={editing ? 'Edit endpoint' : 'New webhook endpoint'}
-      description="ContentKit signs every delivery with Standard Webhooks headers. The receiver must be reachable over https."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // Creating an endpoint is the only moment its signing secret exists
+        // outside the database, and `onIssued` is what surfaces it. A dismissal
+        // mid-flight would leave an endpoint nobody can verify deliveries from.
+        if (save.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-webhook-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={save.isPending}
+        onEscapeKeyDown={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{editing ? 'Edit endpoint' : 'New webhook endpoint'}</DialogTitle>
+          <DialogDescription>
+            ContentKit signs every delivery with Standard Webhooks headers. The receiver must be reachable over https.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          <UrlField
+            data-testid="ck-webhook-url"
+            label="URL"
+            required
+            protocols={['https:']}
+            help="Where deliveries are POSTed."
+            about="Private and loopback addresses are refused."
+            value={url}
+            onChange={setUrl}
+          />
+
+          <EnumMultiSelect
+            data-testid="ck-webhook-events"
+            label="Events"
+            help="Which events reach this endpoint."
+            value={events}
+            options={EVENT_OPTIONS}
+            allEmptyMeans={{ allLabel: 'All events', someLabel: 'Only these events' }}
+            onChange={(next) => setEvents([...next])}
+          />
+
+          <TextField
+            data-testid="ck-webhook-description"
+            label="Description"
+            value={description}
+            fallback="Only a label for this list."
+            onChange={setDescription}
+          />
+
+          <TriToggle
+            data-testid="ck-webhook-enabled"
+            label="Enabled"
+            help="Re-enabling also clears the consecutive-failure counter that auto-paused it."
+            defaultLabel="its stored state"
+            value={enabled}
+            onChange={setEnabled}
+          />
+
+          {save.error ? (
+            <Alert variant="destructive" data-testid="ck-webhook-error">
+              <TriangleAlert />
+              <AlertTitle>The endpoint was not saved</AlertTitle>
+              <AlertDescription>
+                {save.error instanceof Error ? save.error.message : 'Could not save the endpoint'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-webhook-cancel" disabled={save.isPending} onClick={onClose}>
             Cancel
           </Button>
           <Button data-testid="ck-webhook-submit" disabled={save.isPending || !url} onClick={() => save.mutate()}>
+            {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save endpoint' : 'Create endpoint'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="space-y-4">
-        <UrlField
-          data-testid="ck-webhook-url"
-          label="URL"
-          required
-          protocols={['https:']}
-          help="Where deliveries are POSTed. Private and loopback addresses are refused."
-          value={url}
-          onChange={setUrl}
-        />
-
-        <EnumMultiSelect
-          data-testid="ck-webhook-events"
-          label="Events"
-          help="Which events reach this endpoint."
-          value={events}
-          options={EVENT_OPTIONS}
-          allEmptyMeans={{ allLabel: 'All events', someLabel: 'Only these events' }}
-          onChange={(next) => setEvents([...next])}
-        />
-
-        <TextField
-          data-testid="ck-webhook-description"
-          label="Description"
-          value={description}
-          fallback="Only a label for this list."
-          onChange={setDescription}
-        />
-
-        <TriToggle
-          data-testid="ck-webhook-enabled"
-          label="Enabled"
-          help="Re-enabling also clears the consecutive-failure counter that auto-paused it."
-          defaultLabel="its stored state"
-          value={enabled}
-          onChange={setEnabled}
-        />
-
-        {save.error ? (
-          <p data-testid="ck-webhook-error" className="text-sm text-chart-5">
-            {save.error instanceof Error ? save.error.message : 'Could not save the endpoint'}
-          </p>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -169,7 +201,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
           </Button>
         ) : null}
       </CardHeader>
-      <CardContent className="space-y-3 p-0">
+      <CardContent className="flex flex-col gap-3 p-0">
         {issued ? (
           <div className="px-5 pt-3">
             <RevealOnce
@@ -182,42 +214,43 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
           </div>
         ) : null}
         <Table>
-          <THead>
-            <TR>
-              <TH>URL</TH>
-              <TH>Events</TH>
-              <TH>Description</TH>
-              <TH>State</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>URL</TableHead>
+              <TableHead>Events</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>State</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={5}
               isLoading={endpoints.isPending}
               error={endpoints.error}
               isEmpty={rows.length === 0}
               onRetry={() => endpoints.refetch()}
-              emptyMessage="No endpoints. Content events are recorded either way, they just go nowhere."
+              emptyTitle="No endpoints yet"
+              emptyMessage="Content events are recorded either way, they just go nowhere."
             >
               {rows.map((endpoint) => (
-                <TR key={endpoint.id} data-testid="ck-webhook-row" data-endpoint={endpoint.id}>
-                  <TD className="max-w-[22rem] truncate font-mono text-xs">{endpoint.url}</TD>
-                  <TD className="max-w-[16rem] text-xs text-muted-foreground">
+                <TableRow key={endpoint.id} data-testid="ck-webhook-row" data-endpoint={endpoint.id}>
+                  <TableCell className="max-w-[22rem] truncate font-mono text-xs">{endpoint.url}</TableCell>
+                  <TableCell className="max-w-[16rem] text-xs text-muted-foreground">
                     {endpoint.events?.length ? endpoint.events.join(', ') : 'all events'}
-                  </TD>
-                  <TD className="text-muted-foreground">{endpoint.description || '—'}</TD>
-                  <TD>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{endpoint.description || '—'}</TableCell>
+                  <TableCell>
                     {isEnabled(endpoint) ? (
-                      <Badge tone="success">active</Badge>
+                      <StatusBadge tone="success">active</StatusBadge>
                     ) : (
-                      <Badge tone="warning">paused {formatDate(endpoint.disabled_at)}</Badge>
+                      <StatusBadge tone="warning">paused {formatDate(endpoint.disabled_at)}</StatusBadge>
                     )}
                     {endpoint.consecutive_failures ? (
-                      <span className="ml-2 text-xs text-chart-5">{endpoint.consecutive_failures} failures in a row</span>
+                      <span className="ml-2 text-xs text-destructive">{endpoint.consecutive_failures} failures in a row</span>
                     ) : null}
-                  </TD>
-                  <TD className="flex gap-2">
+                  </TableCell>
+                  <TableCell className="flex gap-2">
                     {writable ? (
                       <>
                         <Button
@@ -283,11 +316,11 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                         </Confirm>
                       </>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
 
@@ -340,86 +373,116 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Deliveries</CardTitle>
         <div className="flex flex-wrap gap-2">
-          <Select
-            data-testid="ck-delivery-endpoint-filter"
-            aria-label="Filter deliveries by endpoint"
-            value={endpoint}
-            onChange={(event) => setEndpoint(event.target.value)}
-          >
-            <option value="">All endpoints</option>
-            {endpointRows.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.description || row.url}
-              </option>
-            ))}
+          <Select value={endpoint || ANY} onValueChange={(next) => setEndpoint(next === ANY ? '' : next)}>
+            <SelectTrigger
+              data-testid="ck-delivery-endpoint-filter"
+              aria-label="Filter deliveries by endpoint"
+              className="w-56"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value={ANY} data-testid="ck-delivery-endpoint-filter-any">
+                  All endpoints
+                </SelectItem>
+                {endpointRows.map((row) => (
+                  <SelectItem key={row.id} value={row.id} data-testid={`ck-delivery-endpoint-filter-${row.id}`}>
+                    {row.description || row.url}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
           </Select>
           <Select
-            data-testid="ck-delivery-status-filter"
-            aria-label="Filter deliveries by status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as WebhookDeliveryStatus | '')}
+            value={status || ANY}
+            onValueChange={(next) => setStatus(next === ANY ? '' : (next as WebhookDeliveryStatus))}
           >
-            <option value="">All statuses</option>
-            {WEBHOOK_DELIVERY_STATUS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
+            <SelectTrigger
+              data-testid="ck-delivery-status-filter"
+              aria-label="Filter deliveries by status"
+              className="w-40"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value={ANY} data-testid="ck-delivery-status-filter-any">
+                  All statuses
+                </SelectItem>
+                {WEBHOOK_DELIVERY_STATUS.map((value) => (
+                  <SelectItem key={value} value={value} data-testid={`ck-delivery-status-filter-${value}`}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
           </Select>
-          <Select
-            data-testid="ck-delivery-limit-filter"
-            aria-label="Number of deliveries to load"
-            value={String(limit)}
-            onChange={(event) => setLimit(Number(event.target.value))}
-          >
-            {LIMITS.map((value) => (
-              <option key={value} value={value}>
-                Last {value}
-              </option>
-            ))}
+          <Select value={String(limit)} onValueChange={(next) => setLimit(Number(next))}>
+            <SelectTrigger
+              data-testid="ck-delivery-limit-filter"
+              aria-label="Number of deliveries to load"
+              className="w-32"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {LIMITS.map((value) => (
+                  <SelectItem key={value} value={String(value)} data-testid={`ck-delivery-limit-filter-${value}`}>
+                    Last {value}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
           </Select>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Event</TH>
-              <TH>Endpoint</TH>
-              <TH>Status</TH>
-              <TH>Attempts</TH>
-              <TH>Response</TH>
-              <TH>Created</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Event</TableHead>
+              <TableHead>Endpoint</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Attempts</TableHead>
+              <TableHead>Response</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={7}
               isLoading={deliveries.isPending}
               error={deliveries.error}
               isEmpty={rows.length === 0}
               onRetry={() => deliveries.refetch()}
-              emptyMessage={endpoint || status ? 'No deliveries match these filters.' : 'No deliveries yet.'}
+              emptyTitle={endpoint || status ? 'Nothing matches these filters' : 'No deliveries yet'}
+              emptyMessage={
+                endpoint || status
+                  ? 'Widen the endpoint or the status to see more.'
+                  : 'Nothing has been sent to an endpoint yet.'
+              }
             >
               {rows.map((delivery) => {
                 const open = expanded === delivery.id
                 const target = endpointRows.find((row) => row.id === delivery.endpoint_id)
                 return (
                   <Fragment key={delivery.id}>
-                    <TR data-testid="ck-delivery-row" data-delivery={delivery.id}>
-                      <TD className="font-mono text-xs">{delivery.type}</TD>
-                      <TD className="max-w-[16rem] truncate text-xs text-muted-foreground">
+                    <TableRow data-testid="ck-delivery-row" data-delivery={delivery.id}>
+                      <TableCell className="font-mono text-xs">{delivery.type}</TableCell>
+                      <TableCell className="max-w-[16rem] truncate text-xs text-muted-foreground">
                         {/* A null endpoint_id is the legacy env-configured target. */}
                         {target?.url ?? (delivery.endpoint_id ? delivery.endpoint_id.slice(0, 8) : 'configured default')}
-                      </TD>
-                      <TD>
-                        <Badge tone={DELIVERY_TONE[delivery.status]}>{delivery.status}</Badge>
-                      </TD>
-                      <TD className="tabular-nums text-muted-foreground">{delivery.attempts}</TD>
-                      <TD className="text-muted-foreground">{delivery.response_status ?? '—'}</TD>
-                      <TD className="whitespace-nowrap text-muted-foreground">{formatDate(delivery.created_at)}</TD>
-                      <TD className="flex gap-2">
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge tone={DELIVERY_TONE[delivery.status]}>{delivery.status}</StatusBadge>
+                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">{delivery.attempts}</TableCell>
+                      <TableCell className="text-muted-foreground">{delivery.response_status ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(delivery.created_at)}</TableCell>
+                      <TableCell className="flex gap-2">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -458,11 +521,11 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                             )}
                           </Confirm>
                         ) : null}
-                      </TD>
-                    </TR>
+                      </TableCell>
+                    </TableRow>
                     {open ? (
-                      <TR data-testid={`ck-delivery-detail-${delivery.id}`}>
-                        <TD colSpan={7} className="bg-muted/40">
+                      <TableRow data-testid={`ck-delivery-detail-${delivery.id}`}>
+                        <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
                             <dt className="text-muted-foreground">Event id</dt>
                             <dd className="font-mono">{delivery.event_id}</dd>
@@ -473,7 +536,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                             <dt className="text-muted-foreground">Response status</dt>
                             <dd>{delivery.response_status ?? '—'}</dd>
                             <dt className="text-muted-foreground">Last error</dt>
-                            <dd className="whitespace-pre-wrap break-words text-chart-5">
+                            <dd className="whitespace-pre-wrap break-words text-destructive">
                               {delivery.last_error ?? '—'}
                             </dd>
                             <dt className="text-muted-foreground">Payload</dt>
@@ -481,14 +544,14 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                               <PayloadFields payload={delivery.payload} />
                             </dd>
                           </dl>
-                        </TD>
-                      </TR>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                   </Fragment>
                 )
               })}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
     </Card>

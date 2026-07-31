@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ChevronsUpDown, Columns3 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { TableState } from '@/forms/table-state'
 import { firstPage, type CursorPage } from '@/lib/cursor'
 import {
   clampPage,
@@ -20,18 +21,21 @@ import {
   type SortState,
 } from '@/lib/table-view'
 import { cn } from '@/lib/utils'
-import { Pagination } from './pagination'
+import { Button } from './button'
+import { Card } from './card'
 import { Checkbox } from './checkbox'
-import { Button, TBody, TD, TH, THead, TR, Table, TableState } from './primitives'
+import { Pagination } from './pagination'
 import { SkeletonRows } from './skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table'
 
 /**
- * The console's lists, on the Table primitives rather than instead of them.
+ * The console's lists, on the shared Table rather than instead of it.
  *
- * `Table`/`THead`/`TBody`/`TR`/`TH`/`TD`/`TableState` in primitives.tsx stay the
- * markup and stay the four-state discipline; this adds the three things every
- * list in the console was missing and nothing else: a window over the rows, a
- * header that can reorder them, and a way to put a column away.
+ * `Table`/`TableHeader`/`TableBody`/`TableRow`/`TableHead`/`TableCell` from
+ * `./table` stay the markup and `TableState` from `@/forms/table-state` stays
+ * the four-state discipline; this adds the three things every list in the
+ * console was missing and nothing else: a window over the rows, a header that
+ * can reorder them, and a way to put a column away.
  *
  * All three are capability-driven, from `@/lib/table-view`. A sort control is
  * rendered only where a sort would actually cover the whole result — see
@@ -258,7 +262,12 @@ export function DataTable<Row>({
   const visibleRows = paging === 'whole' ? ordered.slice(slice.start, slice.end) : ordered
   const forward = paging === 'whole' ? slice.nextCursor : (nextCursor ?? null)
 
-  const activeReach = sort ? sortReach(specs.find((spec) => spec.id === sort.column), paging) : 'none'
+  const activeReach = sort
+    ? sortReach(
+        specs.find((spec) => spec.id === sort.column),
+        paging,
+      )
+    : 'none'
   const activeLabel = shown.find((column) => column.id === sort?.column)?.label
 
   /**
@@ -299,10 +308,14 @@ export function DataTable<Row>({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface">
+      {/* `Card`, not a hand-rolled `rounded-xl border bg-surface` — that div was
+          a Card spelled out. `gap-0 py-0` because the two children are a table
+          and its pager, and the pager draws its own `border-t`: the card's own
+          padding and row gap would float that rule away from the last row. */}
+      <Card className="gap-0 py-0">
         <Table data-testid={`${testId}-table`}>
-          <THead>
-            <TR>
+          <TableHeader>
+            <TableRow>
               {shown.map((column) => {
                 const reach = sortReach(
                   specs.find((spec) => spec.id === column.id),
@@ -310,11 +323,17 @@ export function DataTable<Row>({
                 )
                 const active = sort?.column === column.id ? sort.direction : null
                 return (
-                  <TH
+                  <TableHead
                     key={column.id}
                     className={column.className}
                     aria-sort={
-                      !isOfferable(reach) ? undefined : active === 'asc' ? 'ascending' : active === 'desc' ? 'descending' : 'none'
+                      !isOfferable(reach)
+                        ? undefined
+                        : active === 'asc'
+                          ? 'ascending'
+                          : active === 'desc'
+                            ? 'descending'
+                            : 'none'
                     }
                   >
                     {column.headerHidden ? (
@@ -328,22 +347,22 @@ export function DataTable<Row>({
                       >
                         {column.label}
                         {active === 'asc' ? (
-                          <ArrowUp className="h-3 w-3" />
+                          <ArrowUp className="size-3" />
                         ) : active === 'desc' ? (
-                          <ArrowDown className="h-3 w-3" />
+                          <ArrowDown className="size-3" />
                         ) : (
-                          <ChevronsUpDown className="h-3 w-3 opacity-40" />
+                          <ChevronsUpDown className="size-3 opacity-40" />
                         )}
                       </button>
                     ) : (
                       column.label
                     )}
-                  </TH>
+                  </TableHead>
                 )
               })}
-            </TR>
-          </THead>
-          <TBody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {isLoading ? (
               <SkeletonRows rows={Math.min(pageSize, 6)} columns={shown.length} data-testid={`${testId}-skeleton`} />
             ) : (
@@ -359,17 +378,17 @@ export function DataTable<Row>({
                 emptyMessage={emptyMessage}
               >
                 {visibleRows.map((row) => (
-                  <TR key={rowKey(row)} data-testid={rowTestId} {...(rowAttributes?.(row) ?? {})}>
+                  <TableRow key={rowKey(row)} data-testid={rowTestId} {...(rowAttributes?.(row) ?? {})}>
                     {shown.map((column) => (
-                      <TD key={column.id} className={column.className}>
+                      <TableCell key={column.id} className={column.className}>
                         {column.cell(row)}
-                      </TD>
+                      </TableCell>
                     ))}
-                  </TR>
+                  </TableRow>
                 ))}
               </TableState>
             )}
-          </TBody>
+          </TableBody>
         </Table>
         <Pagination
           data-testid={`${testId}-pagination`}
@@ -382,7 +401,7 @@ export function DataTable<Row>({
           // every row. A cursor-paged list has no total and does not get one.
           unit={paging === 'whole' ? `of ${ordered.length} ${unit}` : unit}
         />
-      </div>
+      </Card>
     </div>
   )
 }
@@ -415,7 +434,7 @@ function ColumnChooser<Row>({
         data-testid={`${testId}-columns-toggle`}
         className="inline-flex h-8 cursor-pointer list-none items-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden"
       >
-        <Columns3 className="h-3.5 w-3.5" />
+        <Columns3 className="size-3.5" />
         Columns
         {/* The count is an exception, so it is the only thing printed: a chooser
             with nothing hidden has nothing to report. */}

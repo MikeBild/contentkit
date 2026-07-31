@@ -3,27 +3,35 @@ import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { ck, type ContentKind, type PublishedList } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
-import { Dialog } from '@/components/ui/dialog'
+import { CircleCheckBig, TriangleAlert } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Input,
-  Label,
-  Select,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-  Textarea,
-} from '@/components/ui/primitives'
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
+import { Spinner } from '@/components/ui/spinner'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { SkeletonFields, SkeletonText } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { ContentHtml, useContentScheme } from '@/content/lazy'
 import {
   AUDIO_JOB_STATUS,
@@ -40,6 +48,17 @@ import { useSite } from '@/lib/site'
 
 const FieldGallery = lazy(() => import('@/forms/gallery').then((module) => ({ default: module.FieldGallery })))
 import { formatDate } from '@/lib/utils'
+
+/**
+ * "No filter", as a value Radix will accept.
+ *
+ * A `SelectItem` may not carry an empty value — Radix reserves it for "nothing
+ * selected" and throws on it — while every filter on this page means "no filter"
+ * by the empty string. The sentinel therefore lives between the trigger and
+ * `onValueChange` and nowhere else: the state and the requests built from it are
+ * unchanged. The leading underscores keep it outside every enum on this page.
+ */
+const ANY = '__any'
 
 // ── Published + search ───────────────────────────────────────────────────────
 
@@ -95,53 +114,68 @@ export function PublishedPage() {
           value={term}
           onChange={(event) => setTerm(event.target.value)}
         />
+        {/* `published-kind` moves onto the trigger: `Select` is the headless root
+            and renders no DOM node, so the id has to name the control that is
+            actually on screen. */}
         <Select
-          data-testid="published-kind"
-          aria-label="Filter the published snapshot by kind"
-          value={kind}
-          onChange={(event) => setKind(event.target.value as ContentKind | '')}
+          value={kind || ANY}
+          onValueChange={(next) => setKind(next === ANY ? '' : (next as ContentKind))}
         >
-          <option value="">All kinds</option>
-          {(['page', 'post', 'project', 'deck'] as ContentKind[]).map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
+          <SelectTrigger
+            className="w-40"
+            data-testid="published-kind"
+            aria-label="Filter the published snapshot by kind"
+          >
+            <SelectValue placeholder="All kinds" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={ANY}>All kinds</SelectItem>
+              {(['page', 'post', 'project', 'deck'] as ContentKind[]).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface">
+      <Card className="py-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Title</TH>
-              <TH>Kind</TH>
-              <TH>Locale</TH>
-              <TH>Slug</TH>
-              <TH>{searching ? 'Match' : 'Updated'}</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead>Kind</TableHead>
+              <TableHead>Locale</TableHead>
+              <TableHead>Slug</TableHead>
+              <TableHead>{searching ? 'Match' : 'Updated'}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={6}
               isLoading={searching ? search.isPending : list.isPending}
               error={searching ? search.error : list.error}
               isEmpty={(searching ? hits : entries).length === 0}
               onRetry={() => (searching ? search.refetch() : list.refetch())}
-              emptyMessage={searching ? 'No matches.' : 'Nothing published yet — build and activate a release.'}
+              emptyTitle={searching ? 'No matches' : 'Nothing published yet'}
+              emptyMessage={
+                searching ? 'Nothing in the active release matches this search.' : 'Build and activate a release.'
+              }
             >
               {(searching ? hits : entries).map((entry) => (
-                <TR
+                <TableRow
                   key={`${entry.kind}/${entry.locale}/${entry.slug}`}
                   data-testid="published-row"
                   data-slug={entry.slug}
                 >
-                  <TD className="max-w-[22rem] truncate font-medium">{entry.title || entry.slug}</TD>
-                  <TD className="text-muted-foreground">{entry.kind}</TD>
-                  <TD className="text-muted-foreground">{entry.locale}</TD>
-                  <TD className="font-mono text-xs text-muted-foreground">{entry.slug}</TD>
-                  <TD className="text-muted-foreground">
+                  <TableCell className="max-w-[22rem] truncate font-medium">{entry.title || entry.slug}</TableCell>
+                  <TableCell className="text-muted-foreground">{entry.kind}</TableCell>
+                  <TableCell className="text-muted-foreground">{entry.locale}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{entry.slug}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {searching ? (
                       // The API returns ranked headlines with <mark>; rendering
                       // them as text keeps untrusted content out of the DOM.
@@ -151,8 +185,8 @@ export function PublishedPage() {
                     ) : (
                       formatDate((entry as { updated_at?: string }).updated_at)
                     )}
-                  </TD>
-                  <TD>
+                  </TableCell>
+                  <TableCell>
                     <Button
                       size="sm"
                       variant="outline"
@@ -161,13 +195,13 @@ export function PublishedPage() {
                     >
                       Inspect
                     </Button>
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
-      </div>
+      </Card>
 
       {selected ? <PublishedDetail site={site} target={selected} onClose={() => setSelected(null)} /> : null}
     </Page>
@@ -197,17 +231,29 @@ function PublishedDetail({
   const data = document.data as Record<string, unknown> | undefined
 
   return (
-    <div
-      data-testid="published-dialog"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6"
-      onClick={(event) => event.target === event.currentTarget && onClose()}
+    // Was a hand-rolled `fixed inset-0 z-50 … bg-black/40` overlay: no focus
+    // trap, no Escape, no accessible name, and a black tint written as a colour
+    // literal. The vendored Radix Dialog supplies all four, and the panel keeps
+    // the id — `published-dialog` names the panel rather than the backdrop,
+    // which is the element a browser test wants anyway.
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
     >
-      <Card className="w-full max-w-4xl">
-        <CardHeader>
-          <CardTitle>
+      {/* A reader, not a writer: nothing is in flight, so no busy guard. The
+          heading is the document's own coordinates and there is no second
+          sentence to add, so the description is explicitly declined rather than
+          invented. */}
+      <DialogContent data-testid="published-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>
             {target.kind} · {target.locale} · {target.slug}
-          </CardTitle>
-          <div className="mt-2 flex gap-1">
+          </DialogTitle>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-3 overflow-y-auto">
+          <div className="flex gap-1">
             {(['rendered', 'markdown', 'semantic', 'diagnostics', 'composition'] as const).map((value) => (
               <Button
                 key={value}
@@ -220,18 +266,20 @@ function PublishedDetail({
               </Button>
             ))}
           </div>
-        </CardHeader>
-        <CardContent>
           {document.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <SkeletonText lines={10} label="Loading the published document…" data-testid="published-skeleton" />
           ) : document.error ? (
-            <p className="text-sm text-chart-5">
-              {document.error instanceof Error ? document.error.message : 'Could not load the document'}
-            </p>
+            <Alert variant="destructive" data-testid="published-error">
+              <TriangleAlert />
+              <AlertTitle>This document could not be read</AlertTitle>
+              <AlertDescription>
+                {document.error instanceof Error ? document.error.message : 'Could not load the document'}
+              </AlertDescription>
+            </Alert>
           ) : tab === 'rendered' ? (
-            // The release's charts ship as a <picture> with both palettes, so
-            // they follow the operating system while the surrounding surface
-            // follows the console — the one place the two can disagree.
+                // The release's charts ship as a <picture> with both palettes, so
+                // they follow the operating system while the surrounding surface
+                // follows the console — the one place the two can disagree.
             <ContentHtml
               className="scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border p-4"
               testId="published-rendered"
@@ -251,14 +299,14 @@ function PublishedDetail({
                 : JSON.stringify(tab === 'semantic' ? data?.semantic : data?.diagnostics, null, 2)}
             </pre>
           )}
-          <div className="mt-4 flex justify-end">
-            <Button data-testid="published-close" variant="outline" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+        <DialogFooter>
+          <Button data-testid="published-close" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -316,9 +364,9 @@ export function CompositionsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Compile a draft</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardDescription>
               Nothing is stored: this returns the semantic tree, the chosen pattern and diagnostics only.
-            </p>
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Textarea
@@ -330,13 +378,17 @@ export function CompositionsPage() {
               onChange={(event) => setSource(event.target.value)}
             />
             <div className="mt-3 flex justify-end gap-2">
+              {/* Button has no `isPending`: the sanctioned shape is a Spinner
+                  carrying `data-icon` plus `disabled`, and the label stays the
+                  verb rather than becoming a second progress report. */}
               <Button
                 data-testid="composition-recommend"
                 variant="outline"
                 onClick={() => recommend.mutate()}
                 disabled={!site || !can('content:write') || recommend.isPending}
               >
-                {recommend.isPending ? 'Asking…' : 'Recommend'}
+                {recommend.isPending ? <Spinner data-icon="inline-start" /> : null}
+                Recommend
               </Button>
               <Button
                 data-testid="composition-validate"
@@ -344,14 +396,16 @@ export function CompositionsPage() {
                 onClick={() => validate.mutate()}
                 disabled={!site || !can('content:write') || validate.isPending}
               >
-                {validate.isPending ? 'Checking…' : 'Validate'}
+                {validate.isPending ? <Spinner data-icon="inline-start" /> : null}
+                Validate
               </Button>
               <Button
                 data-testid="composition-compile"
                 onClick={() => compile.mutate()}
                 disabled={!site || !can('content:write') || compile.isPending}
               >
-                {compile.isPending ? 'Compiling…' : 'Compile'}
+                {compile.isPending ? <Spinner data-icon="inline-start" /> : null}
+                Compile
               </Button>
             </div>
 
@@ -362,9 +416,18 @@ export function CompositionsPage() {
             ]
               .filter((entry) => entry.state.error)
               .map((entry) => (
-                <p key={entry.label} data-testid={`composition-error-${entry.label.toLowerCase()}`} className="mt-2 text-sm text-chart-5">
-                  {entry.label}: {entry.state.error instanceof Error ? entry.state.error.message : 'failed'}
-                </p>
+                <Alert
+                  key={entry.label}
+                  variant="destructive"
+                  className="mt-2"
+                  data-testid={`composition-error-${entry.label.toLowerCase()}`}
+                >
+                  <TriangleAlert />
+                  <AlertTitle>{entry.label} failed</AlertTitle>
+                  <AlertDescription>
+                    {entry.state.error instanceof Error ? entry.state.error.message : 'failed'}
+                  </AlertDescription>
+                </Alert>
               ))}
 
             {compiled ? (
@@ -388,10 +451,12 @@ export function CompositionsPage() {
             ) : null}
 
             {diagnostics.length > 0 ? (
-              <ul data-testid="composition-diagnostics" className="mt-3 space-y-1 text-xs">
+              <ul data-testid="composition-diagnostics" className="mt-3 flex flex-col gap-1 text-xs">
                 {diagnostics.map((diagnostic, index) => (
                   <li key={`${diagnostic.code}-${index}`} className="flex gap-2">
-                    <Badge tone={diagnostic.severity === 'error' ? 'danger' : 'warning'}>{diagnostic.severity}</Badge>
+                    <StatusBadge tone={diagnostic.severity === 'error' ? 'danger' : 'warning'}>
+                      {diagnostic.severity}
+                    </StatusBadge>
                     <span className="text-muted-foreground">
                       <span className="font-mono">{diagnostic.code}</span> · {diagnostic.message}
                     </span>
@@ -406,38 +471,59 @@ export function CompositionsPage() {
           <CardHeader>
             <CardTitle>Pattern registry</CardTitle>
             <div className="mt-2 flex flex-wrap gap-2">
+              {/* Each filter's id sits on its trigger — `Select` renders no DOM —
+                  and the sentinel is what stands in for "no filter", which the
+                  handler turns straight back into `undefined`. */}
               {PATTERN_FILTERS.map((filter) => (
                 <Select
                   key={filter.key}
-                  data-testid={`pattern-filter-${filter.key}`}
-                  aria-label={`Filter patterns by ${filter.label.toLowerCase()}`}
-                  value={filters[filter.key] ?? ''}
-                  onChange={(event) =>
-                    setFilters({ ...filters, [filter.key]: event.target.value || undefined } as PatternQuery)
+                  value={filters[filter.key] ?? ANY}
+                  onValueChange={(next) =>
+                    setFilters({ ...filters, [filter.key]: next === ANY ? undefined : next } as PatternQuery)
                   }
                 >
-                  <option value="">All {filter.label.toLowerCase()}</option>
-                  {filter.options.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
+                  <SelectTrigger
+                    className="w-40"
+                    data-testid={`pattern-filter-${filter.key}`}
+                    aria-label={`Filter patterns by ${filter.label.toLowerCase()}`}
+                  >
+                    <SelectValue placeholder={`All ${filter.label.toLowerCase()}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={ANY}>All {filter.label.toLowerCase()}</SelectItem>
+                      {filter.options.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
                 </Select>
               ))}
               <Select
-                data-testid="pattern-filter-canvas"
-                aria-label="Filter patterns by canvas"
-                value={filters.canvas ?? ''}
-                onChange={(event) =>
-                  setFilters({ ...filters, canvas: (event.target.value || undefined) as PatternQuery['canvas'] })
+                value={filters.canvas ?? ANY}
+                onValueChange={(next) =>
+                  setFilters({ ...filters, canvas: next === ANY ? undefined : (next as PatternQuery['canvas']) })
                 }
               >
-                <option value="">All canvases</option>
-                {CANVAS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+                <SelectTrigger
+                  className="w-40"
+                  data-testid="pattern-filter-canvas"
+                  aria-label="Filter patterns by canvas"
+                >
+                  <SelectValue placeholder="All canvases" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value={ANY}>All canvases</SelectItem>
+                    {CANVAS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
               </Select>
               {PATTERN_TEXT_FILTERS.map((filter) => (
                 <Input
@@ -454,46 +540,50 @@ export function CompositionsPage() {
               ))}
             </div>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="px-0">
             <Table>
-              <THead>
-                <TR>
-                  <TH>Pattern</TH>
-                  <TH>Category</TH>
-                  <TH>Scope</TH>
-                  <TH>Status</TH>
-                </TR>
-              </THead>
-              <TBody>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 <TableState
                   columns={4}
                   isLoading={patterns.isPending}
                   error={patterns.error}
                   isEmpty={rows.length === 0}
                   onRetry={() => patterns.refetch()}
-                  emptyMessage="No pattern matches these filters."
+                  emptyTitle="No pattern matches these filters"
+                  emptyMessage="Widen the category, scope, status or canvas above."
                 >
                   {rows.map((descriptor) => (
-                    <TR key={descriptor.id} data-testid="pattern-row" data-pattern={descriptor.id}>
-                      <TD>
-                        <button
-                          type="button"
+                    <TableRow key={descriptor.id} data-testid="pattern-row" data-pattern={descriptor.id}>
+                      <TableCell>
+                        <Button
+                          variant="link"
+                          size="xs"
+                          className="h-auto p-0 font-mono text-xs"
                           data-testid={`pattern-open-${descriptor.id}`}
                           onClick={() => setPattern(descriptor.id)}
-                          className="font-mono text-xs underline decoration-dotted underline-offset-2 hover:text-foreground"
                         >
                           {descriptor.id}
-                        </button>
-                      </TD>
-                      <TD className="text-muted-foreground">{descriptor.category}</TD>
-                      <TD className="text-muted-foreground">{descriptor.scope}</TD>
-                      <TD>
-                        <Badge tone={descriptor.status === 'stable' ? 'success' : 'warning'}>{descriptor.status}</Badge>
-                      </TD>
-                    </TR>
+                        </Button>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{descriptor.category}</TableCell>
+                      <TableCell className="text-muted-foreground">{descriptor.scope}</TableCell>
+                      <TableCell>
+                        <StatusBadge tone={descriptor.status === 'stable' ? 'success' : 'warning'}>
+                          {descriptor.status}
+                        </StatusBadge>
+                      </TableCell>
+                    </TableRow>
                   ))}
                 </TableState>
-              </TBody>
+              </TableBody>
             </Table>
           </CardContent>
         </Card>
@@ -501,49 +591,54 @@ export function CompositionsPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Publishing guides</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardDescription>
               What each authoring construct is for, when to reject it, and which patterns it is compatible with.
-            </p>
+            </CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="px-0">
             <Table>
-              <THead>
-                <TR>
-                  <TH>Guide</TH>
-                  <TH>Kind</TH>
-                  <TH>Summary</TH>
-                  <TH>Status</TH>
-                </TR>
-              </THead>
-              <TBody>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Guide</TableHead>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>Summary</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 <TableState
                   columns={4}
                   isLoading={guides.isPending}
                   error={guides.error}
                   isEmpty={guideRows.length === 0}
                   onRetry={() => guides.refetch()}
+                  emptyTitle="No publishing guides"
+                  emptyMessage="This installation's registry answered an empty list."
                 >
                   {guideRows.map((entry) => (
-                    <TR key={entry.id} data-testid="guide-row" data-guide={entry.id}>
-                      <TD>
-                        <button
-                          type="button"
+                    <TableRow key={entry.id} data-testid="guide-row" data-guide={entry.id}>
+                      <TableCell>
+                        <Button
+                          variant="link"
+                          size="xs"
+                          className="h-auto p-0"
                           data-testid={`guide-open-${entry.id}`}
                           onClick={() => setGuide(entry.id)}
-                          className="underline decoration-dotted underline-offset-2 hover:text-foreground"
                         >
                           {entry.title}
-                        </button>
-                      </TD>
-                      <TD className="text-muted-foreground">{entry.kind}</TD>
-                      <TD className="max-w-[32rem] text-muted-foreground">{entry.summary}</TD>
-                      <TD>
-                        <Badge tone={entry.status === 'stable' ? 'success' : 'warning'}>{entry.status}</Badge>
-                      </TD>
-                    </TR>
+                        </Button>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{entry.kind}</TableCell>
+                      <TableCell className="max-w-[32rem] text-muted-foreground">{entry.summary}</TableCell>
+                      <TableCell>
+                        <StatusBadge tone={entry.status === 'stable' ? 'success' : 'warning'}>
+                          {entry.status}
+                        </StatusBadge>
+                      </TableCell>
+                    </TableRow>
                   ))}
                 </TableState>
-              </TBody>
+              </TableBody>
             </Table>
           </CardContent>
         </Card>
@@ -560,7 +655,7 @@ function Bullets({ label, items }: { label: string; items: readonly string[] | u
   return (
     <div>
       <h4 className="text-xs font-medium text-muted-foreground">{label}</h4>
-      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm">
+      <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4 text-sm">
         {items.map((entry, index) => (
           <li key={`${entry}-${index}`}>{entry}</li>
         ))}
@@ -577,51 +672,77 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
   const data = descriptor.data
 
   return (
-    <Dialog open size="xl" onClose={onClose} data-testid="pattern-dialog" title={pattern}>
-      {descriptor.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : descriptor.error ? (
-        <p className="text-sm text-chart-5">
-          {descriptor.error instanceof Error ? descriptor.error.message : 'Could not load the pattern'}
-        </p>
-      ) : data ? (
-        <div className="space-y-4">
-          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
-            <dt className="text-muted-foreground">Category</dt>
-            <dd>{data.category}</dd>
-            <dt className="text-muted-foreground">Scope</dt>
-            <dd>{data.scope}</dd>
-            <dt className="text-muted-foreground">Status</dt>
-            <dd>{data.status}</dd>
-            <dt className="text-muted-foreground">Version</dt>
-            <dd>{data.version}</dd>
-            <dt className="text-muted-foreground">Accepts</dt>
-            <dd>
-              {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} items
-            </dd>
-            <dt className="text-muted-foreground">Outputs</dt>
-            <dd>{data.capabilities.outputs.join(', ')}</dd>
-            <dt className="text-muted-foreground">Question</dt>
-            <dd>{data.narrative.question}</dd>
-            <dt className="text-muted-foreground">Reader takeaway</dt>
-            <dd>{data.narrative.reader_takeaway}</dd>
-          </dl>
-          <Bullets label="Story arc" items={data.narrative.story_arc} />
-          <Bullets label="Fallbacks" items={data.fallbacks} />
-          <div>
-            <h4 className="text-xs font-medium text-muted-foreground">Slots</h4>
-            <ul className="mt-1 space-y-0.5 text-sm">
-              {data.slots.map((slot) => (
-                <li key={slot.name}>
-                  <span className="font-mono text-xs">{slot.name}</span> · {slot.accepts.join(', ')} · {slot.min}–
-                  {slot.max}
-                  {slot.required ? ' · required' : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
+      {/* A registry reader: nothing is in flight, so no busy guard.
+          `aria-describedby={undefined}` because this dialog has no descriptive
+          sentence — the descriptor itself is the content. Radix warns about a
+          missing Description otherwise, and inventing one to silence a warning
+          would put a sentence on screen that says nothing. */}
+      <DialogContent data-testid="pattern-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{pattern}</DialogTitle>
+        </DialogHeader>
+        <div className="scrollbar-thin overflow-y-auto">
+          {descriptor.isPending ? (
+            <SkeletonFields fields={5} label="Loading the pattern…" data-testid="pattern-skeleton" />
+          ) : descriptor.error ? (
+            <Alert variant="destructive" data-testid="pattern-error">
+              <TriangleAlert />
+              <AlertTitle>This pattern could not be read</AlertTitle>
+              <AlertDescription>
+                {descriptor.error instanceof Error ? descriptor.error.message : 'Could not load the pattern'}
+              </AlertDescription>
+            </Alert>
+          ) : data ? (
+            <div className="flex flex-col gap-4">
+              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
+                <dt className="text-muted-foreground">Category</dt>
+                <dd>{data.category}</dd>
+                <dt className="text-muted-foreground">Scope</dt>
+                <dd>{data.scope}</dd>
+                <dt className="text-muted-foreground">Status</dt>
+                <dd>{data.status}</dd>
+                <dt className="text-muted-foreground">Version</dt>
+                <dd>{data.version}</dd>
+                <dt className="text-muted-foreground">Accepts</dt>
+                <dd>
+                  {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} items
+                </dd>
+                <dt className="text-muted-foreground">Outputs</dt>
+                <dd>{data.capabilities.outputs.join(', ')}</dd>
+                <dt className="text-muted-foreground">Question</dt>
+                <dd>{data.narrative.question}</dd>
+                <dt className="text-muted-foreground">Reader takeaway</dt>
+                <dd>{data.narrative.reader_takeaway}</dd>
+              </dl>
+              <Bullets label="Story arc" items={data.narrative.story_arc} />
+              <Bullets label="Fallbacks" items={data.fallbacks} />
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground">Slots</h4>
+                <ul className="mt-1 flex flex-col gap-0.5 text-sm">
+                  {data.slots.map((slot) => (
+                    <li key={slot.name}>
+                      <span className="font-mono text-xs">{slot.name}</span> · {slot.accepts.join(', ')} · {slot.min}–
+                      {slot.max}
+                      {slot.required ? ' · required' : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        <DialogFooter>
+          <Button variant="outline" size="sm" data-testid="pattern-close" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -631,31 +752,54 @@ function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void })
   const data = detail.data
 
   return (
-    <Dialog open size="xl" onClose={onClose} data-testid="guide-dialog" title={data?.title ?? guide}>
-      {detail.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : detail.error ? (
-        <p className="text-sm text-chart-5">
-          {detail.error instanceof Error ? detail.error.message : 'Could not load the guide'}
-        </p>
-      ) : data ? (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">{data.summary}</p>
-          <Bullets label="Use when" items={data.selection.use_when} />
-          <Bullets label="Reject when" items={data.selection.reject_when} />
-          <Bullets label="Required input" items={data.input_contract.required} />
-          <Bullets label="Optional input" items={data.input_contract.optional} />
-          <Bullets label="Constraints" items={data.input_contract.constraints} />
-          <Bullets label="Guidance" items={data.authoring.guidance} />
-          <div>
-            <h4 className="text-xs font-medium text-muted-foreground">Syntax</h4>
-            <pre className="scrollbar-thin mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
-              {data.authoring.syntax}
-            </pre>
-          </div>
-          <Bullets label="Compatible patterns" items={data.compatible_patterns} />
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
+      {/* Same as the pattern viewer: a reader, and the guide's own summary is
+          the first thing in the body, so there is no separate description. */}
+      <DialogContent data-testid="guide-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{data?.title ?? guide}</DialogTitle>
+        </DialogHeader>
+        <div className="scrollbar-thin overflow-y-auto">
+          {detail.isPending ? (
+            <SkeletonFields fields={5} label="Loading the guide…" data-testid="guide-skeleton" />
+          ) : detail.error ? (
+            <Alert variant="destructive" data-testid="guide-error">
+              <TriangleAlert />
+              <AlertTitle>This guide could not be read</AlertTitle>
+              <AlertDescription>
+                {detail.error instanceof Error ? detail.error.message : 'Could not load the guide'}
+              </AlertDescription>
+            </Alert>
+          ) : data ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">{data.summary}</p>
+              <Bullets label="Use when" items={data.selection.use_when} />
+              <Bullets label="Reject when" items={data.selection.reject_when} />
+              <Bullets label="Required input" items={data.input_contract.required} />
+              <Bullets label="Optional input" items={data.input_contract.optional} />
+              <Bullets label="Constraints" items={data.input_contract.constraints} />
+              <Bullets label="Guidance" items={data.authoring.guidance} />
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground">Syntax</h4>
+                <pre className="scrollbar-thin mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
+                  {data.authoring.syntax}
+                </pre>
+              </div>
+              <Bullets label="Compatible patterns" items={data.compatible_patterns} />
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        <DialogFooter>
+          <Button variant="outline" size="sm" data-testid="guide-close" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -759,7 +903,8 @@ export function DecksPage() {
                 onClick={() => validate.mutate()}
                 disabled={!site || validate.isPending}
               >
-                {validate.isPending ? 'Checking…' : 'Validate'}
+                {validate.isPending ? <Spinner data-icon="inline-start" /> : null}
+                Validate
               </Button>
               <Confirm
                 title="Render this deck?"
@@ -780,30 +925,41 @@ export function DecksPage() {
             </div>
 
             {validate.error ? (
-              <p data-testid="deck-validate-error" className="mt-2 text-sm text-chart-5">
-                {validate.error instanceof Error ? validate.error.message : 'Validation failed'}
-              </p>
+              <Alert variant="destructive" className="mt-2" data-testid="deck-validate-error">
+                <TriangleAlert />
+                <AlertTitle>Validation failed</AlertTitle>
+                <AlertDescription>
+                  {validate.error instanceof Error ? validate.error.message : 'Validation failed'}
+                </AlertDescription>
+              </Alert>
             ) : null}
             {diagnostics.length ? (
-              <ul data-testid="deck-diagnostics" className="mt-3 space-y-1 text-xs">
+              <ul data-testid="deck-diagnostics" className="mt-3 flex flex-col gap-1 text-xs">
                 {diagnostics.map((diagnostic, index) => (
                   <li key={index} className="flex gap-2">
-                    <Badge tone={diagnostic.severity === 'error' ? 'danger' : 'warning'}>{diagnostic.severity}</Badge>
+                    <StatusBadge tone={diagnostic.severity === 'error' ? 'danger' : 'warning'}>
+                      {diagnostic.severity}
+                    </StatusBadge>
                     <span className="text-muted-foreground">{diagnostic.message}</span>
                   </li>
                 ))}
               </ul>
             ) : validate.isSuccess ? (
-              <p data-testid="deck-diagnostics-clean" className="mt-3 text-xs text-chart-2">
-                No diagnostics — the deck compiles as written.
-              </p>
+              // A clean run is a callout too, and Alert is where the console says
+              // something out loud — a green chart series was doing the job of a
+              // component, in a colour nobody had named "good".
+              <Alert className="mt-3" data-testid="deck-diagnostics-clean">
+                <CircleCheckBig />
+                <AlertTitle>No diagnostics</AlertTitle>
+                <AlertDescription>The deck compiles as written.</AlertDescription>
+              </Alert>
             ) : null}
 
             {job ? (
               <div data-testid="deck-job" className="mt-3 flex items-center gap-3 text-sm text-muted-foreground">
                 <span>
                   Job {job.slice(0, 8)} · {jobStatus.data?.status ?? 'queued'}
-                  {jobStatus.data?.error ? <span className="text-chart-5"> · {jobStatus.data.error}</span> : null}
+                  {jobStatus.data?.error ? <span className="text-destructive"> · {jobStatus.data.error}</span> : null}
                 </span>
                 {/*
                   The result was reachable only by calling the API by hand. A
@@ -829,14 +985,18 @@ export function DecksPage() {
         <Card>
           <CardHeader>
             <CardTitle>Themes and templates</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardDescription>
               Choosing one writes it into the deck's frontmatter above — the only place it takes effect.
-            </p>
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Theme</Label>
-              <div className="mt-1 flex flex-wrap gap-2">
+          <CardContent>
+            {/* Two labelled groups of controls, so a FieldSet each with a
+                FieldLegend: a bare `Label` with no `htmlFor` and no control to
+                wrap named nothing, which is what it was doing here. */}
+            <FieldGroup>
+            <FieldSet>
+              <FieldLegend variant="label">Theme</FieldLegend>
+              <div className="flex flex-wrap gap-2">
                 {(themes.data?.themes ?? []).map((name) => (
                   <Button
                     key={name}
@@ -850,10 +1010,10 @@ export function DecksPage() {
                   </Button>
                 ))}
               </div>
-            </div>
-            <div>
-              <Label>Template</Label>
-              <div className="mt-1 flex flex-wrap gap-2">
+            </FieldSet>
+            <FieldSet>
+              <FieldLegend variant="label">Template</FieldLegend>
+              <div className="flex flex-wrap gap-2">
                 {(templates.data?.ids ?? []).map((id) => (
                   <Button
                     key={id}
@@ -867,10 +1027,15 @@ export function DecksPage() {
                   </Button>
                 ))}
               </div>
-            </div>
+            </FieldSet>
             {themes.error || templates.error ? (
-              <p className="text-sm text-chart-5">Could not load the deck registry.</p>
+              <Alert variant="destructive" data-testid="deck-registry-error">
+                <TriangleAlert />
+                <AlertTitle>The deck registry could not be read</AlertTitle>
+                <AlertDescription>No themes or templates can be offered until it answers.</AlertDescription>
+              </Alert>
             ) : null}
+            </FieldGroup>
           </CardContent>
         </Card>
       </div>
@@ -974,16 +1139,40 @@ export function AudioPage() {
           {budget ? (
             <div className="max-w-md">
               <Progress
-                data-testid="audio-budget"
-                label="Characters used this month"
+                data-testid="audio-budget-bar"
+                // Named rather than captioned: the sentence beside the bar is the
+                // numbers, and a reader who lands on the bar itself would
+                // otherwise be given a percentage with no noun on it.
+                aria-label="Characters used this month"
+                // The API's two numbers, unaltered: the rounding and the clamp a
+                // spent budget needs happen once, in progress-value.ts, which has
+                // a unit test by name.
                 value={budget.used}
                 max={budget.budget}
                 tone={budget.tone}
                 // The numbers in words as well as a bar: a percentage alone does
                 // not answer "can this backfill still run", and the cap below is
                 // entered in characters.
-                valueLabel={`${budget.used.toLocaleString()} of ${budget.budget.toLocaleString()} · ${budget.remaining.toLocaleString()} left`}
+                valueLabel={
+                  <span data-testid="audio-budget-value">
+                    {budget.used.toLocaleString()} of {budget.budget.toLocaleString()} characters ·{' '}
+                    {budget.remaining.toLocaleString()} left
+                  </span>
+                }
               />
+              {/* A tint is not a message: an operator who cannot separate amber
+                  from accent still has to be told the budget is nearly gone.
+                  When it escalates is audio-budget.ts's decision, the same one
+                  the bar takes its tone from. */}
+              {budget.tone === 'accent' ? null : (
+                <Badge
+                  data-testid="audio-budget-tone"
+                  variant={budget.tone === 'danger' ? 'destructive' : 'outline'}
+                  className="mt-1.5 w-fit"
+                >
+                  {budget.tone === 'danger' ? 'Budget spent' : 'Budget nearly spent'}
+                </Badge>
+              )}
               {budget.spent ? (
                 // Precisely what a spent budget does, because the two paths
                 // differ: publishing a post checks the month (src/audio.mjs
@@ -991,11 +1180,14 @@ export function AudioPage() {
                 // budget), while a backfill's cap is per run and counts only its
                 // own characters. Saying "nothing will render" would be wrong and
                 // would be discovered as a surprise bill.
-                <p data-testid="audio-budget-spent" className="mt-1.5 text-xs text-chart-5">
-                  The month's characters are spent, so publishing a post no longer queues narration; it resets with the
-                  next calendar month (UTC). A backfill still runs — its cap applies to that one run, not to what is
-                  left of the month.
-                </p>
+                <Alert variant="destructive" className="mt-1.5" data-testid="audio-budget-spent">
+                  <TriangleAlert />
+                  <AlertTitle>The month's characters are spent</AlertTitle>
+                  <AlertDescription>
+                    Publishing a post no longer queues narration; it resets with the next calendar month (UTC). A
+                    backfill still runs — its cap applies to that one run, not to what is left of the month.
+                  </AlertDescription>
+                </Alert>
               ) : null}
             </div>
           ) : (
@@ -1045,66 +1237,86 @@ export function AudioPage() {
 
       <div className="mb-3 flex flex-wrap gap-2">
         <Select
-          data-testid="audio-status-filter"
-          aria-label="Filter audio jobs by status"
-          value={status}
-          onChange={(event) => setStatus(event.target.value as AudioJobStatus | '')}
+          value={status || ANY}
+          onValueChange={(next) => setStatus(next === ANY ? '' : (next as AudioJobStatus))}
         >
-          <option value="">All statuses</option>
-          {AUDIO_JOB_STATUS.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
+          <SelectTrigger className="w-44" data-testid="audio-status-filter" aria-label="Filter audio jobs by status">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={ANY}>All statuses</SelectItem>
+              {AUDIO_JOB_STATUS.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
-        <Select
-          data-testid="audio-limit-filter"
-          aria-label="Number of audio jobs to load"
-          value={String(limit)}
-          onChange={(event) => setLimit(Number(event.target.value))}
-        >
-          {AUDIO_LIMITS.map((value) => (
-            <option key={value} value={value}>
-              Last {value}
-            </option>
-          ))}
+        <Select value={String(limit)} onValueChange={(next) => setLimit(Number(next))}>
+          <SelectTrigger className="w-32" data-testid="audio-limit-filter" aria-label="Number of audio jobs to load">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {AUDIO_LIMITS.map((value) => (
+                <SelectItem key={value} value={String(value)}>
+                  Last {value}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface">
+      <Card className="py-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Title</TH>
-              <TH>Status</TH>
-              <TH>Characters</TH>
-              <TH>Attempts</TH>
-              <TH>Created</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Characters</TableHead>
+              <TableHead>Attempts</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={6}
               isLoading={jobs.isPending}
               error={jobs.error}
               isEmpty={rows.length === 0}
               onRetry={() => jobs.refetch()}
-              emptyMessage={status ? `No ${status} jobs.` : 'No audio jobs. Enable settings.audio for this site to start.'}
+              emptyTitle={status ? `No ${status} jobs` : 'No audio jobs'}
+              emptyMessage={
+                status
+                  ? 'Another status may have them — the filter is above.'
+                  : 'Enable settings.audio for this site to start.'
+              }
             >
               {rows.map((job) => (
-                <TR key={job.id} data-testid="audio-job-row" data-job={job.id}>
-                  <TD className="max-w-[18rem] truncate">{job.title || job.slug || job.item_id.slice(0, 12)}</TD>
-                  <TD>
-                    <Badge tone={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}>
+                <TableRow key={job.id} data-testid="audio-job-row" data-job={job.id}>
+                  <TableCell className="max-w-[18rem] truncate">
+                    {job.title || job.slug || job.item_id.slice(0, 12)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge
+                      tone={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}
+                    >
                       {job.status}
-                    </Badge>
-                    {job.error ? <span className="ml-2 text-xs text-chart-5">{job.error}</span> : null}
-                  </TD>
-                  <TD className="tabular-nums text-muted-foreground">{job.chars?.toLocaleString() ?? '—'}</TD>
-                  <TD className="tabular-nums text-muted-foreground">{job.attempts}</TD>
-                  <TD className="whitespace-nowrap text-muted-foreground">{formatDate(job.created_at)}</TD>
-                  <TD>
+                    </StatusBadge>
+                    {job.error ? <span className="ml-2 text-xs text-destructive">{job.error}</span> : null}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {job.chars?.toLocaleString() ?? '—'}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground">{job.attempts}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatDate(job.created_at)}
+                  </TableCell>
+                  <TableCell>
                     {can('release:write') && job.status === 'failed' ? (
                       <Confirm
                         title="Retry this job?"
@@ -1127,13 +1339,13 @@ export function AudioPage() {
                         )}
                       </Confirm>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
-      </div>
+      </Card>
     </Page>
   )
 }
@@ -1154,14 +1366,18 @@ function StatusTile({
   testId: string
 }) {
   return (
-    <Card data-testid={testId}>
-      <CardContent className="p-5">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className="mt-1 flex items-center gap-2 text-lg font-semibold">
-          <Badge tone={tone}>{value}</Badge>
-        </p>
-        {detail ? <div className="mt-2 text-sm text-muted-foreground">{detail}</div> : null}
-      </CardContent>
+    <Card size="sm" data-testid={testId}>
+      <CardHeader>
+        <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
+        <CardAction>
+          <StatusBadge tone={tone}>{value}</StatusBadge>
+        </CardAction>
+      </CardHeader>
+      {detail ? (
+        <CardContent>
+          <CardDescription>{detail}</CardDescription>
+        </CardContent>
+      ) : null}
     </Card>
   )
 }
@@ -1239,9 +1455,9 @@ export function SystemPage() {
         <Card className="mt-4">
           <CardHeader>
             <CardTitle>Maintenance</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardDescription>
               Both of these normally run on a schedule. Trigger them by hand only when you know why.
-            </p>
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex gap-2">
             <Confirm
@@ -1280,12 +1496,14 @@ export function SystemPage() {
         <Card className="mt-4">
           <CardHeader>
             <CardTitle>Field gallery</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardDescription>
               Every form field the console has, with live state. Not shown in a production build.
-            </p>
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+            <Suspense
+              fallback={<SkeletonFields fields={6} label="Loading the field gallery…" data-testid="gallery-skeleton" />}
+            >
               <FieldGallery />
             </Suspense>
           </CardContent>

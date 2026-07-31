@@ -1,7 +1,9 @@
-import { AlertTriangle, Check } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Button } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
+import { StatusBadge } from './status-badge'
 import type { SectionStatus, SectionTone } from './use-form'
 
 /**
@@ -50,7 +52,11 @@ export function SaveBar({
       <Button variant="outline" size="sm" data-testid={`${testId}-reset`} disabled={!dirty || isSaving} onClick={onReset}>
         Discard
       </Button>
+      {/* `Button` has no `isPending`: the spinner is composed, `data-icon` earns
+          it the leading padding, and `disabled` is what actually stops a second
+          submit. */}
       <Button size="sm" data-testid={`${testId}-save`} disabled={!canSave} onClick={onSave}>
+        {isSaving ? <Spinner data-icon="inline-start" /> : null}
         {isSaving ? 'Saving…' : 'Save'}
       </Button>
     </div>
@@ -68,25 +74,20 @@ export function UnsavedPill({
   'data-testid'?: string
 }) {
   if (!dirty) return null
+  // `StatusBadge` already draws the warning icon for this tone, so nothing here
+  // names a colour or a size.
   return (
-    <span
-      data-testid={testId}
-      className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-chart-3/30 bg-chart-3/15 px-2 py-0.5 text-xs text-chart-3',
-        className,
-      )}
-    >
-      <AlertTriangle className="h-3 w-3" />
+    <StatusBadge tone="warning" data-testid={testId} className={className}>
       Unsaved
-    </span>
+    </StatusBadge>
   )
 }
 
 const toneDot: Record<SectionTone, string> = {
   neutral: 'bg-muted-foreground/40',
-  ok: 'bg-chart-2',
-  warning: 'bg-chart-3',
-  error: 'bg-chart-5',
+  ok: 'bg-success',
+  warning: 'bg-warning',
+  error: 'bg-destructive',
 }
 
 /**
@@ -148,9 +149,9 @@ export function SectionNav<T extends string>({
               className={cn(
                 'truncate text-xs',
                 state.tone === 'error'
-                  ? 'text-chart-5'
+                  ? 'text-destructive'
                   : state.tone === 'warning'
-                    ? 'text-chart-3'
+                    ? 'text-warning'
                     : 'text-muted-foreground',
               )}
             >
@@ -166,9 +167,9 @@ export function SectionNav<T extends string>({
 /** The inline "saved" acknowledgement, for the moment after a successful write. */
 export function SavedNote({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-1 text-xs text-chart-2', className)}>
-      <Check className="h-3 w-3" />
+    <StatusBadge tone="success" className={className}>
+      <Check data-icon="inline-start" />
       Saved
-    </span>
+    </StatusBadge>
   )
 }

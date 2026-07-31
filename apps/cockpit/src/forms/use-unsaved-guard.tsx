@@ -1,6 +1,14 @@
 import { useBlocker } from '@tanstack/react-router'
-import { Dialog } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
 
 /**
  * Stops a navigation away from unsaved work, and asks rather than decides.
@@ -44,14 +52,32 @@ export function useUnsavedGuard({
     blocker.status === 'blocked' ? (
       <Dialog
         open
-        size="sm"
-        data-testid="ck-unsaved-guard"
-        title="Unsaved changes"
-        description="Leaving now discards everything changed on this page since the last save."
-        onClose={blocker.reset}
-        busy={isSaving}
-        footer={
-          <>
+        onOpenChange={(next) => {
+          // A save that is still in the air is not a save that can be taken
+          // back, and the navigation it was going to unblock is not settled
+          // either: the only thing that ends this dialog then is the answer.
+          if (isSaving) return
+          if (!next) blocker.reset()
+        }}
+      >
+        <DialogContent
+          data-testid="ck-unsaved-guard"
+          className="sm:max-w-md"
+          closeDisabled={isSaving}
+          onEscapeKeyDown={(event) => {
+            if (isSaving) event.preventDefault()
+          }}
+          onPointerDownOutside={(event) => {
+            if (isSaving) event.preventDefault()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Unsaved changes</DialogTitle>
+            <DialogDescription>
+              Leaving now discards everything changed on this page since the last save.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
             <Button variant="outline" size="sm" data-testid="ck-unsaved-stay" disabled={isSaving} onClick={blocker.reset}>
               Stay
             </Button>
@@ -70,23 +96,34 @@ export function useUnsavedGuard({
                 data-testid="ck-unsaved-save"
                 disabled={isSaving}
                 onClick={async () => {
+                  // `false` is a failed save, and it is the only way either caller
+                  // reports one: use-form's save() returns false on a validation
+                  // error and on a rejected request, and site-settings' attemptSave()
+                  // does the same. Neither throws. So a try/catch alone saw every
+                  // failure as a success and called proceed() — navigating away and
+                  // discarding the very edits the operator had just asked to keep,
+                  // in the two most write-heavy pages in the console.
+                  //
+                  // Anything other than `false` is success, so a caller that resolves
+                  // with nothing still works; only an explicit refusal keeps us here.
+                  let saved: unknown = false
                   try {
-                    await onSave()
+                    saved = await onSave()
                   } catch {
-                    // The save failed and said so through its own error path.
-                    // Staying put is the only safe outcome: proceeding here
-                    // would discard the very edits the operator asked to keep.
+                    // A thrown failure reported itself through its own error path.
                     return
                   }
+                  if (saved === false) return
                   blocker.proceed()
                 }}
               >
+                {isSaving ? <Spinner data-icon="inline-start" /> : null}
                 {isSaving ? 'Saving…' : 'Save and leave'}
               </Button>
             ) : null}
-          </>
-        }
-      />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     ) : null
 
   return { prompt, isBlocked: blocker.status === 'blocked' }

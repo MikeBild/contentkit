@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Chip } from '@/components/ui/chip'
 import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox'
-import { Input } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/input'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
 import type { Choice } from './choice'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 const BCP47 = /^[a-z]{2}(?:-[a-z]{2})?$/i
@@ -89,21 +91,45 @@ export function TagListField({
         <div
           className={cn(
             'flex min-h-9 w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 focus-within:ring-2 focus-within:ring-accent',
-            invalidBorder(error),
           )}
         >
-          {value.map((entry, index) => (
-            <Chip
-              key={`${entry}-${index}`}
-              data-testid={`${control['data-testid']}-chip-${index}`}
-              invalid={Boolean(problems.get(index))}
-              title={problems.get(index)}
-              removeLabel={`Remove ${entry}`}
-              onRemove={control.disabled ? undefined : () => onChange(value.filter((_, at) => at !== index))}
-            >
-              {entry}
-            </Chip>
-          ))}
+          {value.map((entry, index) => {
+            const problem = problems.get(index)
+            const chip = (
+              <Chip
+                key={`${entry}-${index}`}
+                data-testid={`${control['data-testid']}-chip-${index}`}
+                invalid={Boolean(problem)}
+                removeLabel={`Remove ${entry}`}
+                onRemove={control.disabled ? undefined : () => onChange(value.filter((_, at) => at !== index))}
+              >
+                {entry}
+              </Chip>
+            )
+            // Which chip is wrong is `aria-invalid` and the destructive variant;
+            // *why* it is wrong used to be a native `title` on the chip, and
+            // `Chip` spreads its props onto the Badge span, so it was a native
+            // tooltip with a capital letter in front of it. The wrapper is the
+            // trigger, and it is a tab stop, because a chip is not one.
+            return problem ? (
+              <TooltipProvider key={`${entry}-${index}`}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      className="max-w-full rounded focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      data-testid={`${control['data-testid']}-chip-${index}-why`}
+                    >
+                      {chip}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{problem}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              chip
+            )
+          })}
           <Input
             {...control}
             value={draft}
@@ -156,29 +182,31 @@ export function EnumMultiSelect<T extends string>({
     <FieldShell {...shell}>
       {(control) => (
         <div className="flex flex-col gap-2">
+          {/* Two mutually exclusive readings of the same list, which is a
+              ToggleGroup — the loop of `role="radio"` buttons with a hand-rolled
+              `aria-checked` and a hand-rolled active border was the same control
+              built by hand, roving focus and all. */}
           {allEmptyMeans ? (
-            <div role="radiogroup" aria-labelledby={control.id} className="grid gap-2 sm:grid-cols-2">
-              {[
-                { key: 'all', label: allEmptyMeans.allLabel, active: all },
-                { key: 'some', label: allEmptyMeans.someLabel, active: !all },
-              ].map((card) => (
-                <button
-                  key={card.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={card.active}
-                  disabled={control.disabled}
-                  data-testid={`${control['data-testid']}-${card.key}`}
-                  onClick={() => onChange(card.key === 'all' ? [] : value.length ? [...value] : [options[0]!.value])}
-                  className={cn(
-                    'rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                    card.active ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
-                  )}
-                >
-                  {card.label}
-                </button>
-              ))}
-            </div>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              spacing={0}
+              aria-labelledby={control.id}
+              disabled={control.disabled}
+              value={all ? 'all' : 'some'}
+              onValueChange={(next) => {
+                if (!next) return
+                onChange(next === 'all' ? [] : value.length ? [...value] : [options[0]!.value])
+              }}
+            >
+              <ToggleGroupItem value="all" data-testid={`${control['data-testid']}-all`}>
+                {allEmptyMeans.allLabel}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="some" data-testid={`${control['data-testid']}-some`}>
+                {allEmptyMeans.someLabel}
+              </ToggleGroupItem>
+            </ToggleGroup>
           ) : null}
           {allEmptyMeans && all ? null : (
             <MultiCombobox

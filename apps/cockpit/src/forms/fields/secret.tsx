@@ -1,9 +1,10 @@
 import { Eye, EyeOff } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Button, Input } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 /**
@@ -44,19 +45,19 @@ export function SecretField({
               autoComplete="new-password"
               spellCheck={false}
               value={value}
-              className={cn('font-mono', invalidBorder(error))}
+              className="font-mono"
               onChange={(event) => onChange(event.target.value)}
             />
             <Button
               type="button"
               variant="outline"
-              size="icon"
+              size="icon-sm"
               aria-label={revealed ? 'Hide' : 'Reveal'}
               data-testid={`${control['data-testid']}-reveal`}
               disabled={control.disabled}
               onClick={() => setRevealed((state) => !state)}
             >
-              {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {revealed ? <EyeOff /> : <Eye />}
             </Button>
             {generate ? (
               <Button
@@ -74,7 +75,7 @@ export function SecretField({
           {value ? (
             <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn('h-full transition-all', strength < 0.5 ? 'bg-chart-3' : 'bg-chart-2')}
+                className={cn('h-full transition-all', strength < 0.5 ? 'bg-warning' : 'bg-success')}
                 style={{ width: `${Math.round(strength * 100)}%` }}
               />
             </div>
@@ -112,7 +113,7 @@ export function RevealOnce({
   return (
     <div
       data-testid={testId}
-      className={cn('rounded-xl border border-chart-3/30 bg-chart-3/10 p-4', className)}
+      className={cn('rounded-xl border border-warning/30 bg-warning/10 p-4', className)}
       // The one-time value is important enough to be announced, not merely shown.
       role="alert"
     >

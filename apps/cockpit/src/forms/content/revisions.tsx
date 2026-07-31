@@ -1,8 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck, type Revision } from '@/api/ck'
-import { Badge, Button, TBody, TD, TH, THead, TR, Table, TableState } from '@/components/ui/primitives'
-import { Dialog } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -34,17 +44,17 @@ export function Revisions({
   return (
     <div data-testid={testId} className="rounded-xl border border-border bg-surface">
       <Table>
-        <THead>
-          <TR>
-            <TH>Status</TH>
-            <TH>Slug</TH>
-            <TH>Created</TH>
-            <TH>Published</TH>
-            <TH>Source hash</TH>
-            <TH />
-          </TR>
-        </THead>
-        <TBody>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Status</TableHead>
+            <TableHead>Slug</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Published</TableHead>
+            <TableHead>Source hash</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           <TableState
             columns={6}
             isLoading={query.isPending}
@@ -54,15 +64,15 @@ export function Revisions({
             emptyMessage="No revisions yet."
           >
             {rows.map((revision, index) => (
-              <TR key={revision.id} data-testid={`${testId}-row`} data-revision={revision.id}>
-                <TD>
-                  <Badge tone={revision.status === 'published' ? 'success' : 'neutral'}>{revision.status}</Badge>
-                </TD>
-                <TD className="text-muted-foreground">{revision.slug}</TD>
-                <TD className="text-muted-foreground">{formatDate(revision.created_at)}</TD>
-                <TD className="text-muted-foreground">{formatDate(revision.published_at)}</TD>
-                <TD className="font-mono text-xs text-muted-foreground">{revision.source_sha256?.slice(0, 12)}</TD>
-                <TD className="flex gap-2">
+              <TableRow key={revision.id} data-testid={`${testId}-row`} data-revision={revision.id}>
+                <TableCell>
+                  <StatusBadge tone={revision.status === 'published' ? 'success' : 'neutral'}>{revision.status}</StatusBadge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{revision.slug}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(revision.created_at)}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(revision.published_at)}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{revision.source_sha256?.slice(0, 12)}</TableCell>
+                <TableCell className="flex gap-2">
                   <Button
                     size="sm"
                     variant="outline"
@@ -81,32 +91,46 @@ export function Revisions({
                   >
                     {index === 0 ? 'Open' : 'Restore into the editor'}
                   </Button>
-                </TD>
-              </TR>
+                </TableCell>
+              </TableRow>
             ))}
           </TableState>
-        </TBody>
+        </TableBody>
       </Table>
 
       {compared ? (
         <Dialog
           open
-          size="xl"
-          data-testid={`${testId}-diff`}
-          title="What changed"
-          description={
-            compared.older
-              ? `Against the revision from ${formatDate(compared.older.created_at)}.`
-              : 'This is the first revision, so everything in it is new.'
-          }
-          onClose={() => setCompared(null)}
-          footer={
-            <Button size="sm" variant="outline" data-testid={`${testId}-diff-close`} onClick={() => setCompared(null)}>
-              Close
-            </Button>
-          }
+          onOpenChange={(next) => {
+            if (!next) setCompared(null)
+          }}
         >
-          <DiffList before={compared.older?.markdown ?? ''} after={compared.newer.markdown ?? ''} />
+          {/* Nothing is in flight here — this reads two revisions that are
+              already stored — so there is no busy guard and Escape, the
+              backdrop and the X all close it. */}
+          <DialogContent data-testid={`${testId}-diff`} className="sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>What changed</DialogTitle>
+              <DialogDescription>
+                {compared.older
+                  ? `Against the revision from ${formatDate(compared.older.created_at)}.`
+                  : 'This is the first revision, so everything in it is new.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="scrollbar-thin overflow-y-auto">
+              <DiffList before={compared.older?.markdown ?? ''} after={compared.newer.markdown ?? ''} />
+            </div>
+            <DialogFooter>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid={`${testId}-diff-close`}
+                onClick={() => setCompared(null)}
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
       ) : null}
     </div>
@@ -134,7 +158,7 @@ export function DiffList({ before, after }: { before: string; after: string }) {
           className={cn(
             'flex gap-2 whitespace-pre-wrap break-words px-2 py-0.5',
             row.type === 'add' && 'bg-chart-2/10 text-chart-2',
-            row.type === 'remove' && 'bg-chart-5/10 text-chart-5',
+            row.type === 'remove' && 'bg-destructive/10 text-destructive',
             row.type === 'context' && 'text-muted-foreground',
           )}
         >

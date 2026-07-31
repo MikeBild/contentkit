@@ -3,10 +3,14 @@ import {
   Activity,
   BookOpen,
   Boxes,
+  ChevronDown,
+  ChevronsUpDown,
   FileText,
   Globe,
   KeyRound,
   LayoutDashboard,
+  Library,
+  LogOut,
   MessagesSquare,
   Moon,
   Presentation,
@@ -19,12 +23,48 @@ import {
   Volume2,
   Webhook,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { ck } from '@/api/ck'
 import { AppLink } from '@/components/app-link'
-import { Breadcrumb, type Crumb } from '@/components/ui/breadcrumb'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { CommandPalette } from '@/components/ui/command-palette'
-import { Button, Select } from '@/components/ui/primitives'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSkeleton,
+  SidebarProvider,
+  SidebarRail,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
 import { useTheme } from '@/lib/theme'
@@ -52,8 +92,13 @@ import { cn } from '@/lib/utils'
  *               which is one site's record — and 'installation' where it is
  *               not. `GET/POST /v1/sites` is the registry: a list, and a
  *               creation that names no existing site.
+ * - `group`     the block of the sidebar it is drawn in (GROUPS below). Two
+ *               headings answered "whose endpoints?" and nothing answered "what
+ *               am I doing?", so the site's own pages are grouped by the job
+ *               they belong to. It is presentation, and the navigation test
+ *               checks it against `context` rather than trusting it.
  * - `selection` what the site switcher actually does to this page, checked
- *               against the page's own source: see SELECTION below.
+ *               against the page's own source: see SELECTION_NOTE below.
  * - `api`       the documented paths the page talks to, as exact paths or a
  *               `/*` prefix. The navigation test does not take this list on
  *               trust: it derives the paths each page really reaches from the
@@ -92,6 +137,7 @@ const NAV = [
     icon: LayoutDashboard,
     scope: 'stats:read',
     context: 'site',
+    group: 'overview',
     selection: 'governs',
     // The release chain is derived from the two lists that answer it; both are
     // site-parameterised, so the page stays in the site context.
@@ -99,11 +145,15 @@ const NAV = [
   },
   {
     to: '/content',
-    label: 'Content',
+    label: 'Documents',
     icon: FileText,
     scope: 'content:read',
     context: 'site',
+    group: 'content',
     selection: 'governs',
+    // 'Documents' rather than 'Content': the block above it is called Content,
+    // and a page named after its own heading says nothing. The route, the scope
+    // and the page are unchanged.
     // /v1/content/{item}… carries no {site}, but an item id resolves to exactly
     // one site and the list that produced it is site-scoped.
     api: [
@@ -127,6 +177,7 @@ const NAV = [
     icon: Search,
     scope: 'content:read',
     context: 'site',
+    group: 'content',
     selection: 'governs',
     api: ['/v1/sites/{site}/published', '/v1/sites/{site}/published/*', '/v1/sites/{site}/search'],
   },
@@ -136,6 +187,7 @@ const NAV = [
     icon: Boxes,
     scope: 'content:read',
     context: 'site',
+    group: 'content',
     selection: 'governs',
     api: [
       '/v1/sites/{site}/compositions/*',
@@ -151,6 +203,7 @@ const NAV = [
     icon: Presentation,
     scope: 'content:read',
     context: 'site',
+    group: 'content',
     selection: 'governs',
     // Not /v1/sites/{site}/decks/plan: the Cockpit compiles and validates, and
     // nothing in it calls plan. A `decks/*` prefix here would have claimed it.
@@ -168,6 +221,7 @@ const NAV = [
     icon: Rocket,
     scope: 'content:read',
     context: 'site',
+    group: 'deliver',
     selection: 'governs',
     api: [
       '/v1/sites/{site}/releases',
@@ -183,8 +237,9 @@ const NAV = [
     icon: Volume2,
     scope: 'content:read',
     context: 'site',
+    group: 'deliver',
     selection: 'governs',
-    // The per-item audio endpoints belong to Content, which is where a single
+    // The per-item audio endpoints belong to Documents, which is where a single
     // item's narration is created and removed; this page is the site's queue.
     api: ['/v1/sites/{site}/audio/*'],
   },
@@ -194,6 +249,7 @@ const NAV = [
     icon: ShieldCheck,
     scope: 'access:admin',
     context: 'site',
+    group: 'access',
     selection: 'governs',
     // The rebuild banner builds a release, because access rules are snapshotted
     // into one and nothing changes for a reader until then.
@@ -205,6 +261,7 @@ const NAV = [
     icon: Webhook,
     scope: 'webhook:admin',
     context: 'site',
+    group: 'access',
     selection: 'governs',
     api: [
       '/v1/sites/{site}/webhooks',
@@ -219,6 +276,7 @@ const NAV = [
     icon: SlidersHorizontal,
     scope: 'site:admin',
     context: 'site',
+    group: 'settings',
     // GET and PATCH /v1/sites/{site} for the one slug the switcher names. It is
     // the same path the registry deletes through, which is exactly why the two
     // are separate pages: here the switcher decides the target, there the row
@@ -231,9 +289,10 @@ const NAV = [
   {
     to: '/sites',
     label: 'Sites',
-    icon: Globe,
+    icon: Library,
     scope: 'site:admin',
     context: 'installation',
+    group: 'installation',
     // The registry: what exists, one creation, one deletion per row. The
     // creation is a single POST /v1/sites that carries the locale rows and the
     // settings with it, so no locale endpoint is reached from here. Nothing
@@ -248,6 +307,7 @@ const NAV = [
     icon: MessagesSquare,
     scope: 'moderation:write',
     context: 'installation',
+    group: 'installation',
     // The endpoints hold every site's rows and the page narrows its lists with
     // ?site_id=; the mutations are id-addressed and carry no site at all. It
     // renders nothing at all without a selection, though, which is why the
@@ -269,6 +329,7 @@ const NAV = [
     icon: KeyRound,
     scope: 'api-key:admin',
     context: 'installation',
+    group: 'installation',
     // A key or grant may name site_ids, but it is issued installation-wide and
     // this page never reads the switcher.
     selection: 'ignored',
@@ -286,6 +347,7 @@ const NAV = [
     icon: ScrollText,
     scope: 'audit:read',
     context: 'installation',
+    group: 'installation',
     // One append-only trail for the installation, with its own in-page site
     // filter. `useState(site)` seeds that filter from the selection on the
     // page's first render and it is the operator's from then on — so on a cold
@@ -301,6 +363,7 @@ const NAV = [
     icon: BookOpen,
     scope: 'content:write',
     context: 'installation',
+    group: 'installation',
     // Installation-wide transport, but every turn is sent with the selected
     // site and previews render through it. The page renders without a
     // selection; only sending is disabled.
@@ -313,6 +376,7 @@ const NAV = [
     icon: Activity,
     scope: null,
     context: 'installation',
+    group: 'installation',
     selection: 'ignored',
     api: ['/health', '/ready', '/v1/publish-due', '/v1/maintenance/storage-gc'],
   },
@@ -405,10 +469,84 @@ function entryFor(pathname: string): NavEntry | undefined {
   ).sort((first, second) => second.to.length - first.to.length)[0]
 }
 
+/**
+ * The blocks the sidebar is drawn in.
+ *
+ * Sixteen labels in two headed lists was still not a navigation: the two
+ * headings said whose endpoints a page reaches, and nothing said what the
+ * operator is doing. The site's own pages are therefore grouped by the job —
+ * writing it, shipping it, letting people at it, configuring it — and
+ * INSTALLATION is one block below them, set apart, because it is the one the
+ * switcher does not reach.
+ *
+ * `context` is repeated here rather than derived so that the navigation test can
+ * check every entry against the block it is drawn in: "Moderation reads nicely
+ * under Content" must not quietly move an installation-wide page under the
+ * switcher, and a block heading is the only thing on screen saying which is
+ * which.
+ *
+ * `startsOpen` is a judgement about how often a block is needed, not about how
+ * important it is. Overview, Content and Deliver are where the day is spent;
+ * Access, Settings and Installation are visited to change something.
+ */
 const GROUPS = [
-  { context: 'site' as const, label: 'Site', testId: 'nav-group-site' },
-  { context: 'installation' as const, label: 'Installation', testId: 'nav-group-installation' },
-]
+  {
+    id: 'overview',
+    label: '',
+    context: 'site',
+    testId: 'nav-group-overview',
+    collapsible: false,
+    startsOpen: true,
+    separated: false,
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    context: 'site',
+    testId: 'nav-group-content',
+    collapsible: true,
+    startsOpen: true,
+    separated: false,
+  },
+  {
+    id: 'deliver',
+    label: 'Deliver',
+    context: 'site',
+    testId: 'nav-group-deliver',
+    collapsible: true,
+    startsOpen: true,
+    separated: false,
+  },
+  {
+    id: 'access',
+    label: 'Access',
+    context: 'site',
+    testId: 'nav-group-access',
+    collapsible: true,
+    startsOpen: false,
+    separated: false,
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    context: 'site',
+    testId: 'nav-group-settings',
+    collapsible: true,
+    startsOpen: false,
+    separated: false,
+  },
+  {
+    id: 'installation',
+    label: 'Installation',
+    context: 'installation',
+    testId: 'nav-group-installation',
+    collapsible: true,
+    startsOpen: false,
+    separated: true,
+  },
+] as const
+
+type NavGroupDefinition = (typeof GROUPS)[number]
 
 /** What to say about the switcher on a page it does not fully govern. */
 const SELECTION_NOTE = {
@@ -429,6 +567,9 @@ const SELECTION_NOTE = {
  */
 const DIMMED: readonly NavEntry['selection'][] = ['seeds', 'ignored']
 
+/** One caption, two wrappers — a reason to disclose is the only difference. */
+const NOTE_CLASS = 'px-2 pt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden'
+
 /** The switcher's caption for the open page, and the long reason behind it. */
 function switcherNote(open: NavEntry | undefined) {
   const mixture = MIXED.find((entry) => entry.label === open?.label)
@@ -441,187 +582,357 @@ function switcherNote(open: NavEntry | undefined) {
 
 export function Shell() {
   const session = useSession()
-  const { site, setSite, sites, isLoading, error } = useSite()
+  const selection = useSite()
   const { resolved, setTheme } = useTheme()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const open = entryFor(pathname)
   const note = switcherNote(open)
 
   const visible = NAV.filter((item) => !item.scope || session.product_scopes.includes(item.scope))
-  // The switcher belongs to the site group, but installation pages read the
-  // selection too, so it has to stay reachable while any page that reads it is
-  // visible — otherwise Moderation, which shows nothing without one, offers no
-  // way to choose.
+  // The switcher is header chrome above every block, but installation pages read
+  // the selection too, so it stays mounted while any visible page reads it —
+  // otherwise Moderation, which shows nothing without one, offers no way to
+  // choose. It is absent only where nothing on screen or reachable from it would
+  // change: a session whose every visible page ignores the selection.
   const switcherUsed = visible.some((item) => item.selection !== 'ignored')
 
   return (
-    <div className="flex h-full">
-      <aside data-testid="sidebar" className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
-        <div className="px-4 py-4">
-          <div className="text-[0.7rem] font-semibold tracking-[0.18em] text-muted-foreground">CONTENTKIT</div>
-          <div className="text-sm font-semibold">Cockpit</div>
-        </div>
-
-        {/*
-         * The palette sits above both groups because it reaches into both, and it
-         * is passed the whole NAV table rather than the filtered `visible` list:
-         * it applies the same scope rule itself (lib/palette.ts), so the one place
-         * an entry can be offered is the one place it is checked. The trigger is
-         * visible on every page — a ⌘K nobody is told about is not a feature.
-         */}
-        <div className="px-3 pb-3">
-          <CommandPalette pages={NAV} />
-        </div>
-
-        <nav data-testid="nav" className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-2">
-          {GROUPS.map((group) => {
-            const items = visible.filter((item) => item.context === group.context)
-            const carriesSwitcher = group.context === 'site' && switcherUsed
-            if (items.length === 0 && !carriesSwitcher) return null
-            return (
-              <div key={group.context} data-testid={group.testId} className="mb-3">
-                <div className="px-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  {group.label}
-                </div>
-
+    <TooltipProvider>
+      {/*
+       * The one TooltipProvider in the console, and it is load-bearing twice
+       * over: `SidebarMenuButton tooltip=…` is what makes the collapsed icon
+       * rail readable, and the form fields' definitions and disabled-reason
+       * tooltips render nowhere without a provider above them. It wraps the
+       * whole shell — the Outlet included — so every route is inside it.
+       */}
+      <SidebarProvider>
+        <Sidebar collapsible="icon" data-testid="sidebar">
+          <SidebarHeader>
+            {/*
+             * The team-switcher position: first thing in the sidebar, naming the
+             * thing the console is pointed at. It used to sit inside the site
+             * group so that what it governed was what appeared beneath it; with
+             * the site's pages in four blocks and INSTALLATION below them that
+             * arrangement is gone, so the words below carry the claim instead —
+             * and a block that renders nothing can no longer take the switcher
+             * off screen with it.
+             */}
+            {switcherUsed ? (
+              <div
+                data-testid="site-switcher-scope"
+                data-relation={open?.selection ?? 'governs'}
+                className={cn(open && DIMMED.includes(open.selection) && 'opacity-60')}
+              >
+                <SiteSwitcher
+                  site={selection.site}
+                  current={selection.current}
+                  setSite={selection.setSite}
+                  sites={selection.sites}
+                  isLoading={selection.isLoading}
+                  error={selection.error}
+                />
                 {/*
-                 * The switcher sits under the "Site" heading rather than above
-                 * both groups, so what it governs is what appears beneath it.
-                 *
-                 * It is captioned on every page it does not simply govern, and
-                 * dimmed only where moving it changes nothing here (see DIMMED).
-                 * It is never MOVED: one position and one testid on every route,
-                 * because a control that jumps as the route changes costs the
-                 * operator a second look every time, and because `?site=` stays
-                 * in the URL and in effect across every route — the selection is
-                 * live state whether or not the open page reads it, so an
-                 * operator can line up the next site before they navigate.
-                 *
-                 * It is unmounted in exactly one case, and it is not a route: a
-                 * session for which no VISIBLE page reads the selection at all
-                 * (`switcherUsed` above — Credentials and System, say). There the
-                 * control would govern nothing that is on screen or reachable
-                 * from it, and an empty site group would be a heading over a
-                 * control with no consequence.
+                 * The caption is always on screen; the long reason behind it is a
+                 * Tooltip when there is one. It used to be a native `title`, which
+                 * offered the explanation to a pointer and to nobody else — and
+                 * the operators most likely to be confused by a switcher that does
+                 * not reach the open page are not the ones with a mouse to spare.
+                 * The trigger is a tab stop, so the sentence is one Tab away.
                  */}
-                {carriesSwitcher ? (
-                  <div
-                    data-testid="site-switcher-scope"
-                    data-relation={open?.selection ?? 'governs'}
-                    className={cn('px-1 pb-2', open && DIMMED.includes(open.selection) && 'opacity-60')}
-                  >
-                    <SiteSwitcher site={site} setSite={setSite} sites={sites} isLoading={isLoading} error={error} />
-                    {note.text ? (
-                      <div
-                        data-testid="site-switcher-note"
-                        title={note.reason}
-                        className="px-1 pt-1 text-[0.65rem] text-muted-foreground"
-                      >
-                        {note.text}
-                      </div>
-                    ) : null}
-                  </div>
+                {note.text ? (
+                  note.reason ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div tabIndex={0} data-testid="site-switcher-note" className={NOTE_CLASS}>
+                          {note.text}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent data-testid="site-switcher-note-reason">{note.reason}</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <div data-testid="site-switcher-note" className={NOTE_CLASS}>
+                      {note.text}
+                    </div>
+                  )
                 ) : null}
-
-                {items.map(({ to, label, icon: Icon }) => (
-                  <AppLink
-                    key={to}
-                    to={to}
-                    data-testid={`nav-${to === '/' ? 'overview' : to.slice(1)}`}
-                    className={cn(
-                      'mb-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors',
-                      open?.to === to
-                        ? 'bg-muted font-medium text-foreground'
-                        : 'text-muted-foreground hover:bg-muted/60',
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {label}
-                  </AppLink>
-                ))}
               </div>
-            )
-          })}
-        </nav>
+            ) : null}
 
-        <div className="border-t border-border p-3">
-          <div data-testid="operator-name" className="truncate text-xs text-muted-foreground" title={session.subject}>
-            {session.display_name || session.email || session.subject}
-          </div>
-          <div
-            data-testid="operator-role"
-            className="mt-0.5 text-[0.7rem] uppercase tracking-wide text-muted-foreground"
-          >
-            {session.role}
-          </div>
-          <div className="mt-2 flex gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Toggle theme"
-              data-testid="theme-toggle"
-              onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
-            >
-              {resolved === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="sign-out"
-              onClick={async () => {
-                await ck.identity.logout()
-                window.location.assign(ck.identity.loginUrl('/cockpit/'))
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
-        </div>
-      </aside>
+            {/*
+             * Directly beneath it, with the chord written out: a ⌘K nobody is
+             * told about is not a feature. The palette is handed the whole NAV
+             * table rather than the filtered list — it applies the same scope
+             * rule itself (lib/palette.ts), so the one place an entry can be
+             * offered is the one place it is checked.
+             */}
+            <CommandPalette pages={NAV} />
+          </SidebarHeader>
 
-      <main className="scrollbar-thin flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
-    </div>
+          <SidebarContent>
+            <nav data-testid="nav" aria-label="Cockpit">
+              {GROUPS.map((group) => {
+                const items = visible.filter((item) => item.group === group.id)
+                const groupShown = items.length > 0
+                if (!groupShown) return null
+                return (
+                  <Fragment key={group.id}>
+                    {group.separated ? <SidebarSeparator data-testid={`${group.testId}-separator`} /> : null}
+                    <NavBlock group={group} items={items} open={open} />
+                  </Fragment>
+                )
+              })}
+            </nav>
+          </SidebarContent>
+
+          <SidebarFooter>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  data-testid="theme-toggle"
+                  tooltip={resolved === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
+                  onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
+                >
+                  {resolved === 'dark' ? <Sun data-icon="inline-start" /> : <Moon data-icon="inline-start" />}
+                  <span>{resolved === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  data-testid="sign-out"
+                  tooltip="Sign out"
+                  onClick={async () => {
+                    await ck.identity.logout()
+                    window.location.assign(ck.identity.loginUrl('/cockpit/'))
+                  }}
+                >
+                  <LogOut data-icon="inline-start" />
+                  <span>Sign out</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            <div className="flex flex-col gap-0.5 px-2 pb-1 group-data-[collapsible=icon]:hidden">
+              {/*
+               * The footer shows the friendliest name the session has; the subject
+               * is what an audit log and a support request are keyed by, so it has
+               * to stay reachable — by focus and by tap, not only by hover, which
+               * is what the native `title` here used to mean.
+               */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div tabIndex={0} data-testid="operator-name" className="truncate text-left text-xs text-muted-foreground">
+                    {session.display_name || session.email || session.subject}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent data-testid="operator-subject">{session.subject}</TooltipContent>
+              </Tooltip>
+              <div data-testid="operator-role" className="truncate text-xs uppercase text-muted-foreground">
+                {session.role}
+              </div>
+            </div>
+          </SidebarFooter>
+
+          <SidebarRail data-testid="sidebar-rail" />
+        </Sidebar>
+
+        <SidebarInset>
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+            <SidebarTrigger data-testid="sidebar-toggle" />
+          </header>
+          <div className="scrollbar-thin flex-1 overflow-y-auto">
+            <Outlet />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   )
 }
 
+/**
+ * One block of the sidebar.
+ *
+ * Two things it has to get right that a plain list did not. A block that is
+ * closed still has to open itself when the page inside it is the open one —
+ * otherwise a ⌘K jump into Access lands on a page whose sidebar entry is not on
+ * screen. And collapsed to the icon rail there is no heading to click, so a
+ * closed block must show its icons anyway or its pages become unreachable; the
+ * label is then carried by `tooltip=` on each button, which is the only text in
+ * that state.
+ */
+function NavBlock({
+  group,
+  items,
+  open,
+}: {
+  group: NavGroupDefinition
+  items: readonly NavEntry[]
+  open: NavEntry | undefined
+}) {
+  const { state } = useSidebar()
+  const [expanded, setExpanded] = useState(group.startsOpen)
+  const holdsOpenPage = items.some((item) => item.to === open?.to)
+
+  useEffect(() => {
+    if (holdsOpenPage) setExpanded(true)
+  }, [holdsOpenPage])
+
+  const menu = (
+    <SidebarGroupContent>
+      <SidebarMenu>
+        {items.map(({ to, label, icon: Icon }) => (
+          <SidebarMenuItem key={to}>
+            <SidebarMenuButton asChild isActive={open?.to === to} tooltip={label}>
+              <AppLink to={to} data-testid={`nav-${to === '/' ? 'overview' : to.slice(1)}`}>
+                <Icon data-icon="inline-start" />
+                <span>{label}</span>
+              </AppLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ))}
+      </SidebarMenu>
+    </SidebarGroupContent>
+  )
+
+  if (!group.collapsible)
+    return (
+      <SidebarGroup data-testid={group.testId} data-context={group.context}>
+        {menu}
+      </SidebarGroup>
+    )
+
+  return (
+    <Collapsible open={state === 'collapsed' || expanded} onOpenChange={setExpanded} className="group/collapsible">
+      <SidebarGroup data-testid={group.testId} data-context={group.context}>
+        <SidebarGroupLabel asChild>
+          <CollapsibleTrigger data-testid={`${group.testId}-toggle`}>
+            {group.label}
+            <ChevronDown
+              data-icon="inline-end"
+              className="ml-auto transition-transform group-data-[state=closed]/collapsible:-rotate-90"
+            />
+          </CollapsibleTrigger>
+        </SidebarGroupLabel>
+        <CollapsibleContent>{menu}</CollapsibleContent>
+      </SidebarGroup>
+    </Collapsible>
+  )
+}
+
+/**
+ * Which site the console is pointed at, and the control that changes it.
+ *
+ * A dropdown rather than a `<select>` because the rail is 3rem wide when the
+ * sidebar is collapsed: the trigger has to survive losing its label, which a
+ * native select cannot, and the tooltip has to be able to say the site's name
+ * where nothing else can. In the lost pass this was the one control in the rail
+ * without a tooltip, which meant the control answering "which site am I about to
+ * change?" showed a globe and nothing else.
+ */
 function SiteSwitcher({
   site,
+  current,
   setSite,
   sites,
   isLoading,
   error,
 }: {
   site: string
+  current: { id: string; slug: string; name: string } | undefined
   setSite: (site: string) => void
   sites: { id: string; slug: string; name: string }[]
   isLoading: boolean
   error: unknown
 }) {
-  if (isLoading) return <div className="px-1 text-xs text-muted-foreground">Loading sites…</div>
+  const { state } = useSidebar()
+  const name = current?.name || site
+
+  if (isLoading)
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuSkeleton showIcon data-testid="site-switcher-loading" />
+        </SidebarMenuItem>
+      </SidebarMenu>
+    )
+
   if (error)
     return (
-      <div className="px-1 text-xs text-chart-5">
-        {error instanceof Error ? error.message : 'Sites could not be loaded'}
-      </div>
+      <Alert variant="destructive" data-testid="site-switcher-error" className="group-data-[collapsible=icon]:hidden">
+        <AlertTitle>Sites could not be loaded</AlertTitle>
+        <AlertDescription>{error instanceof Error ? error.message : 'The site list is unavailable.'}</AlertDescription>
+      </Alert>
     )
+
+  // Not an Empty: in a 16rem header that collapses to a 3rem rail the honest
+  // shape is the control that fixes it, not a framed paragraph saying there is
+  // nothing to pick.
   if (sites.length === 0)
-    return <div className="px-1 text-xs text-muted-foreground">No sites yet — create one under Sites.</div>
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton asChild tooltip="No sites yet — create the first one">
+            <AppLink to="/sites" data-testid="site-switcher-empty">
+              <Globe data-icon="inline-start" />
+              <span>No sites yet</span>
+            </AppLink>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    )
+
   return (
-    <Select
-      data-testid="site-switcher"
-      className="w-full"
-      value={site}
-      onChange={(event) => setSite(event.target.value)}
-    >
-      {sites.map((candidate) => (
-        <option key={candidate.id} value={candidate.slug}>
-          {candidate.name}
-        </option>
-      ))}
-    </Select>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  size="lg"
+                  data-testid="site-switcher"
+                  aria-label={`Site: ${name || 'none selected'}`}
+                >
+                  <Globe data-icon="inline-start" />
+                  <span className="flex min-w-0 flex-col text-left">
+                    <span className="truncate font-medium">{name || 'No site selected'}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {name ? 'Site' : 'Choose a site to continue'}
+                    </span>
+                  </span>
+                  <ChevronsUpDown data-icon="inline-end" className="ml-auto" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            {/* Collapsed, this is the only thing on screen that names the site. */}
+            <TooltipContent side="right" hidden={state !== 'collapsed'}>
+              Site · {name || 'none selected'}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="start" side="right" data-testid="site-switcher-menu" className="min-w-56">
+            <DropdownMenuLabel>Sites</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={site} onValueChange={setSite}>
+              {sites.map((candidate) => (
+                <DropdownMenuRadioItem
+                  key={candidate.id}
+                  value={candidate.slug}
+                  data-testid={`site-switcher-option-${candidate.slug}`}
+                >
+                  <span className="truncate">{candidate.name}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{candidate.slug}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
   )
+}
+
+/** One step of the page header's trail. Composed here; ui/breadcrumb.tsx is parts. */
+interface Crumb {
+  label: string
+  /** A stand-in for something not chosen yet, e.g. "No site selected". */
+  placeholder?: boolean
 }
 
 /**
@@ -655,12 +966,39 @@ export function Page({
   return (
     <div data-testid="page" data-page={title} className="mx-auto max-w-7xl p-6">
       <header className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <Breadcrumb items={crumbs} className="mb-1" />
+        <div className="flex flex-col gap-1">
+          {/*
+           * No crumb is a link, and BreadcrumbLink is therefore not rendered:
+           * two of the three name no route at all — the console has no page for
+           * "the site context" — and the third is the page already open, so a
+           * link here could only leave a half-filled form or change the site.
+           * Exactly one crumb is the BreadcrumbPage, because that part carries
+           * aria-current="page" and three of them announce three current pages.
+           */}
+          <Breadcrumb
+            data-testid="breadcrumb"
+            data-trail={crumbs.map((crumb) => crumb.label).join(' · ')}
+            className="text-xs"
+          >
+            <BreadcrumbList className="text-xs">
+              {crumbs.map((crumb, index) => (
+                <Fragment key={`${index}-${crumb.label}`}>
+                  {index > 0 ? <BreadcrumbSeparator /> : null}
+                  <BreadcrumbItem data-testid={`breadcrumb-item-${index}`}>
+                    {index === crumbs.length - 1 ? (
+                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    ) : (
+                      <span className={cn('truncate', crumb.placeholder && 'italic')}>{crumb.label}</span>
+                    )}
+                  </BreadcrumbItem>
+                </Fragment>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
           <h1 data-testid="page-title" className="text-lg font-semibold tracking-tight">
             {title}
           </h1>
-          {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
+          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 gap-2">{actions}</div> : null}
       </header>
@@ -672,11 +1010,14 @@ export function Page({
 /** Shown wherever a site-scoped page has no site selected yet. */
 export function NoSite() {
   return (
-    <div
-      data-testid="no-site"
-      className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground"
-    >
-      Choose a site in the sidebar to continue.
-    </div>
+    <Empty data-testid="no-site" className="border">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Globe />
+        </EmptyMedia>
+        <EmptyTitle>No site selected</EmptyTitle>
+        <EmptyDescription>Choose a site at the top of the sidebar to continue.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }

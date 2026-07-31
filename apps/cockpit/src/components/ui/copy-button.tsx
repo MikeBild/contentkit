@@ -1,12 +1,17 @@
 import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from './primitives'
+import { Button } from './button'
 
 /**
  * Values that exist exactly once — a raw API key, a webhook secret — have to be
  * copyable without selecting text by hand. `navigator.clipboard` needs a secure
  * context, so the failure is reported rather than swallowed: silently copying
  * nothing is how a key is lost.
+ *
+ * `size="icon-sm"` rather than the old `"icon"`: shadcn's `icon` is `size-8` and
+ * pairs with the default height, while this control's labelled form is `sm`
+ * (`h-7`). The icon-only form has to be the same height as the labelled one, or
+ * two copy buttons in one row sit at two different sizes.
  */
 export function CopyButton({
   value,
@@ -16,7 +21,7 @@ export function CopyButton({
 }: {
   value: string
   label?: string
-  size?: 'sm' | 'icon'
+  size?: 'sm' | 'icon-sm'
   'data-testid'?: string
 }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -27,7 +32,7 @@ export function CopyButton({
       variant="outline"
       size={size}
       data-testid={testId}
-      aria-label={size === 'icon' ? label : undefined}
+      aria-label={size === 'icon-sm' ? label : undefined}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)
@@ -38,8 +43,22 @@ export function CopyButton({
         setTimeout(() => setState('idle'), 2000)
       }}
     >
-      {state === 'copied' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {size === 'icon' ? null : state === 'failed' ? 'Copy blocked — select it' : state === 'copied' ? 'Copied' : label}
+      {/* No size class: the Button CVA sizes an unsized svg per button size, so
+          the glyph tracks `sm` and `icon-sm` on its own. `data-icon` only where
+          there is a label beside it — it is what tightens the padding on that
+          side, and an icon-only button has no side to tighten. */}
+      {state === 'copied' ? (
+        <Check data-icon={size === 'icon-sm' ? undefined : 'inline-start'} />
+      ) : (
+        <Copy data-icon={size === 'icon-sm' ? undefined : 'inline-start'} />
+      )}
+      {size === 'icon-sm'
+        ? null
+        : state === 'failed'
+          ? 'Copy blocked — select it'
+          : state === 'copied'
+            ? 'Copied'
+            : label}
     </Button>
   )
 }

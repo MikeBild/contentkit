@@ -1,5 +1,5 @@
 import { Checkbox } from '@/components/ui/checkbox'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PRODUCT_SCOPES, type ProductScope } from '../contracts/enums.generated'
 import { FieldShell, type FieldShellProps } from './field'
@@ -50,7 +50,20 @@ export function ScopePicker({
   return (
     <FieldShell {...shell} error={error} hint={shell.hint ?? `${value.length}/${PRODUCT_SCOPES.length}`}>
       {(control) => (
-        <div className="grid gap-1" data-testid={control['data-testid']}>
+        // The shell hands down `id`, `aria-describedby` and `aria-invalid` for a
+        // reason: without them the label above points at an id no element in the
+        // document carries, the group has no accessible name at all, and "Choose
+        // at least one scope" is text on a page that no control refers to. A
+        // `<div>` is not labelable, so the name comes from `aria-label` — the
+        // `id` is still taken so the label's `htmlFor` resolves to something.
+        <div
+          role="group"
+          id={control.id}
+          aria-label={shell.label}
+          aria-describedby={control['aria-describedby']}
+          className="grid gap-1"
+          data-testid={control['data-testid']}
+        >
           {PRODUCT_SCOPES.map((scope) => {
             const held = unlimited || ceiling.includes(scope)
             const row = (
@@ -63,6 +76,11 @@ export function ScopePicker({
                 <span className="pt-0.5">
                   <Checkbox
                     data-testid={`${control['data-testid']}-${scope}`}
+                    // `aria-invalid` is not allowed on `role="group"`, and the
+                    // refusal is about the set rather than any one box, so every
+                    // box carries it — whichever one the operator lands on says
+                    // the answer is not accepted yet.
+                    aria-invalid={control['aria-invalid']}
                     disabled={control.disabled || !held}
                     checked={value.includes(scope)}
                     onCheckedChange={(checked) =>
@@ -79,9 +97,22 @@ export function ScopePicker({
             return held ? (
               <div key={scope}>{row}</div>
             ) : (
-              <Tooltip key={scope} content="You do not hold this scope yourself" className="block">
-                {row}
-              </Tooltip>
+              // A disabled checkbox is neither a hover nor a focus target, so the
+              // reason it is disabled would be unreachable through it. The wrapper
+              // is the trigger, and it is a tab stop so the sentence is not
+              // mouse-only. `TooltipProvider` is opened locally as well as at the
+              // app root: this picker is rendered inside dialogs that mount their
+              // own trees, and a missing provider throws rather than degrades.
+              <TooltipProvider key={scope}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0} className="block" data-testid={`${control['data-testid']}-${scope}-locked`}>
+                      {row}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>You do not hold this scope yourself</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )
           })}
         </div>

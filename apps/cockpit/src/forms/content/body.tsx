@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Button } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /**
@@ -88,7 +88,7 @@ export function MarkdownBody({
         <span className="text-xs font-medium text-muted-foreground">Markdown</span>
         <span
           data-testid={`${testId}-budget`}
-          className={cn('text-xs tabular-nums', over ? 'text-chart-5' : 'text-muted-foreground')}
+          className={cn('text-xs tabular-nums', over ? 'text-destructive' : 'text-muted-foreground')}
         >
           {Math.round(bytes / 1024)} KiB / 256 KiB
         </span>
@@ -105,11 +105,11 @@ export function MarkdownBody({
         onChange={(event) => onChange(event.target.value)}
         className={cn(
           'w-full rounded-lg border border-border bg-background p-3 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent',
-          over && 'border-chart-5 focus-visible:ring-chart-5',
+          over && 'border-destructive focus-visible:ring-destructive',
         )}
       />
       {over ? (
-        <p data-testid={`${testId}-error`} className="text-xs text-chart-5">
+        <p data-testid={`${testId}-error`} className="text-xs text-destructive">
           Over 256 KiB — the render endpoint and the release both refuse this.
         </p>
       ) : null}

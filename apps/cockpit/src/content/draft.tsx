@@ -59,10 +59,17 @@ export function Draft({
    */
   unrendered?: boolean
 }) {
+  // A column with a gap rather than a stacking utility that hangs a margin on
+  // every child but the first: the segments here are a mix of rendered markdown
+  // and placeholder paragraphs, and how many there are changes as the message
+  // streams in. Spacing that lives on the children therefore depends on which
+  // segment happens to be first at that instant, and the first one has no top
+  // margin — so the block moved as it grew. A gap on the parent does not reach
+  // into the children at all.
   return (
     <div
       data-testid={testId}
-      className="space-y-2 text-sm leading-relaxed [&_li]:ml-4 [&_ol]:list-decimal [&_ul]:list-disc"
+      className="flex flex-col gap-2 text-sm leading-relaxed [&_li]:ml-4 [&_ol]:list-decimal [&_ul]:list-disc"
     >
       {segments(markdown).map((segment, index) =>
         segment.kind === 'markdown' ? (

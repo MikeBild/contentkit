@@ -1,9 +1,16 @@
 import type { ReactNode } from 'react'
-import { Select } from '@/components/ui/primitives'
-import { Segmented } from '@/components/ui/segmented'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { FieldShell, type ControlProps, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 /** Every closed-set field takes its options in this shape. */
@@ -19,6 +26,14 @@ export interface Choice<T extends string> {
 export function choices<T extends string>(values: readonly T[], label?: (value: T) => string): Choice<T>[] {
   return values.map((value) => ({ value, label: label ? label(value) : value }))
 }
+
+/**
+ * Radix's Select has no value for "nothing chosen" — an empty string is how it
+ * spells *deselected*, and an item may not carry one. So absence travels under
+ * its own name inside the component and is translated back at both edges; no
+ * caller ever sees it, and no enum this console has could collide with it.
+ */
+const UNSET = '__ck_unset__'
 
 /**
  * A closed set, straight from `contracts/enums.generated.ts`.
@@ -40,24 +55,140 @@ export function EnumSelect<T extends string>({
     placeholder?: string
     allowEmpty?: boolean
   }) {
+  const empty = placeholder ?? '—'
   return (
     <FieldShell {...shell}>
       {(control) => (
         <Select
-          {...control}
-          value={value}
-          className={cn('w-full', invalidBorder(shell.error))}
-          onChange={(event) => onChange(event.target.value as T | '')}
+          value={value === '' ? UNSET : value}
+          disabled={control.disabled}
+          onValueChange={(next) => onChange(next === UNSET ? '' : (next as T))}
         >
-          {allowEmpty || !value ? <option value="">{placeholder ?? '—'}</option> : null}
-          {options.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.disabled}>
-              {option.label}
-            </option>
-          ))}
+          <SelectTrigger
+            id={control.id}
+            aria-describedby={control['aria-describedby']}
+            aria-invalid={control['aria-invalid']}
+            data-testid={control['data-testid']}
+            className="w-full"
+          >
+            <SelectValue placeholder={empty} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {allowEmpty || !value ? (
+                <SelectItem value={UNSET} data-testid={`${control['data-testid']}-unset`}>
+                  {empty}
+                </SelectItem>
+              ) : null}
+              {options.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                  data-testid={`${control['data-testid']}-${option.value}`}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
         </Select>
       )}
     </FieldShell>
+  )
+}
+
+/**
+ * The one shape every visible closed set renders as.
+ *
+ * It used to be three: a `Segmented` radiogroup, a loop of `<button role="radio"
+ * aria-checked>` cards, and the tri-state switch — each hand-rolling the pressed
+ * state, the roving focus and the disabled reason, and each getting a different
+ * subset of them right. `ToggleGroup` owns all three, so what is left here is
+ * the mapping from a `Choice` to an item.
+ *
+ * Two deliberate departures from the obvious:
+ *
+ *  - an unavailable option is `aria-disabled`, not `disabled`. A disabled button
+ *    takes neither hover nor focus, so the sentence saying *why* it is
+ *    unavailable would be the one sentence nobody can reach. It stays operable
+ *    to the keyboard and inert to the group instead.
+ *  - the option's own sentence — its consequence, or the reason it is closed —
+ *    is a tooltip on the item rather than a line beneath it. Six options with a
+ *    line each is six lines of prose to choose between two of them.
+ */
+function OptionToggle<T extends string>({
+  control,
+  label,
+  value,
+  onChange,
+  options,
+  orientation = 'horizontal',
+}: {
+  control: ControlProps
+  label: string
+  value: T
+  onChange: (value: T) => void
+  options: readonly Choice<T>[]
+  orientation?: 'horizontal' | 'vertical'
+}) {
+  return (
+    <TooltipProvider>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        spacing={0}
+        orientation={orientation}
+        id={control.id}
+        aria-label={label}
+        aria-describedby={control['aria-describedby']}
+        disabled={control.disabled}
+        value={value}
+        onValueChange={(next) => {
+          if (!next) return
+          if (options.find((option) => option.value === next)?.disabled) return
+          onChange(next as T)
+        }}
+        data-testid={control['data-testid']}
+        className={orientation === 'vertical' ? 'w-full' : undefined}
+      >
+        {options.map((option) => {
+          const aside = option.disabled ? option.disabledReason : option.description
+          return aside ? (
+            <Tooltip key={option.value}>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem
+                  value={option.value}
+                  aria-disabled={option.disabled || undefined}
+                  // `aria-invalid` is not allowed on `role="group"`, and the
+                  // refusal is about the choice rather than any one option, so
+                  // every item carries it — whichever one the operator lands on
+                  // says the answer is not accepted yet.
+                  aria-invalid={control['aria-invalid']}
+                  data-testid={`${control['data-testid']}-${option.value}`}
+                  className={orientation === 'vertical' ? 'justify-start' : undefined}
+                >
+                  {option.label}
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent>{aside}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <ToggleGroupItem
+              key={option.value}
+              value={option.value}
+              aria-disabled={option.disabled || undefined}
+              aria-invalid={control['aria-invalid']}
+              data-testid={`${control['data-testid']}-${option.value}`}
+              className={orientation === 'vertical' ? 'justify-start' : undefined}
+            >
+              {option.label}
+            </ToggleGroupItem>
+          )
+        })}
+      </ToggleGroup>
+    </TooltipProvider>
   )
 }
 
@@ -71,19 +202,7 @@ export function SegmentedField<T extends string>({
   return (
     <FieldShell {...shell}>
       {(control) => (
-        <Segmented
-          data-testid={control['data-testid']}
-          aria-labelledby={control.id}
-          disabled={control.disabled}
-          value={value}
-          onChange={onChange}
-          options={options.map(({ value: option, label, disabled, disabledReason }) => ({
-            value: option,
-            label,
-            disabled,
-            disabledReason,
-          }))}
-        />
+        <OptionToggle control={control} label={shell.label} value={value} onChange={onChange} options={options} />
       )}
     </FieldShell>
   )
@@ -91,9 +210,10 @@ export function SegmentedField<T extends string>({
 
 /**
  * A choice whose options differ in consequence rather than in degree — role
- * versus explicit scopes, opt-in versus opt-out. Each card states its
+ * versus explicit scopes, opt-in versus opt-out. Each option states its
  * consequence in one sentence, because the difference between them is exactly
- * the thing a dropdown hides.
+ * the thing a dropdown hides; the sentence is one hover or one focus away
+ * rather than stacked under every option at once.
  */
 export function ChoiceCards<T extends string>({
   value,
@@ -104,32 +224,14 @@ export function ChoiceCards<T extends string>({
   return (
     <FieldShell {...shell}>
       {(control) => (
-        <div role="radiogroup" aria-labelledby={control.id} data-testid={control['data-testid']} className="grid gap-2">
-          {options.map((option) => {
-            const active = option.value === value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                disabled={control.disabled || option.disabled}
-                title={option.disabled ? option.disabledReason : undefined}
-                data-testid={`${control['data-testid']}-${option.value}`}
-                onClick={() => onChange(option.value)}
-                className={cn(
-                  'rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50',
-                  active ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
-                )}
-              >
-                <div className="text-sm font-medium">{option.label}</div>
-                {option.description ? (
-                  <div className="mt-0.5 text-xs text-muted-foreground">{option.description}</div>
-                ) : null}
-              </button>
-            )
-          })}
-        </div>
+        <OptionToggle
+          control={control}
+          label={shell.label}
+          value={value}
+          onChange={onChange}
+          options={options}
+          orientation="vertical"
+        />
       )}
     </FieldShell>
   )
@@ -153,6 +255,7 @@ export function SwitchField({
           <Switch
             id={control.id}
             aria-describedby={control['aria-describedby']}
+            aria-invalid={control['aria-invalid']}
             data-testid={control['data-testid']}
             disabled={control.disabled}
             checked={value}
@@ -165,11 +268,11 @@ export function SwitchField({
   )
 }
 
-const TRI = [
+const TRI: readonly Choice<'default' | 'on' | 'off'>[] = [
   { value: 'default', label: 'Default' },
   { value: 'on', label: 'On' },
   { value: 'off', label: 'Off' },
-] as const
+]
 
 /**
  * `true | false | undefined`, and the third one is not a nicety.
@@ -192,10 +295,9 @@ export function TriToggle({
       fallback={shell.fallback ?? (defaultLabel ? `Unset, the server uses ${defaultLabel}.` : undefined)}
     >
       {(control) => (
-        <Segmented
-          data-testid={control['data-testid']}
-          aria-labelledby={control.id}
-          disabled={control.disabled}
+        <OptionToggle
+          control={control}
+          label={shell.label}
           value={state}
           options={TRI}
           onChange={(next) => onChange(next === 'default' ? undefined : next === 'on')}

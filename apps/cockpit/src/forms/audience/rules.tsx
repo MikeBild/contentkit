@@ -1,25 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ck, type AccessGroup, type AccessRule, type AccessUser, type RuleInput } from '@/api/ck'
 import { Confirm } from '@/components/confirm'
-import { Dialog, DialogActions } from '@/components/ui/dialog'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
-  TableState,
-} from '@/components/ui/primitives'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ACCESS_RULE_MATCH, type AccessRuleMatch } from '@/forms/contracts/enums.generated'
 import { EntityMultiSelect, PathField, SegmentedField } from '@/forms/fields'
+import { StatusBadge } from '@/forms/status-badge'
+import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 
@@ -80,14 +80,98 @@ function RuleDialog({
   return (
     <Dialog
       open
-      size="lg"
-      onClose={onClose}
-      busy={save.isPending}
-      data-testid="ck-rule-dialog"
-      title={editing ? `Edit rule for ${rule?.path}` : 'New path rule'}
-      description="Rules are snapshotted into each release. Saving one changes nothing live until the next build."
-      footer={
-        <DialogActions>
+      onOpenChange={(next) => {
+        // A rule decides who can read a path. Until the server says which
+        // audience it stored, there is no answer to dismiss.
+        if (save.isPending) return
+        if (!next) onClose()
+      }}
+    >
+      <DialogContent
+        data-testid="ck-rule-dialog"
+        className="sm:max-w-2xl"
+        closeDisabled={save.isPending}
+        onEscapeKeyDown={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => {
+          if (save.isPending) event.preventDefault()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{editing ? `Edit rule for ${rule?.path}` : 'New path rule'}</DialogTitle>
+          <DialogDescription>
+            Rules are snapshotted into each release. Saving one changes nothing live until the next build.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+          <SegmentedField
+            data-testid="ck-rule-match"
+            label="Match"
+            value={match}
+            options={MATCH_OPTIONS}
+            help={
+              match === 'prefix'
+                ? 'Covers the path and everything below it.'
+                : 'Covers exactly this path and nothing below it.'
+            }
+            onChange={setMatch}
+          />
+
+          <PathField
+            data-testid="ck-rule-path"
+            label="Path"
+            required
+            help="A published path on this site, for example /de/internal."
+            value={path}
+            onChange={setPath}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-rule-groups"
+            label="Groups"
+            value={groupSlugs}
+            isLoading={groupsQuery.isPending}
+            optionsError={groupsQuery.error}
+            emptyMessage="No groups on this site yet"
+            options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
+            onChange={(next) => setGroupSlugs([...next])}
+          />
+
+          <EntityMultiSelect
+            data-testid="ck-rule-users"
+            label="Readers"
+            help="Named directly, independent of any group."
+            value={userIds}
+            isLoading={readersQuery.isPending}
+            optionsError={readersQuery.error}
+            emptyMessage="No readers on this site yet"
+            options={readers.map((reader) => ({
+              value: reader.id,
+              label: reader.display_name || reader.username,
+              hint: reader.username,
+            }))}
+            onChange={(next) => setUserIds([...next])}
+          />
+
+          {audienceEmpty ? (
+            <p data-testid="ck-rule-audience-error" className="text-sm text-destructive">
+              A rule needs at least one group or one reader — the server rejects an empty audience, and a rule nobody
+              matches would lock the path away from everyone.
+            </p>
+          ) : null}
+
+          {save.error ? (
+            <Alert variant="destructive" data-testid="ck-rule-error">
+              <TriangleAlert />
+              <AlertTitle>The rule was not saved</AlertTitle>
+              <AlertDescription>
+                {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
           <Button variant="outline" data-testid="ck-rule-cancel" disabled={save.isPending} onClick={onClose}>
             Cancel
           </Button>
@@ -96,74 +180,11 @@ function RuleDialog({
             disabled={save.isPending || audienceEmpty || !path}
             onClick={() => save.mutate()}
           >
+            {save.isPending ? <Spinner data-icon="inline-start" /> : null}
             {save.isPending ? 'Saving…' : editing ? 'Save rule' : 'Create rule'}
           </Button>
-        </DialogActions>
-      }
-    >
-      <div className="space-y-4">
-        <SegmentedField
-          data-testid="ck-rule-match"
-          label="Match"
-          value={match}
-          options={MATCH_OPTIONS}
-          help={
-            match === 'prefix'
-              ? 'Covers the path and everything below it.'
-              : 'Covers exactly this path and nothing below it.'
-          }
-          onChange={setMatch}
-        />
-
-        <PathField
-          data-testid="ck-rule-path"
-          label="Path"
-          required
-          help="A published path on this site, for example /de/internal."
-          value={path}
-          onChange={setPath}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-rule-groups"
-          label="Groups"
-          value={groupSlugs}
-          isLoading={groupsQuery.isPending}
-          optionsError={groupsQuery.error}
-          emptyMessage="No groups on this site yet"
-          options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
-          onChange={(next) => setGroupSlugs([...next])}
-        />
-
-        <EntityMultiSelect
-          data-testid="ck-rule-users"
-          label="Readers"
-          help="Named directly, independent of any group."
-          value={userIds}
-          isLoading={readersQuery.isPending}
-          optionsError={readersQuery.error}
-          emptyMessage="No readers on this site yet"
-          options={readers.map((reader) => ({
-            value: reader.id,
-            label: reader.display_name || reader.username,
-            hint: reader.username,
-          }))}
-          onChange={(next) => setUserIds([...next])}
-        />
-
-        {audienceEmpty ? (
-          <p data-testid="ck-rule-audience-error" className="text-sm text-chart-5">
-            A rule needs at least one group or one reader — the server rejects an empty audience, and a rule nobody
-            matches would lock the path away from everyone.
-          </p>
-        ) : null}
-
-        {save.error ? (
-          <p data-testid="ck-rule-error" className="text-sm text-chart-5">
-            {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
-          </p>
-        ) : null}
-      </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -224,16 +245,16 @@ export function RulesCard({
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <THead>
-            <TR>
-              <TH>Match</TH>
-              <TH>Path</TH>
-              <TH>Groups</TH>
-              <TH>Readers</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Match</TableHead>
+              <TableHead>Path</TableHead>
+              <TableHead>Groups</TableHead>
+              <TableHead>Readers</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             <TableState
               columns={5}
               isLoading={rules.isPending}
@@ -243,20 +264,20 @@ export function RulesCard({
               emptyMessage="No rules — everything published is public."
             >
               {rows.map((rule) => (
-                <TR key={rule.id} data-testid="ck-rule-row" data-rule={rule.id}>
-                  <TD>
-                    <Badge tone="info">{rule.match}</Badge>
-                  </TD>
-                  <TD className="font-mono text-xs">{rule.path}</TD>
-                  <TD className="text-muted-foreground">{rule.group_slugs?.join(', ') || '—'}</TD>
-                  <TD className="text-muted-foreground">
+                <TableRow key={rule.id} data-testid="ck-rule-row" data-rule={rule.id}>
+                  <TableCell>
+                    <StatusBadge tone="info">{rule.match}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{rule.path}</TableCell>
+                  <TableCell className="text-muted-foreground">{rule.group_slugs?.join(', ') || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {rule.user_ids?.length
                       ? rule.user_ids
                           .map((id) => readerRows.find((reader) => reader.id === id)?.username ?? id.slice(0, 8))
                           .join(', ')
                       : '—'}
-                  </TD>
-                  <TD className="flex gap-2">
+                  </TableCell>
+                  <TableCell className="flex gap-2">
                     {writable ? (
                       <>
                         <Button
@@ -292,11 +313,11 @@ export function RulesCard({
                         </Confirm>
                       </>
                     ) : null}
-                  </TD>
-                </TR>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableState>
-          </TBody>
+          </TableBody>
         </Table>
       </CardContent>
 

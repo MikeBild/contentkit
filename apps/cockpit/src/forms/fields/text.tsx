@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Input } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { FieldShell, type FieldShellProps } from './field'
 
 export interface ValueProps<T> {
   value: T
@@ -38,7 +39,7 @@ export function TextField({
       hint={
         shell.hint ??
         (maxLength !== undefined ? (
-          <span className={over ? 'text-chart-5' : undefined}>
+          <span className={over ? 'text-destructive' : undefined}>
             {value.length}/{maxLength}
           </span>
         ) : undefined)
@@ -49,7 +50,6 @@ export function TextField({
           {...control}
           value={value}
           placeholder={placeholder}
-          className={invalidBorder(shell.error ?? (over ? 'over' : undefined))}
           onChange={(event) => onChange(event.target.value)}
           onBlur={transform ? () => onChange(transform(value)) : undefined}
         />
@@ -122,7 +122,7 @@ export function SlugField({
         <Input
           {...control}
           value={value}
-          className={cn('font-mono', invalidBorder(error))}
+          className="font-mono"
           onChange={(event) => {
             edited.current = true
             onChange(event.target.value)
@@ -153,7 +153,7 @@ export function UsernameField({ value, onChange, ...shell }: FieldShellProps & V
           {...control}
           value={value}
           autoComplete="off"
-          className={cn('font-mono', invalidBorder(error))}
+          className="font-mono"
           onChange={(event) => onChange(event.target.value)}
           onBlur={() => onChange(value.toLowerCase())}
         />
@@ -212,21 +212,17 @@ export function TextAreaField({
     <FieldShell
       {...shell}
       error={error}
-      hint={shell.hint ?? (budget ? <span className={error ? 'text-chart-5' : undefined}>{budget}</span> : undefined)}
+      hint={shell.hint ?? (budget ? <span className={error ? 'text-destructive' : undefined}>{budget}</span> : undefined)}
     >
       {(control) => (
-        <textarea
+        <Textarea
           {...control}
           rows={rows}
           value={value}
           placeholder={placeholder}
           spellCheck={monospace ? false : undefined}
           onChange={(event) => onChange(event.target.value)}
-          className={cn(
-            'w-full rounded-lg border border-border bg-background p-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-accent',
-            monospace && 'font-mono text-xs',
-            invalidBorder(error),
-          )}
+          className={cn(monospace && 'font-mono text-xs')}
         />
       )}
     </FieldShell>
@@ -266,7 +262,7 @@ export function PathField({
         <Input
           {...control}
           value={value}
-          className={cn('font-mono', invalidBorder(error))}
+          className="font-mono"
           onChange={(event) => {
             setTouched(true)
             onChange(event.target.value)

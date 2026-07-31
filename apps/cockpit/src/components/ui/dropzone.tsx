@@ -95,7 +95,7 @@ export function Dropzone({
         className={cn(
           'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed p-6 text-center text-sm transition-colors focus-within:ring-2 focus-within:ring-accent',
           over ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
-          error || refused ? 'border-chart-5' : null,
+          error || refused ? 'border-destructive' : null,
           disabled && 'cursor-not-allowed opacity-50',
         )}
       >
@@ -121,7 +121,7 @@ export function Dropzone({
       {children}
 
       {error || refused ? (
-        <p data-testid={`${testId}-error`} className="text-xs text-chart-5">
+        <p data-testid={`${testId}-error`} className="text-xs text-destructive">
           {error ?? refused}
         </p>
       ) : hint ? (

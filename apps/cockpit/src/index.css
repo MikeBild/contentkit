@@ -1,56 +1,164 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
-/* The palette is ContentKit's own design system (src/design-system.mjs), not a
-   shadcn default, so the Cockpit and the sites it publishes read as one product.
-   Keep these in sync with resolveDesignSystem()'s light/dark defaults. */
-@theme {
-  --color-background: #ffffff;
-  --color-surface: #ffffff;
-  --color-foreground: #020817;
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
-  --color-border: #e2e8f0;
-  --color-primary: #0f172a;
-  --color-primary-foreground: #f8fafc;
-  --color-accent: #2563eb;
-  --color-accent-foreground: #ffffff;
-  --color-chart-1: #2563eb;
-  --color-chart-2: #059669;
-  --color-chart-3: #d97706;
-  --color-chart-4: #7c3aed;
-  --color-chart-5: #dc2626;
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn's components read raw variables — `--background`, `--card`, `--sidebar`
+   and so on. This file gives them shadcn's NAMES with ContentKit's VALUES, taken
+   from resolveDesignSystem()'s light and dark defaults in src/design-system.mjs,
+   so the console and the sites it publishes read as one product rather than as a
+   stock component demo. Keep the two in sync; a drift test compares all of them.
+
+   Six names have no counterpart in the design system and are derived here rather
+   than invented: `card` and `popover` take `surface`, `secondary` takes `muted`,
+   `destructive` takes chart_5 — already the palette's red — `warning` takes chart_3
+   — already the palette's amber — and `input` and `ring` follow `border` and
+   `accent`. A focus ring in a colour the product never uses would be the one thing
+   on screen belonging to no design system.
+
+   `success` completes the set for the same reason `warning` did: `bg-chart-2` on
+   a saved indicator, a passed step or a diff's added line is a severity wearing a
+   chart series' name. Two of those five uses are genuinely data — the up-vote
+   column and the added/removed rows of a diff are quantities, and a diff's green
+   is a convention older than this console — so they keep the chart token and the
+   rule below exempts them by name rather than by silence.
+
+   `warning` is the newest of the six and it exists for the same reason
+   `destructive` does. A severity spelled `bg-chart-3` is the warning tone wearing a
+   chart series' name: it renders identically, so nothing on screen says it is
+   wrong, and the source then reads as though a graph had leaked into a save bar.
+   Two tones, two names, both derived from the one palette. */
+:root {
+  --background: #ffffff;
+  --foreground: #020817;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-foreground: #020817;
+  --popover: #ffffff;
+  --popover-foreground: #020817;
+  --primary: #0f172a;
+  --primary-foreground: #f8fafc;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #2563eb;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --warning: #d97706;
+  --success: #059669;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --chart-1: #2563eb;
+  --chart-2: #059669;
+  --chart-3: #d97706;
+  --chart-4: #7c3aed;
+  --chart-5: #dc2626;
   --radius: 12px;
+  /* The sidebar carries the site context, so it sits on `surface` rather than on
+     a tint of its own. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #020817;
+  --sidebar-primary: #0f172a;
+  --sidebar-primary-foreground: #f8fafc;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #2563eb;
+}
+
+.dark {
+  --background: #020817;
+  --foreground: #f8fafc;
+  --surface: #0f172a;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #f8fafc;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #60a5fa;
+  --accent-foreground: #020817;
+  --destructive: #f87171;
+  --warning: #fbbf24;
+  --success: #34d399;
+  --border: #334155;
+  --input: #334155;
+  --ring: #60a5fa;
+  --chart-1: #60a5fa;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #c4b5fd;
+  --chart-5: #f87171;
+  --sidebar: #0f172a;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #f8fafc;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #334155;
+  --sidebar-ring: #60a5fa;
+}
+
+/* Tailwind utilities over the values above. `--color-surface` has no shadcn
+   counterpart and is ContentKit's own, so it is mapped here alongside them. */
+@theme inline {
   --font-sans:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
 }
 
 @layer base {
-  .dark {
-    --color-background: #020817;
-    --color-surface: #0f172a;
-    --color-foreground: #f8fafc;
-    --color-muted: #1e293b;
-    --color-muted-foreground: #94a3b8;
-    --color-border: #334155;
-    --color-primary: #f8fafc;
-    --color-primary-foreground: #0f172a;
-    --color-accent: #60a5fa;
-    --color-accent-foreground: #020817;
-    --color-chart-1: #60a5fa;
-    --color-chart-2: #34d399;
-    --color-chart-3: #fbbf24;
-    --color-chart-4: #c4b5fd;
-    --color-chart-5: #f87171;
-  }
-
   * {
-    border-color: var(--color-border);
+    @apply border-border outline-ring/50;
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
-    font-family: var(--font-sans);
+    @apply bg-background text-foreground font-sans;
     /* The console is an app shell: panes scroll, the document does not. */
     overflow: hidden;
     scrollbar-gutter: stable;

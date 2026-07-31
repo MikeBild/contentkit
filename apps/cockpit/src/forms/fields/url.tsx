@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Input } from '@/components/ui/primitives'
-import { cn } from '@/lib/utils'
-import { FieldShell, invalidBorder, type FieldShellProps } from './field'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
 const DEFAULT_PROTOCOLS = ['https:', 'http:']
@@ -120,7 +121,7 @@ export function UrlField({
           autoComplete="off"
           value={draft}
           placeholder={placeholder}
-          className={cn('font-mono', invalidBorder(error))}
+          className="font-mono"
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
         />
@@ -169,24 +170,35 @@ export function UrlTemplateField({
           <Input
             {...control}
             value={value}
-            className={cn('font-mono', invalidBorder(error))}
+            className="font-mono"
             onChange={(event) => onChange(event.target.value)}
           />
-          <div className="flex flex-wrap gap-1">
-            {placeholders.map((entry) => (
-              <button
-                key={entry.token}
-                type="button"
-                title={entry.description}
-                disabled={control.disabled}
-                data-testid={`${control['data-testid']}-insert-${entry.token}`}
-                onClick={() => onChange(`${value}{${entry.token}}`)}
-                className="rounded-md border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                {`{${entry.token}}`}
-              </button>
-            ))}
-          </div>
+          {/* What each placeholder stands for used to be a native `title`, which
+              is invisible to a keyboard and to a touch screen — the two ways this
+              console is actually driven. A tooltip on the insert button says it
+              to everyone. */}
+          <TooltipProvider>
+            <div className="flex flex-wrap gap-1">
+              {placeholders.map((entry) => (
+                <Tooltip key={entry.token}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="font-mono"
+                      disabled={control.disabled}
+                      data-testid={`${control['data-testid']}-insert-${entry.token}`}
+                      onClick={() => onChange(`${value}{${entry.token}}`)}
+                    >
+                      {`{${entry.token}}`}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{entry.description}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </TooltipProvider>
         </div>
       )}
     </FieldShell>
