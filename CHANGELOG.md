@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.8.0 — 2026-07-31
+
+### Changed
+
+- The console runs on shadcn/ui. It was built on hand-written lookalikes —
+  components named after shadcn, styled like shadcn, with none of the behaviour
+  underneath — and that is why the navigation was sixteen flat labels, why every
+  explanation became prose beneath a field, why the publication date was a raw
+  control reading `tt.mm.jjjj`, and why the dialog every destructive action passes
+  through was a `div` carrying `aria-modal` it did not enforce. There is one
+  component stack now, with Radix underneath and no hand-rolled twin.
+- The sidebar is a navigation rather than a list: the site switcher sits at the
+  top, the pages it governs are grouped beneath it, the installation-wide pages are
+  their own block, and the whole rail collapses to icons. The command palette is
+  cmdk, reachable with ⌘K, and offers only what the session's exact scopes permit.
+- shadcn's variable names carry ContentKit's values from `src/design-system.mjs`,
+  compared token by token in both modes, so the console and the sites it publishes
+  still read as one product. `--warning` and `--success` join `--destructive`, all
+  derived from the same palette, because a severity spelled `bg-chart-3` is a chart
+  series' name doing a warning's job.
+
+### Added
+
+- A test suite that can see behaviour. Everything above was previously graded by
+  reading source text, which cannot tell a trapped focus from the word
+  `AlertDialogContent`. A rendering suite now drives the console in CI: focus
+  trapped and returned in all three shapes a trigger can be in, a server refusal
+  announced rather than tinted, a progress bar that exposes no fraction the API did
+  not report. A floor test names every contract, so a case cannot be deleted
+  quietly, and writes down what is still graded by grep — a runner sitting in a
+  repository looks like coverage from a distance.
+
+### Fixed
+
+- The unsaved-changes guard discarded an operator's work when a save failed. It
+  awaited the save inside a `try`/`catch` and left unless something was thrown, and
+  neither caller throws: both report failure by returning `false`. So a failed save
+  was indistinguishable from a successful one and the guard navigated away with the
+  edits, in the content editor and the site settings page. The comment above it
+  asserted the opposite in as many words.
+- No dialog that owns a mutation can be dismissed while the request is in the air —
+  not by Escape, not by the backdrop, not by the close button, which says so by
+  being disabled.
+
 ## 4.7.1 — 2026-07-30
 
 ### Fixed
