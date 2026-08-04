@@ -441,12 +441,19 @@ function SectionWarnings({
           : `${active.length} things are accepted but questionable`}
       </AlertTitle>
       <AlertDescription className="flex flex-col items-start gap-1">
+        {/*
+          Each of these opens the section that holds the offending value. It is
+          not navigation — the URL is the same afterwards and the page has not
+          moved to another route — so it stopped being link-styled: an underline
+          here promised a destination and delivered an accordion. Ghost keeps it
+          a sentence with a hover and a focus ring, which is what it is.
+        */}
         {active.map((entry) => (
           <Button
             key={entry.id}
-            variant="link"
+            variant="ghost"
             size="xs"
-            className="h-auto p-0 text-left"
+            className="-mx-1.5 h-auto px-1.5 py-0.5 text-left whitespace-normal"
             data-testid={`ck-site-warnings-${entry.id}`}
             onClick={() => onOpen(entry.id)}
           >

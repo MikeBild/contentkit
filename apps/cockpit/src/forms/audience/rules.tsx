@@ -181,7 +181,7 @@ function RuleDialog({
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {save.isPending ? 'Saving…' : editing ? 'Save rule' : 'Create rule'}
+            {editing ? 'Save rule' : 'Create rule'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -306,7 +306,7 @@ export function RulesCard({
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="ghost" data-testid={`ck-rule-delete-${rule.id}`} onClick={open}>
+                            <Button size="sm" variant="destructive" data-testid={`ck-rule-delete-${rule.id}`} onClick={open}>
                               Delete
                             </Button>
                           )}

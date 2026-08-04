@@ -80,18 +80,26 @@ export function SitesPage() {
                       carries this row's slug as ?site= rather than relying on
                       the switcher: the operator picked this site here.
                     */}
-                    <AppLink
-                      to="/settings"
-                      // The one link in the console that deliberately changes
-                      // the site rather than carrying it forward. Written as a
-                      // reducer because AppLink is route-agnostic and its search
-                      // type is resolved per route.
-                      search={(() => ({ site: entry.slug })) as never}
-                      data-testid={`ck-sites-settings-${entry.slug}`}
-                      className="rounded-md px-2 py-1 text-sm text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
-                    >
-                      Settings
-                    </AppLink>
+                    {/*
+                      Styled by `Button variant="link"`, which is what a link
+                      looks like everywhere else in this console; it used to
+                      carry its own dotted-underline rule, so the one navigation
+                      in the table read as a fourth kind of thing beside the
+                      buttons in the same cell.
+                    */}
+                    <Button asChild variant="link" size="sm">
+                      <AppLink
+                        to="/settings"
+                        // The one link in the console that deliberately changes
+                        // the site rather than carrying it forward. Written as a
+                        // reducer because AppLink is route-agnostic and its search
+                        // type is resolved per route.
+                        search={(() => ({ site: entry.slug })) as never}
+                        data-testid={`ck-sites-settings-${entry.slug}`}
+                      >
+                        Settings
+                      </AppLink>
+                    </Button>
                     {can('site:admin') ? <DeleteSite site={entry} /> : null}
                   </TableCell>
                 </TableRow>
@@ -201,7 +209,7 @@ function DeleteSite({ site }: { site: Site }) {
     >
       {(open) => (
         <Button
-          variant="ghost"
+          variant="destructive"
           size="sm"
           aria-label={`Delete ${site.name}`}
           data-testid={`ck-site-delete-${site.slug}`}
@@ -212,7 +220,10 @@ function DeleteSite({ site }: { site: Site }) {
           }}
         >
           {/* No size class on an icon inside a Button: the CVA sizes it per button
-              size, and the severity is the dialog's to state, not this icon's. */}
+              size. The severity is no longer left entirely to the dialog: this
+              was `ghost`, on the argument that the dialog states the danger — but
+              the reader decides whether to press *this* before any dialog exists,
+              and next to it in the same cell sits a link that only navigates. */}
           <Trash2 data-icon="inline-start" />
           Delete
         </Button>

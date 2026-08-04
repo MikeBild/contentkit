@@ -135,7 +135,9 @@ export function DecksPage() {
                     data-testid="deck-render"
                     onClick={open}
                     disabled={!site || !can('deck:render') || compile.isPending}
+                    aria-busy={compile.isPending}
                   >
+                    {compile.isPending ? <Spinner data-icon="inline-start" /> : null}
                     Render
                   </Button>
                 )}

@@ -156,7 +156,7 @@ export function SystemPage() {
                 onConfirm={() => ck.releases.storageGc()}
               >
                 {(open) => (
-                  <Button data-testid="maintenance-storage-gc" variant="outline" onClick={open}>
+                  <Button data-testid="maintenance-storage-gc" variant="destructive" onClick={open}>
                     Storage GC
                   </Button>
                 )}

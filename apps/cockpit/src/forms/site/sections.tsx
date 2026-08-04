@@ -316,7 +316,7 @@ function Languages({ disabled }: SectionProps) {
                       onClick={() => remove.mutate(row.locale)}
                     >
                       {remove.isPending ? <Spinner data-icon="inline-start" /> : null}
-                      {remove.isPending ? 'Removing…' : 'Remove'}
+                      Remove
                     </Button>
                     <Button
                       variant="ghost"
@@ -393,7 +393,7 @@ function Languages({ disabled }: SectionProps) {
           onClick={() => add.mutate(adding)}
         >
           {add.isPending ? <Spinner data-icon="inline-start" /> : null}
-          {add.isPending ? 'Adding…' : 'Add locale'}
+          Add locale
         </Button>
       </div>
 

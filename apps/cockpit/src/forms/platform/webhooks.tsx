@@ -168,7 +168,7 @@ function EndpointDialog({
           </Button>
           <Button data-testid="ck-webhook-submit" disabled={save.isPending || !url} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {save.isPending ? 'Saving…' : editing ? 'Save endpoint' : 'Create endpoint'}
+            {editing ? 'Save endpoint' : 'Create endpoint'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -280,7 +280,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                           {(open) => (
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="destructive"
                               data-testid={`ck-webhook-rotate-${endpoint.id}`}
                               onClick={open}
                             >
@@ -306,7 +306,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                           {(open) => (
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="destructive"
                               data-testid={`ck-webhook-delete-${endpoint.id}`}
                               onClick={open}
                             >

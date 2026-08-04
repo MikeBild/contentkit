@@ -249,7 +249,7 @@ function ReaderDialog({
           </Button>
           <Button data-testid="ck-reader-submit" disabled={!canSave} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {save.isPending ? 'Saving…' : editing ? 'Save reader' : 'Create reader'}
+            {editing ? 'Save reader' : 'Create reader'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -367,7 +367,7 @@ export function ReadersCard({ site }: { site: string }) {
                           {(open) => (
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="destructive"
                               data-testid={`ck-reader-delete-${reader.id}`}
                               onClick={open}
                             >

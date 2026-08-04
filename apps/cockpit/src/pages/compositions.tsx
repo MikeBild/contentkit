@@ -311,10 +311,17 @@ export function CompositionsPage() {
                   {rows.map((descriptor) => (
                     <TableRow key={descriptor.id} data-testid="pattern-row" data-pattern={descriptor.id}>
                       <TableCell>
+                        {/*
+                          It opens a dialog on this page; the URL does not move.
+                          Styled as a link it promised a destination it has never
+                          had, so it wears the same grammar every other row
+                          control that reveals a record wears — `published-inspect`,
+                          `content-open`, `ck-group-members-*`.
+                        */}
                         <Button
-                          variant="link"
+                          variant="outline"
                           size="xs"
-                          className="h-auto p-0 font-mono text-xs"
+                          className="font-mono text-xs"
                           data-testid={`pattern-open-${descriptor.id}`}
                           onClick={() => setPattern(descriptor.id)}
                         >
@@ -365,10 +372,11 @@ export function CompositionsPage() {
                   {guideRows.map((entry) => (
                     <TableRow key={entry.id} data-testid="guide-row" data-guide={entry.id}>
                       <TableCell>
+                        {/* A dialog, not a destination — see the pattern table above. */}
                         <Button
-                          variant="link"
+                          variant="outline"
                           size="xs"
-                          className="h-auto p-0"
+                          className="text-left"
                           data-testid={`guide-open-${entry.id}`}
                           onClick={() => setGuide(entry.id)}
                         >

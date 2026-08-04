@@ -118,7 +118,7 @@ export function useUnsavedGuard({
                 }}
               >
                 {isSaving ? <Spinner data-icon="inline-start" /> : null}
-                {isSaving ? 'Saving…' : 'Save and leave'}
+                Save and leave
               </Button>
             ) : null}
           </DialogFooter>

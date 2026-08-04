@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
+import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge, type StatusTone } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
@@ -155,8 +156,9 @@ export function ReleasesPage() {
               onConfirm={() => build.mutateAsync()}
             >
               {(open) => (
-                <Button data-testid="release-build" onClick={open} disabled={build.isPending}>
-                  {build.isPending ? 'Building…' : 'New release'}
+                <Button data-testid="release-build" onClick={open} disabled={build.isPending} aria-busy={build.isPending}>
+                  {build.isPending ? <Spinner data-icon="inline-start" /> : null}
+                  New release
                 </Button>
               )}
             </Confirm>
@@ -250,6 +252,16 @@ export function ReleasesPage() {
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {formatDate(release.completed_at)}
                       </TableCell>
+                      {/*
+                        Three acts, three grammars — the row this rule was
+                        written for. `Details` reveals the row below and changes
+                        nothing, so it is the console's disclosure: ghost, with
+                        `aria-expanded` saying which state it is in. `Activate`
+                        changes the live site, so it is a button. `Delete` cannot
+                        be undone, so it is `destructive` — it used to be `ghost`,
+                        which made an irreversible act and a disclosure the same
+                        control to look at.
+                      */}
                       <TableCell className="flex flex-wrap gap-2">
                         <Button
                           size="sm"
@@ -313,7 +325,7 @@ export function ReleasesPage() {
                               <Button
                                 data-testid={`release-delete-${release.id}`}
                                 size="sm"
-                                variant="ghost"
+                                variant="destructive"
                                 onClick={openDialog}
                               >
                                 Delete

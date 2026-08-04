@@ -344,8 +344,9 @@ Page: `nav-releases`. Row testid `release-row`, id in `data-release`.
 2. Click `release-build`.
    **Expect** `confirm-dialog` naming the site in bold and stating the live site changes.
 3. `confirm-cancel` → no request. Then repeat and `confirm-accept`.
-   **Expect** `POST /v1/sites/cockpit-verify/releases` → `201`. The button reads `Building…` while in
-   flight. A new row appears; after the poll it reaches `active`.
+   **Expect** `POST /v1/sites/cockpit-verify/releases` → `201`. The button still reads `New release`
+   while in flight — it grows a `ck-spinner` and goes `disabled`, and the label does not move, so the
+   control the operator aimed at is still the control under the pointer. A new row appears; after the poll it reaches `active`.
    **Fail if** the list never updates (the page polls while a build is in flight) or the release
    settles on `failed` — capture the failure reason and see Appendix A.4.
 4. **Important semantics:** a plain build carries **no** `revision_ids`. It rebuilds what is already

@@ -144,7 +144,7 @@ export function ConflictDialog({
             onClick={onOverwrite}
           >
             {isSaving ? <Spinner data-icon="inline-start" /> : null}
-            {isSaving ? 'Saving…' : 'Overwrite with mine'}
+            Overwrite with mine
           </Button>
         </DialogFooter>
       </DialogContent>

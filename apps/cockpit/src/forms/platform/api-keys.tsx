@@ -148,7 +148,7 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
           </Button>
           <Button data-testid="ck-api-key-submit" disabled={!canCreate} onClick={() => create.mutate()}>
             {create.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {create.isPending ? 'Creating…' : 'Create key'}
+            Create key
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -280,7 +280,7 @@ export function ApiKeysCard() {
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="ghost" data-testid={`ck-api-key-revoke-${key.id}`} onClick={open}>
+                            <Button size="sm" variant="destructive" data-testid={`ck-api-key-revoke-${key.id}`} onClick={open}>
                               Revoke
                             </Button>
                           )}

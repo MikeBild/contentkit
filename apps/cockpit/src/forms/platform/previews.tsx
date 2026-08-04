@@ -162,7 +162,7 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
             onClick={() => create.mutate()}
           >
             {create.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {create.isPending ? 'Building…' : 'Build preview'}
+            Build preview
           </Button>
         </DialogFooter>
       </DialogContent>

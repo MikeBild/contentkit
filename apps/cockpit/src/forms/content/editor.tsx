@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { ck, type ContentItem, type Revision } from '@/api/ck'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Card, CardContent } from '@/components/ui/card'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
@@ -204,9 +205,11 @@ export function ContentEditor({
                 variant="outline"
                 data-testid="ck-content-build-preview"
                 disabled={!canWrite || blocked || isBuilding || form.isSaving}
+                aria-busy={isBuilding}
                 onClick={() => void buildPreview()}
               >
-                {isBuilding ? 'Building…' : 'Save and build a preview'}
+                {isBuilding ? <Spinner data-icon="inline-start" /> : null}
+                Save and build a preview
               </Button>
             ) : null
           }

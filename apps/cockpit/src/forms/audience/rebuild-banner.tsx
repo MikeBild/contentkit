@@ -87,7 +87,7 @@ export function RebuildBanner({ site, onBuilt }: { site: string; onBuilt: () => 
               {(open) => (
                 <Button size="sm" data-testid="ck-rebuild-build" disabled={build.isPending} onClick={open}>
                   {build.isPending ? <Spinner data-icon="inline-start" /> : null}
-                  {build.isPending ? 'Building…' : 'Build release'}
+                  Build release
                 </Button>
               )}
             </Confirm>

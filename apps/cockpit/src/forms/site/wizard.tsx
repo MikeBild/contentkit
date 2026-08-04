@@ -266,11 +266,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                     onClick={() => create.mutate()}
                   >
                     {create.isPending ? <Spinner data-icon="inline-start" /> : null}
-                    {create.isPending
-                      ? 'Creating…'
-                      : writesPreset
-                        ? 'Create site with this preset'
-                        : 'Create site'}
+                    {writesPreset ? 'Create site with this preset' : 'Create site'}
                   </Button>
                 ) : (
                   <Button

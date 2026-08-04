@@ -222,7 +222,7 @@ export function ContentPage() {
                 }}
               >
                 {(openConfirm) => (
-                  <Button data-testid="content-discard" size="sm" variant="ghost" onClick={openConfirm}>
+                  <Button data-testid="content-discard" size="sm" variant="destructive" onClick={openConfirm}>
                     Discard
                   </Button>
                 )}
@@ -244,7 +244,7 @@ export function ContentPage() {
                 }}
               >
                 {(openConfirm) => (
-                  <Button data-testid="content-unpublish" size="sm" variant="ghost" onClick={openConfirm}>
+                  <Button data-testid="content-unpublish" size="sm" variant="destructive" onClick={openConfirm}>
                     Unpublish
                   </Button>
                 )}
@@ -584,8 +584,15 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex gap-2">
+          {/*
+            Outline, not the filled default: this page's one primary action is
+            `content-new`, and a second filled button — on a card the reader
+            reaches only after opening a document — asked them to choose between
+            two things the page said were equally the point.
+          */}
           <Button
             size="sm"
+            variant="outline"
             data-testid="content-audio-create"
             disabled={!can('content:write') || !item.published_revision_id}
             onClick={() => void run('create')}
@@ -602,7 +609,7 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
             {(open) => (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="destructive"
                 data-testid="content-audio-remove"
                 disabled={!can('content:write')}
                 onClick={open}

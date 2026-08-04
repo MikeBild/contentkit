@@ -57,7 +57,7 @@ export function SaveBar({
           submit. */}
       <Button size="sm" data-testid={`${testId}-save`} disabled={!canSave} onClick={onSave}>
         {isSaving ? <Spinner data-icon="inline-start" /> : null}
-        {isSaving ? 'Saving…' : 'Save'}
+        Save
       </Button>
     </div>
   )

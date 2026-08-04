@@ -320,7 +320,7 @@ function GrantDialog({
           </Button>
           <Button data-testid="ck-grant-submit" disabled={!canSave} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {save.isPending ? 'Saving…' : restoring ? 'Restore grant' : editing ? 'Save grant' : 'Create grant'}
+            {restoring ? 'Restore grant' : editing ? 'Save grant' : 'Create grant'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -455,7 +455,7 @@ export function IdentityGrantsCard() {
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="ghost" data-testid={`ck-grant-revoke-${grant.id}`} onClick={open}>
+                            <Button size="sm" variant="destructive" data-testid={`ck-grant-revoke-${grant.id}`} onClick={open}>
                               Revoke
                             </Button>
                           )}

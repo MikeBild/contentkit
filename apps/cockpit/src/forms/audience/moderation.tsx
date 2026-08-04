@@ -214,7 +214,7 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                           {(open) => (
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="destructive"
                               data-testid={`ck-comment-delete-${comment.id}`}
                               onClick={open}
                             >
@@ -350,7 +350,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                               {(openDialog) => (
                                 <Button
                                   size="sm"
-                                  variant="ghost"
+                                  variant="destructive"
                                   data-testid={`ck-contact-delete-${submission.id}`}
                                   onClick={openDialog}
                                 >
@@ -472,7 +472,7 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                         {(open) => (
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="destructive"
                             data-testid={`ck-feedback-reset-${row.content_item_id}`}
                             onClick={open}
                           >

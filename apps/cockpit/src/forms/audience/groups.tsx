@@ -134,7 +134,7 @@ function GroupDialog({
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {save.isPending ? 'Saving…' : editing ? 'Save group' : 'Create group'}
+            {editing ? 'Save group' : 'Create group'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -258,7 +258,7 @@ function MembersDialog({
           </Button>
           <Button data-testid="ck-group-members-submit" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {save.isPending ? 'Saving…' : 'Replace membership'}
+            Replace membership
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -418,7 +418,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                             {(open) => (
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="destructive"
                                 data-testid={`ck-group-delete-${group.id}`}
                                 onClick={open}
                               >

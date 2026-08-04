@@ -535,7 +535,25 @@ const FLOOR = {
   // empty and failed states say, which used to live in ui/primitives.tsx.
   'status-badge.tsx': 0,
   'table-state.tsx': 2,
-  'use-unsaved-guard.tsx': 4,
+  /**
+   * Four became two, and no sentence left the screen.
+   *
+   * The old four counted "Save and leave" twice. The label was written as
+   * `{isSaving ? 'Saving…' : 'Save and leave'}`, and `literalsIn` reads both
+   * branches of a ternary — so one button contributed two prose slots, of which
+   * at most one was ever rendered. UI-UX.md §2 now forbids a button that rewrites
+   * its own label while it works (`Spinner` + `disabled`, the label stays), so
+   * the ternary is gone and the label is a plain child of `<Button>`.
+   *
+   * A plain child that follows a brace expression is invisible to `runs`, whose
+   * pattern is `>text<` and cannot span the `}` that the spinner's conditional
+   * leaves in front of the words. So the honest count this analyser can see is
+   * two, and `ck-unsaved-save` is guarded instead by
+   * `test/unit/cockpit-affordances.test.mjs`, which asserts that a button's label
+   * is a literal rather than a function of a pending flag — a label that ceased
+   * to exist would not be one.
+   */
+  'use-unsaved-guard.tsx': 2,
   /**
    * The DOM test that renders the shell, co-located with it — a `.tsx` under
    * `forms/`, so the walk finds it, and it has to be declared or the first test

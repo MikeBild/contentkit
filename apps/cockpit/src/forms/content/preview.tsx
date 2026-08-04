@@ -322,7 +322,7 @@ export function ValidatePane({
         }}
       >
         {isPending ? <Spinner data-icon="inline-start" /> : null}
-        {isPending ? 'Validating…' : kind === 'deck' ? 'Validate the deck' : 'Validate the composition'}
+        {kind === 'deck' ? 'Validate the deck' : 'Validate the composition'}
       </Button>
       {verdict ? (
         // Accepted or refused, and the server's own words for the second. Both

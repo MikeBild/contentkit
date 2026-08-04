@@ -354,13 +354,30 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
           The secret is shown on a ContentKit page and never passes through the conversation.
         </AlertDescription>
         <div className="col-start-2 mt-2">
-          <Button
-            data-testid="assistant-elicitation-open"
-            size="sm"
-            onClick={() => elicitation.url && window.open(elicitation.url, '_blank', 'noopener,noreferrer')}
-          >
-            Open secure page
-          </Button>
+          {/*
+            This opens a page; it changes nothing here. It was a filled button
+            calling `window.open`, which is a link wearing a mutation's clothes —
+            no middle-click, no "open in new tab", nothing to copy, and invisible
+            to anything that reads the document for its links. It is an anchor
+            now, styled as the console's one link.
+
+            Rendered only when there is somewhere to go: an anchor with no href
+            is not a link but unfocusable text that looks like one, and `url` is
+            optional on the wire. Where it is absent the callout stands on its
+            own words, which are the ones that matter.
+          */}
+          {elicitation.url ? (
+            <Button asChild size="sm" variant="link" className="h-auto p-0">
+              <a
+                data-testid="assistant-elicitation-open"
+                href={elicitation.url}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Open secure page
+              </a>
+            </Button>
+          ) : null}
         </div>
       </Alert>
     )
@@ -386,10 +403,18 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
         </p>
       ) : (
         <div className="col-start-2 mt-3 flex gap-2">
-          <Button data-testid="elicitation-approve" size="sm" onClick={() => respond('accept')}>
+          {/*
+            The page's one filled button is `assistant-send`. This callout sits
+            in the same scroll as the composer, so a second filled button here
+            put two "the thing to do" controls on screen at once — and the one
+            that was filled was a decision the operator should make on the
+            request's own terms, not because it was the loud one. Approve leads,
+            Decline is quieter still; neither pretends to be the page's purpose.
+          */}
+          <Button data-testid="elicitation-approve" size="sm" variant="outline" onClick={() => respond('accept')}>
             Approve
           </Button>
-          <Button data-testid="elicitation-decline" size="sm" variant="outline" onClick={() => respond('decline')}>
+          <Button data-testid="elicitation-decline" size="sm" variant="ghost" onClick={() => respond('decline')}>
             Decline
           </Button>
         </div>
