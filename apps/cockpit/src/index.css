@@ -8,7 +8,9 @@
    and so on. This file gives them shadcn's NAMES with ContentKit's VALUES, taken
    from resolveDesignSystem()'s light and dark defaults in src/design-system.mjs,
    so the console and the sites it publishes read as one product rather than as a
-   stock component demo. Keep the two in sync; a drift test compares all of them.
+   stock component demo. Keep the two in sync; every binding below is compared
+   against the design system by test/unit/cockpit-design-tokens.test.mjs, in both
+   schemes and in both directions — a drifted value and an unaccounted one.
 
    Six names have no counterpart in the design system and are derived here rather
    than invented: `card` and `popover` take `surface`, `secondary` takes `muted`,
