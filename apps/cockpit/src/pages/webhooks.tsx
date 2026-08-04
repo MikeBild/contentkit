@@ -1,8 +1,12 @@
 import { useState } from 'react'
+import { ck } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { TabCountBadge } from '@/components/tab-count'
 import { TabPanel, Tabs } from '@/components/ui/tabs'
 import { WebhookDeliveriesCard, WebhookEndpointsCard } from '@/forms/platform/webhooks'
+import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
+import { useTabCount } from '@/lib/tab-counts'
 
 /**
  * Two parallel readings of one subject — what this site sends, and what came of
@@ -24,9 +28,57 @@ import { useSite } from '@/lib/site'
  */
 type WebhookTab = 'endpoints' | 'deliveries'
 
+/**
+ * `GET /v1/webhook-deliveries` is limit-paged and defaults to 50, so a count
+ * read off it is a floor rather than a total. 200 is high enough that a site
+ * with a handful of broken endpoints gets an exact number, and the badge says
+ * "200+" rather than "200" when it is not — see `atLeast` in lib/tab-counts.ts.
+ */
+const FAILED = { status: 'failed', limit: 200 } as const
+
 export function WebhooksPage() {
   const { site, siteId } = useSite()
   const [tab, setTab] = useState<WebhookTab>('endpoints')
+
+  /*
+    Endpoints is a free read: both cards already query `keys.webhooks.list(site)`
+    — the delivery filter names its endpoints from it — so this observes a row
+    that exists whichever tab is open.
+
+    Deliveries is the one request this page adds, and it is the one that answers
+    the question an operator has while looking at the other tab: not how many
+    events were sent, but how many never arrived. `pending` is a queue draining
+    itself and `delivered` is the ordinary case; `failed` is the only one of the
+    three with a Retry button under it, which is what "waiting" means here.
+  */
+  const endpoints = useTabCount({
+    queryKey: keys.webhooks.list(site),
+    queryFn: () => ck.webhooks.list(site),
+    count: (rows) => rows.length,
+    enabled: Boolean(site),
+    open: tab === 'endpoints',
+  })
+  const failed = useTabCount({
+    queryKey: keys.webhooks.deliveries(siteId, FAILED),
+    queryFn: () => ck.webhooks.deliveries(siteId, FAILED),
+    count: (rows) => rows.length,
+    enabled: Boolean(siteId),
+    open: tab === 'deliveries',
+  })
+
+  // Destructive, and the word "failed" beside the number: §8 refuses to convey a
+  // severity by colour alone, and without the noun the figure would read as the
+  // size of the delivery log rather than the part of it that went nowhere.
+  const endpointsBadge = <TabCountBadge count={endpoints} data-testid="ck-webhook-count-endpoints" />
+  const deliveriesBadge = (
+    <TabCountBadge
+      count={failed}
+      noun="failed"
+      variant="destructive"
+      atLeast={failed === FAILED.limit}
+      data-testid="ck-webhook-count-deliveries"
+    />
+  )
 
   if (!site)
     return (
@@ -45,8 +97,8 @@ export function WebhooksPage() {
         // scroll sideways and nothing else.
         className="mb-4 overflow-x-auto"
         tabs={[
-          { id: 'endpoints', label: 'Endpoints' },
-          { id: 'deliveries', label: 'Deliveries' },
+          { id: 'endpoints', label: 'Endpoints', badge: endpointsBadge },
+          { id: 'deliveries', label: 'Deliveries', badge: deliveriesBadge },
         ]}
       />
 

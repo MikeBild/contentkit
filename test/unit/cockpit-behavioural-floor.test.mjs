@@ -833,16 +833,18 @@ const UNCOVERED = [
   {
     id: 'ui/derived-readouts',
     missing:
-      'Relative time, the release chain, the stat tiles and the audio budget: each turns numbers into a sentence an operator trusts, and each is checked only by unit tests over the maths, never over what is rendered.',
+      'Relative time, the release chain, the stat tiles, the audio budget and a tab strip’s count badge: each turns numbers into a sentence an operator trusts, and each is checked only by unit tests over the maths, never over what is rendered. The tab count is the newest and the one with a rule worth rendering — a known zero and an unknown must both draw nothing, and nothing is exactly what a jsdom assertion about an absent badge cannot tell apart from a page that failed to render. It is graded instead by scripts/validate-cockpit-browser.mjs, which reads the badge and then opens the panel it counts.',
     where: [
       'components/ui/relative-time.tsx',
       'components/ui/release-chain.tsx',
       'components/ui/progress-value.ts',
+      'components/tab-count.tsx',
       'lib/relative-time.ts',
       'lib/release-chain.ts',
       'lib/stat-tile.ts',
       'lib/audio-budget.ts',
       'lib/reported.ts',
+      'lib/tab-counts.ts',
     ],
   },
   {

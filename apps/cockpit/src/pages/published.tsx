@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck, type ContentKind, type PublishedList } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { TabCountBadge } from '@/components/tab-count'
 import { TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -182,15 +183,15 @@ export function PublishedPage() {
   )
 }
 
-const PUBLISHED_VIEWS = [
-  { id: 'rendered', label: 'Rendered' },
-  { id: 'markdown', label: 'Markdown' },
-  { id: 'semantic', label: 'Semantic' },
-  { id: 'diagnostics', label: 'Diagnostics' },
-  { id: 'composition', label: 'Composition' },
-] as const
+/**
+ * The five views, in the order the strip offers them, and the type of "which one
+ * is open". The strip itself is written out in the JSX below rather than mapped
+ * from here, because one of the five carries a badge and a tab is a definition
+ * rather than a row in a table.
+ */
+const PUBLISHED_VIEWS = ['rendered', 'markdown', 'semantic', 'diagnostics', 'composition'] as const
 
-type PublishedView = (typeof PUBLISHED_VIEWS)[number]['id']
+type PublishedView = (typeof PUBLISHED_VIEWS)[number]
 
 function PublishedDetail({
   site,
@@ -213,6 +214,20 @@ function PublishedDetail({
   const [tab, setTab] = useState<PublishedView>('rendered')
   const scheme = useContentScheme()
   const data = document.data as Record<string, unknown> | undefined
+
+  /*
+    Lifted, not fetched. Four of these five tabs are views of one document that
+    has already been read, so the only number worth a badge is the one thing the
+    reader would otherwise have to click to find out: whether the release said
+    anything about this document while rendering it.
+
+    `undefined` until the read lands and `undefined` again if it fails — which is
+    the third state, and it is why this is not written `?? 0`. A clean document
+    counts zero and shows nothing; a document whose read failed also shows
+    nothing, and the panel below carries the error that tells them apart.
+  */
+  const diagnostics = Array.isArray(data?.diagnostics) ? data.diagnostics.length : undefined
+  const diagnosticsBadge = <TabCountBadge count={diagnostics} data-testid="published-count-diagnostics" />
 
   return (
     // Was a hand-rolled `fixed inset-0 z-50 … bg-black/40` overlay: no focus
@@ -246,8 +261,14 @@ function PublishedDetail({
             data-testid="published-tab"
             value={tab}
             onValueChange={setTab}
-            tabs={PUBLISHED_VIEWS}
             className="overflow-x-auto"
+            tabs={[
+              { id: 'rendered', label: 'Rendered' },
+              { id: 'markdown', label: 'Markdown' },
+              { id: 'semantic', label: 'Semantic' },
+              { id: 'diagnostics', label: 'Diagnostics', badge: diagnosticsBadge },
+              { id: 'composition', label: 'Composition' },
+            ]}
           />
           {document.isPending ? (
             <SkeletonText lines={10} label="Loading the published document…" data-testid="published-skeleton" />

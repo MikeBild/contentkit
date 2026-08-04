@@ -714,6 +714,90 @@ try {
     await context.close()
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Case 7 — a tab's count is the count of the list behind it.
+  //
+  // Two surfaces, one number, and no source test can put them side by side: the
+  // badge is drawn from a page-level query and the rows from the card's own, and
+  // the only thing that proves they are the same fact is reading one and then
+  // opening the other. docs/OPEN-WORK.md §1 names this case for exactly that.
+  //
+  // It also pins the cost rule that item's Risks section asks for. The count for
+  // the tab the reader is *on* is not fetched — its panel is already the answer —
+  // so Comments carries no badge on arrival and gains one the moment it stops
+  // being the open tab. Asserted in both directions, because "no badge yet" and
+  // "no badge ever" look identical in a screenshot and only one of them is the
+  // design.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    const page = await context.newPage()
+    watch(page)
+    await open(page, '/moderation', fixture.origin)
+
+    const contactBadge = page.locator('[data-testid="ck-moderation-count-contact"]')
+    const shown = await contactBadge
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false)
+    expect(
+      shown,
+      '1280×800 /moderation: the Contact tab carries no count. Behind a tab a list is behind a door with no number on it — a moderator on Comments cannot see that contact submissions are waiting.',
+    )
+
+    // Two different defects arrive here, so the badge's text is read before it
+    // is judged: "30 pending" on the open tab means the count was fetched for a
+    // number already on screen, and "0 pending" means an unknown count was
+    // rendered as a zero — which is the third state collapsing into the second.
+    const openTab = page.locator('[data-testid="ck-moderation-count-comments"]')
+    const openTabText = (await openTab.count()) > 0 ? ((await openTab.textContent()) ?? '').trim() : null
+    expect(
+      openTabText === null,
+      `1280×800 /moderation: Comments is the open tab and it carries a badge reading "${openTabText}". Either its count was fetched for a number already on screen — the extra request per page load the open-tab gate exists to avoid — or a count nobody has yet is being drawn as a zero, and absent must never read as zero.`,
+    )
+
+    if (shown) {
+      const badgeText = ((await contactBadge.textContent()) ?? '').trim()
+      const counted = Number.parseInt(badgeText, 10)
+      expect(
+        Number.isInteger(counted) && counted > 0,
+        `1280×800 /moderation: the Contact tab's badge reads "${badgeText}", which is not a positive whole number. A badge exists to be read as a count; a zero or an empty one is noise the strip is supposed to omit.`,
+      )
+
+      await page.locator('[data-testid="ck-moderation-tabs-contact"]').click()
+      const panel = page.locator('[data-testid="ck-moderation-tab-contact"]')
+      await panel.waitFor({ state: 'visible', timeout: 5000 })
+      const rows = await panel.locator('[data-testid="ck-contact-row"]').count()
+      note({ case: 'tab-count-matches-panel', badge: badgeText, counted, rows })
+
+      expect(
+        counted === rows,
+        `1280×800 /moderation: the Contact tab says ${counted} and the Contact panel lists ${rows}. The badge and the list are two readings of one query; a badge that disagrees with the list under it is worse than no badge, because it is believed.`,
+      )
+
+      // The count does not vanish when its tab becomes the open one. A number
+      // that disappeared under the pointer would read as "it just went to zero",
+      // which is the one thing absent must never mean.
+      expect(
+        (await contactBadge.count()) === 1,
+        '1280×800 /moderation: opening the Contact tab removed its count. Suppressing the *request* for the open tab is the rule; discarding a count already fetched makes the badge flicker out under the click that opened it.',
+      )
+
+      // And the deferral is a deferral: Comments was not counted while it was
+      // open, and is counted now that it is not.
+      const commentsBadge = page.locator('[data-testid="ck-moderation-count-comments"]')
+      expect(
+        await commentsBadge
+          .waitFor({ state: 'visible', timeout: 10_000 })
+          .then(() => true)
+          .catch(() => false),
+        '1280×800 /moderation: Comments still carries no count after the reader moved to another tab. Its count is deferred until it is not the open tab; never fetching it is not a deferral, it is the missing badge this case exists to find.',
+      )
+      note({ case: 'tab-count-deferred', comments: ((await commentsBadge.textContent()) ?? '').trim() })
+    }
+    await context.close()
+  }
+
   expect(
     fixture.unanswered.length === 0,
     `The console asked for endpoints the fixture could not answer, so some page rendered against nothing: ${[...new Set(fixture.unanswered)].join('; ')}`,
@@ -748,6 +832,7 @@ if (failures.length > 0) {
           'below 768 the sidebar is an off-canvas sheet its trigger opens',
           'the collapsed rail names every entry, the site switcher included',
           '⌘K opens, filters, moves, navigates and closes on the keyboard alone',
+          "a tab's count equals the list behind it, and the open tab's count is deferred rather than dropped",
         ],
         known_horizontal_overflow: [...KNOWN_HORIZONTAL_OVERFLOW],
         measurements: observations.length,
