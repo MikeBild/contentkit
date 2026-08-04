@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
+import { createBuildRunner } from './build-runner.mjs'
 import { buildSite } from './site-builder.mjs'
 import { WEBHOOK_EVENT } from './webhook-events.mjs'
 import { sha256 } from './utils.mjs'
@@ -98,10 +99,50 @@ async function contentTransitionEvents(db, snapshot, retireItemIds, releaseId) {
   return events
 }
 
+// The rendering half of a release runs off the API's event loop. Measured with
+// scripts/loadtest-release-build.mjs, which publishes through this manager:
+// releasing 1000 documents in-process left an unrelated GET /health waiting
+// 10 197 ms of the publish's 10 233 ms. Off-thread the worst wait is 4.69 ms and
+// the publish takes 10 283 ms — half a percent slower for a two-thousandfold
+// better answer. See src/build-runner.mjs for why a Worker and not a fork.
+//
+// Only the pure part moves. `buildSite` returns bytes or throws; every Postgres
+// and object-storage write below — the entries, the activation RPC, the event
+// enqueue, the cleanup on failure — stays on this thread inside the same
+// transaction it was always in. A worker cannot produce a half-committed
+// release, only bytes or an error.
+//
+// `config.buildWorker === false` keeps the old in-process path as an operator
+// escape hatch. It has no environment variable yet: config.mjs needs a
+// `buildWorker` entry (and CONTENTKIT_BUILD_WORKER in .env.defaults) before an
+// operator can reach it without editing code.
+function createBuildStrategy(config, logger, hooks) {
+  if (hooks.buildRunner) return hooks.buildRunner
+  if (config.buildWorker === false) {
+    return {
+      build: (input) => buildSite({ root: config.root, logger, deckRenderer: hooks.deckRenderer, ...input }),
+      async close() {},
+    }
+  }
+  return createBuildRunner({
+    root: config.root,
+    logger,
+    deckRenderer: hooks.deckRenderer,
+    // The semaphore below already admits at most this many builds, so a worker
+    // per admitted build is the ceiling — never a queue behind a queue.
+    concurrency: config.buildConcurrency || 1,
+    // A warm worker saves ~2.6s of module compilation on the next build and
+    // costs the retained build heap until it goes.
+    idleMs: config.buildWorkerIdleMs ?? 60000,
+    timeoutMs: config.buildTimeoutMs ?? 0,
+  })
+}
+
 export function createReleaseManager(config, repo, db, storage, logger, hooks = {}) {
   const semaphore = createSemaphore(config.buildConcurrency)
   const acquire = () => semaphore.acquire()
   const release = () => semaphore.release()
+  const builder = createBuildStrategy(config, logger, hooks)
 
   async function build({
     siteId,
@@ -133,7 +174,18 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         reason,
         revision_ids: revisionIds,
       })
-      const built = await buildSite({ root: config.root, logger, deckRenderer: hooks.deckRenderer, ...snapshot })
+      // Only what buildSite reads crosses the thread boundary. `items` and
+      // `overlay` stay here: the CMS pointer bookkeeping below needs them, and
+      // the build does not.
+      const built = await builder.build({
+        site: snapshot.site,
+        locales: snapshot.locales,
+        revisions: snapshot.revisions,
+        comments: snapshot.comments,
+        audio: snapshot.audio,
+        accessRules: snapshot.accessRules,
+        accessGroups: snapshot.accessGroups,
+      })
       const decks = built.content.filter((item) => item.kind === 'deck')
       deckCount = decks.length
       deckSlides = decks.reduce((sum, item) => sum + (item.slide_count || 0), 0)
@@ -380,6 +432,10 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
 
   return {
     inflight: () => semaphore.active(),
+    // Terminates any warm build worker. Idle workers are unref'd, so nothing
+    // hangs without this — it exists so a draining server gives the memory back
+    // immediately instead of waiting out the idle timer.
+    stop: () => builder.close?.(),
     publish,
     preview: async (input) =>
       build({ ...input, previewSlug: normalizePreviewSlug(input.previewSlug), kind: 'preview' }),
