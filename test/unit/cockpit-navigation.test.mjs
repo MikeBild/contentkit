@@ -1258,10 +1258,20 @@ describe('Cockpit navigation: site context versus installation context', withNav
     )
     const switcher = shell.slice(shell.indexOf('function SiteSwitcher('))
     assert.match(switcher, /<TooltipContent/, 'the switcher needs one too — a globe on its own names no site')
+    // The switcher's tooltip is hand-rolled, because `SidebarMenuButton
+    // tooltip=` returns a Tooltip *Root* and a `DropdownMenuTrigger asChild`
+    // cloning that renders no DOM node at all. Hand-rolled means the condition
+    // that ships for free on the other ten has to be typed out here, and
+    // `|| isMobile` is the half that was missing: on the mobile sheet every
+    // label is on screen while `state` still reports the desktop rail, so
+    // without it this was the one entry in the rail popping a tooltip its
+    // neighbours suppress. Both halves are pinned, so dropping either fails.
     assert.match(
       switcher,
-      /hidden=\{state !== 'collapsed'\}/,
-      'and only in the rail: expanded, the site’s name is already on screen and a tooltip repeating it is noise',
+      /hidden=\{state !== 'collapsed' \|\| isMobile\}/,
+      'and only in the rail, on a pointer: expanded the site’s name is already on screen, and on the mobile ' +
+        'sheet so is every neighbour’s — sidebar.tsx suppresses both with `state !== "collapsed" || isMobile` ' +
+        'and the switcher must say the same thing, or it is the one control in the rail behaving differently',
     )
     // The order the user drew: the thing the console is pointed at, then the way
     // to jump anywhere in it. A palette trigger above the switcher would offer

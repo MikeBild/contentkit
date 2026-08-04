@@ -861,7 +861,7 @@ function SiteSwitcher({
   isLoading: boolean
   error: unknown
 }) {
-  const { state } = useSidebar()
+  const { state, isMobile } = useSidebar()
   const name = current?.name || site
 
   if (isLoading)
@@ -912,6 +912,16 @@ function SiteSwitcher({
                 >
                   <Globe data-icon="inline-start" />
                   <span className="flex min-w-0 flex-col text-left">
+                    {/*
+                     * The trigger is as wide as the sidebar and no wider, so this
+                     * one name can still be cut where the menu's no longer can.
+                     * UI-UX.md §6 asks for a `title` here; §3 — and the guard in
+                     * test/unit/cockpit-forms-density.test.mjs, which has already
+                     * evicted two native titles from this very file — forbids one
+                     * outright. The console's answer to a cut name is the menu
+                     * below, which now spells every name out in full, plus this
+                     * button's own `aria-label`. See the note in the result.
+                     */}
                     <span className="truncate font-medium">{name || 'No site selected'}</span>
                     <span className="truncate text-xs text-muted-foreground">
                       {name ? 'Site' : 'Choose a site to continue'}
@@ -921,22 +931,66 @@ function SiteSwitcher({
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            {/* Collapsed, this is the only thing on screen that names the site. */}
-            <TooltipContent side="right" hidden={state !== 'collapsed'}>
+            {/*
+             * Collapsed, this is the only thing on screen that names the site — and
+             * it is hand-rolled because `SidebarMenuButton tooltip=` cannot reach a
+             * `DropdownMenuTrigger` (SHADCN-MIGRATION.md §6). Hand-rolled means the
+             * equivalence has to be maintained by hand, and one half of it was
+             * missing: the ten neighbours pass `hidden={state !== 'collapsed' || isMobile}`,
+             * because on the mobile sheet every label is visible and `state` still
+             * reports the desktop rail. Without `isMobile` this was the one entry in
+             * the rail that popped a tooltip its neighbours suppress. `side` and
+             * `align` are spelled out for the same reason — so the next reader can
+             * diff this against sidebar.tsx without running it.
+             */}
+            <TooltipContent
+              side="right"
+              align="center"
+              hidden={state !== 'collapsed' || isMobile}
+              data-testid="site-switcher-tooltip"
+            >
               Site · {name || 'none selected'}
             </TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="start" side="right" data-testid="site-switcher-menu" className="min-w-56">
+          {/*
+           * `w-auto` is the whole fix for the truncation an operator photographed:
+           * ui/dropdown-menu.tsx pins every menu to `w-(--radix-dropdown-menu-trigger-width)`,
+           * and this trigger is the sidebar, so the menu was frozen at ~14rem no
+           * matter how long the names were — "Harmoniqs Priva…", "Mission Coc…".
+           * Released, the menu takes the width its longest name needs and stops at
+           * the viewport, which is what `max-w-(…available-width)` is for.
+           */}
+          <DropdownMenuContent
+            align="start"
+            side="right"
+            data-testid="site-switcher-menu"
+            className="w-auto min-w-56 max-w-(--radix-dropdown-menu-content-available-width)"
+          >
             <DropdownMenuLabel>Sites</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={site} onValueChange={setSite}>
               {sites.map((candidate) => (
+                /*
+                 * Name over slug rather than name beside slug. Side by side, the
+                 * slug held a column the name was not allowed to use; stacked, the
+                 * name gets the full row and the slug — which is short, and which
+                 * the operator already knows — reads as the caption it is.
+                 *
+                 * A name too long even for that wraps rather than clamps, and this
+                 * is deliberate: UI-UX.md §6 says a cut name owes the reader a
+                 * `title`, §3 forbids a native `title` anywhere in the console, and
+                 * a menu row is the one place where honouring both is free — do not
+                 * cut. The `aria-label` keeps the slug from being read as part of
+                 * the name.
+                 */
                 <DropdownMenuRadioItem
                   key={candidate.id}
                   value={candidate.slug}
                   data-testid={`site-switcher-option-${candidate.slug}`}
+                  aria-label={`${candidate.name} (${candidate.slug})`}
+                  className="flex-col items-start gap-0"
                 >
-                  <span className="truncate">{candidate.name}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{candidate.slug}</span>
+                  <span className="break-words">{candidate.name}</span>
+                  <span className="text-xs text-muted-foreground">{candidate.slug}</span>
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
