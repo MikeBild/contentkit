@@ -87,6 +87,43 @@ jobs:
       # `build-cockpit.sh` installs it with --no-audit.
       - run: npm audit --audit-level=high
 
+  # jsdom performs no layout. `clientHeight` is 0 there, so the `cockpit` job
+  # above renders the console and asks the DOM about roles, focus and
+  # announcements — and can ask it nothing at all about geometry. That is not a
+  # theoretical gap: in 4.8.0 an unbounded shell wrapper made nine tenths of the
+  # releases page unreachable, with no scrollbar to say so, and shipped past 1078
+  # source tests, 79 DOM tests and six adversarial reviews. A user found it.
+  #
+  # This job drives the built console in Chromium at 1280, 768 and 390, and
+  # asserts the six things only a browser can answer. It runs against
+  # scripts/cockpit-fixture.mjs — the bundle on a local origin with an API
+  # synthesized from docs/openapi.json — so it needs no database and no session
+  # and finishes in about ten seconds. A browser gate that is slow gets skipped,
+  # and a skipped gate is worse than none because it looks like coverage.
+  cockpit-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: npm
+          # Same reason as the `cockpit` job: apps/cockpit is deliberately not a
+          # workspace, so its lockfile has to be named or its install is uncached.
+          cache-dependency-path: |
+            package-lock.json
+            apps/cockpit/package-lock.json
+      - run: npm ci
+      # The only CI job that needs a browser binary. The three site validators in
+      # `validate:visuals` need one too and run nowhere but a developer's machine.
+      - run: npx playwright install --with-deps chromium
+      # assets/cockpit is gitignored build output, and the suite refuses to run
+      # without it rather than validating a stale bundle. build-cockpit.sh
+      # installs apps/cockpit's own dependencies if they are missing.
+      - run: npm run cockpit:build
+      - run: npm run validate:cockpit:browser
+
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30

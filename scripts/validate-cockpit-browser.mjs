@@ -1,0 +1,759 @@
+/* global document, getComputedStyle, window, requestAnimationFrame, HTMLElement */
+/**
+ * The Cockpit, driven in a real browser at three viewports.
+ *
+ * WHY THIS EXISTS
+ *
+ * `jsdom` performs no layout. `clientHeight` is `0` there, so every assertion
+ * the 79 rendering tests make about the console is an assertion about its DOM
+ * tree and none of them is about its geometry. That is not a theoretical gap: in
+ * 4.8.0 `SidebarProvider` kept shadcn's `min-h-svh`, the wrapper grew to nine
+ * thousand pixels inside an eight-hundred-pixel `body`, the scrolling pane never
+ * had a bounded parent so it never overflowed, and `body { overflow: hidden }`
+ * silently cut off nine tenths of the releases page. 1078 source tests, 79 DOM
+ * tests and six adversarial reviews passed. A user found it.
+ *
+ * Every case below is one a browser is required for. Nothing here re-checks
+ * something a source test can read.
+ *
+ * WHAT IT RUNS AGAINST
+ *
+ * `scripts/cockpit-fixture.mjs` — the built `assets/cockpit` on a local origin
+ * with an API synthesized from `docs/openapi.json`. The reasoning for that shape
+ * (rather than `page.route()`, and rather than the local stack) is in that file's
+ * header. It is hermetic and needs no database, so this runs on every push.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO
+ *
+ * There is no retry anywhere in this file and there is no `waitForTimeout`
+ * standing in for a condition that could be waited on. A flaky browser case gets
+ * muted, and a muted gate looks like coverage. If a case here turns flaky,
+ * delete it.
+ */
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { chromium } from 'playwright'
+import { startFixture } from './cockpit-fixture.mjs'
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)))
+
+/**
+ * The sidebar's own width, from `SIDEBAR_WIDTH` in
+ * apps/cockpit/src/components/ui/sidebar.tsx. It is the exact size of the
+ * horizontal overflow the console still has (see KNOWN_HORIZONTAL_OVERFLOW), so
+ * naming it here is what makes that list a measurement rather than a number.
+ */
+const SIDEBAR_WIDTH = 256
+
+/**
+ * The viewports, and why each one.
+ *
+ * 1280×420 is deliberately short: it is the only way to be sure every route's
+ * content exceeds its pane, which is the precondition case 1 is about. 768 is
+ * the breakpoint's desktop side — `useIsMobile` is `innerWidth < 768`, so at
+ * exactly 768 the sidebar is still a 256px rail and the content area is 512px,
+ * which is the narrowest the *desktop* shell ever gets. 390 is UI-UX.md §7's
+ * floor and the mobile side of the same breakpoint.
+ */
+const VIEWPORTS = [
+  { name: '1280×420', width: 1280, height: 420, requireOverflow: true },
+  { name: '768×800', width: 768, height: 800, requireOverflow: false },
+  { name: '390×800', width: 390, height: 800, requireOverflow: false },
+]
+
+/**
+ * The horizontal overflow the console has today, measured rather than assumed.
+ *
+ * `SidebarInset` is a flex child with `min-width: auto`, which resolves to its
+ * min-content width and therefore refuses to shrink below it. On every page
+ * holding a table the inset stays a full viewport wide *beside* a 256px sidebar,
+ * so the document is 256px wider than the window — and because `body` is
+ * `overflow: hidden`, that 256px is not scrolled to, it is cut off. It is the
+ * horizontal twin of the 4.8.0 defect, and the fix is the same one token:
+ * `min-w-0` beside the `min-h-0` already on that element in
+ * apps/cockpit/src/app/shell.tsx. Setting `min-width: 0` on the inset in the
+ * browser takes every entry below to zero.
+ *
+ * This list is a ratchet, not an exemption. It fails three ways:
+ *
+ * - a route/viewport that overflows and is not listed — a new defect;
+ * - a listed one that overflows by more than the sidebar's width — a worse one;
+ * - a listed one that no longer overflows — the fix landed, so the line goes.
+ *
+ * docs/OPEN-WORK.md §3 asks this suite for "the real list of what breaks". This
+ * is it, for the horizontal axis, dated 2026-08-04 and reproducible.
+ */
+const KNOWN_HORIZONTAL_OVERFLOW = new Set([
+  '1280×420 /audio',
+  '1280×420 /access',
+  '1280×420 /webhooks',
+  '1280×420 /credentials',
+  '768×800 /sites',
+  '768×800 /content',
+  '768×800 /published',
+  '768×800 /releases',
+  '768×800 /audio',
+  '768×800 /access',
+  '768×800 /webhooks',
+  '768×800 /moderation',
+  '768×800 /credentials',
+  '768×800 /audit',
+])
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The routes, read from the router rather than written down.
+//
+// A route this suite does not know about is a route with no browser coverage,
+// and a hand-kept list is how that happens quietly. apps/cockpit/src/router.tsx
+// holds the one table the application itself uses.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const routerSource = await readFile(join(root, 'apps/cockpit/src/router.tsx'), 'utf8')
+const ROUTES = [...routerSource.matchAll(/^\s*\['(\/[^']*)',\s*(\w+)\],?\s*$/gm)].map((entry) => entry[1])
+if (ROUTES.length < 16) {
+  throw new Error(
+    `Read ${ROUTES.length} routes out of apps/cockpit/src/router.tsx; the console has sixteen. The table's shape changed and this parser has to change with it.`,
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reporting.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const failures = []
+const observations = []
+
+function expect(condition, message) {
+  if (!condition) failures.push(message)
+  return Boolean(condition)
+}
+
+function note(entry) {
+  observations.push(entry)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-page measurement.
+//
+// Passed to page.evaluate as source, so it has to be self-contained: nothing
+// from this module's scope is visible inside the browser.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const measure = () => {
+  const documentElement = document.documentElement
+  const page = document.querySelector('[data-testid="page"]')
+
+  /** The nearest scrolling ancestor of the page, found by computed style. */
+  let pane = page?.parentElement ?? null
+  while (pane) {
+    const overflow = getComputedStyle(pane).overflowY
+    if (overflow === 'auto' || overflow === 'scroll') break
+    pane = pane.parentElement
+  }
+
+  /** Elements sticking out to the right that are NOT inside a scroller. */
+  const limit = documentElement.clientWidth
+  const spilling = []
+  for (const element of document.querySelectorAll('[data-slot="sidebar-inset"] *')) {
+    const box = element.getBoundingClientRect()
+    if (box.width === 0 || box.right <= limit + 1) continue
+    let scrolls = false
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      const overflow = getComputedStyle(node).overflowX
+      if (overflow === 'auto' || overflow === 'scroll') {
+        scrolls = true
+        break
+      }
+    }
+    if (scrolls) continue
+    if ([...element.children].some((child) => child.getBoundingClientRect().right > limit + 1)) continue
+    spilling.push({
+      tag: element.tagName.toLowerCase(),
+      testId: element.getAttribute('data-testid'),
+      text: (element.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 48),
+    })
+  }
+
+  return {
+    hasPage: Boolean(page),
+    title: document.querySelector('[data-testid="page-title"]')?.textContent ?? null,
+    paneFound: Boolean(pane),
+    paneClientHeight: pane?.clientHeight ?? 0,
+    paneScrollHeight: pane?.scrollHeight ?? 0,
+    paneClass: pane ? pane.className.toString().slice(0, 80) : null,
+    documentScrollHeight: documentElement.scrollHeight,
+    documentClientHeight: documentElement.clientHeight,
+    bodyScrollHeight: document.body.scrollHeight,
+    bodyClientHeight: document.body.clientHeight,
+    documentScrollWidth: documentElement.scrollWidth,
+    documentClientWidth: documentElement.clientWidth,
+    spilling: spilling.slice(0, 4),
+  }
+}
+
+/** Scrolls the pane to the bottom and reports whether it moved and what became reachable. */
+const scrollPaneToEnd = () => {
+  const page = document.querySelector('[data-testid="page"]')
+  let pane = page?.parentElement ?? null
+  while (pane) {
+    const overflow = getComputedStyle(pane).overflowY
+    if (overflow === 'auto' || overflow === 'scroll') break
+    pane = pane.parentElement
+  }
+  if (!pane || !page) return { scrolled: 0, lastReachable: false }
+  pane.scrollTop = pane.scrollHeight
+  return {
+    scrolled: pane.scrollTop,
+    // The bottom of the page's content, once scrolled, has to be inside the
+    // pane. A pane that scrolls by a hundred pixels while its content is a
+    // thousand past the fold is still a page with an unreachable bottom.
+    lastReachable: page.getBoundingClientRect().bottom <= pane.getBoundingClientRect().bottom + 2,
+  }
+}
+
+/** Whether the document itself moved when asked to. `body` is `overflow: hidden`. */
+const tryScrollDocument = () => {
+  window.scrollTo(0, 10_000)
+  document.body.scrollTop = 10_000
+  document.documentElement.scrollTop = 10_000
+  return { windowY: window.scrollY, bodyTop: document.body.scrollTop, docTop: document.documentElement.scrollTop }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+const started = Date.now()
+const fixture = await startFixture()
+const browser = await chromium.launch({ headless: true })
+const browserErrors = []
+
+/** Opens a route and waits for it to have rendered — never on a fixed delay. */
+async function open(page, route, origin) {
+  const path = route === '/' ? '/cockpit/' : `/cockpit${route}`
+  // Not `networkidle`: the assistant page holds a stream open, so "idle" never
+  // arrives there and the suite would hang on one route out of sixteen.
+  await page.goto(`${origin}${path}?site=canary`)
+  await page.waitForSelector('[data-testid="page"]', { timeout: 15_000 })
+  // A skeleton on screen means a query is still in flight and the page's real
+  // height is not known yet. Absence of one is the condition, not a duration.
+  await page
+    .waitForFunction(() => !document.querySelector('[data-slot="skeleton"]'), null, { timeout: 15_000 })
+    .catch(() => {})
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))))
+}
+
+/**
+ * Waits until nothing is animating.
+ *
+ * The sheet slides, the rail's labels transition their margin, and a box read
+ * mid-transition is a measurement of an intermediate frame. This is a condition,
+ * not a duration: `getAnimations()` answers what is actually still running.
+ */
+async function settled(page) {
+  await page
+    .waitForFunction(() => document.getAnimations().every((animation) => animation.playState === 'finished'), null, {
+      timeout: 5000,
+    })
+    .catch(() => {})
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))))
+}
+
+function watch(page) {
+  page.on('pageerror', (error) => browserErrors.push(`pageerror: ${error.message}`))
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return
+    const text = message.text()
+    // The fixture answers no 4xx/5xx, so a failed request here is real; a
+    // favicon the bundle does not ship is not.
+    if (/favicon/i.test(text)) return
+    browserErrors.push(`console: ${text}`)
+  })
+}
+
+try {
+  // ───────────────────────────────────────────────────────────────────────────
+  // Cases 1, 2 and 3 — one pass per viewport, one measurement per route.
+  // ───────────────────────────────────────────────────────────────────────────
+  for (const viewport of VIEWPORTS) {
+    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } })
+    const page = await context.newPage()
+    watch(page)
+
+    for (const route of ROUTES) {
+      await open(page, route, fixture.origin)
+      const seen = await page.evaluate(measure)
+      const where = `${viewport.name} ${route}`
+      note({ viewport: viewport.name, route, ...seen })
+
+      if (!expect(seen.hasPage, `${where}: nothing with data-testid="page" rendered.`)) continue
+
+      // ── Case 1. Every route scrolls when its content exceeds the viewport.
+      expect(
+        seen.paneFound,
+        `${where}: the page has no scrolling ancestor at all — nothing below the fold is reachable.`,
+      )
+      expect(
+        seen.paneClientHeight <= viewport.height + 1,
+        `${where} (${seen.title}): the scrolling pane is ${seen.paneClientHeight}px tall inside a ${viewport.height}px viewport, so it is unbounded and can never overflow. This is the 4.8.0 defect: the pane's overflow-y has no bounded parent, and body{overflow:hidden} cuts off everything past ${viewport.height}px with no scrollbar to say so.`,
+      )
+      if (viewport.requireOverflow) {
+        expect(
+          seen.paneScrollHeight > seen.paneClientHeight,
+          `${where} (${seen.title}): content is ${seen.paneScrollHeight}px in a ${seen.paneClientHeight}px pane — it does not exceed even this deliberately short viewport, so either the page rendered nothing or the pane grew with it.`,
+        )
+      }
+      if (seen.paneScrollHeight > seen.paneClientHeight) {
+        const moved = await page.evaluate(scrollPaneToEnd)
+        expect(
+          moved.scrolled > 0,
+          `${where} (${seen.title}): the pane reports ${seen.paneScrollHeight}px of content in ${seen.paneClientHeight}px but scrollTop stayed at 0 — the overflow is not scrollable.`,
+        )
+        expect(
+          moved.lastReachable,
+          `${where} (${seen.title}): scrolled to the end and the bottom of the page is still below the pane — part of this page cannot be reached.`,
+        )
+      }
+
+      // ── Case 2. No page scrolls the document itself.
+      expect(
+        seen.documentScrollHeight <= seen.documentClientHeight + 1,
+        `${where} (${seen.title}): the document is ${seen.documentScrollHeight}px tall in a ${seen.documentClientHeight}px window. body is overflow:hidden by design, so this height is not scrolled — it is clipped.`,
+      )
+      expect(
+        seen.bodyScrollHeight <= seen.bodyClientHeight + 1,
+        `${where} (${seen.title}): body content is ${seen.bodyScrollHeight}px in a ${seen.bodyClientHeight}px body, and body is overflow:hidden — the difference is cut off.`,
+      )
+      const stayed = await page.evaluate(tryScrollDocument)
+      expect(
+        stayed.windowY === 0 && stayed.bodyTop === 0 && stayed.docTop === 0,
+        `${where} (${seen.title}): the document scrolled (window ${stayed.windowY}, body ${stayed.bodyTop}, root ${stayed.docTop}). The shell scrolls its panes; a page that moves the document takes the sidebar with it.`,
+      )
+
+      // ── Case 3. Nothing overflows horizontally, except inside a scroller.
+      const overflow = seen.documentScrollWidth - seen.documentClientWidth
+      const key = `${viewport.name} ${route}`
+      if (KNOWN_HORIZONTAL_OVERFLOW.has(key)) {
+        expect(
+          overflow > 0,
+          `${where}: listed in KNOWN_HORIZONTAL_OVERFLOW and no longer overflows. Delete the '${key}' line from scripts/validate-cockpit-browser.mjs — the ratchet only holds if it tightens.`,
+        )
+        expect(
+          overflow <= SIDEBAR_WIDTH,
+          `${where} (${seen.title}): horizontal overflow is ${overflow}px, worse than the ${SIDEBAR_WIDTH}px this page is recorded as having. Something new overflows on top of the SidebarInset min-width defect.`,
+        )
+      } else {
+        expect(
+          overflow <= 0,
+          `${where} (${seen.title}): the document is ${overflow}px wider than the window and body is overflow:hidden, so that ${overflow}px is unreachable. Outside a table's own scroll container, nothing may overflow. Widest offenders: ${
+            seen.spilling
+              .map((item) => `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> "${item.text}"`)
+              .join(', ') || 'none identified'
+          }`,
+        )
+      }
+    }
+    await context.close()
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Case 4 — below 768 the sidebar is an off-canvas sheet, and its trigger
+  // opens it.
+  //
+  // §7 of UI-UX.md claims this and nothing has ever checked it: `useIsMobile`
+  // reads `window.innerWidth`, which is 1024 in jsdom and cannot be anything
+  // else without stubbing the very thing under test.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const context = await browser.newContext({ viewport: { width: 390, height: 800 } })
+    const page = await context.newPage()
+    watch(page)
+    await open(page, '/', fixture.origin)
+
+    const railHidden = await page.evaluate(() => {
+      const desktop = document.querySelector('[data-slot="sidebar"]:not([data-mobile])')
+      return !desktop || getComputedStyle(desktop).display === 'none'
+    })
+    expect(
+      railHidden,
+      '390×800: the desktop sidebar rail is still displayed below 768px; it must give way to the sheet.',
+    )
+    expect(
+      (await page.locator('[data-slot="sidebar"][data-mobile="true"]').count()) === 0,
+      '390×800: the mobile sheet is mounted before anything opened it.',
+    )
+
+    const trigger = page.locator('[data-testid="sidebar-toggle"]')
+    expect(
+      await trigger.isVisible(),
+      '390×800: the sidebar trigger is not visible, so the navigation cannot be opened at all.',
+    )
+    await trigger.click()
+    const sheet = page.locator('[data-slot="sidebar"][data-mobile="true"]')
+    const opened = await sheet
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .then(() => true)
+      .catch(() => false)
+    expect(
+      opened,
+      '390×800: the sidebar trigger did not open the off-canvas sheet. Below 768px it is the only way to reach the navigation.',
+    )
+    if (opened) {
+      await settled(page)
+      expect(
+        await sheet.locator('[data-testid="nav-releases"]').isVisible(),
+        '390×800: the sheet opened without the navigation in it — no route is reachable from a phone.',
+      )
+      const box = await sheet.boundingBox()
+      expect(
+        box !== null && box.x >= -1 && box.x + box.width <= 391,
+        `390×800: the opened sheet sits at ${box ? `${Math.round(box.x)}…${Math.round(box.x + box.width)}` : 'nowhere'} in a 390px window — part of it is off screen.`,
+      )
+      /**
+       * Escape closes it — on the second press, today, and that is a defect
+       * this case pins rather than hides.
+       *
+       * The sheet autofocuses its first control, which is a `SidebarMenuButton`
+       * with a `tooltip=`. On mobile that tooltip is rendered with `hidden`, so
+       * it is invisible — but it is still mounted, and Radix's DismissableLayer
+       * stack gives Escape to the topmost layer, which is the tooltip. The first
+       * press therefore dismisses something the operator cannot see and the
+       * navigation stays over the page. It is not specific to the first control:
+       * every entry in the sheet mounts the same tooltip on focus.
+       *
+       * KNOWN_TOOLTIP_SWALLOWS_ESCAPE is the ratchet. When the tooltip stops
+       * being mounted where it is not shown, the first press will close the
+       * sheet, this assertion will fail, and the constant is what gets flipped.
+       */
+      const KNOWN_TOOLTIP_SWALLOWS_ESCAPE = true
+      await page.keyboard.press('Escape')
+      const closedOnFirst = await sheet
+        .waitFor({ state: 'hidden', timeout: 1500 })
+        .then(() => true)
+        .catch(() => false)
+      expect(
+        closedOnFirst !== KNOWN_TOOLTIP_SWALLOWS_ESCAPE,
+        KNOWN_TOOLTIP_SWALLOWS_ESCAPE
+          ? '390×800: the first Escape now closes the sheet. Set KNOWN_TOOLTIP_SWALLOWS_ESCAPE to false in scripts/validate-cockpit-browser.mjs — the invisible tooltip no longer eats it.'
+          : '390×800: the first Escape did not close the sheet. An invisible layer above it is taking the key, so the navigation covers the page with no keyboard way out.',
+      )
+      if (!closedOnFirst) {
+        await page.keyboard.press('Escape')
+        expect(
+          await sheet
+            .waitFor({ state: 'hidden', timeout: 5000 })
+            .then(() => true)
+            .catch(() => false),
+          '390×800: two Escapes did not close the sheet either. There is no keyboard way out of the navigation on a phone.',
+        )
+      }
+    }
+    await context.close()
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Case 5 — the collapsed rail names every entry, the site switcher included.
+  //
+  // Collapsed, the rail is 3rem of icons and the tooltip is the only text on
+  // screen. An entry without one is an unlabelled icon, which is what the site
+  // switcher was until it was given a hand-rolled tooltip — hand-rolled meaning
+  // nothing keeps it equivalent to the ten it sits above.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    const page = await context.newPage()
+    watch(page)
+    await open(page, '/', fixture.origin)
+
+    await page.locator('[data-testid="sidebar-toggle"]').click()
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-slot="sidebar"]:not([data-mobile])')?.getAttribute('data-state') === 'collapsed',
+      null,
+      { timeout: 5000 },
+    )
+    // The rail's labels transition their margin over 200ms, and both the hit
+    // test and the tooltips below are about where things end up.
+    await settled(page)
+
+    /**
+     * Every entry in the rail — and the site switcher has to be named
+     * separately.
+     *
+     * It IS a `SidebarMenuButton`, but shell.tsx nests it inside
+     * `TooltipTrigger asChild > DropdownMenuTrigger asChild`, and Radix's Slot
+     * merge leaves the outermost `data-slot` on the rendered element. Selecting
+     * by `data-slot="sidebar-menu-button"` therefore silently misses the one
+     * control whose tooltip was hand-rolled — which is the one this case was
+     * written for.
+     */
+    const ids = await page.evaluate(() => {
+      const found = new Set()
+      for (const element of document.querySelectorAll(
+        '[data-slot="sidebar-container"] [data-slot="sidebar-menu-button"], [data-slot="sidebar-container"] [data-testid="site-switcher"]',
+      )) {
+        const id = element.getAttribute('data-testid')
+        if (id) found.add(id)
+      }
+      return [...found]
+    })
+    expect(
+      ids.length >= 12,
+      `1280×800 collapsed: only ${ids.length} entries are in the rail; the console has sixteen routes plus its chrome.`,
+    )
+    expect(
+      ids.includes('site-switcher'),
+      '1280×800 collapsed: the site switcher is not in the rail at all — the one control that says which site is about to change.',
+    )
+
+    /**
+     * The tooltip has to be reachable by a pointer, and this is measured first
+     * — before anything is focused, because focusing an entry scrolls the rail
+     * and a hit test after that is a hit test of a different layout.
+     *
+     * `SidebarGroupLabel` collapses with `-mt-8 opacity-0`: invisible, still
+     * 32px tall, still taking pointer events, and pulled up exactly over the
+     * first entry of the block below it. Four routes in the rail cannot be
+     * hovered or clicked because of it — `elementFromPoint` at the centre of the
+     * icon answers the label, not the link. Adding `pointer-events-none` to that
+     * collapsed state in apps/cockpit/src/components/ui/sidebar.tsx takes the
+     * list to zero.
+     *
+     * Ratcheted the same three ways as KNOWN_HORIZONTAL_OVERFLOW: an unlisted
+     * obstruction fails, and a listed one that has been fixed fails until the
+     * line is deleted.
+     */
+    const KNOWN_RAIL_OBSTRUCTIONS = new Set(['nav-overview', 'nav-decks', 'nav-audio', 'nav-webhooks'])
+    const blocked = await page.evaluate(
+      (entries) =>
+        entries
+          .map((id) => {
+            const element = document.querySelector(`[data-testid="${id}"]`)
+            if (!element) return { id, over: 'missing' }
+            const box = element.getBoundingClientRect()
+            const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+            if (hit && (hit === element || element.contains(hit))) return null
+            return { id, over: hit?.getAttribute('data-testid') ?? hit?.tagName.toLowerCase() ?? 'nothing' }
+          })
+          .filter(Boolean),
+      ids,
+    )
+    note({ case: 'collapsed-rail-obstructions', blocked })
+    for (const entry of blocked) {
+      expect(
+        KNOWN_RAIL_OBSTRUCTIONS.has(entry.id),
+        `1280×800 collapsed: "${entry.id}" cannot be pointed at — "${entry.over}" covers its icon, so the route is unreachable with a mouse and its tooltip never opens.`,
+      )
+    }
+    for (const id of KNOWN_RAIL_OBSTRUCTIONS) {
+      expect(
+        blocked.some((entry) => entry.id === id),
+        `1280×800 collapsed: "${id}" is listed in KNOWN_RAIL_OBSTRUCTIONS and is now reachable. Delete it from scripts/validate-cockpit-browser.mjs — the ratchet only holds if it tightens.`,
+      )
+    }
+
+    const named = []
+    for (const id of ids) {
+      const entry = page.locator(`[data-testid="${id}"]`)
+      // Focus rather than hover, for two reasons. It is the path an operator
+      // without a pointer takes, which is the half a hover test never covers;
+      // and four entries are covered by the invisible label measured above, so a
+      // hover would report the tooltip missing when what is actually wrong is
+      // the hit target — two different defects, and this half is the first.
+      await entry.focus()
+      const tip = page.locator('[data-slot="tooltip-content"]:visible').first()
+      const shown = await tip
+        .waitFor({ state: 'visible', timeout: 3000 })
+        .then(() => true)
+        .catch(() => false)
+      const text = shown ? ((await tip.textContent()) ?? '').trim() : ''
+      expect(
+        shown && text.length > 0,
+        `1280×800 collapsed: the rail entry "${id}" shows no tooltip. Collapsed it is a 32px icon and nothing else, so it names nothing.`,
+      )
+      named.push({ entry: id, tooltip: text })
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+      await page
+        .waitForFunction(() => !document.querySelector('[data-slot="tooltip-content"]'), null, { timeout: 3000 })
+        .catch(() => {})
+    }
+    note({ case: 'collapsed-rail', entries: named })
+    await context.close()
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Case 6 — ⌘K, keyboard only.
+  //
+  // Not one click in this block. The palette's whole claim is that a route is
+  // one chord away, and focus, filtering and commit are three things that only
+  // hold together in a real event loop.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    const page = await context.newPage()
+    watch(page)
+    await open(page, '/', fixture.origin)
+
+    // Somewhere to come back to. On a freshly loaded page focus is on <body>,
+    // and "focus was restored" would then be indistinguishable from "focus was
+    // dropped" — the assertion below has to be able to fail.
+    await page.keyboard.press('Tab')
+    const before = await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null)
+    expect(
+      before !== null,
+      '1280×800: the first Tab landed on an element with no data-testid, so focus restoration cannot be named.',
+    )
+
+    // Playwright maps ControlOrMeta the same way lib/keyboard.ts's
+    // isApplePlatform does: ⌘ on Apple hardware, Ctrl everywhere else.
+    await page.keyboard.press('ControlOrMeta+k')
+    const input = page.locator('[data-testid="ck-command-palette-search"]')
+    const openedPalette = await input
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .then(() => true)
+      .catch(() => false)
+    expect(openedPalette, '1280×800: ⌘K did not open the command palette.')
+
+    if (openedPalette) {
+      expect(
+        await input.evaluate((element) => element === document.activeElement),
+        '1280×800: the palette opened without focus on its input, so the next keystroke goes somewhere else.',
+      )
+
+      const items = page.locator('[data-slot="command-item"]')
+      const before = await items.count()
+      await page.keyboard.type('releas')
+      await page.waitForFunction(
+        (previous) => document.querySelectorAll('[data-slot="command-item"]').length < previous,
+        before,
+        { timeout: 5000 },
+      )
+      const after = await items.count()
+      expect(
+        after > 0 && after < before,
+        `1280×800: typing "releas" left ${after} of ${before} palette entries; it must narrow the list and must not empty it.`,
+      )
+
+      /**
+       * Arrow to a page target, and commit that one.
+       *
+       * Not "type a word and assume the first hit": cmdk scores fuzzily and the
+       * palette offers pages, sites and content in one list, so which entry is
+       * selected after six characters is cmdk's business rather than a claim
+       * this suite should be making. What it does assert is the pair that
+       * matters — the arrows move the selection, and Enter navigates to *the
+       * selection*, whatever it is. The destination is read off the selected
+       * entry's own testid, so the assertion cannot pass by coincidence.
+       */
+      const selected = () =>
+        page.evaluate(() => {
+          const item = document.querySelector('[data-slot="command-item"][data-selected="true"]')
+          return item ? { id: item.getAttribute('data-testid'), label: (item.textContent ?? '').trim() } : null
+        })
+
+      const first = await selected()
+      expect(first !== null, '1280×800: no palette entry is selected after typing, so Enter would commit nothing.')
+
+      // The arrows move. Asserted on its own, before anything is looked for,
+      // because a walk that stops the moment it finds what it wants can pass
+      // without ever having moved.
+      await page.keyboard.press('ArrowDown')
+      const moved = await selected()
+      expect(
+        after === 1 || moved?.id !== first?.id,
+        `1280×800: ArrowDown did not move the selection off "${first?.label}" with ${after} entries listed.`,
+      )
+
+      // Back to the top, then down to a page target. cmdk does not wrap, so
+      // `after` presses of ArrowUp are guaranteed to reach the first entry.
+      for (let step = 0; step < after; step += 1) await page.keyboard.press('ArrowUp')
+      let target = await selected()
+      const seen = [target?.id]
+      for (let step = 0; step < after && !target?.id?.includes('target-page:'); step += 1) {
+        await page.keyboard.press('ArrowDown')
+        target = await selected()
+        seen.push(target?.id)
+      }
+      expect(
+        Boolean(target?.id?.includes('target-page:')),
+        `1280×800: no page target could be arrowed to among ${after} entries; the selection walked ${seen.join(' → ')}.`,
+      )
+
+      const route = target?.id?.split('target-page:')[1] ?? ''
+      await page.keyboard.press('Enter')
+      await page.waitForFunction(() => !document.querySelector('[data-slot="command-input"]'), null, { timeout: 5000 })
+      const url = new URL(page.url())
+      const expected = route === '/' ? '/cockpit/' : `/cockpit${route}`
+      expect(
+        url.pathname === expected,
+        `1280×800: Enter on the palette's selection ("${target?.label}", ${target?.id}) landed on ${url.pathname}, not ${expected}.`,
+      )
+      expect(
+        url.searchParams.get('site') === 'canary',
+        `1280×800: the palette dropped ?site= on navigation (${url.search || 'no search at all'}); the operator would arrive on a different site than they left.`,
+      )
+
+      await page.keyboard.press('ControlOrMeta+k')
+      await input.waitFor({ state: 'visible', timeout: 5000 })
+      await page.keyboard.press('Escape')
+      expect(
+        await input
+          .waitFor({ state: 'hidden', timeout: 5000 })
+          .then(() => true)
+          .catch(() => false),
+        '1280×800: Escape did not close the palette.',
+      )
+      const restored = await page.evaluate(() => ({
+        onBody: document.activeElement === document.body || document.activeElement === null,
+        testId: document.activeElement?.getAttribute('data-testid') ?? null,
+      }))
+      expect(
+        !restored.onBody,
+        '1280×800: closing the palette left focus on <body> — the next Tab starts from the top of the document. UI-UX.md §8 requires focus to land somewhere useful.',
+      )
+    }
+    await context.close()
+  }
+
+  expect(
+    fixture.unanswered.length === 0,
+    `The console asked for endpoints the fixture could not answer, so some page rendered against nothing: ${[...new Set(fixture.unanswered)].join('; ')}`,
+  )
+  expect(
+    browserErrors.length === 0,
+    `The browser reported errors: ${[...new Set(browserErrors)].slice(0, 6).join(' | ')}`,
+  )
+} finally {
+  await browser.close().catch(() => {})
+  await fixture.close().catch(() => {})
+}
+
+const seconds = ((Date.now() - started) / 1000).toFixed(1)
+
+if (failures.length > 0) {
+  for (const failure of failures) console.error(`✗ ${failure}`)
+  console.error(`\nCockpit browser validation failed: ${failures.length} assertion(s) in ${seconds}s.`)
+  process.exitCode = 1
+} else {
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        valid: true,
+        seconds: Number(seconds),
+        routes: ROUTES.length,
+        viewports: VIEWPORTS.map((entry) => entry.name),
+        cases: [
+          'every route scrolls its pane and the pane is bounded by the viewport',
+          'no page scrolls the document; body is overflow:hidden by design',
+          'nothing overflows horizontally outside a scroll container',
+          'below 768 the sidebar is an off-canvas sheet its trigger opens',
+          'the collapsed rail names every entry, the site switcher included',
+          '⌘K opens, filters, moves, navigates and closes on the keyboard alone',
+        ],
+        known_horizontal_overflow: [...KNOWN_HORIZONTAL_OVERFLOW],
+        measurements: observations.length,
+      },
+      null,
+      2,
+    )}\n`,
+  )
+}
