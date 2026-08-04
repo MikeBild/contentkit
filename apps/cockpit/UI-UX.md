@@ -8,7 +8,12 @@ measured. Every one of those was a defensible local choice. Together they read a
 console nobody decided.
 
 So this is the decision. It is short on purpose: a rule nobody can recall is a rule
-nobody follows. Where a rule can be enforced by a test, the test is named.
+nobody follows. Where a rule is enforced by a test, that test is named here — and where
+it is not, the rule says so in as many words. A review found this document citing a
+test that did not assert the rule beside it, silent about four files that were doing
+the real work, and stating an absolute the console breaks forty-four times. A style
+guide that is wrong about itself is worse than none, so the marking matters as much as
+the rules.
 
 ---
 
@@ -16,6 +21,11 @@ nobody follows. Where a rule can be enforced by a test, the test is named.
 
 **One page answers one question.** "What is in this site?" is a page. "What is
 happening with audio, decks, compositions, patterns and guides?" is five.
+
+**And one module exports one page.** This is not pedantry: `authoring.tsx` held five
+compliant pages, already mounted at five routes, and every measurement anyone took
+read the module. Five good pages in one bucket measured as one bad page, which is
+precisely how the defect survived being looked at.
 
 A page has exactly one `<Page title description>` heading. The description is one
 sentence and says what the page is *for*, never how it works.
@@ -28,7 +38,7 @@ something, so do not start halfway.
 | | Use when | Do not use when |
 |---|---|---|
 | **Nothing** | The page is one list or one form. | — |
-| **Tabs** | The page has 2–6 *parallel* concerns about one subject, and the reader looks at one at a time. | The concerns are sequential (→ Steps), or the reader compares them side by side. |
+| **Tabs** | The page has 2–6 *parallel* concerns about one subject, and the reader looks at one at a time. | The concerns are sequential (→ Steps); the reader compares them side by side; or one panel's controls act on another panel's content — a button whose whole effect is off screen describes itself falsely. |
 | **Card** | A group of controls or facts that has its own title and can be reasoned about alone. | It is the only thing on the page — then it is the page. |
 | **Accordion / Collapsible** | Many sections, most of them rarely opened, and the reader needs to see the *titles* to find one. | Fewer than four sections. |
 
@@ -38,6 +48,13 @@ the defect this section exists to correct.
 
 A card is not a container for one paragraph. If a card holds one sentence, it is a
 sentence.
+
+Enforced by `test/unit/cockpit-shape.test.mjs`: one module exports one page, a page
+with more sibling cards than the ladder allows and no Tabs or Accordion is a stack of
+boxes, a tab strip whose triggers answer no panel is unreachable, and a loading branch
+renders a Skeleton rather than nothing. `test/unit/cockpit-governance-split.test.mjs`
+holds the same rules over the pages that were split out of a bucket module, including
+the coupling exception — a page whose panels write into each other must keep saying so.
 
 ### What must never happen
 
@@ -71,6 +88,9 @@ Consequences, and they are not optional:
 - **One primary action per surface.** `variant="default"` is the thing this page
   exists for. Everything else is `outline` or `ghost`. Two filled buttons side by
   side ask the reader to choose without saying which is which.
+Enforced by `test/unit/cockpit-affordances.test.mjs`, and the testid requirement by
+`test/unit/cockpit-testids.test.mjs`.
+
 - A button never rewrites its own label while it works. Compose `Spinner` +
   `disabled` and leave the label alone, or the button the reader aimed at is gone by
   the time they arrive.
@@ -152,8 +172,21 @@ reason this is written down.
 - Spacing is `flex` + `gap-*`. Never `space-y-*`.
 - A table wide enough to overflow scrolls inside its own container, never by pushing
   the page sideways.
-- Nothing is truncated where the space beside it is empty. If a name must be cut,
-  the full value belongs in a `title` *and* in the accessible name.
+- **A list is a `DataTable`.** It carries the four states, cursor pagination, the
+  column chooser and the sort-capability rule in one place. `Card` + `Table` +
+  `TableState` is the older hand-rolled shape; it is not wrong, but it is a second
+  answer to "how do I render a list", and a console with two answers has none. New
+  lists use `DataTable`; existing ones move when they are next touched.
+- **Prefer not to truncate.** Give the text the space — `max-w-*` with `break-words`,
+  or let the secondary value wrap beneath the primary one. An earlier version of this
+  rule said a cut name may keep its full value in a `title`; that contradicts §3 and is
+  enforced against by `test/unit/cockpit-forms-density.test.mjs`, so it is withdrawn.
+
+  **Stated honestly: `truncate` appears 44 times in `apps/cockpit/src` today.** This is
+  a direction, not a law, and no test enforces it — writing it as an absolute while the
+  console breaks it four dozen times is how a style guide stops being believed. Where a
+  cut is unavoidable, the full value must be reachable some way that is not a `title`:
+  the accessible name, a Tooltip, or the row expanding.
 
 ## 7. Responsiveness
 
@@ -177,8 +210,16 @@ horizontally; nothing else may.
   requirement, not a testing convenience.
 - Nothing is conveyed by colour alone. A status has a word; a warning has an icon.
 
-Enforced by `apps/cockpit/src/components/**/*.test.tsx` and
-`test/unit/cockpit-dialog-guards.test.mjs`. The behavioural floor in
+Enforced, rule by rule rather than by a blanket claim, because an earlier version of
+this paragraph credited two files with a rule neither of them asserts:
+
+| Rule | Enforced by |
+|---|---|
+| A dialog has a title | `test/unit/cockpit-confirm.test.mjs` |
+| Focus trapped, restored, never on `<body>` | `apps/cockpit/src/components/confirm.test.tsx` |
+| A mutation dialog resists dismissal in flight | `test/unit/cockpit-dialog-guards.test.mjs` |
+| Every interactive element has a `data-testid` | `test/unit/cockpit-testids.test.mjs` |
+| Nothing is conveyed by colour alone | **nothing — aspirational** | The behavioural floor in
 `test/unit/cockpit-behavioural-floor.test.mjs` names every contract a rendering test
 covers, and — deliberately — what is still graded by reading source, so a runner in
 the repository is never mistaken for coverage.
