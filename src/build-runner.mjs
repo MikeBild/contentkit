@@ -87,6 +87,17 @@ export function createBuildRunner({
     entry.job?.reject(error || Object.assign(new Error('build worker stopped'), { statusCode: 500 }))
     entry.job = null
     entry.worker.terminate().catch(() => {})
+    // A dying worker takes its own job down with it, and used to take the queue
+    // with it too — silently. `checkIn` is the only other place that shifts the
+    // queue, and it runs when a job FINISHES; a worker that is killed never
+    // finishes one. So with every worker busy and a build queued behind them, one
+    // OOM left that build waiting forever: no rejection, no timeout at this level,
+    // nothing for the caller to observe. Capacity has just been freed by the
+    // deletion above, so it is spent on the queue rather than left idle.
+    if (!closed && queue.length && all.size < concurrency) {
+      const next = queue.shift()
+      if (next) dispatch(spawn(), next)
+    }
   }
 
   function spawn() {

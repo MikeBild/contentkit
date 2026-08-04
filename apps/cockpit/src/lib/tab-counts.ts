@@ -42,7 +42,21 @@ import { useQuery, type QueryKey } from '@tanstack/react-query'
  * coerced to `0`; `tabCountLabel` is the only thing allowed to decide what it
  * renders as, which is nothing.
  */
-export type TabCount = number | undefined
+/**
+ * Three answers, not two.
+ *
+ * `number` is measured. `'unknown'` is asked and refused — the query failed, and
+ * that is a different fact from zero. `undefined` is not asked yet, or not asked at
+ * all: still loading, no site selected, no scope, or this tab is the open one and
+ * its own panel is the answer.
+ *
+ * The distinction is the whole point and it was missing: both failure and zero
+ * rendered no badge, so a count query that 403'd put "nothing waiting" on screen
+ * beside a panel holding thirty rows. UI-UX.md section 4 states the rule this
+ * violated — a measured zero and an unmeasured value are different facts and must
+ * read differently — and a badge is exactly where a reader looks for it.
+ */
+export type TabCount = number | 'unknown' | undefined
 
 /**
  * Stale for the length of a visit.
@@ -74,6 +88,9 @@ export function tabCountLabel(
   count: TabCount,
   { noun, atLeast = false }: { noun?: string; atLeast?: boolean } = {},
 ): string | null {
+  // An em dash, not silence. Nothing on the strip is the reader's evidence that
+  // nothing is waiting, so a failed count must not borrow it.
+  if (count === 'unknown') return '—'
   if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) return null
   return `${count}${atLeast ? '+' : ''}${noun ? ` ${noun}` : ''}`
 }
@@ -105,8 +122,9 @@ export function useTabCount<T>({ queryKey, queryFn, count, enabled = true, open 
     enabled: enabled && !open,
     staleTime: TAB_COUNT_STALE_TIME,
   })
-  // `data` is undefined while pending and while failed, which is exactly the
-  // third state; there is no branch on `isError` because there is nothing
-  // different to do with it.
+  // A refusal is reported, not swallowed. `data` is undefined for both pending and
+  // failed, so reading it alone made those one state — and on screen that state was
+  // indistinguishable from zero.
+  if (query.isError) return 'unknown'
   return query.data === undefined ? undefined : count(query.data)
 }

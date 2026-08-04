@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react'
  * ┌───────────────────────────────────────────────────────────────────────────┐
  * │ THIS RUNNER EXISTING IS NOT THE SAME THING AS BEHAVIOUR BEING COVERED.    │
  * │                                                                           │
- * │ It grades 56 contracts. 15 named flows — the sidebar collapse and its     │
+ * │ It grades 58 contracts. 15 named flows — the sidebar collapse and its     │
  * │ tooltips, the command palette's keyboard path, the unsaved-changes        │
  * │ guard, the wizard step gate, the site switcher, the data table's four     │
  * │ branches, all sixteen Dialog CALL SITES (the component itself is covered  │

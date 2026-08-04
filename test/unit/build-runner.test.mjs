@@ -290,3 +290,43 @@ test('config.buildWorker false keeps the build in this process', async () => {
   assert.ok(result.file_count > 0, 'the in-process escape hatch must still produce a release')
   await releases.stop()
 })
+
+/**
+ * A worker that dies must not take the queue with it.
+ *
+ * `checkIn` is the only other place that shifts the queue, and it runs when a job
+ * FINISHES — a worker that is killed never finishes one. So with every worker busy
+ * and a build queued behind them, one out-of-memory left that build waiting forever:
+ * no rejection, no timeout at this level, nothing the caller could observe. Found by
+ * an adversarial pass reading the runner, not by any test.
+ */
+test('a queued build still runs after the worker ahead of it dies', async () => {
+  // 40 MB is under what rendering needs, so the first build reliably dies of it,
+  // which is the real shape of the failure rather than a stubbed rejection.
+  const runner = createBuildRunner({ root, concurrency: 1, resourceLimits: { maxOldGenerationSizeMb: 40 } })
+  try {
+    const docs = Array.from({ length: 400 }, (_, index) => doc(`heavy-${index}`))
+    const dying = build(runner, docs).then(
+      () => null,
+      (error) => error,
+    )
+    const queued = build(runner, [doc('after-the-death')])
+    assert.equal(runner.queued(), 1, 'the second build must be queued behind the only worker')
+
+    assert.ok(await dying, 'the dying worker rejects its own job — that part always worked')
+
+    // The assertion that matters. Without the fix this never settles: the queue is
+    // only drained by a job finishing, and this worker never finished one.
+    const settled = await Promise.race([
+      queued.then(
+        (value) => value,
+        (error) => error,
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('ABANDONED'), 20_000)),
+    ])
+    assert.notEqual(settled, 'ABANDONED', 'a build queued behind a worker that died was never served')
+    assert.equal(runner.queued(), 0, 'and the queue is empty afterwards')
+  } finally {
+    await runner.close()
+  }
+})

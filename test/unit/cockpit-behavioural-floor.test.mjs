@@ -630,6 +630,28 @@ const CONTRACTS = [
     asserts: [/toHaveBeenCalledOnce/],
     min: 2,
   },
+  // ── A tab badge tells zero from unknown ────────────────────────────────────
+  //
+  // Both used to render nothing, so a count query that failed put "nothing waiting"
+  // on the strip beside a panel holding thirty rows. Silence on a tab is the
+  // reader's evidence that the queue is empty, and a failure may not borrow it.
+  {
+    id: 'tab-counts/unknown-is-not-zero',
+    promise:
+      'A count that was asked for and refused prints an em dash. A measured zero prints nothing, and so does a count not asked for yet — three answers, three appearances.',
+    incident: 'TabCount was number | undefined, so a failed query and an empty queue were one state on screen.',
+    title: /(measured zero|asked for and refused|not been asked for yet)/i,
+    asserts: [/toBeNull|toBe\('—'\)/],
+    min: 3,
+  },
+  {
+    id: 'tab-counts/a-number-is-printed-as-itself',
+    promise:
+      'A real count prints, with its noun where the number answers a narrowed question and a plus where the list saturated its own limit — and the unknown dash takes neither, because a noun on a number nobody has is a claim.',
+    title: /(the number when there is one|unknown dash unqualified)/i,
+    asserts: [/tabCountLabel/],
+    min: 2,
+  },
 ]
 
 /** The modules a contract above actually asserts against. Everything else is grep. */
