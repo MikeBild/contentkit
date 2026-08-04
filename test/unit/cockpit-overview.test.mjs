@@ -134,7 +134,11 @@ describe('the Overview says "nothing measured" once, and still says which nothin
     assert.ok(chain > 0, 'the chain must be on the page')
     assert.ok(statistics > chain, 'the chain is the thing an operator acts on, so it comes first')
     assert.ok(grid > statistics, 'and the tiles are reference material, under their own heading')
-    assert.match(body, /<h2[^>]*>\s*Statistics/, 'the reference half needs a heading to be a half rather than more tiles')
+    assert.match(
+      body,
+      /<h2[^>]*>\s*Statistics/,
+      'the reference half needs a heading to be a half rather than more tiles',
+    )
   })
 
   test('the page description says what the page is for, not how the numbers are computed', () => {
