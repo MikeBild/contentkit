@@ -3,13 +3,17 @@ import { Shell } from '@/app/shell'
 import { ToastProvider } from '@/components/ui/toast'
 import { SiteProvider } from '@/lib/site'
 import { AssistantPage } from '@/pages/assistant'
-import { AudioPage, CompositionsPage, DecksPage, PublishedPage, SystemPage } from '@/pages/authoring'
+import { AudioPage } from '@/pages/audio'
+import { CompositionsPage } from '@/pages/compositions'
 import { ContentPage } from '@/pages/content'
+import { DecksPage } from '@/pages/decks'
 import { AccessPage, AuditPage, CredentialsPage, ModerationPage, WebhooksPage } from '@/pages/governance'
 import { OverviewPage } from '@/pages/overview'
+import { PublishedPage } from '@/pages/published'
 import { ReleasesPage } from '@/pages/releases'
 import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
+import { SystemPage } from '@/pages/system'
 
 /** Every route carries the selected site; nothing below the root may drop it. */
 export interface RootSearch {

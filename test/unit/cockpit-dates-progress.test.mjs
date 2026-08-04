@@ -84,7 +84,9 @@ const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(
 
 const fields = source('forms', 'content', 'fields.tsx')
 const releases = source('pages', 'releases.tsx')
-const authoring = source('pages', 'authoring.tsx')
+// Was `pages/authoring.tsx`, which held five routed pages. The budget bar is the
+// Audio page's alone, and "exactly one bar on this page" below now means it.
+const authoring = source('pages', 'audio.tsx')
 const budgetModule = source('lib', 'audio-budget.ts')
 const progressSource = source('components', 'ui', 'progress.tsx')
 const fieldIndex = source('forms', 'fields', 'index.ts')

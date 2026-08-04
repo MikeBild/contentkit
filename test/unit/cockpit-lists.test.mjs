@@ -53,7 +53,18 @@ const allSources = (function walk(dir) {
 
 const dataTable = source('components', 'ui', 'data-table.tsx')
 const contentPage = source('pages', 'content.tsx')
-const authoringPage = source('pages', 'authoring.tsx')
+/**
+ * The audio summary and the readiness tiles, which used to share a file.
+ *
+ * `pages/authoring.tsx` was five routed pages in one module — Published,
+ * Compositions, Decks, Audio and System, each with its own `<Page>` — and it is
+ * now five files. The rules below are about two of them plus the rule they both
+ * import, so this is those three sources read as one text: every assertion here
+ * is a `const` or an element lifted out by name, and none of them spans a file.
+ */
+const authoringPage = [source('pages', 'audio.tsx'), source('pages', 'system.tsx'), source('lib', 'reported.ts')].join(
+  '\n',
+)
 const openapi = JSON.parse(readFileSync(join(root, 'docs', 'openapi.json'), 'utf8'))
 
 /**
@@ -954,7 +965,23 @@ describe('the components the console stopped hand-rolling', () => {
   const toast = source('components', 'ui', 'toast.tsx')
   const chip = source('components', 'ui', 'chip.tsx')
   const segmented = source('components', 'ui', 'segmented.tsx')
-  const pages = ['overview', 'sites', 'site-settings', 'content', 'releases', 'authoring', 'assistant', 'governance']
+  // Twelve now rather than eight: `authoring.tsx` was five of these pages in one
+  // file, and the rules below are per page, so splitting it widened the scope
+  // rather than narrowing it.
+  const pages = [
+    'overview',
+    'sites',
+    'site-settings',
+    'content',
+    'releases',
+    'published',
+    'compositions',
+    'decks',
+    'audio',
+    'system',
+    'assistant',
+    'governance',
+  ]
 
   test('an error and a warning still outlive the four seconds a confirmation gets', () => {
     // The map is read as data rather than matched as text: a regex for

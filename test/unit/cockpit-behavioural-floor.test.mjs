@@ -665,10 +665,14 @@ const UNCOVERED = [
   {
     id: 'pages/every-page-but-releases-and-the-registry',
     missing:
-      'Overview, content, governance, site settings, authoring and the assistant. Two pages of nine have a rendering test — releases, and the site registry since its delete moved onto <Confirm>. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text.',
+      'Overview, content, governance, site settings, the assistant, and the five pages `authoring.tsx` was split into — published, compositions, decks, audio and system. Two pages of twelve have a rendering test — releases, and the site registry since its delete moved onto <Confirm>. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text.',
     where: [
       'pages/assistant.tsx',
-      'pages/authoring.tsx',
+      'pages/audio.tsx',
+      'pages/compositions.tsx',
+      'pages/decks.tsx',
+      'pages/published.tsx',
+      'pages/system.tsx',
       'pages/content.tsx',
       'pages/governance.tsx',
       'pages/overview.tsx',
@@ -690,8 +694,9 @@ const UNCOVERED = [
   {
     id: 'ui/the-interactive-primitives',
     missing:
-      'Select, checkbox, switch, toggle group, tabs, collapsible, popover, dropdown menu, hover card, tooltip, combobox, segmented control, dropzone and copy button: every one has a keyboard contract and an announcement, and none is rendered by a test.',
+      'Select, checkbox, switch, toggle group, tabs, accordion, collapsible, popover, dropdown menu, hover card, tooltip, combobox, segmented control, dropzone and copy button: every one has a keyboard contract and an announcement, and none is rendered by a test. The accordion is the newest and the site settings form is its only caller: that ←/→/Home/End move between nine section headers, and that a section refused by the server still announces its count while closed, are both graded by reading the page.',
     where: [
+      'components/ui/accordion.tsx',
       'components/ui/select.tsx',
       'components/ui/checkbox.tsx',
       'components/ui/switch.tsx',
@@ -739,6 +744,7 @@ const UNCOVERED = [
       'lib/release-chain.ts',
       'lib/stat-tile.ts',
       'lib/audio-budget.ts',
+      'lib/reported.ts',
     ],
   },
   {
@@ -750,6 +756,7 @@ const UNCOVERED = [
       'lib/query.ts',
       'lib/conversations.ts',
       'lib/utils.ts',
+      'lib/select-any.ts',
       'forms/aside.tsx',
       'forms/gallery.tsx',
       'forms/status-badge.tsx',

@@ -37,7 +37,8 @@ const src = join(root, 'apps', 'cockpit', 'src')
  */
 const READERS = {
   'forms/content/revisions.tsx': 'shows the diff between two revisions already stored; writes nothing',
-  'pages/authoring.tsx': 'three inspectors — a published document, a pattern, a guide — all reads',
+  'pages/published.tsx': 'the published-document inspector; it reads the active release and writes nothing',
+  'pages/compositions.tsx': 'two registry inspectors — a pattern and a publishing guide — both reads',
   'components/ui/command.tsx': 'the command palette navigates; the destination does the writing',
 }
 
