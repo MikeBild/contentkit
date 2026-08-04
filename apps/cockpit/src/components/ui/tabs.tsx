@@ -82,7 +82,18 @@ export function Tabs<T extends string>({
     <div
       role="tablist"
       data-testid={testId}
-      className={cn('flex gap-1 border-b border-border', className)}
+      /*
+        `flex-wrap`, because a tab that is off the edge of the strip is a tab
+        nobody knows about. Four of the six strips are rendered inside an
+        `overflow-x-auto` wrapper, which turns that into a sideways scroll
+        rather than a clip — and a sideways scroll is what UI-UX.md §7 reserves
+        for tables. It is not hypothetical: giving these strips their counts
+        (`Comments · Contact 30 · Feedback 30`) took the moderation strip to
+        349px inside 342px at 390, and to 349 inside 312 at 360. Wrapping is
+        inert wherever the strip fits, which is every strip at every width the
+        console is actually operated at above the phone.
+      */
+      className={cn('flex flex-wrap gap-1 border-b border-border', className)}
       onKeyDown={(event) => {
         if (event.key === 'ArrowRight') step(1)
         else if (event.key === 'ArrowLeft') step(-1)

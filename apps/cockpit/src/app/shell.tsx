@@ -1038,8 +1038,16 @@ export function Page({
   const crumbs = useCrumbs(title)
   return (
     <div data-testid="page" data-page={title} className="mx-auto max-w-7xl p-6">
-      <header className="mb-5 flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
+      {/*
+        The actions drop below the title on a phone. Beside it they are
+        `shrink-0`, which is right at 1280 and wrong at 390: a 100px button and
+        its gap took 116px of a 342px column, so "New content" left the Content
+        page's description wrapping in 226px with a third of the row empty
+        beside it. Below `sm` the title block gets the whole width and the
+        actions get their own row.
+      */}
+      <header className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
           {/*
            * No crumb is a link, and BreadcrumbLink is therefore not rendered:
            * two of the three name no route at all — the console has no page for

@@ -190,13 +190,49 @@ reason this is written down.
 
 ## 7. Responsiveness
 
-The shell is responsive: below 768px the sidebar is an off-canvas sheet. **The pages
-largely are not**, and this is written down rather than implied — four of eight
-carry no responsive class at all. Until that is fixed, a page is not finished when
-it works at 1440px.
+Minimum for a new or touched page: **usable at 390px wide.** A table may scroll
+horizontally inside its own container; nothing else may, and a table may not take
+the row's own controls with it.
 
-Minimum for a new or touched page: it is usable at 390px wide. Tables may scroll
-horizontally; nothing else may.
+### The count of responsive classes was the wrong measurement
+
+Two earlier versions of this section counted `sm:`/`md:` prefixes in `src/pages`
+and reported the console mostly unresponsive — "four of eight", then nine of
+sixteen. The number was accurate and it measured nothing. Seven of the nine pages
+it named are composition shells thirty to a hundred lines long: `access.tsx` is
+three `<Card>`s in a `flex-col`, `moderation.tsx` and `webhooks.tsx` are a tab
+strip over cards. They carry no responsive class because they carry almost no
+layout. The layout is in `Page`, `Card`, `Table`, `Tabs` and `src/forms`, and the
+forms have been mobile-first all along — every grid in them is `sm:grid-cols-2`,
+which is already the collapsed-at-390 spelling.
+
+So the console was driven at 390 instead, every route and every dialog
+(`scripts/validate-cockpit-browser.mjs`). What that found, and what is now true:
+
+| Measured at 390 | Was | Is |
+|---|---|---|
+| Row actions in lists | `Edit`/`Revoke`/`Approve`/`Delete` 370–1400px off the right of the window on **every** list — the tables are 713px (groups) to 1749px (webhook endpoints) inside a 342px container, and the last column is the actions on all of them | The last cell is pinned to the right edge below `md`, bounded to `max-w-36` so it cannot eat the identity column |
+| Dialog footers | Four dialogs put their own answer below the fold at 390×667; `ck-api-key-dialog` laid out 1406px of form in a 635px panel and left Create 700px past a window that cannot scroll | The panel's middle row gives, so the body scrolls and the footer stays |
+| The wizard's step strip | Scrolled sideways at every viewport; at 390 steps 3 and 4 were 219px and 361px past the window | Wraps |
+| Tab strips | Adding counts took the moderation strip to 349px inside 342px | Wrap |
+| The page header | A 100px action button and its gap took 116px of a 342px row, wrapping descriptions in 226px | Actions take their own row below `sm` |
+| Page bodies, the content detail, site-settings' nine sections | — | Measured clean; nothing was changed |
+
+Every row above is held by a case at 390 in the browser suite, so this table
+cannot quietly stop being true.
+
+### What is still true and is not fixed
+
+A list at 390 is a table two to five times the width of the window, and pinning
+its actions does not change that: on `/moderation` a row is 257px tall because
+the comment being moderated is off to the right, so the page whose job is reading
+a comment shows an author and whitespace. Letting cells wrap below `md` was
+measured — it takes moderation from 943px to 703px and webhooks from 1749px to
+886px, at the cost of row heights of 77–257px — and it is a trade, not a fix.
+**The honest statement is that lists are reachable at 390 and not yet readable
+at it.** The answer is a row that stacks below `md` rather than a table that
+scrolls, and that is a change to `DataTable` and the nine hand-rolled lists §6
+already wants moved onto it — not a class.
 
 ---
 

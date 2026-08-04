@@ -46,15 +46,29 @@ import { Button } from "@/components/ui/button"
  *     name. `DialogContent` and `DialogFooter` destructure `data-testid` and
  *     derive the button's from it, exactly as `ui/sheet.tsx` derives `-close`,
  *     `ui/dropzone.tsx` derives `-input` and `ui/progress.tsx` derives `-bar`.
- *  2. **`max-h-[calc(100dvh-2rem)]` on the panel.** Stock has no height bound at
- *     all, and this console puts a rendered release document, a four-step wizard
- *     and a line diff inside dialogs — every one of which was taller than the
- *     viewport on the machines this is operated from, and would have run off the
- *     bottom with no way to reach it. A grid item that scrolls has an automatic
- *     minimum size of zero, so a body marked `overflow-y-auto` shrinks and
- *     scrolls while `DialogHeader` and `DialogFooter` keep their rows: the
- *     pinned-header/scrolling-body behaviour the old overlay had, without the
- *     overlay. Layout only, which is what a className is allowed to be here.
+ *  2. **`max-h-[calc(100dvh-2rem)]` and `grid-rows-[auto_minmax(0,1fr)_auto]` on
+ *     the panel.** Stock has no height bound at all, and this console puts a
+ *     rendered release document, a four-step wizard and a line diff inside
+ *     dialogs — every one of which was taller than the viewport on the machines
+ *     this is operated from, and would have run off the bottom with no way to
+ *     reach it. Header, body, footer: the middle row is the one that gives, so
+ *     a body marked `overflow-y-auto` scrolls while `DialogHeader` and
+ *     `DialogFooter` keep their size. Layout only, which is what a className is
+ *     allowed to be here.
+ *
+ *     The row template is not decoration. An earlier version of this note
+ *     claimed the cap alone was enough — "a grid item that scrolls has an
+ *     automatic minimum size of zero, so the body shrinks" — and measurement
+ *     says otherwise: with implicit `auto` rows Chromium sizes each row to its
+ *     content and then clips the panel at the cap, so **the body never shrank
+ *     and no dialog in this console ever scrolled**. `ck-api-key-dialog` laid
+ *     out 1406px of form inside a 635px panel at 390×667 and put its own Create
+ *     button 700px below the fold, unreachable by any gesture: `body` is
+ *     `overflow: hidden`, so the overflow was not scrolled to, it was cut off.
+ *     `ck-reader-dialog` and `ck-webhook-dialog` lost their footers the same
+ *     way. It is the 4.8.0 shell defect, one container in. Held by the dialog
+ *     case in `scripts/validate-cockpit-browser.mjs`, which is where a claim
+ *     about geometry belongs.
  *  3. **`closeDisabled` on `DialogContent`.** A dialog guarding a mutation in
  *     flight refuses to close — the `X` is already inert then, because every
  *     path through it ends at the caller's `onOpenChange`, which returns early
@@ -152,7 +166,7 @@ function DialogContent({
         data-slot="dialog-content"
         data-testid={testId}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         /**

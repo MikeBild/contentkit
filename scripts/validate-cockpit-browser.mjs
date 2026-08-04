@@ -57,9 +57,9 @@ const SIDEBAR_WIDTH = 256
  * floor and the mobile side of the same breakpoint.
  */
 const VIEWPORTS = [
-  { name: '1280×420', width: 1280, height: 420, requireOverflow: true },
-  { name: '768×800', width: 768, height: 800, requireOverflow: false },
-  { name: '390×800', width: 390, height: 800, requireOverflow: false },
+  { name: '1280×420', width: 1280, height: 420, requireOverflow: true, narrow: false },
+  { name: '768×800', width: 768, height: 800, requireOverflow: false, narrow: false },
+  { name: '390×800', width: 390, height: 800, requireOverflow: false, narrow: true },
 ]
 
 /**
@@ -189,6 +189,87 @@ const measure = () => {
     documentScrollWidth: documentElement.scrollWidth,
     documentClientWidth: documentElement.clientWidth,
     spilling: spilling.slice(0, 4),
+  }
+}
+
+/**
+ * What a phone width actually costs, which the three measurements above cannot
+ * see.
+ *
+ * `documentElement.scrollWidth` is a document-level number, and at 390 the
+ * sidebar is off-canvas, so the inset is the whole window and the document does
+ * not grow. Everything that goes wrong at 390 goes wrong *inside* a container
+ * that scrolls it sideways instead — which is invisible from the outside and is
+ * exactly what a phone shows you first.
+ *
+ * Two questions, both of them §7's:
+ *
+ *  - **What scrolls sideways?** §7 allows a table to and nothing else. Every
+ *    other sideways scroller in the page is reported by name.
+ *  - **What did that scroll take with it?** A table is allowed to hold data off
+ *    screen. It is not allowed to hold the row's own controls off screen: an
+ *    `Approve` that is 600px to the right of a 390px window is a control the
+ *    operator has no reason to believe exists.
+ */
+const measureNarrow = (viewportWidth) => {
+  const sideways = []
+  const inset = document.querySelector('[data-slot="sidebar-inset"]')
+  for (const element of inset?.querySelectorAll('*') ?? []) {
+    const style = getComputedStyle(element)
+    if (style.display === 'none' || style.visibility === 'hidden') continue
+    if (!['auto', 'scroll'].includes(style.overflowX)) continue
+    if (element.scrollWidth <= element.clientWidth + 1) continue
+    // The one exemption §7 grants, and it is granted to the element that holds
+    // a table rather than to anything that happens to contain one.
+    if (element.querySelector(':scope > table')) continue
+    sideways.push({
+      tag: element.tagName.toLowerCase(),
+      testId: element.getAttribute('data-testid'),
+      by: element.scrollWidth - element.clientWidth,
+      text: (element.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 48),
+    })
+  }
+
+  /**
+   * How much of the row the page's title block actually gets.
+   *
+   * `Page`'s header is a row of "title, description" against "actions", and the
+   * actions are `shrink-0` — right at 1280, wrong at 390, where a 100px button
+   * and its gap took 116px of a 342px column and left the description wrapping
+   * in 226px with a third of the row empty beside it.
+   */
+  const heading = document.querySelector('[data-testid="page-title"]')?.parentElement ?? null
+  const page = document.querySelector('[data-testid="page"]')
+  const titleBlock =
+    heading && page
+      ? {
+          width: Math.round(heading.getBoundingClientRect().width),
+          available: Math.round(
+            page.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(page).paddingLeft) * 2,
+          ),
+        }
+      : null
+
+  const stranded = []
+  for (const row of inset?.querySelectorAll('tbody tr') ?? []) {
+    for (const control of row.querySelectorAll('button, a[href], [role="button"]')) {
+      const box = control.getBoundingClientRect()
+      if (box.width === 0) continue
+      if (box.left < viewportWidth && box.right > 0) continue
+      stranded.push({
+        testId: control.getAttribute('data-testid'),
+        at: Math.round(box.left),
+        text: (control.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 24),
+      })
+    }
+  }
+
+  return {
+    sideways: sideways.slice(0, 4),
+    sidewaysCount: sideways.length,
+    stranded: stranded.slice(0, 4),
+    strandedCount: stranded.length,
+    titleBlock,
   }
 }
 
@@ -349,6 +430,35 @@ try {
               .map((item) => `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> "${item.text}"`)
               .join(', ') || 'none identified'
           }`,
+        )
+      }
+
+      // ── Case 8. At a phone width, only a table scrolls sideways, and a row's
+      //    controls are never what a table takes off screen.
+      if (viewport.narrow) {
+        const narrow = await page.evaluate(measureNarrow, viewport.width)
+        note({ viewport: viewport.name, route, ...narrow })
+        expect(
+          narrow.sidewaysCount === 0,
+          `${where} (${seen.title}): ${narrow.sidewaysCount} element(s) scroll sideways that are not a table. UI-UX.md §7 allows a table to and nothing else — a tab strip or a step strip with entries past its right edge hides them with no scrollbar an operator reads as one. Offenders: ${
+            narrow.sideways
+              .map(
+                (item) =>
+                  `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> +${item.by}px "${item.text}"`,
+              )
+              .join(', ') || 'none identified'
+          }`,
+        )
+        expect(
+          narrow.strandedCount === 0,
+          `${where} (${seen.title}): ${narrow.strandedCount} control(s) in table rows sit outside the ${viewport.width}px window. A table may hold its data off screen; the row's own actions are not data, and an operator has no reason to believe they exist. Stranded: ${
+            narrow.stranded.map((item) => `"${item.text}" (${item.testId}) at x=${item.at}`).join(', ') ||
+            'none identified'
+          }`,
+        )
+        expect(
+          narrow.titleBlock !== null && narrow.titleBlock.width >= narrow.titleBlock.available - 1,
+          `${where} (${seen.title}): the page's title and description share their row with the page's actions, so they get ${narrow.titleBlock?.width}px of ${narrow.titleBlock?.available}px. At a phone width the actions take their own row — see the header in apps/cockpit/src/app/shell.tsx.`,
         )
       }
     }
@@ -798,6 +908,128 @@ try {
     await context.close()
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Case 9 — a dialog's own answer is on screen, at a phone's height.
+  //
+  // 390×667 rather than 390×800, because 800 is not a phone: it is the number
+  // that made the shortest of these dialogs *just* fit and hid the defect from
+  // the pass above. The console's forms are mobile-first — every grid in
+  // `src/forms` is `sm:grid-cols-2` — so at 390 they collapse to one column and
+  // double in height, and the panel is capped at `100dvh-2rem`. That cap was
+  // doing nothing but clipping: `ck-api-key-dialog` laid out 1406px of form in
+  // a 635px panel and put its own Create button 700px below the fold, on a
+  // document that is `overflow: hidden` and cannot be scrolled to it.
+  //
+  // The list is written down rather than discovered, because a dialog that no
+  // longer opens has to fail here rather than be skipped — a suite that walks
+  // whatever it finds reports "nothing broken" when it finds nothing.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const DIALOGS = [
+      // The three that were measurably broken, worst first.
+      ['/credentials', 'ck-api-key-new', 'New key'],
+      ['/access', 'ck-reader-edit', 'Edit reader'],
+      ['/webhooks', 'ck-webhook-edit', 'Edit endpoint'],
+      // The rest of the console's form dialogs, so a regression in any of them
+      // lands here rather than on an operator.
+      ['/sites', 'site-new', 'New site (the wizard)'],
+      ['/access', 'ck-reader-new', 'New reader'],
+      ['/access', 'ck-rule-new', 'New path rule'],
+      ['/access', 'ck-group-new', 'New group'],
+      ['/webhooks', 'ck-webhook-new', 'New endpoint'],
+    ]
+    const context = await browser.newContext({ viewport: { width: 390, height: 667 } })
+    const page = await context.newPage()
+    watch(page)
+
+    for (const [route, opener, label] of DIALOGS) {
+      await open(page, route, fixture.origin)
+      const trigger = page.locator(`[data-testid^="${opener}"]`).first()
+      const opened = await trigger
+        .click({ timeout: 5000 })
+        .then(() => page.locator('[role="dialog"]').first().waitFor({ state: 'visible', timeout: 5000 }))
+        .then(() => true)
+        .catch(() => false)
+      if (
+        !expect(
+          opened,
+          `390×667 ${route}: "${opener}" (${label}) did not open a dialog. It is listed here because it is one of the console's form dialogs; if it has been renamed or removed, this list is what changes.`,
+        )
+      )
+        continue
+
+      await settled(page)
+      const seen = await page.evaluate(() => {
+        const panel = [...document.querySelectorAll('[role="dialog"]')].at(-1)
+        if (!panel) return null
+        const footer = panel.querySelector('[data-slot="dialog-footer"]')
+        const body = [...panel.children].find((child) => ['auto', 'scroll'].includes(getComputedStyle(child).overflowY))
+        const box = panel.getBoundingClientRect()
+        return {
+          testId: panel.getAttribute('data-testid'),
+          bottom: Math.round(box.bottom),
+          panelOverflows: panel.scrollHeight > panel.clientHeight + 1,
+          footerBottom: footer ? Math.round(footer.getBoundingClientRect().bottom) : null,
+          bodyFits: body ? body.scrollHeight <= body.clientHeight + 1 : null,
+          // §7 inside a dialog, which is where the wizard's four-step strip
+          // lives: 4 × `min-w-44` is 728px of strip, and the widest dialog here
+          // is `sm:max-w-2xl`, so it scrolled sideways at every viewport and at
+          // 390 held steps three and four 219px and 361px past the window.
+          sideways: [...panel.querySelectorAll('*')]
+            .filter((element) => {
+              const style = getComputedStyle(element)
+              if (style.display === 'none' || style.visibility === 'hidden') return false
+              if (!['auto', 'scroll'].includes(style.overflowX)) return false
+              if (element.scrollWidth <= element.clientWidth + 1) return false
+              return !element.querySelector(':scope > table')
+            })
+            .map((element) => ({
+              testId: element.getAttribute('data-testid'),
+              by: element.scrollWidth - element.clientWidth,
+            })),
+          offScreen: [...panel.querySelectorAll('[data-slot="dialog-footer"] button')]
+            .map((element) => ({
+              testId: element.getAttribute('data-testid'),
+              bottom: Math.round(element.getBoundingClientRect().bottom),
+            }))
+            .filter((entry) => entry.bottom > 668),
+        }
+      })
+      note({ case: 'dialog-at-phone-height', route, opener, ...seen })
+
+      expect(
+        seen !== null && seen.offScreen.length === 0,
+        `390×667 ${route} ${label}: ${seen?.offScreen.length} control(s) in the dialog's footer sit below the 667px window — ${seen?.offScreen
+          .map((entry) => `${entry.testId} at y=${entry.bottom}`)
+          .join(', ')}. The footer is where a dialog is answered; body is overflow:hidden, so nothing scrolls to it.`,
+      )
+      expect(
+        seen !== null && !seen.panelOverflows,
+        `390×667 ${route} ${label}: the panel holds more than it shows (${seen?.testId}) and does not scroll. Its middle row is what has to give — see grid-rows-[auto_minmax(0,1fr)_auto] in apps/cockpit/src/components/ui/dialog.tsx.`,
+      )
+      expect(
+        seen !== null && seen.footerBottom !== null && seen.footerBottom <= seen.bottom + 1,
+        `390×667 ${route} ${label}: the footer ends at ${seen?.footerBottom} and the panel at ${seen?.bottom}, so it hangs outside its own dialog.`,
+      )
+      expect(
+        seen !== null && seen.sideways.length === 0,
+        `390×667 ${route} ${label}: ${seen?.sideways.length} element(s) inside the dialog scroll sideways — ${seen?.sideways
+          .map((entry) => `${entry.testId} by ${entry.by}px`)
+          .join(
+            ', ',
+          )}. §7 grants that to a table and to nothing else, and a wizard whose remaining steps are off the edge of its own strip is the case the rule is about.`,
+      )
+
+      await page.keyboard.press('Escape')
+      await page
+        .locator('[role="dialog"]')
+        .first()
+        .waitFor({ state: 'hidden', timeout: 5000 })
+        .catch(() => {})
+    }
+    await context.close()
+  }
+
   expect(
     fixture.unanswered.length === 0,
     `The console asked for endpoints the fixture could not answer, so some page rendered against nothing: ${[...new Set(fixture.unanswered)].join('; ')}`,
@@ -833,6 +1065,8 @@ if (failures.length > 0) {
           'the collapsed rail names every entry, the site switcher included',
           '⌘K opens, filters, moves, navigates and closes on the keyboard alone',
           "a tab's count equals the list behind it, and the open tab's count is deferred rather than dropped",
+          'at 390 only a table scrolls sideways, and no row keeps its own controls off screen',
+          "at 390×667 a dialog's footer is inside the dialog and inside the window",
         ],
         known_horizontal_overflow: [...KNOWN_HORIZONTAL_OVERFLOW],
         measurements: observations.length,

@@ -45,7 +45,18 @@ export function Steps<T extends string>({
   )
 
   return (
-    <ol data-testid={testId} className={cn('scrollbar-thin flex gap-2 overflow-x-auto', className)}>
+    /*
+      Wraps rather than scrolls. Four steps at `min-w-44` are 728px of strip,
+      and the widest dialog this sits in is `sm:max-w-2xl` — so the strip was
+      sideways-scrollable at *every* viewport, and at 390 steps three and four
+      sat 219px and 361px past the window with nothing to say they were there.
+      A step strip is not a table: UI-UX.md §7 allows a table to scroll
+      horizontally and nothing else, and a wizard whose remaining questions are
+      off screen is exactly the case that rule is about. Wrapping costs a row of
+      height on narrow viewports and reads the same on wide ones, where the
+      strip fits on one line either way.
+    */
+    <ol data-testid={testId} className={cn('flex flex-wrap gap-2', className)}>
       {steps.map((step, index) => {
         const active = index === activeAt
         const unreachable = blockedAt >= 0 && index > blockedAt
