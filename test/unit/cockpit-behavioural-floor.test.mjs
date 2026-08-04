@@ -452,6 +452,66 @@ const CONTRACTS = [
     min: 1,
   },
 
+  // ── The console's own tab strip: components/ui/tabs.tsx ────────────────────
+  //
+  // Not shadcn's. This one keeps its panels mounted and hides the inactive ones,
+  // which is a decision with an ARIA contract attached, and nothing was holding
+  // it: a mutation that deleted `role="tabpanel"` from `TabPanel` altogether
+  // left 982 assertions green, because every test that touches a tab in this
+  // repository looks for the caller's `<TabPanel`, not for the role the caller
+  // never writes.
+  {
+    id: 'tabs/the-strip-is-a-tablist-and-says-which-tab-is-selected',
+    promise:
+      'The strip is a real tablist: three tabs in the accessibility tree, one selected, one tab stop between them.',
+    title: /is a tablist whose selected tab/i,
+    asserts: [/getByRole\(['"]tablist/, /selected: true/],
+    min: 1,
+  },
+  {
+    id: 'tabs/only-the-panel-on-screen-is-a-tabpanel',
+    promise:
+      'Exactly one panel is a tabpanel; the mounted-but-hidden ones are out of the accessibility tree entirely — which is why nothing a reader must be told may be rendered into one.',
+    incident: 'M2: TabPanel lost its role and 982 tests passed.',
+    title: /only the panel on screen a tabpanel/i,
+    asserts: [/getAllByRole\(['"]tabpanel/, /not\.toBeVisible/],
+    min: 1,
+  },
+  {
+    id: 'tabs/every-tab-points-at-a-panel-that-exists',
+    promise:
+      'aria-controls resolves to the panel and aria-labelledby resolves back to the tab, so the panel on screen carries the tab’s words as its accessible name.',
+    incident:
+      'Tabs wrote aria-controls from a useId() the panels never saw and TabPanel carried no id, so every tab in the console pointed at an element that has never existed.',
+    title: /points every tab at a panel that exists/i,
+    asserts: [/aria-controls/, /aria-labelledby/, /toHaveAccessibleName/],
+    min: 1,
+  },
+  {
+    id: 'tabs/an-unwired-strip-emits-no-broken-reference',
+    promise:
+      'A strip whose caller has named no group emits no aria-controls at all. "Controls a panel" with no panel to go to is worse than silence.',
+    title: /no reference at all when the caller names no group/i,
+    asserts: [/not\.toHaveAttribute\(['"]aria-controls/, /danglingReferences/],
+    min: 1,
+  },
+  {
+    id: 'tabs/arrows-move-the-selection-the-panel-and-the-focus',
+    promise:
+      '←/→ change which tab is selected, which panel is on screen, and where the focus ring is — all three, or the strip has moved and the keyboard has not.',
+    incident: 'M9: a tab strip made inert left two panels unreachable and 982 tests passed.',
+    title: /moves between tabs with/i,
+    asserts: [/\{ArrowRight\}/, /getByRole\(['"]tabpanel/, /toHaveFocus/],
+    min: 1,
+  },
+  {
+    id: 'tabs/a-disabled-tab-is-stepped-over',
+    promise: 'A disabled tab is skipped by the arrow keys and cannot be opened by clicking it.',
+    title: /skips a disabled tab/i,
+    asserts: [/\{ArrowRight\}\{ArrowRight\}/, /toHaveTextContent/],
+    min: 1,
+  },
+
   // ── One page, rendered end to end ──────────────────────────────────────────
   {
     id: 'page/releases-names-a-running-build',
@@ -502,6 +562,40 @@ const CONTRACTS = [
     asserts: [/getByRole\(['"]progressbar/, /not\.toHaveAttribute\(['"]aria-valuenow/],
     min: 1,
   },
+  // ── Compositions: the one thing the tab strips cost ────────────────────────
+  //
+  // `TabPanel` hides rather than unmounts, and a hidden element is out of the
+  // accessibility tree — so the compile refusals this page rendered inside its
+  // Compile panel reached nobody who was reading the pattern registry when the
+  // request came back. No toast, no badge, and role="alert" in a display:none
+  // div, which announces nothing. Pinned at the page because it is a property of
+  // where the page puts its Alert, not of the component.
+  {
+    id: 'page/compositions-a-refusal-reaches-a-reader-on-another-tab',
+    promise:
+      'A compile that fails while the reader is on Patterns is still in the accessibility tree, visible, and carrying the server’s own words — on every tab, because it belongs to the page and not to a panel.',
+    incident: 'The alert lived inside TabPanel, which keeps hidden panels mounted and announces from none of them.',
+    title: /REACHES THE READER ON ANOTHER TAB/i,
+    asserts: [/getByRole\(['"]alert['"]\)/, /toBeVisible/, /toHaveTextContent/],
+    min: 1,
+  },
+  {
+    id: 'page/compositions-the-strip-says-which-panel-failed',
+    promise:
+      'The tab whose panel produced the refusal says so in a word — the tab’s accessible name reads "Compile 1 failed" — rather than in a colour the strip alone would carry.',
+    title: /which panel failed/i,
+    asserts: [/getByRole\(['"]tab['"]/, /toHaveTextContent/],
+    min: 1,
+  },
+  {
+    id: 'page/compositions-one-panel-at-a-time',
+    promise: 'Each of this page’s three tabs really shows its own panel, and only ever one of them.',
+    incident: 'M11: a five-view detail cut to one view passed 982 tests.',
+    title: /each tab of this page really has its own/i,
+    asserts: [/getAllByRole\(['"]tabpanel/, /toHaveAttribute/],
+    min: 1,
+  },
+
   // ── "Save and leave", when the save says no ────────────────────────────────
   //
   // The only finding in this whole migration that destroyed something, and it
@@ -544,10 +638,12 @@ const COVERED_SUBJECTS = [
   'components/ui/dialog.tsx',
   'components/ui/progress.tsx',
   'components/ui/spinner.tsx',
+  'components/ui/tabs.tsx',
   'forms/fields/field.tsx',
   'forms/fields/choice.tsx',
   'forms/fields/scopes.tsx',
   'forms/fields/text.tsx',
+  'pages/compositions.tsx',
   'pages/releases.tsx',
   'pages/sites.tsx',
 ]
@@ -665,13 +761,12 @@ const UNCOVERED = [
   {
     id: 'pages/every-page-but-releases-and-the-registry',
     missing:
-      'Overview, content, site settings, the assistant, the five pages `authoring.tsx` was split into — published, compositions, decks, audio and system — and the five `governance.tsx` was split into: reader access, webhooks, moderation, credentials and audit. Two pages of sixteen have a rendering test — releases, and the site registry since its delete moved onto <Confirm>. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text. The three new tab strips are the next: nothing renders them, so which panel is on screen is graded by reading source.',
+      'Overview, content, site settings, the assistant, four of the five pages `authoring.tsx` was split into — published, decks, audio and system — and the five `governance.tsx` was split into: reader access, webhooks, moderation, credentials and audit. Three pages of sixteen have a rendering test — releases, the site registry since its delete moved onto <Confirm>, and compositions since its compile refusals came out of a hidden panel. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text. The remaining tab strips are the next: content, published, webhooks, moderation, credentials and the content editor render one each, and which panel is on screen is graded there by reading source.',
     where: [
       'pages/access.tsx',
       'pages/assistant.tsx',
       'pages/audio.tsx',
       'pages/audit.tsx',
-      'pages/compositions.tsx',
       'pages/credentials.tsx',
       'pages/decks.tsx',
       'pages/moderation.tsx',
@@ -698,7 +793,7 @@ const UNCOVERED = [
   {
     id: 'ui/the-interactive-primitives',
     missing:
-      'Select, checkbox, switch, toggle group, tabs, accordion, collapsible, popover, dropdown menu, hover card, tooltip, combobox, segmented control, dropzone and copy button: every one has a keyboard contract and an announcement, and none is rendered by a test. The accordion is the newest and the site settings form is its only caller: that ←/→/Home/End move between nine section headers, and that a section refused by the server still announces its count while closed, are both graded by reading the page.',
+      'Select, checkbox, switch, toggle group, accordion, collapsible, popover, dropdown menu, hover card, tooltip, combobox, segmented control, dropzone and copy button: every one has a keyboard contract and an announcement, and none is rendered by a test. (The tab strip was one of them until `components/ui/tabs.test.tsx`.) The accordion is the newest and the site settings form is its only caller: that ←/→/Home/End move between nine section headers, and that a section refused by the server still announces its count while closed, are both graded by reading the page.',
     where: [
       'components/ui/accordion.tsx',
       'components/ui/select.tsx',
@@ -706,7 +801,6 @@ const UNCOVERED = [
       'components/ui/switch.tsx',
       'components/ui/toggle.tsx',
       'components/ui/toggle-group.tsx',
-      'components/ui/tabs.tsx',
       'components/ui/collapsible.tsx',
       'components/ui/popover.tsx',
       'components/ui/dropdown-menu.tsx',

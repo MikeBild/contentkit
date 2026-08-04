@@ -67,8 +67,22 @@ type PatternQuery = {
  * `TabPanel` keeps every panel mounted, which is what makes this safe here: the
  * draft in the textarea and the compile result beside it survive a look at the
  * registry and back.
+ *
+ * It is also what made the tabs cost something, and the cost is paid above:
+ * mounted-but-hidden means a panel is out of the accessibility tree, so a
+ * compile that failed while the reader was on Patterns was an `Alert` in a
+ * `hidden` div — no toast, no badge, and `role="alert"` announcing to nobody,
+ * because a live region that is not rendered does not speak. A refusal the
+ * reader has to change tabs to discover has not been reported. So the three
+ * refusals belong to the page rather than to the Compile panel, and they are
+ * rendered above the strip where they are on screen whichever tab is open; the
+ * strip says which panel they came from, in the same place and the same grammar
+ * as the Patterns and Guides counts.
  */
 type CompositionTab = 'compile' | 'patterns' | 'guides'
+
+/** Names this page's strip, so each tab and its panel can address each other. */
+const GROUP = 'composition'
 
 export function CompositionsPage() {
   const { site } = useSite()
@@ -91,13 +105,53 @@ export function CompositionsPage() {
   const diagnostics = compile.data?.diagnostics ?? []
   const compiled = compile.data
 
+  /**
+   * Every refusal on this page, in the order the buttons stand in.
+   *
+   * One list read twice — once above the strip, where the refusal is announced,
+   * and once on the Compile tab, where it says which panel produced it. Two
+   * derivations of "did anything fail" would be two answers the moment one of
+   * them gained a fourth mutation.
+   */
+  const failures = [
+    { label: 'Compile', state: compile },
+    { label: 'Validate', state: validate },
+    { label: 'Recommend', state: recommend },
+  ].filter((entry) => entry.state.error)
+
   return (
     <Page
       title="Compositions"
       description="The deterministic pattern registry, and a compiler you can point at Markdown without persisting anything."
     >
+      {/*
+        Above the strip, not inside a panel: this is the page's own answer to a
+        button the reader pressed, and `TabPanel` hides rather than unmounts, so
+        an Alert in the Compile panel is a live region nobody hears while the
+        reader is anywhere else. Rendered here it is on screen on all three tabs
+        and `role="alert"` — which `Alert` carries — interrupts on arrival.
+      */}
+      {failures.length > 0 ? (
+        <div data-testid="composition-failures" className="mb-4 flex flex-col gap-2">
+          {failures.map((entry) => (
+            <Alert
+              key={entry.label}
+              variant="destructive"
+              data-testid={`composition-error-${entry.label.toLowerCase()}`}
+            >
+              <TriangleAlert />
+              <AlertTitle>{entry.label} failed</AlertTitle>
+              <AlertDescription>
+                {entry.state.error instanceof Error ? entry.state.error.message : 'failed'}
+              </AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      ) : null}
+
       <Tabs
         data-testid="composition-tabs"
+        group={GROUP}
         value={tab}
         onValueChange={setTab}
         // The strip scrolls rather than widening the page: three tabs and two
@@ -105,7 +159,25 @@ export function CompositionsPage() {
         // nothing else.
         className="mb-4 overflow-x-auto"
         tabs={[
-          { id: 'compile', label: 'Compile' },
+          {
+            id: 'compile',
+            label: 'Compile',
+            /*
+              The strip already says how many patterns and how many guides are
+              behind their tabs; this is the same sentence for the one state
+              Compile has that the reader cares about from another tab. It is a
+              word and a number rather than a red dot — §8: nothing is conveyed
+              by colour alone — so the tab's accessible name reads "Compile 1
+              failed", which is also what a screen reader gets when it walks the
+              strip.
+            */
+            badge:
+              failures.length > 0 ? (
+                <Badge variant="destructive" data-testid="composition-tab-compile-failed">
+                  {failures.length} failed
+                </Badge>
+              ) : undefined,
+          },
           {
             id: 'patterns',
             label: 'Patterns',
@@ -119,7 +191,13 @@ export function CompositionsPage() {
         ]}
       />
 
-      <TabPanel active={tab === 'compile'} data-testid="composition-tab-compile" className="flex flex-col gap-3">
+      <TabPanel
+        active={tab === 'compile'}
+        group={GROUP}
+        id="compile"
+        data-testid="composition-tab-compile"
+        className="flex flex-col gap-3"
+      >
         {/* The card this was a CardDescription of is gone; the sentence is not.
             It belongs to the three buttons below rather than to the page, which
             is why it sits with the control and not in the Page description. */}
@@ -166,26 +244,6 @@ export function CompositionsPage() {
           </Button>
         </div>
 
-        {[
-          { label: 'Compile', state: compile },
-          { label: 'Validate', state: validate },
-          { label: 'Recommend', state: recommend },
-        ]
-          .filter((entry) => entry.state.error)
-          .map((entry) => (
-            <Alert
-              key={entry.label}
-              variant="destructive"
-              data-testid={`composition-error-${entry.label.toLowerCase()}`}
-            >
-              <TriangleAlert />
-              <AlertTitle>{entry.label} failed</AlertTitle>
-              <AlertDescription>
-                {entry.state.error instanceof Error ? entry.state.error.message : 'failed'}
-              </AlertDescription>
-            </Alert>
-          ))}
-
         {compiled ? (
           <dl
             data-testid="composition-result"
@@ -220,7 +278,13 @@ export function CompositionsPage() {
         ) : null}
       </TabPanel>
 
-      <TabPanel active={tab === 'patterns'} data-testid="composition-tab-patterns" className="flex flex-col gap-3">
+      <TabPanel
+        active={tab === 'patterns'}
+        group={GROUP}
+        id="patterns"
+        data-testid="composition-tab-patterns"
+        className="flex flex-col gap-3"
+      >
         <div className="flex flex-wrap gap-2">
           {/* Each filter's id sits on its trigger — `Select` renders no DOM —
               and the sentinel is what stands in for "no filter", which the
@@ -240,11 +304,15 @@ export function CompositionsPage() {
               >
                 <SelectValue placeholder={`All ${filter.label.toLowerCase()}`} />
               </SelectTrigger>
+              {/* An option is a control a reader picks and a browser check has
+                  to address, so it carries a name of its own — UI-UX.md §8. */}
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value={ANY}>All {filter.label.toLowerCase()}</SelectItem>
+                  <SelectItem value={ANY} data-testid={`pattern-filter-${filter.key}-any`}>
+                    All {filter.label.toLowerCase()}
+                  </SelectItem>
                   {filter.options.map((option) => (
-                    <SelectItem key={option} value={option}>
+                    <SelectItem key={option} value={option} data-testid={`pattern-filter-${filter.key}-${option}`}>
                       {option}
                     </SelectItem>
                   ))}
@@ -263,9 +331,11 @@ export function CompositionsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                <SelectItem value={ANY}>All canvases</SelectItem>
+                <SelectItem value={ANY} data-testid="pattern-filter-canvas-any">
+                  All canvases
+                </SelectItem>
                 {CANVAS.map((option) => (
-                  <SelectItem key={option} value={option}>
+                  <SelectItem key={option} value={option} data-testid={`pattern-filter-canvas-${option}`}>
                     {option}
                   </SelectItem>
                 ))}
@@ -344,7 +414,13 @@ export function CompositionsPage() {
         </Card>
       </TabPanel>
 
-      <TabPanel active={tab === 'guides'} data-testid="composition-tab-guides" className="flex flex-col gap-3">
+      <TabPanel
+        active={tab === 'guides'}
+        group={GROUP}
+        id="guides"
+        data-testid="composition-tab-guides"
+        className="flex flex-col gap-3"
+      >
         <p className="text-sm text-muted-foreground">
           What each authoring construct is for, when to reject it, and which patterns it is compatible with.
         </p>
