@@ -605,7 +605,24 @@ export function Shell() {
        * tooltips render nowhere without a provider above them. It wraps the
        * whole shell — the Outlet included — so every route is inside it.
        */}
-      <SidebarProvider>
+      {/*
+        `h-full min-h-0`, and both halves are load-bearing.
+
+        shadcn's wrapper is `min-h-svh`: it is at least the viewport and grows with
+        its content, which is right for a page that scrolls in the document. This
+        console does not — `body` is `overflow: hidden` because the panes scroll and
+        the document stays put, which is what makes the sidebar stay while a list
+        moves. Put those two together and the wrapper grew to nine thousand pixels
+        inside an eight-hundred-pixel body, the pane's `overflow-y-auto` never had a
+        bounded parent so it never overflowed, and `overflow: hidden` quietly cut off
+        everything below the fold. On the releases page that was nine tenths of it.
+
+        `h-full` bounds the wrapper to `#root`, which is bounded to the viewport.
+        `min-h-0` is the flexbox half: a flex child's default `min-height: auto`
+        refuses to shrink below its content, so without it the inset would push the
+        same way from the inside.
+      */}
+      <SidebarProvider className="h-full min-h-0">
         <Sidebar collapsible="icon" data-testid="sidebar">
           <SidebarHeader>
             {/*
@@ -734,7 +751,9 @@ export function Shell() {
           <SidebarRail data-testid="sidebar-rail" />
         </Sidebar>
 
-        <SidebarInset>
+        {/* min-h-0 for the same reason: this is the flex child that has to be
+            allowed to shrink so the pane below it can overflow and scroll. */}
+        <SidebarInset className="min-h-0">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
             <SidebarTrigger data-testid="sidebar-toggle" />
           </header>

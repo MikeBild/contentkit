@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.8.1 — 2026-08-04
+
+### Fixed
+
+- The console could not be scrolled. `body` is `overflow: hidden` on purpose — the
+  panes scroll and the document stays put, which is what keeps the sidebar still
+  while a list moves — and that only works while every element between `body` and
+  the scrolling pane is bounded to the viewport. shadcn's sidebar wrapper is
+  `min-h-svh`: at least the viewport, growing with its content. So the shell grew
+  past the fold, the pane's `overflow-y-auto` never overflowed because its parent
+  had grown instead, and `overflow: hidden` cut off the remainder without a
+  scrollbar to say so. Measured on the releases page: an 827px viewport, a 9073px
+  shell, and nine tenths of the page unreachable.
+
+  Nothing caught it because nothing measures layout: jsdom performs none, so
+  `clientHeight` is zero there and the rendering suite is blind to the whole class.
+  A source guard now holds the pairing together — while the document refuses to
+  scroll, the shell must bound itself — and says in writing that it is the cheap
+  half of the answer.
+
 ## 4.8.0 — 2026-07-31
 
 ### Changed
