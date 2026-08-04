@@ -18,6 +18,7 @@
     "test:integration": "node --test --test-concurrency=1 test/integration/*.test.mjs",
     "test:contract": "node --test test/contract/*.test.mjs",
     "test:smoke": "node --test test/smoke/*.test.mjs",
+    "test:load": "node --test test/load/*.test.mjs",
     "test:e2e:local": "bash scripts/test-e2e-local.sh",
     "benchmark": "node scripts/benchmark.mjs",
     "verify": "npm run lint && npm test && npm run test:contract && npm run test:integration && npm run test:smoke && npm run validate:visuals && npm run validate:cockpit && npm run check:embedded-drift && npm run check:docs-drift",

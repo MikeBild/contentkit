@@ -151,6 +151,36 @@ jobs:
       - run: npm ci
       - run: npm run test:integration
 
+  # 4.9.1 moved the release build onto a worker thread and added
+  # test/load/release-build-event-loop.test.mjs to prove it with a number — the
+  # only item in docs/OPEN-WORK.md whose fix is provable that way. That file was
+  # in no npm script and no job, so from the commit that added it onward it ran
+  # only when someone typed its path from memory: the regression it exists to
+  # catch would have landed silently.
+  #
+  # It is deliberately not in `npm test` (see the file's own header) because it
+  # builds a real site twice. That is an argument for its own job, not for no
+  # job — the same shape `integration`, `binary-e2e` and `benchmark` already
+  # have. Measured here: 14s on 22.x, 17s on 20.x.
+  #
+  # Both matrix legs, because the thing under test is `worker_threads` and 20.x
+  # is a supported engine and a required check.
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20.x', '22.x']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:load
+
   binary-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
