@@ -84,22 +84,11 @@ const VIEWPORTS = [
  * docs/OPEN-WORK.md §3 asks this suite for "the real list of what breaks". This
  * is it, for the horizontal axis, dated 2026-08-04 and reproducible.
  */
-const KNOWN_HORIZONTAL_OVERFLOW = new Set([
-  '1280×420 /audio',
-  '1280×420 /access',
-  '1280×420 /webhooks',
-  '1280×420 /credentials',
-  '768×800 /sites',
-  '768×800 /content',
-  '768×800 /published',
-  '768×800 /releases',
-  '768×800 /audio',
-  '768×800 /access',
-  '768×800 /webhooks',
-  '768×800 /moderation',
-  '768×800 /credentials',
-  '768×800 /audit',
-])
+// Empty, and that is the point: `min-w-0` on SidebarInset took all fourteen
+// entries to zero at once. The list stays as a mechanism rather than being
+// deleted, because the next horizontal overflow should have to be written down
+// deliberately rather than absorbed.
+const KNOWN_HORIZONTAL_OVERFLOW = new Set([])
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The routes, read from the router rather than written down.

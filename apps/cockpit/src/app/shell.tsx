@@ -753,7 +753,22 @@ export function Shell() {
 
         {/* min-h-0 for the same reason: this is the flex child that has to be
             allowed to shrink so the pane below it can overflow and scroll. */}
-        <SidebarInset className="min-h-0">
+        {/*
+          `min-w-0` is the horizontal twin of `min-h-0`, and it was missing on the
+          line whose own comment states the rule for the vertical axis.
+
+          A flex child defaults to `min-width: auto`, which resolves to min-content
+          and refuses to shrink below it. So on a page holding a table the inset
+          stayed a full viewport wide *beside* the sidebar, the document grew past
+          the window, and `body{overflow:hidden}` cut the difference off — the same
+          shape as 4.8.0, turned ninety degrees.
+
+          It survived local runs because macOS draws overlay scrollbars that take no
+          width. On Linux and Windows the pane's scrollbar takes real width, the
+          content beside it overflows by exactly that, and CI found it on the first
+          run of the browser suite — which is the whole argument for having one.
+        */}
+        <SidebarInset className="min-h-0 min-w-0">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
             <SidebarTrigger data-testid="sidebar-toggle" />
           </header>
