@@ -500,9 +500,52 @@ function semanticRole(attributes, fallback = 'supporting') {
   return role
 }
 
-function compositionDirectives(meta, charts, semanticNodes) {
+/**
+ * A directive that fails validation is a 422 on the write path and a readable
+ * paragraph on the lenient one.
+ *
+ * The write path must stay strict: an author who spells a composition wrongly gets
+ * told immediately, which is the whole point of validating it. But `lenient` render
+ * paths replay text nobody is writing right now — a stored revision during a site
+ * build, a preview, and above all an assistant reply, which was never a document at
+ * all. There, one malformed directive used to throw and take the ENTIRE render with
+ * it: the console fell back to its client-side draft view, which cannot render any
+ * directive, so every well-formed block in the message became a grey box saying
+ * "not shown". A reader asked a question and got three grey boxes.
+ *
+ * This is the same bargain `dropWhenLenient` already strikes for frontmatter, and
+ * the argument is stronger here: the directive's CHILDREN are ordinary markdown and
+ * stay exactly where they were, so what is lost is the special presentation, not the
+ * content. The failure is reported as a warning and reaches the caller as a
+ * diagnostic.
+ */
+function compositionDirectives(meta, charts, semanticNodes, { lenient = false, warnings = [] } = {}) {
   return (tree) => {
     visit(tree, ['containerDirective', 'leafDirective', 'textDirective'], (node) => {
+      // Snapshot the two collectors: a directive can append a chart or a semantic
+      // node before the assertion that rejects it, and a half-built composition is
+      // worse than none.
+      const chartCount = charts.length
+      const semanticCount = semanticNodes.length
+      try {
+        return directiveNode(node, meta, charts, semanticNodes)
+      } catch (error) {
+        if (!lenient || error.statusCode !== 422) throw error
+        charts.length = chartCount
+        semanticNodes.length = semanticCount
+        warnings.push(`${node.name} directive not rendered: ${error.message}`)
+        const data = node.data || (node.data = {})
+        data.hName = node.type === 'textDirective' ? 'span' : 'div'
+        data.hProperties = { className: ['ck-directive-unrendered'], 'data-directive': node.name }
+        return undefined
+      }
+    })
+  }
+}
+
+function directiveNode(node, meta, charts, semanticNodes) {
+  {
+    {
       const data = node.data || (node.data = {})
       if (['note', 'tip', 'warning'].includes(node.name)) {
         data.hName = 'aside'
@@ -1125,8 +1168,9 @@ function compositionDirectives(meta, charts, semanticNodes) {
       } else if (meta.layout === 'composition') {
         throw directiveError(`unknown composition directive "${node.name}"`)
       }
-    })
+    }
   }
+  return undefined
 }
 
 function optionalSlug(value, field) {
@@ -1726,7 +1770,7 @@ export async function renderMarkdown(markdown, { lenient = false } = {}) {
     .use(remarkGfm)
     .use(remarkMath)
     .use(remarkDirective)
-    .use(compositionDirectives, meta, charts, semanticNodes)
+    .use(compositionDirectives, meta, charts, semanticNodes, { lenient, warnings })
     .use(semanticFencedBlocks, semanticNodes)
     .use(dropRedundantTitle, meta.title)
     .use(remarkRehype)

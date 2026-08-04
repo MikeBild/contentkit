@@ -90,6 +90,11 @@ export async function renderFragment({ markdown, site = {}, locale, scheme = 'au
     narrative: rendered.narrative ?? null,
     composition: rendered.composition ?? null,
     diagnostics: rendered.diagnostics ?? [],
+    // What the lenient path chose not to fail on. A malformed directive no longer
+    // takes the whole render down — its content stays and this says which block lost
+    // its presentation. Without it the caller sees a fragment that looks complete and
+    // has quietly become plain text, which is the worse of the two silences.
+    warnings: rendered.warnings ?? [],
     accessible_text: rendered.accessibleText ?? rendered.accessible_text ?? null,
     has_mermaid: /class="mermaid"|data-mermaid/.test(withCharts.html),
     chart_count: rendered.charts?.length ?? 0,
