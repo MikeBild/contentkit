@@ -665,18 +665,22 @@ const UNCOVERED = [
   {
     id: 'pages/every-page-but-releases-and-the-registry',
     missing:
-      'Overview, content, governance, site settings, the assistant, and the five pages `authoring.tsx` was split into — published, compositions, decks, audio and system. Two pages of twelve have a rendering test — releases, and the site registry since its delete moved onto <Confirm>. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text.',
+      'Overview, content, site settings, the assistant, the five pages `authoring.tsx` was split into — published, compositions, decks, audio and system — and the five `governance.tsx` was split into: reader access, webhooks, moderation, credentials and audit. Two pages of sixteen have a rendering test — releases, and the site registry since its delete moved onto <Confirm>. site-settings.tsx is the nearest gap: its identity confirmation goes through the same component and is graded here only as text. The three new tab strips are the next: nothing renders them, so which panel is on screen is graded by reading source.',
     where: [
+      'pages/access.tsx',
       'pages/assistant.tsx',
       'pages/audio.tsx',
+      'pages/audit.tsx',
       'pages/compositions.tsx',
+      'pages/credentials.tsx',
       'pages/decks.tsx',
+      'pages/moderation.tsx',
       'pages/published.tsx',
       'pages/system.tsx',
       'pages/content.tsx',
-      'pages/governance.tsx',
       'pages/overview.tsx',
       'pages/site-settings.tsx',
+      'pages/webhooks.tsx',
     ],
   },
   {

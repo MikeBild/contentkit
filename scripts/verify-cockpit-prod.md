@@ -551,7 +551,8 @@ Page: `nav-access`. Row testid `ck-rule-row`, id in `data-rule`.
 
 ## 11. Webhooks
 
-Page: `nav-webhooks`. Row testid `ck-webhook-row`, id in `data-endpoint`/row id attribute.
+Page: `nav-webhooks`, tab `ck-webhook-tabs-endpoints` (panel `ck-webhook-tab-endpoints`). Row testid
+`ck-webhook-row`, id in `data-endpoint`/row id attribute.
 
 ### 11.1 Create
 
@@ -591,7 +592,8 @@ Errors surface at `ck-webhook-error`.
 
 ## 12. Webhook deliveries
 
-Same page, lower card. Row testid `ck-delivery-row`, id in the row.
+Same page, tab `ck-webhook-tabs-deliveries` (panel `ck-webhook-tab-deliveries`). Row testid
+`ck-delivery-row`, id in the row.
 
 Deliveries are **produced by the system**, not created by hand. Create / edit / delete do not exist and
 must not be offered; the mutating operation is **retry**.
@@ -618,7 +620,8 @@ must not be offered; the mutating operation is **retry**.
 
 ## 13. Comments
 
-Page: `nav-moderation`. Row testid `ck-comment-row`, id in `data-comment`.
+Page: `nav-moderation`, tab `ck-moderation-tabs-comments` (panel `ck-moderation-tab-comments`). Row
+testid `ck-comment-row`, id in `data-comment`.
 
 Comments are **submitted by visitors**; the console moderates them. The create leg is therefore a
 public POST.
@@ -668,7 +671,8 @@ Appendix A.6 covers the case where the republish fails after a successful delete
 
 ## 14. Contact submissions
 
-Same page. Row testid `ck-contact-row`, id in `data-submission`.
+Same page, tab `ck-moderation-tabs-contact` (panel `ck-moderation-tab-contact`). Row testid
+`ck-contact-row`, id in `data-submission`.
 
 ### 14.1 Create (as a visitor)
 
@@ -702,8 +706,8 @@ now moves it.
 
 ## 15. Feedback
 
-Same page, lower card. Row testid `ck-feedback-row`, id in `data-post` (feedback is aggregated **per
-post**, not per vote).
+Same page, tab `ck-moderation-tabs-feedback` (panel `ck-moderation-tab-feedback`). Row testid
+`ck-feedback-row`, id in `data-post` (feedback is aggregated **per post**, not per vote).
 
 ### 15.1 Create (as a visitor)
 
@@ -739,7 +743,8 @@ Click `ck-feedback-reset-{itemId}` → `confirm-accept`.
 
 ## 16. API keys
 
-Page: `nav-credentials`. Row testid `ck-api-key-row`, id in the row.
+Page: `nav-credentials`, tab `ck-credentials-tabs-keys` (panel `ck-credentials-tab-keys`). Row testid
+`ck-api-key-row`, id in the row.
 
 ### 16.1 Create
 
@@ -798,7 +803,8 @@ its value.
 
 ## 17. Identity grants
 
-Page: `nav-credentials`, second card. Row testid `ck-grant-row`, id in the row.
+Page: `nav-credentials`, tab `ck-credentials-tabs-grants` (panel `ck-credentials-tab-grants`) — the tab
+is offered only to a session holding `identity:admin`. Row testid `ck-grant-row`, id in the row.
 
 ### 17.1 Create
 

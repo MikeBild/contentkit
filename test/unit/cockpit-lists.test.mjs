@@ -965,9 +965,10 @@ describe('the components the console stopped hand-rolling', () => {
   const toast = source('components', 'ui', 'toast.tsx')
   const chip = source('components', 'ui', 'chip.tsx')
   const segmented = source('components', 'ui', 'segmented.tsx')
-  // Twelve now rather than eight: `authoring.tsx` was five of these pages in one
-  // file, and the rules below are per page, so splitting it widened the scope
-  // rather than narrowing it.
+  // Sixteen now rather than eight: `authoring.tsx` was five of these pages in
+  // one file and `governance.tsx` was five more, and the rules below are per
+  // page, so splitting them widened the scope rather than narrowing it. This is
+  // the whole of pages/, and it is meant to stay that way.
   const pages = [
     'overview',
     'sites',
@@ -980,8 +981,24 @@ describe('the components the console stopped hand-rolling', () => {
     'audio',
     'system',
     'assistant',
-    'governance',
+    'access',
+    'webhooks',
+    'moderation',
+    'credentials',
+    'audit',
   ]
+
+  test('the list above is every page, so a new one cannot arrive unruled', () => {
+    // The list used to be written out and then quietly fall behind: it named
+    // `authoring` and `governance` — one entry each for ten routed pages — so
+    // the two rules below graded a tenth of what they claimed to. Derived from
+    // the directory, the next page to be added is either in it or this fails.
+    const found = readdirSync(join(cockpit, 'pages'))
+      .filter((name) => name.endsWith('.tsx') && !name.endsWith('.test.tsx'))
+      .map((name) => name.replace(/\.tsx$/, ''))
+      .sort()
+    assert.deepEqual([...pages].sort(), found, 'every module in src/pages must be graded by the rules below')
+  })
 
   test('an error and a warning still outlive the four seconds a confirmation gets', () => {
     // The map is read as data rather than matched as text: a regex for

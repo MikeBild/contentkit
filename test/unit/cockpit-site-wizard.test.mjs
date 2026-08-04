@@ -561,7 +561,7 @@ describe('“languages can be added later” is true of the console, not just of
 /**
  * The right-hand side of a `const <name> =`, however it is line-wrapped.
  *
- * governance.tsx is JSX, so Node cannot import it. The one-line rules below are
+ * A page is JSX, so Node cannot import it. The one-line rules below are
  * sliced out and run instead of quoted: a rule asserted as source text is a rule
  * nobody has ever executed.
  */
@@ -584,7 +584,7 @@ const evaluate = (expression, scope) =>
 
 describe('the audit trail says what its site filter does', () => {
   test('the filter is seeded once, and the page says so instead of implying a live filter', async () => {
-    const page = await read('pages', 'governance.tsx')
+    const page = await read('pages', 'audit.tsx')
     const start = page.indexOf('export function AuditPage')
     assert.ok(start > 0, 'AuditPage must exist')
     const body = page.slice(start)
@@ -608,7 +608,7 @@ describe('the audit trail says what its site filter does', () => {
   })
 
   test('the caption does not promise the switcher’s site, because the first render may have none', async () => {
-    const page = await read('pages', 'governance.tsx')
+    const page = await read('pages', 'audit.tsx')
     const header = page.slice(page.indexOf('export function AuditPage'))
     // `useState(site)` captures the FIRST render, and useSite() derives `site`
     // from `?site=` and only picks a default once GET /v1/sites has answered
@@ -627,7 +627,7 @@ describe('the audit trail says what its site filter does', () => {
   })
 
   test('the way back to the selected site is offered in exactly the cases the two disagree', async () => {
-    const page = await read('pages', 'governance.tsx')
+    const page = await read('pages', 'audit.tsx')
     const diverged = expressionOf(page.slice(page.indexOf('export function AuditPage')), 'diverged')
     assert.ok(diverged, 'AuditPage must still derive `diverged` — it is what offers the way back')
     const shown = (site, scope) => evaluate(diverged, { site, scope })

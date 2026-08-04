@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
-import { ck, type AccessRule } from '@/api/ck'
-import { NoSite, Page } from '@/app/shell'
+import { ck } from '@/api/ck'
+import { Page } from '@/app/shell'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import {
@@ -15,114 +15,9 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
-import { GroupsCard } from '@/forms/audience/groups'
-import { CommentsCard, ContactCard, FeedbackCard } from '@/forms/audience/moderation'
-import { ReadersCard } from '@/forms/audience/readers'
-import { RebuildBanner, useRebuildRequired } from '@/forms/audience/rebuild-banner'
-import { RulesCard } from '@/forms/audience/rules'
-import { ApiKeysCard } from '@/forms/platform/api-keys'
-import { IdentityGrantsCard } from '@/forms/platform/identity'
-import { WebhookDeliveriesCard, WebhookEndpointsCard } from '@/forms/platform/webhooks'
 import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
 import { formatDate } from '@/lib/utils'
-
-// ── Reader access ────────────────────────────────────────────────────────────
-
-export function AccessPage() {
-  const { site } = useSite()
-  const rebuild = useRebuildRequired(site)
-  // Lifted out of the rules card so the groups card can open the very rule that
-  // is blocking a deletion, instead of only naming it.
-  const [editingRule, setEditingRule] = useState<{ rule?: AccessRule } | null>(null)
-
-  if (!site)
-    return (
-      <Page title="Reader access">
-        <NoSite />
-      </Page>
-    )
-
-  return (
-    <Page
-      title="Reader access"
-      description="Who may read the published site. Rules are snapshotted into each release, so changes take effect on the next build."
-    >
-      {rebuild.required ? <RebuildBanner site={site} onBuilt={rebuild.clear} /> : null}
-
-      <div className="flex flex-col gap-4">
-        <ReadersCard site={site} />
-        <RulesCard
-          site={site}
-          editing={editingRule}
-          onEditingChange={setEditingRule}
-          onRebuildRequired={rebuild.mark}
-        />
-        <GroupsCard site={site} onEditRule={(rule) => setEditingRule({ rule })} />
-      </div>
-    </Page>
-  )
-}
-
-// ── Webhooks ─────────────────────────────────────────────────────────────────
-
-export function WebhooksPage() {
-  const { site, siteId } = useSite()
-
-  if (!site)
-    return (
-      <Page title="Webhooks">
-        <NoSite />
-      </Page>
-    )
-
-  return (
-    <Page title="Webhooks" description="Outbound content events, their endpoints and delivery history.">
-      <div className="flex flex-col gap-4">
-        <WebhookEndpointsCard site={site} />
-        <WebhookDeliveriesCard site={site} siteId={siteId} />
-      </div>
-    </Page>
-  )
-}
-
-// ── Moderation ───────────────────────────────────────────────────────────────
-
-export function ModerationPage() {
-  const { site, siteId } = useSite()
-
-  if (!siteId)
-    return (
-      <Page title="Moderation">
-        <NoSite />
-      </Page>
-    )
-
-  return (
-    <Page title="Moderation" description="Visitor comments, contact submissions and anonymous post feedback.">
-      <div className="flex flex-col gap-4">
-        <CommentsCard site={site} siteId={siteId} />
-        <ContactCard siteId={siteId} />
-        <FeedbackCard site={site} siteId={siteId} />
-      </div>
-    </Page>
-  )
-}
-
-// ── Credentials ──────────────────────────────────────────────────────────────
-
-export function CredentialsPage() {
-  return (
-    <Page title="Credentials" description="API keys and the OAuth identity grants that bound what a token may ever do.">
-      <div className="flex flex-col gap-4">
-        <ApiKeysCard />
-        <IdentityGrantsCard />
-      </div>
-    </Page>
-  )
-}
-
-// ── Audit ────────────────────────────────────────────────────────────────────
 
 /**
  * The actions worth filtering by, as a fixed list.
@@ -165,6 +60,20 @@ const ANY = '__any'
 
 /**
  * The installation's audit trail, with its own site filter.
+ *
+ * One page, one list, so it takes the container ladder's first step and has no
+ * container of its own: three filters and the table. The table's own `Card` is
+ * the frame every list in this console wears, not a section around the page.
+ *
+ * It is the one list in this group that is still `Card` + `Table` + `TableState`
+ * rather than `DataTable` (UI-UX.md §6), and the reason is the expanded row: a
+ * `ck-audit-row` opens a second `<tr>` beneath itself carrying the actor id, the
+ * resource id, the site and every metadata key the server recorded, and
+ * `DataTable` renders exactly one row per record with no slot for that. Moving
+ * this list would mean either dropping the evidence or turning
+ * `ck-audit-detail-{id}` into a dialog, which is a different affordance from the
+ * one scripts/verify-cockpit-prod.md drives. The row-detail slot belongs in
+ * components/ui/data-table.tsx, and that is where this moves when it exists.
  *
  * `useState(site)` is deliberate and is what shell.tsx declares (`selection:
  * 'seeds'`): the trail is one append-only log for the whole installation, so the

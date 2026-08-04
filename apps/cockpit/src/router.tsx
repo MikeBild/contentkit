@@ -2,18 +2,22 @@ import { createRootRoute, createRoute, createRouter } from '@tanstack/react-rout
 import { Shell } from '@/app/shell'
 import { ToastProvider } from '@/components/ui/toast'
 import { SiteProvider } from '@/lib/site'
+import { AccessPage } from '@/pages/access'
 import { AssistantPage } from '@/pages/assistant'
 import { AudioPage } from '@/pages/audio'
+import { AuditPage } from '@/pages/audit'
 import { CompositionsPage } from '@/pages/compositions'
 import { ContentPage } from '@/pages/content'
+import { CredentialsPage } from '@/pages/credentials'
 import { DecksPage } from '@/pages/decks'
-import { AccessPage, AuditPage, CredentialsPage, ModerationPage, WebhooksPage } from '@/pages/governance'
+import { ModerationPage } from '@/pages/moderation'
 import { OverviewPage } from '@/pages/overview'
 import { PublishedPage } from '@/pages/published'
 import { ReleasesPage } from '@/pages/releases'
 import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
 import { SystemPage } from '@/pages/system'
+import { WebhooksPage } from '@/pages/webhooks'
 
 /** Every route carries the selected site; nothing below the root may drop it. */
 export interface RootSearch {
