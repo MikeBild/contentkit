@@ -6,7 +6,14 @@ import { NoSite, Page } from '@/app/shell'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { ReleaseChain } from '@/components/ui/release-chain'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -14,7 +21,7 @@ import { keys } from '@/lib/query'
 import { deriveReleaseChain } from '@/lib/release-chain'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { tileEmptiness, visibleMetrics } from '@/lib/stat-tile'
+import { tileEmptiness, visibleMetrics, type TileEmptiness } from '@/lib/stat-tile'
 
 const WINDOW = { bucket: 'day', tz: 'UTC' } as const
 
@@ -83,6 +90,62 @@ function readUsageStats(payload: unknown): Metric[] {
   }))
 }
 
+interface StatsResult {
+  data?: unknown
+  error?: unknown
+  isPending?: boolean
+}
+
+/**
+ * One statistic, already read and already classified.
+ *
+ * The classification used to happen inside the tile, which is why the page could
+ * not see that seven of its nine tiles were saying the same thing: each one only
+ * ever knew about itself. Deriving it here is what lets the page group nine
+ * answers into one statement — the tile renders a result, and the *page* owns
+ * what to do about the tiles that have none.
+ */
+interface Tile {
+  kind: StatsKind
+  /** Usage statistics are opt-in per site, which is why an absent one is ordinary. */
+  usage: boolean
+  result?: StatsResult
+  shown: Metric[]
+  lead?: Metric
+  emptiness: TileEmptiness
+}
+
+function readTile(kind: StatsKind, result?: StatsResult): Tile {
+  const usage = usageStatsKinds.includes(kind)
+  const metrics = result?.data ? (usage ? readUsageStats(result.data) : readProductStats(result.data)) : []
+  // Both rules live in lib/stat-tile.ts so they can be called by a test rather than
+  // matched as text — see that module's header for why that distinction earned its own file.
+  const shown = visibleMetrics(metrics)
+  return { kind, usage, result, shown, lead: shown[0] ?? metrics[0], emptiness: tileEmptiness(metrics) }
+}
+
+/**
+ * What one quiet statistic is quiet *about*, in the two words a chip has room
+ * for.
+ *
+ * Nine paragraphs became one, and this is the half that must not have been lost
+ * with them: `tileEmptiness` separates "measured, and the answer is zero" from
+ * "nothing came back", its tests pin that separation, and a layout that prints
+ * one word over both would undo it in the one place no test was looking. So the
+ * naming is two plain records rather than a chain of ternaries inside JSX —
+ * `test/unit/cockpit-overview.test.mjs` slices them out and asserts that the two
+ * emptinesses never share a word.
+ *
+ * The usage record differs in exactly one entry, and that entry is the reason it
+ * exists: usage telemetry is opt-in per site, so a usage statistic with nothing
+ * in it is ordinarily a site that never switched it on — a different sentence
+ * from a product statistic that recorded nothing.
+ */
+const QUIET_WORD = { 'measured-all-zero': 'measured zero', 'nothing-came-back': 'not recorded' }
+const QUIET_WORD_USAGE = { 'measured-all-zero': 'measured zero', 'nothing-came-back': 'not opted in' }
+
+const quietWord = (tile: Tile) => (tile.usage ? QUIET_WORD_USAGE : QUIET_WORD)[tile.emptiness]
+
 export function OverviewPage() {
   const { site, current } = useSite()
   const can = useCan()
@@ -133,6 +196,12 @@ export function OverviewPage() {
     })),
   })
 
+  const tiles = statsKinds.map((kind, index) => readTile(kind, results[index]))
+  const pending = tiles.filter((tile) => tile.result?.isPending)
+  const failed = tiles.filter((tile) => !tile.result?.isPending && tile.result?.error)
+  const reporting = tiles.filter((tile) => !tile.result?.isPending && !tile.result?.error && tile.shown.length > 0)
+  const quiet = tiles.filter((tile) => !tile.result?.isPending && !tile.result?.error && tile.shown.length === 0)
+
   if (!site) {
     return (
       <Page title="Overview">
@@ -142,43 +211,148 @@ export function OverviewPage() {
   }
 
   return (
-    <Page title="Overview" description={`Daily UTC aggregates for ${site}, last 30 buckets.`}>
-      {/*
-        Summary first. A chain with nothing wrong in it is one line; a chain with
-        an exception in it earns the block, because that is the state an operator
-        has to act on. The derivation is the same either way — the variant is a
-        layout choice, not a second reading of the same two endpoints.
-      */}
-      <ReleaseChain
-        chain={chain}
-        isLoading={chainLoading}
-        variant={chain.calm ? 'compact' : 'card'}
-        className="mb-4"
-      />
+    // The description says what the page is for. What the numbers underneath it
+    // are measured over is a fact about the numbers, so it sits with them.
+    <Page title="Overview" description={`What ${site} has waiting, and what it measured.`}>
+      <div className="flex flex-col gap-6">
+        {/*
+          First, and alone: the chain is the only thing on this page an operator
+          acts on. A chain with nothing wrong in it is one line; a chain with an
+          exception in it earns the block, because that is the state that has to
+          be acted on. The derivation is the same either way — the variant is a
+          layout choice, not a second reading of the same two endpoints.
+        */}
+        <ReleaseChain chain={chain} isLoading={chainLoading} variant={chain.calm ? 'compact' : 'card'} />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {statsKinds.map((kind, index) => (
-          <StatCard key={kind} kind={kind} result={results[index]} />
-        ))}
+        {/*
+          Then the reference half, under its own heading so that it reads as
+          material to consult rather than as nine more things to decide about.
+        */}
+        <section className="flex flex-col gap-3" data-testid="ck-overview-statistics">
+          <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className="text-sm font-semibold tracking-tight">Statistics</h2>
+            <p className="text-xs text-muted-foreground">Daily UTC aggregates, last 30 buckets.</p>
+          </header>
+
+          {/*
+            One refusal for the surface, not one per tile. A missing stats:read
+            scope fails all nine identically, and nine identical destructive
+            alerts is nine times the pixels for one fact about this operator.
+          */}
+          {failed.length > 0 ? <UnreadableStats tiles={failed} /> : null}
+
+          {pending.length + reporting.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {[...pending, ...reporting].map((tile) => (
+                <StatCard key={tile.kind} tile={tile} />
+              ))}
+            </div>
+          ) : null}
+
+          {/*
+            And one Empty for everything that had nothing to plot. This used to be
+            a card each, every one of them carrying its own paragraph — three
+            near-identical sentences on the screenshot that started this, carrying
+            one fact between them.
+          */}
+          {quiet.length > 0 ? <QuietStats tiles={quiet} total={tiles.length} /> : null}
+        </section>
       </div>
     </Page>
   )
 }
 
-function StatCard({
-  kind,
-  result,
-}: {
-  kind: StatsKind
-  result?: { data?: unknown; error?: unknown; isPending?: boolean }
-}) {
-  const usage = usageStatsKinds.includes(kind)
-  const metrics = result?.data ? (usage ? readUsageStats(result.data) : readProductStats(result.data)) : []
-  // Both rules live in lib/stat-tile.ts so they can be called by a test rather than
-  // matched as text — see that module's header for why that distinction earned its own file.
-  const shown = visibleMetrics(metrics)
-  const lead = shown[0] ?? metrics[0]
-  const emptiness = tileEmptiness(metrics)
+/**
+ * Every statistic that could not be read, said once per distinct refusal.
+ *
+ * The server's own words are carried verbatim and grouped by message rather than
+ * rewritten into a summary: a 403 and a 500 on the same page are two different
+ * problems, and a refusal that names counts loses them the moment it is
+ * paraphrased.
+ */
+function UnreadableStats({ tiles }: { tiles: Tile[] }) {
+  const grouped = new Map<string, StatsKind[]>()
+  for (const tile of tiles) {
+    const message = tile.result?.error instanceof Error ? tile.result.error.message : 'Unavailable'
+    grouped.set(message, [...(grouped.get(message) ?? []), tile.kind])
+  }
+
+  return (
+    <Alert variant="destructive" data-testid="ck-overview-unreadable" data-count={tiles.length}>
+      <TriangleAlert />
+      <AlertTitle>
+        {tiles.length === 1 ? 'One statistic could not be read' : `${tiles.length} statistics could not be read`}
+      </AlertTitle>
+      <AlertDescription className="flex flex-col gap-1.5">
+        {[...grouped].map(([message, kinds]) => (
+          <span key={message} className="flex flex-wrap items-center gap-1.5">
+            {kinds.map((kind) => (
+              <Badge key={kind} variant="destructive" data-testid={`ck-overview-unreadable-${kind}`}>
+                {kind}
+              </Badge>
+            ))}
+            <span>{message}</span>
+          </span>
+        ))}
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+/**
+ * Everything with nothing to plot, as one statement and a list of names.
+ *
+ * The distinction the sentences used to carry is not lost, it is compressed: a
+ * window that was measured and answered zero, a window nothing was recorded in,
+ * and a site that never opted into usage telemetry are three different facts,
+ * and each name below says which of the three it is in two words. `data-emptiness`
+ * keeps the same distinction addressable to a browser test.
+ */
+function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
+  return (
+    <Empty className="border" data-testid="ck-overview-quiet" data-count={tiles.length}>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <ChartNoAxesColumn />
+        </EmptyMedia>
+        <EmptyTitle>
+          {tiles.length} of {total} statistics have nothing to plot
+        </EmptyTitle>
+        <EmptyDescription>
+          A measured zero and a value nobody recorded are different answers, so each name says which it is.
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent className="max-w-none">
+        <ul className="flex flex-wrap items-center justify-center gap-1.5">
+          {tiles.map((tile) => (
+            <li key={tile.kind}>
+              <Badge
+                variant="outline"
+                data-testid={`ck-overview-quiet-${tile.kind}`}
+                data-emptiness={tile.emptiness}
+                className="gap-1"
+              >
+                <span className="capitalize">{tile.kind}</span>
+                <span className="text-muted-foreground">· {quietWord(tile)}</span>
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      </EmptyContent>
+    </Empty>
+  )
+}
+
+/**
+ * One statistic that has something to say.
+ *
+ * It no longer has an empty state or an error state of its own: both were facts
+ * about the surface rather than about this card, and both now live above it.
+ * What is left is the wait and the result — a card that is only ever built for a
+ * tile with rows in it, or for one that is still loading them.
+ */
+function StatCard({ tile }: { tile: Tile }) {
+  const { kind, usage, result, shown, lead } = tile
 
   return (
     <Card data-testid="stat-card" data-kind={kind}>
@@ -209,34 +383,6 @@ function StatCard({
               ))}
             </div>
           </SkeletonGroup>
-        ) : result?.error ? (
-          // A tile that could not be read and a tile with nothing in it are two
-          // different answers, so they are two different components: an Alert
-          // carries role="alert" and says the reading failed, while the Empty
-          // below says the window is genuinely quiet.
-          <Alert variant="destructive" data-testid="stat-card-error">
-            <TriangleAlert />
-            <AlertTitle>This statistic could not be read</AlertTitle>
-            <AlertDescription>
-              {result.error instanceof Error ? result.error.message : 'Unavailable'}
-            </AlertDescription>
-          </Alert>
-        ) : shown.length === 0 ? (
-          <Empty className="border" data-testid="stat-card-empty" data-emptiness={emptiness}>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <ChartNoAxesColumn />
-              </EmptyMedia>
-              <EmptyTitle>Nothing to plot</EmptyTitle>
-              <EmptyDescription>
-                {emptiness === 'measured-all-zero'
-                  ? 'Measured in this window, and every value is zero.'
-                  : usage
-                    ? 'No usage telemetry in this window.'
-                    : 'Nothing recorded in this window.'}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
         ) : (
           <>
             {lead ? <Sparkline points={lead.points} /> : null}

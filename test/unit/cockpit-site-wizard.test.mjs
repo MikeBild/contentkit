@@ -655,11 +655,37 @@ describe('the site settings view surfaces its section warnings', () => {
       /SITE_SECTIONS\.map\(\(section\) => \(\{[\s\S]{0,200}?warning: section\.warning\?\.\(values\)/,
       'the strip must read every section spec’s own warning',
     )
-    const strip = page.indexOf('<SectionWarnings')
-    const nav = page.indexOf('<SectionNav')
-    const body = page.indexOf('<Body form={form}')
+    // The strip used to sit above a `<SectionNav>` — a horizontally scrolling row
+    // of nine cards, which UI-UX.md's container ladder answers with an Accordion
+    // at that count. What the rule was ever about is the *position*: the warnings
+    // are outside every section, so nothing accepted-but-questionable needs a
+    // section opened to be seen. So this now names the container that replaced it
+    // rather than the one that is gone, and both halves are asserted — the
+    // sections are an Accordion, and it comes after the strip.
+    //
+    // Every index and every match below is taken from the comment-stripped
+    // source, and both halves of that matter: this page documents the choice it
+    // made and quotes the prop it made it with, so the raw text would let the
+    // sentence explaining a rule satisfy the rule — and three offsets, two of
+    // them into a shortened string, would compare positions in two different
+    // documents.
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    const strip = code.indexOf('<SectionWarnings')
+    // The container's own testid, not `<Accordion` — `indexOf` would find
+    // `<AccordionItem` and report a hand-rolled strip as the container.
+    const nav = code.indexOf('data-testid="ck-site-sections"')
+    const body = code.indexOf('<Body form={form}')
+    assert.match(code, /from '@\/components\/ui\/accordion'/, 'the sections are the shared Accordion, not a local one')
+    assert.match(
+      code,
+      /<Accordion\b[^>]*?type="multiple"[\s\S]{0,400}?data-testid="ck-site-sections"/,
+      'the sections are one Accordion, and a refusal can name several of them, so several must be openable at once',
+    )
     assert.ok(strip > 0 && nav > strip, 'the strip belongs above the section navigation')
     assert.ok(body > strip, 'the strip must not sit inside the expanded section body')
+    // Every section is still individually addressable — scripts/verify-cockpit-prod.md
+    // drives the settings form by exactly these ids.
+    assert.match(code, /data-testid=\{`ck-site-sections-\$\{id\}`\}/, 'each section keeps its own testid')
   })
 
   test('a section warning is not hidden by an error in the same section', async () => {

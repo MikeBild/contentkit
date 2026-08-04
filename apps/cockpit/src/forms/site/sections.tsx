@@ -6,6 +6,7 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StatusBadge } from '@/forms/status-badge'
@@ -251,7 +252,14 @@ function Languages({ disabled }: SectionProps) {
         </Popover>
       </div>
       {rows.isPending ? (
-        <p className="text-xs text-muted-foreground">Loading the locale rows…</p>
+        // The rows are a list, and the wait is the shape of that list. A one-line
+        // sentence here settled the section at one line and then jolted it to
+        // five, which is the defect UI-UX.md's "four states" section names.
+        <SkeletonGroup label="Loading the locale rows…" data-testid="ck-site-locales-skeleton">
+          {Array.from({ length: 3 }, (_unused, row) => (
+            <Skeleton key={row} className="h-9 w-full" />
+          ))}
+        </SkeletonGroup>
       ) : rows.error ? (
         <Alert variant="destructive">
           <AlertTriangle />

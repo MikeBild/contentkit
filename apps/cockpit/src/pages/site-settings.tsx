@@ -4,9 +4,9 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { ck, type Site } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SkeletonFields } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { ConflictDialog, type SettingsConflict } from '@/forms/site/conflict'
@@ -19,8 +19,9 @@ import {
 } from '@/forms/site/contract'
 import { SITE_SECTION_BODIES } from '@/forms/site/sections'
 import { sameValue } from '@/forms/path'
-import { SaveBar, SectionNav, UnsavedPill } from '@/forms/save-bar'
-import { useForm } from '@/forms/use-form'
+import { SaveBar, UnsavedPill } from '@/forms/save-bar'
+import { StatusBadge } from '@/forms/status-badge'
+import { useForm, type SectionStatus } from '@/forms/use-form'
 import { useUnsavedGuard } from '@/forms/use-unsaved-guard'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
@@ -96,8 +97,15 @@ const pickWire = (site: Site): SiteWire => ({
 function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site; readOnly: boolean }) {
   const client = useQueryClient()
   const { toast } = useToast()
-  const [section, setSection] = useState<SiteSectionId>('identity')
+  // A list, not a single id: the save is one all-or-nothing PATCH, so a 422 can
+  // name three sections at once and the operator has to be able to hold all
+  // three open while fixing them. `type="multiple"` is what makes that possible.
+  const [open, setOpen] = useState<SiteSectionId[]>(['identity'])
   const [conflict, setConflict] = useState<SettingsConflict | null>(null)
+  // The warning strip opens the section that owns a warning; opening it without
+  // moving focus would leave the operator's caret in a strip that no longer says
+  // anything, so the trigger it opened is what receives focus.
+  const triggers = useRef<Partial<Record<SiteSectionId, HTMLButtonElement | null>>>({})
 
   const wire = useMemo(() => pickWire(loaded), [loaded])
   const initial = useMemo(() => siteSettingsContract.detect(wire), [wire])
@@ -176,8 +184,14 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
   })
 
   const identityDirty = !sameValue(form.values.identity, initial.identity)
-  const Body = SITE_SECTION_BODIES[section]
   const errorCount = Object.keys(form.errors).length
+
+  const openSection = useCallback((id: SiteSectionId) => {
+    setOpen((current) => (current.includes(id) ? current : [...current, id]))
+    // After the state has been applied, so the trigger is the one that now
+    // reads "expanded" rather than the one that was collapsed a moment ago.
+    queueMicrotask(() => triggers.current[id]?.focus())
+  }, [])
 
   return (
     <div className="flex flex-col gap-4">
@@ -270,26 +284,66 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
         </Alert>
       ) : null}
 
-      <SectionWarnings values={form.values} onOpen={setSection} />
+      <SectionWarnings values={form.values} onOpen={openSection} />
 
-      <SectionNav
+      {/*
+        Nine sections, and the container ladder in UI-UX.md answers that number
+        rather than leaving it to taste. Tabs are for two to six parallel
+        concerns; nine is past that ceiling, and a strip of nine tabs is the
+        horizontally scrolling row of cards this replaces — a control whose ninth
+        item is off-screen is a control that hides a third of the form. An
+        Accordion is the next rung down and it is the one this page needed: many
+        sections, most of them rarely opened, and a reader who is looking for a
+        title. Every title is now on screen at once, in one column, at any width.
+
+        What it must not cost, because it was a deliberate earlier fix: a warning
+        is still rendered above, outside every section, so nothing accepted-but-
+        questionable needs a section opened to be seen. Each row repeats its own
+        status beside its title for the same reason — "3 problems" on a closed
+        row is how an operator decides whether to open it.
+      */}
+      <Accordion
+        type="multiple"
+        value={open}
+        onValueChange={(next) => setOpen(next as SiteSectionId[])}
         data-testid="ck-site-sections"
-        sections={SITE_SECTIONS.map((entry) => ({ id: entry.id as SiteSectionId, label: entry.label }))}
-        value={section}
-        onChange={setSection}
-        status={form.sectionStatus}
-      />
-
-      <Card>
-        <CardHeader>
-          {/* The nav above is a strip of nine; the card says which one of them is
-              open, so the heading and the body are one statement. */}
-          <CardTitle>{SITE_SECTIONS.find((entry) => entry.id === section)?.label ?? 'Settings'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Body form={form} base={wire.base_url} locales={[wire.default_locale]} disabled={readOnly} />
-        </CardContent>
-      </Card>
+        className="rounded-xl border border-border bg-surface px-4"
+      >
+        {SITE_SECTIONS.map((entry) => {
+          const id = entry.id as SiteSectionId
+          const status = form.sectionStatus(id)
+          const Body = SITE_SECTION_BODIES[id]
+          return (
+            <AccordionItem key={id} value={id}>
+              <AccordionTrigger
+                ref={(node) => {
+                  triggers.current[id] = node
+                }}
+                data-testid={`ck-site-sections-${id}`}
+                data-tone={status.tone}
+                // The component's own `hover:underline` is for a row of prose. A
+                // row here is a title, a badge and a status line, and underlining
+                // all three on hover reads as three links to three places.
+                className="items-center gap-3 py-3 hover:no-underline"
+              >
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-medium">{entry.label}</span>
+                  <SectionNote status={status} />
+                </span>
+              </AccordionTrigger>
+              {/*
+                `h-auto` undoes the fixed height shadcn sets for the open/close
+                animation. These bodies grow while they are open — a version row
+                added, a token revealed — and a height measured at open time would
+                clip whatever arrived after it.
+              */}
+              <AccordionContent className="h-auto pb-5">
+                <Body form={form} base={wire.base_url} locales={[wire.default_locale]} disabled={readOnly} />
+              </AccordionContent>
+            </AccordionItem>
+          )
+        })}
+      </Accordion>
 
       <p className="text-xs text-muted-foreground">
         Presentation, theme and branding changes reach the live site with the next release; reader features that gate an
@@ -312,6 +366,35 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
 
     </div>
   )
+}
+
+/**
+ * What a closed section says about itself.
+ *
+ * The old strip drew a coloured dot and then truncated the words next to it to
+ * the width of a card. A dot is a colour doing a sentence's job — it says
+ * something is wrong and not what, which is the entire question — so the reading
+ * is carried by a word here, and the row is as wide as the page.
+ *
+ * `error` and `warning` are two different promises and get two different
+ * components: an error blocks nothing but *was refused*, so it is destructive
+ * and counted; a warning is accepted-but-questionable, so it is the tone
+ * `StatusBadge` already draws an icon for. Neither is a chart colour.
+ */
+function SectionNote({ status }: { status: SectionStatus }) {
+  if (status.tone === 'error') {
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <StatusBadge tone="danger">{status.errors === 1 ? '1 problem' : `${status.errors} problems`}</StatusBadge>
+        <span className="min-w-0 text-xs font-normal text-destructive">{status.text}</span>
+      </span>
+    )
+  }
+  if (status.tone === 'warning') {
+    return <StatusBadge tone="warning">{status.text}</StatusBadge>
+  }
+  if (!status.text) return null
+  return <span className="min-w-0 text-xs font-normal text-muted-foreground">{status.text}</span>
 }
 
 /**
