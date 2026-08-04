@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.9.0 — 2026-08-04
+
+### Changed
+
+- The console has a shape, and it is written down in `apps/cockpit/UI-UX.md`. It was
+  called inconsistent, correctly: a link and two buttons in one row doing three
+  different kinds of thing, nine tiles each carrying its own paragraph saying nothing
+  was measured, and two modules that were really ten pages in a bucket. Every one of
+  those was a defensible local choice; together they read as a console nobody decided.
+  The document decides — the container ladder, link for navigation and button for
+  change, where a sentence lives depending on when it is needed, which token carries
+  which severity, the four states of anything that loads — and marks each rule as
+  enforced by a named test or not enforced at all.
+- `authoring.tsx` and `governance.tsx` were each five routes in one module, already
+  mounted at five paths. They are ten focused pages now, and the rule that would have
+  caught them before anyone measured them — one module exports one page — is a test.
+  Five of those pages use tabs where they hold parallel concerns; the two whose panels
+  write into each other deliberately do not, because a control whose whole effect is
+  off screen describes itself falsely.
+- Actions follow one grammar. A link navigates and nothing else changes; a button
+  changes something; `destructive` means irreversible. The releases table offered
+  Details as a link beside Activate and Delete as buttons — three meanings in one
+  visual grammar — and rows like it are consistent now, with a test behind the rule.
+- The site switcher's menu is as wide as the names in it. It truncated every site name
+  while the column beside it had room.
+
+### Fixed
+
+- A compile refusal raised on one tab could be rendered into a hidden panel and
+  announced by nothing. Tab panels stay mounted, so a result the reader did not ask to
+  see now reaches them.
+
 ## 4.8.1 — 2026-08-04
 
 ### Fixed
