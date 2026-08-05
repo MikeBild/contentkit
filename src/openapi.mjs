@@ -1614,6 +1614,14 @@ export function openApi(config) {
           responses: { 200: { description: 'OpenAPI specification' } },
         },
       },
+      '/.well-known/service-descriptor.json': {
+        get: {
+          operationId: 'serviceDescriptor',
+          summary:
+            'Version and a sha256 per self-description artifact — one small GET that tells a watcher whether anything changed, instead of it downloading every document to find out',
+          responses: { 200: { description: 'Service descriptor' } },
+        },
+      },
       '/llms.txt': {
         get: {
           operationId: 'llmsIndex',

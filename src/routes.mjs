@@ -63,6 +63,7 @@ export const SERVICE = {
   name: 'contentkit',
   description: 'API-first Markdown mini-CMS and immutable static-site publisher',
   openapi: '/openapi.json',
+  service_descriptor: '/.well-known/service-descriptor.json',
   llms: '/llms.txt',
   llms_full: '/llms-full.txt',
   mcp: '/mcp',
@@ -1071,6 +1072,42 @@ export function createRequestHandler(ctx) {
         content: decision.action === 'accept' ? decision.content || {} : undefined,
       })
       return accepted ? sendJson(res, 200, { resolved: true }) : sendJson(res, 409, { error: 'elicitation_expired' })
+    }
+    // One cheap GET that fingerprints every self-description artifact.
+    //
+    // A monitor asking "has anything changed" otherwise downloads all of them
+    // on every poll — llms-full.txt alone is ~112 KB here, every round, almost
+    // always to discover nothing changed. This answers the same question in a
+    // few hundred bytes, which is what makes a thirty-second drift check
+    // affordable instead of an hourly one.
+    //
+    // The hashes are of the bytes actually served, computed per request rather
+    // than cached: a cached hash can go stale, and a descriptor that lies is
+    // worse than no descriptor precisely in the situation it exists to report.
+    if (apiHost && req.method === 'GET' && path === '/.well-known/service-descriptor.json') {
+      const base = String(config.publicUrl || '').replace(/\/$/, '')
+      const artifacts = {
+        openapi: { url: `${base}/openapi.json`, sha256: sha256(JSON.stringify(openApi(config))), updated_at: null },
+      }
+      // Only what this build actually serves. An entry for a document that
+      // answers 404 would send a watcher to fetch it and then report the miss
+      // as drift, which is worse than not mentioning it.
+      for (const [key, file] of [
+        ['llms_txt', 'llms.txt'],
+        ['llms_full_txt', 'llms-full.txt'],
+      ]) {
+        try {
+          artifacts[key] = { url: `${base}/${file}`, sha256: sha256(documentation(config, file)), updated_at: null }
+        } catch {
+          // Absent from this build. Saying nothing is the honest answer.
+        }
+      }
+      return sendJson(res, 200, {
+        service: 'contentkit',
+        version: config.version,
+        artifacts,
+        capabilities: ['health', 'ready', 'metrics', 'openapi', 'llms-txt', 'mcp', 'descriptor'],
+      })
     }
     if (apiHost && req.method === 'GET' && path === '/openapi.json') return sendJson(res, 200, openApi(config))
     if (apiHost && req.method === 'GET' && path === '/llms.txt')
