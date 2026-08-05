@@ -35,7 +35,6 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { CommandPalette } from '@/components/ui/command-palette'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -674,15 +673,6 @@ export function Shell() {
                 ) : null}
               </div>
             ) : null}
-
-            {/*
-             * Directly beneath it, with the chord written out: a ⌘K nobody is
-             * told about is not a feature. The palette is handed the whole NAV
-             * table rather than the filtered list — it applies the same scope
-             * rule itself (lib/palette.ts), so the one place an entry can be
-             * offered is the one place it is checked.
-             */}
-            <CommandPalette pages={NAV} />
           </SidebarHeader>
 
           <SidebarContent>

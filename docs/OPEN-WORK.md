@@ -111,7 +111,6 @@ Start with (2) because it makes the suite cheap enough to run on every push, and
 | Nothing overflows horizontally at 1280, 768 and 390 | Layout, unmeasurable in jsdom |
 | The sidebar becomes a sheet below 768 and its trigger opens it | The mobile claim in §7 |
 | Tab counts match their panel's list (item 1) | Two surfaces, one number |
-| ⌘K opens, types, arrows, enters, escapes — keyboard only | Focus and rendering together |
 | The collapsed rail shows a tooltip for every entry | Hover state, no layout in jsdom |
 
 ### Risks

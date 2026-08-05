@@ -413,27 +413,6 @@ const withRules = { skip: navFailure || rulesFailure ? because(navFailure ?? rul
 const SCOPES = [...new Set(NAV.map((entry) => entry.scope).filter(Boolean))]
 
 /**
- * The palette's half of that same rule, wherever this Node can read TypeScript.
- *
- * lib/palette.ts is dependency-free precisely so its gate can be driven with real
- * scope sets. Type stripping landed in 22.6 and CI also runs on Node 20, so the
- * import is attempted and its failure kept: the cross-check below skips with a
- * reason in the TAP output rather than passing quietly.
- */
-let palette = null
-let paletteFailure = null
-try {
-  palette = await import('../../apps/cockpit/src/lib/palette.ts')
-} catch (error) {
-  paletteFailure = error
-}
-const withPalette = {
-  skip: palette
-    ? false
-    : `this Node cannot import TypeScript (type stripping landed in 22.6): ${paletteFailure?.message}`,
-}
-
-/**
  * An entry declares the OpenAPI paths its page talks to. A pattern is either an
  * exact documented path or a prefix ending in `/*`.
  */
@@ -1273,17 +1252,6 @@ describe('Cockpit navigation: site context versus installation context', withNav
         'sheet so is every neighbour’s — sidebar.tsx suppresses both with `state !== "collapsed" || isMobile` ' +
         'and the switcher must say the same thing, or it is the one control in the rail behaving differently',
     )
-    // The order the user drew: the thing the console is pointed at, then the way
-    // to jump anywhere in it. A palette trigger above the switcher would offer
-    // destinations before saying which site they belong to.
-    const headerStart = shell.indexOf('<SidebarHeader>')
-    const header = shell.slice(headerStart, shell.indexOf('</SidebarHeader>', headerStart))
-    assert.ok(
-      header.includes('<SiteSwitcher') &&
-        header.includes('<CommandPalette') &&
-        header.indexOf('<SiteSwitcher') < header.indexOf('<CommandPalette'),
-      'the palette trigger sits in the header directly beneath the switcher',
-    )
   })
 
   test('the switcher is chrome above the blocks, and says what it does to the open page', () => {
@@ -1553,64 +1521,6 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
         `without ${scope} the sidebar must not offer ${withheld.join(', ')} — authorize() answers 403 for each`,
       )
     }
-  })
-
-  describe('the palette and the sidebar are one rule over one table', withPalette, () => {
-    /** The pages lib/palette.ts offers a session, in table order. */
-    const paletteLabelsFor = (scopes) =>
-      palette
-        .paletteTargets({
-          pages: NAV,
-          sites: [],
-          items: [],
-          scopes,
-          site: '',
-          goTo: () => {},
-          pickSite: () => {},
-        })
-        .filter((target) => target.group === 'Page')
-        .map((target) => target.label)
-
-    test('the same scopes reach the same pages in both', () => {
-      // lib/palette.ts says it applies "the sidebar's rule to the same table".
-      // The sidebar's rule is the expression above; this is what makes that
-      // sentence checkable rather than a claim in a comment.
-      for (const scopes of [[], ['site:admin'], ['content:read'], ['content:write'], ['audit:read'], SCOPES]) {
-        assert.deepEqual(
-          paletteLabelsFor(scopes),
-          labelsFor(scopes),
-          `the palette and the sidebar disagree for [${scopes.join(', ')}] — one of them is offering a page the ` +
-            `session cannot open, or hiding one it can`,
-        )
-      }
-    })
-
-    test('the palette gate is exact membership in its own right, not by agreement', () => {
-      // The check above compares the palette with the sidebar, so a relaxation
-      // made in both at once — or in the one shape the live scope strings cannot
-      // tell apart from equality — passes it with both sides wrong. This one
-      // compares the palette against the only thing that cannot drift with it:
-      // the exact scope each entry names.
-      assert.deepEqual(
-        paletteLabelsFor(SCOPES),
-        NAV.map((entry) => entry.label),
-        'holding every scope in the table must offer every page, or the assertions below pass on an empty palette',
-      )
-      assert.deepEqual(
-        paletteLabelsFor(FABRICATED_EXTENSIONS),
-        ['System'],
-        'lib/palette.ts must drop a target unless the session holds its scope string exactly — a prefix, suffix, ' +
-          'substring or wildcard match here offers ⌘K destinations the server answers 403 for',
-      )
-      for (const held of FABRICATED_EXTENSIONS) {
-        assert.deepEqual(paletteLabelsFor([held]), ['System'], `'${held}' must open no palette target`)
-        assert.deepEqual(
-          paletteLabelsFor(['audit:read', held]),
-          ['Audit', 'System'],
-          `'${held}' widened a palette for a session that holds audit:read and nothing else`,
-        )
-      }
-    })
   })
 
   test('the switcher stays mounted wherever a visible page reads the selection', () => {

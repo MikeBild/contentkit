@@ -15,8 +15,8 @@ import { fileURLToPath } from 'node:url'
  * says so at length. It is easy to read that file, see the mutations it names,
  * and conclude the console's behaviour is graded. It is not. As of this file,
  * SEVEN test files assert against TEN modules. Everything else in
- * apps/cockpit/src — the sidebar and its collapse, the command palette's
- * keyboard path, the unsaved-changes guard, the site wizard's step gate, the
+ * apps/cockpit/src — the sidebar and its collapse, the unsaved-changes guard,
+ * the site wizard's step gate, the
  * data table's four branches, every modal except the confirmation, and six of
  * the nine pages — is graded by grep: a Node test reads the source as text,
  * finds the string it expects, and concludes that focus is trapped, that a label
@@ -694,18 +694,6 @@ const UNCOVERED = [
       'router.tsx',
       'main.tsx',
       'hooks/use-mobile.ts',
-    ],
-  },
-  {
-    id: 'palette/command-palette-keyboard-path',
-    missing:
-      'Cmd-K opens it, typing filters, arrows move the active option, Enter navigates, Escape closes and returns focus, and the no-results state says so out loud. Every step of that is keyboard-only and invisible to a string match.',
-    where: [
-      'components/ui/command-palette.tsx',
-      'components/ui/command.tsx',
-      'components/ui/kbd.tsx',
-      'lib/palette.ts',
-      'lib/keyboard.ts',
     ],
   },
   {

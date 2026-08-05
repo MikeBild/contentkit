@@ -11,20 +11,18 @@ import { fileURLToPath } from 'node:url'
  *
  * The behavioural half drives real code with real values. Every rule worth
  * checking — how a relative label picks its unit, what "unset" means to a date
- * field, where a cursor-paged list is, which palette entries a set of scopes may
- * see — lives in a dependency-free `.ts` module next to its component precisely so
- * that it can be imported and called here instead of asserted about as text.
+ * field, where a cursor-paged list is — lives in a dependency-free `.ts` module
+ * next to its component precisely so that it can be imported and called here
+ * instead of asserted about as text.
  * Node reads TypeScript by stripping types, which arrived in 22.6; CI also runs
  * this suite on Node 20, which cannot, so those tests skip there with a reason
  * printed in the TAP output. A skip is visible. A test that silently passed would
  * not be.
  *
  * The structural half runs everywhere and guards the things a pure function
- * cannot: that the palette is the existing dialog holding the existing combobox
- * rather than a sixth hand-rolled overlay, that the exact timestamp is still on
- * screen next to the relative one, that an indeterminate bar reports no
- * percentage, that every control is addressable, and that none of it reached for
- * a new dependency.
+ * cannot: that the exact timestamp is still on screen next to the relative one,
+ * that an indeterminate bar reports no percentage, that every control is
+ * addressable, and that none of it reached for a new dependency.
  *
  * Only committed files are read. Nothing here touches a generated artefact —
  * apps/cockpit/src/content/site.scoped.css and assets/cockpit/* are absent on a
@@ -37,7 +35,6 @@ const cockpit = join(root, 'apps', 'cockpit', 'src')
 const source = (...parts) => readFileSync(join(cockpit, ...parts), 'utf8')
 
 const ui = (name) => source('components', 'ui', `${name}.tsx`)
-const shell = source('app', 'shell.tsx')
 
 /**
  * The behavioural half's imports, attempted once.
@@ -54,8 +51,6 @@ try {
   logic = {
     time: await import('../../apps/cockpit/src/lib/relative-time.ts'),
     cursor: await import('../../apps/cockpit/src/lib/cursor.ts'),
-    keyboard: await import('../../apps/cockpit/src/lib/keyboard.ts'),
-    palette: await import('../../apps/cockpit/src/lib/palette.ts'),
     date: await import('../../apps/cockpit/src/forms/fields/date-value.ts'),
   }
 } catch (error) {
@@ -490,168 +485,6 @@ describe('Cockpit primitives: the logic behind them', () => {
       )
     })
   })
-
-  // ── The palette's scope filter ─────────────────────────────────────────────
-
-  describe('the command palette offers only what the session may reach', behavioural, () => {
-    const PAGES = [
-      { to: '/', label: 'Overview', scope: 'stats:read' },
-      { to: '/content', label: 'Content', scope: 'content:read' },
-      { to: '/credentials', label: 'Credentials', scope: 'api-key:admin' },
-      { to: '/system', label: 'System', scope: null },
-    ]
-    const SITES = [
-      { slug: 'blog', name: 'Blog' },
-      { slug: 'docs', name: 'Docs' },
-    ]
-    const ITEMS = [
-      { id: 'i1', title: 'Hello', slug: 'hello', translation_key: 'hello', kind: 'post', locale: 'en' },
-      { id: 'i2', title: null, slug: null, translation_key: 'no-revision-yet', kind: 'page', locale: 'de' },
-    ]
-
-    function build(scopes, over = {}) {
-      const ran = []
-      const targets = logic.palette.paletteTargets({
-        pages: PAGES,
-        sites: SITES,
-        items: ITEMS,
-        scopes,
-        site: 'blog',
-        goTo: (to) => ran.push(`go:${to}`),
-        pickSite: (slug) => ran.push(`site:${slug}`),
-        ...over,
-      })
-      return { targets, ran, labels: targets.map((target) => target.label) }
-    }
-
-    test('an entry appears only when the session holds its one exact scope', () => {
-      const { labels } = build(['content:read'])
-      assert.deepEqual(labels, ['Content', 'System', 'Blog', 'Docs', 'Hello', 'no-revision-yet'])
-      assert.ok(!labels.includes('Overview'), 'stats:read is not held')
-      assert.ok(!labels.includes('Credentials'), 'api-key:admin is not held')
-    })
-
-    test('a session with no scopes at all is offered only what needs none', () => {
-      const { labels } = build([])
-      assert.deepEqual(labels, ['System', 'Blog', 'Docs'])
-    })
-
-    test('no scope is implied by another — authorize() has no hierarchy', () => {
-      // content:write is what the editor needs; it does not carry content:read,
-      // and site:admin carries nothing at all.
-      const write = build(['content:write']).labels
-      assert.ok(!write.includes('Content'), 'content:write must not open a content:read page')
-      assert.ok(!write.includes('Hello'), 'nor offer the items behind it')
-      const admin = build(['site:admin']).labels
-      assert.deepEqual(admin, ['System', 'Blog', 'Docs'])
-    })
-
-    test('the items carry the content page’s scope, read off the table', () => {
-      const withScope = build(['content:read']).targets.filter((target) => target.group === 'Content')
-      assert.deepEqual(
-        withScope.map((target) => target.scope),
-        ['content:read', 'content:read'],
-      )
-      // With no content page in the table there is no scope to check against, and
-      // the answer to that is to offer nothing rather than to guess one.
-      const withoutPage = build(['content:read'], { pages: PAGES.filter((page) => page.to !== '/content') })
-      assert.deepEqual(withoutPage.labels, ['System', 'Blog', 'Docs'])
-    })
-
-    test('the switcher entries need no scope, because the list already answered that', () => {
-      const sites = build(['content:read']).targets.filter((target) => target.group === 'Site')
-      assert.deepEqual(
-        sites.map((target) => target.scope),
-        [null, null],
-      )
-      assert.match(sites[0].hint, /current/, 'the site already selected says so')
-      assert.doesNotMatch(sites[1].hint, /current/)
-      // A site the credential cannot read is not in the list it was given, so it
-      // cannot be in the palette either.
-      assert.deepEqual(build(['content:read'], { sites: [] }).labels, ['Content', 'System', 'Hello', 'no-revision-yet'])
-    })
-
-    test('choosing an entry does the one thing it named', () => {
-      const page = build(['content:read'])
-      page.targets.find((target) => target.label === 'Content').run()
-      assert.deepEqual(page.ran, ['go:/content'])
-
-      const site = build(['content:read'])
-      site.targets.find((target) => target.label === 'Docs').run()
-      assert.deepEqual(site.ran, ['site:docs'])
-
-      const item = build(['content:read'])
-      item.targets.find((target) => target.label === 'Hello').run()
-      assert.deepEqual(item.ran, ['go:/content'], 'an item is reachable through the list that holds it')
-    })
-
-    test('every id is unique, so one keystroke cannot mean two things', () => {
-      const { targets } = build(['content:read', 'stats:read', 'api-key:admin'])
-      assert.equal(new Set(targets.map((target) => target.id)).size, targets.length)
-    })
-
-    test('the offer is bounded — the content endpoint has no limit parameter', () => {
-      const many = Array.from({ length: logic.palette.MAX_CONTENT_TARGETS + 50 }, (_unused, index) => ({
-        id: `i${index}`,
-        title: `Item ${index}`,
-        slug: `item-${index}`,
-        translation_key: `item-${index}`,
-        kind: 'post',
-        locale: 'en',
-      }))
-      const { targets } = build(['content:read'], { items: many })
-      const items = targets.filter((target) => target.group === 'Content')
-      assert.equal(items.length, logic.palette.MAX_CONTENT_TARGETS)
-    })
-
-    test('the gate itself passes a scopeless target and nothing else unheld', () => {
-      const { reachable } = logic.palette
-      const targets = [
-        { id: 'a', label: 'a', group: 'Page', scope: null, run: () => {} },
-        { id: 'b', label: 'b', group: 'Page', scope: 'audit:read', run: () => {} },
-      ]
-      assert.deepEqual(
-        reachable(targets, []).map((target) => target.id),
-        ['a'],
-      )
-      assert.deepEqual(
-        reachable(targets, ['audit:read']).map((target) => target.id),
-        ['a', 'b'],
-      )
-    })
-  })
-
-  // ── The shortcut ───────────────────────────────────────────────────────────
-
-  describe('the shortcut matches the platform it is printed on', behavioural, () => {
-    test('Apple hardware is recognised from either half of navigator', () => {
-      const { isApplePlatform, modifierLabel } = logic.keyboard
-      assert.equal(isApplePlatform({ platform: 'MacIntel' }), true)
-      assert.equal(isApplePlatform({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' }), true)
-      assert.equal(isApplePlatform({ platform: 'Win32', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64)' }), false)
-      assert.equal(isApplePlatform({ platform: 'Linux x86_64', userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' }), false)
-      assert.equal(isApplePlatform({}), false)
-      assert.equal(modifierLabel(true), '⌘')
-      assert.equal(modifierLabel(false), 'Ctrl')
-    })
-
-    test('only the platform’s own chord opens the palette', () => {
-      const { isShortcut } = logic.keyboard
-      assert.equal(isShortcut({ key: 'k', metaKey: true }, 'k', true), true)
-      assert.equal(isShortcut({ key: 'K', metaKey: true }, 'k', true), true, 'the key case is not the chord')
-      assert.equal(isShortcut({ key: 'k', ctrlKey: true }, 'k', false), true)
-      // Ctrl+K on a Mac is "delete to end of line" in every text field, and ⌘ does
-      // not exist on the other platforms. Claiming the wrong one takes a shortcut
-      // away from the operator.
-      assert.equal(isShortcut({ key: 'k', ctrlKey: true }, 'k', true), false)
-      assert.equal(isShortcut({ key: 'k', metaKey: true }, 'k', false), false)
-      assert.equal(isShortcut({ key: 'k' }, 'k', false), false, 'a bare letter is what is being typed')
-      assert.equal(isShortcut({ key: 'k', ctrlKey: true, shiftKey: true }, 'k', false), false)
-      assert.equal(isShortcut({ key: 'k', ctrlKey: true, altKey: true }, 'k', false), false)
-      assert.equal(isShortcut({ key: 'k', metaKey: true, ctrlKey: true }, 'k', true), false)
-      assert.equal(isShortcut({ key: 'j', metaKey: true }, 'k', true), false)
-    })
-  })
 })
 
 // ── What only the sources can be asked ───────────────────────────────────────
@@ -661,8 +494,6 @@ const OWNED = [
   ['components/ui/spinner.tsx', ui('spinner')],
   ['components/ui/progress.tsx', ui('progress')],
   ['components/ui/pagination.tsx', ui('pagination')],
-  ['components/ui/command-palette.tsx', ui('command-palette')],
-  ['components/ui/kbd.tsx', ui('kbd')],
   ['components/ui/dropzone.tsx', ui('dropzone')],
   ['components/ui/relative-time.tsx', ui('relative-time')],
   ['forms/fields/date.tsx', source('forms', 'fields', 'date.tsx')],
@@ -736,68 +567,6 @@ describe('Cockpit primitives: what the sources have to say', () => {
         assert.ok(dependencies.has(owner), `${name} imports "${imported}", which is not a Cockpit dependency`)
       }
     }
-  })
-
-  test('the palette is cmdk’s CommandDialog, and the two hacks it replaced stay gone', () => {
-    // Comment-stripped: this component documents the two hacks it replaced, and
-    // a `requestAnimationFrame` written in prose to say it is gone would read as
-    // one that is still there.
-    const palette = stripComments(ui('command-palette'))
-    // It used to be a Combobox inside a Dialog, and it paid for the mismatch
-    // twice. The combobox's listbox is an absolutely positioned sibling and the
-    // dialog panel clips its overflow, so the panel reserved a fixed height it
-    // could not need; and the dialog focuses its own close button first, so the
-    // caret had to be moved onto the input a frame later with
-    // requestAnimationFrame. cmdk's Command owns the input, the list and the
-    // selection together — the list is inside the panel and the input is the
-    // panel's first focusable — so both hacks are gone rather than rewritten,
-    // and this is where they stay gone.
-    assert.match(palette, /from '\.\/command'/, 'Escape, the focus trap, typing, the arrows and Enter are all there')
-    assert.doesNotMatch(
-      palette,
-      /from '\.\/combobox'/,
-      'a listbox that cannot leave the panel is the arrangement both hacks existed for',
-    )
-    assert.doesNotMatch(
-      palette,
-      /requestAnimationFrame/,
-      'cmdk’s input is the panel’s first focusable, so nothing has to place the caret a frame later',
-    )
-    assert.doesNotMatch(
-      palette,
-      /className="h-\[/,
-      'the list no longer escapes the panel, so the panel must not reserve a height for it',
-    )
-    assert.doesNotMatch(palette, /fixed inset-0/, 'a second overlay would be a second set of the same two bugs')
-    assert.doesNotMatch(palette, /addEventListener\('keydown'[\s\S]*Escape/, 'Escape is the dialog’s to handle')
-
-    // A cmdk item may only live inside a group, and a palette that matches
-    // nothing has to say so rather than showing an empty box.
-    assert.match(palette, /<CommandEmpty\b/, 'a palette that matches nothing must say nothing matches')
-    const groupStart = palette.indexOf('<CommandGroup')
-    const groupEnd = palette.lastIndexOf('</CommandGroup>')
-    assert.ok(groupStart !== -1 && groupEnd !== -1, 'the three kinds of destination are three CommandGroups')
-    const itemStart = palette.indexOf('<CommandItem')
-    assert.ok(
-      itemStart > groupStart && itemStart < groupEnd,
-      'every CommandItem sits inside its CommandGroup — three kinds of destination in one ungrouped list read ' +
-        'as one kind',
-    )
-  })
-
-  test('the palette is mounted with a hint an operator can see', () => {
-    assert.match(shell, /from '@\/components\/ui\/command-palette'/, 'the palette is mounted in the shell')
-    assert.match(shell, /<CommandPalette\b[^>]*pages=\{NAV\}/, 'and is passed the whole table, not the filtered list')
-    assert.match(ui('command-palette'), /<Shortcut\b/, 'an invisible shortcut is not a feature')
-    assert.match(ui('kbd'), /<kbd\b/, 'the hint is a real <kbd>, so it reads as a key')
-    assert.match(ui('command-palette'), /-open`/, 'the trigger is addressable')
-  })
-
-  test('the palette applies the scope filter itself', () => {
-    // The one place an entry can be offered is the one place it is checked. A
-    // palette handed a pre-filtered list would be a second rule to keep in step.
-    assert.match(ui('command-palette'), /paletteTargets\(/)
-    assert.doesNotMatch(ui('command-palette'), /\.role\b/, 'a role is not a scope')
   })
 
   test('the relative label never replaces the instant it summarises', () => {
