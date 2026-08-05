@@ -60,6 +60,7 @@ Use these service endpoints for discovery and health checks:
 | GET | `/health` | Liveness; returns `ok` while the process is up |
 | GET | `/ready` | Readiness; returns status, version and release/deck in-flight plus queued counts |
 | GET | `/metrics` | Prometheus metrics |
+| GET | `/.well-known/service-descriptor.json` | Version and a sha256 per self-description artifact — one small GET that tells a watcher whether anything changed |
 | GET | `/openapi.json` | Generated OpenAPI 3.1 spec |
 | GET | `/llms.txt` | Concise LLM documentation index |
 | GET | `/llms-full.txt` | Full LLM documentation in one file |

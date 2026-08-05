@@ -89,6 +89,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/service-descriptor.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Version and a sha256 per self-description artifact — one small GET that tells a watcher whether anything changed, instead of it downloading every document to find out */
+        get: operations["wellKnownServiceDescriptor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/llms.txt": {
         parameters: {
             query?: never;
@@ -3072,6 +3089,24 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description OpenAPI specification */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    wellKnownServiceDescriptor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service descriptor */
             200: {
                 headers: {
                     [name: string]: unknown;
