@@ -692,6 +692,15 @@ const THEME_CONTRACTS = [
     min: 3,
   },
   {
+    id: 'theme/two-tabs-of-one-console-agree',
+    promise: 'A theme chosen in another tab reaches this one, in both directions — a write and a return to `system`.',
+    incident:
+      'Two tabs are two copies of the store over one storage. Without a `storage` subscription the second never learns, and it then shows a theme that is no longer stored anywhere — observed live, and mistaken for a broken store before the cause was found.',
+    title: /another tab/,
+    asserts: [/setStored/],
+    min: 2,
+  },
+  {
     id: 'theme/the-choice-reaches-the-server-rendered-funnel',
     promise:
       'An explicit choice is mirrored into the cookie, `system` deletes it, and construction reconciles both directions — so the login page the operator meets is the scheme they chose.',
@@ -765,6 +774,12 @@ const UNCOVERED = [
       'main.tsx',
       'hooks/use-mobile.ts',
     ],
+  },
+  {
+    id: 'profile/the-account-surface',
+    missing:
+      'That both session clocks count down against one shared tick; that the held and not-held scope lists are complements over PRODUCT_SCOPES; that an absent display_name falls back to email and then to subject rather than rendering blank; that the operator menu opens, names the subject, and routes to this page.',
+    where: ['pages/profile.tsx', 'hooks/use-now.ts'],
   },
   {
     id: 'forms/unsaved-changes-guard',

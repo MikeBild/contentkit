@@ -965,7 +965,7 @@ describe('the components the console stopped hand-rolling', () => {
   const toast = source('components', 'ui', 'toast.tsx')
   const chip = source('components', 'ui', 'chip.tsx')
   const segmented = source('components', 'ui', 'segmented.tsx')
-  // Sixteen now rather than eight: `authoring.tsx` was five of these pages in
+  // Seventeen now rather than eight: `authoring.tsx` was five of these pages in
   // one file and `governance.tsx` was five more, and the rules below are per
   // page, so splitting them widened the scope rather than narrowing it. This is
   // the whole of pages/, and it is meant to stay that way.
@@ -986,6 +986,7 @@ describe('the components the console stopped hand-rolling', () => {
     'moderation',
     'credentials',
     'audit',
+    'profile',
   ]
 
   test('the list above is every page, so a new one cannot arrive unruled', () => {

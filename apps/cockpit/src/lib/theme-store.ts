@@ -44,6 +44,16 @@ export interface ThemeEnvironment {
   /** Subscribe to OS-level changes; returns an unsubscribe. */
   watchSystem?(onChange: () => void): () => void
   /**
+   * Subscribe to the SAME key changing in another tab.
+   *
+   * An operator with the console open twice — a document on one screen, the
+   * overview on the other — changes the theme in one and the other stays as it
+   * was, indefinitely, because nothing told it. Worse than cosmetic: the two
+   * tabs then disagree about what is stored, and the stale one will happily
+   * write its old value back the next time anything touches the store.
+   */
+  watchStorage?(onChange: () => void): () => void
+  /**
    * Mirror an EXPLICIT choice where the server can read it.
    *
    * The auth funnel is server-rendered with a CSP that allows no script, so it
@@ -99,6 +109,11 @@ export function createThemeStore(env: ThemeEnvironment): ThemeStore {
   // `system` follows the OS for as long as the console is open, which outlives
   // every component, so the subscription belongs to the store and not to a hook.
   env.watchSystem?.(publish)
+
+  // Another tab is an external system too, and the store already knows how to
+  // reconcile with one: `publish` re-reads and replaces the snapshot only when
+  // something actually changed, so a tab that was already in step does nothing.
+  env.watchStorage?.(publish)
 
   // Reconcile the cookie with the stored choice ONCE, at construction. This is
   // what heals every operator who chose dark before the cookie existed: their

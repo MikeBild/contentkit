@@ -49,6 +49,20 @@ function browserThemeEnvironment(): ThemeEnvironment {
       media.addEventListener('change', onChange)
       return () => media.removeEventListener('change', onChange)
     },
+    watchStorage: (onChange) => {
+      // `storage` fires in every OTHER tab of the origin, never in the one that
+      // wrote — which is exactly the signal wanted here and why no guard against
+      // self-notification is needed.
+      //
+      // `event.key === null` means the whole store was cleared (a browser
+      // "clear site data", or another tab calling localStorage.clear()), and it
+      // concerns this key as much as a direct write does.
+      const handler = (event: StorageEvent) => {
+        if (event.key === null || event.key === THEME_STORAGE_KEY) onChange()
+      }
+      window.addEventListener('storage', handler)
+      return () => window.removeEventListener('storage', handler)
+    },
     // The cookie shares the localStorage key's NAME on purpose: one string for
     // one concept, greppable across both storages.
     //

@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.14.0 — 2026-08-06
+
+### Added
+
+- **A Profile page.** The console had no account surface at all: the footer
+  printed a name and a role, and that was it. There was no way to see the
+  subject an audit line is keyed by, no way to see which scopes the session
+  actually holds, and no sight of either session clock — so a tab left open
+  overnight could not say when it stops working and found out mid-save.
+  `/v1/identity/session` has returned both `expires_at` and
+  `absolute_expires_at` all along.
+
+  The scope block shows held AND not-held, because "why is that page missing"
+  is the question an operator actually arrives with, and a list of what you
+  can do does not answer it.
+
+- **The operator menu.** The identity in the footer became a control instead of
+  three inert lines with Sign out floating above them. The subject moved inside
+  the menu — it was reachable only through a tooltip before, which on a phone
+  means not reachable.
+
+  The sibling console grew the same page and the same menu in the same places.
+  Two separate implementations over two different authorization models —
+  ContentKit stores a role, watchkit derives a label from scopes — because what
+  should be shared is where an operator looks, not the code.
+
+### Fixed
+
+- **Two tabs of the console now agree on the theme.** Each tab holds its own
+  copy of the theme store over one shared storage, and nothing subscribed to
+  `storage` — so a theme chosen in one tab never reached the other, and the
+  stale tab went on claiming a value that was no longer stored anywhere.
+
 ## 4.13.0 — 2026-08-06
 
 ### Added

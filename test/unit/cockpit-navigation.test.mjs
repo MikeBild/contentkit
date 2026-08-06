@@ -734,10 +734,24 @@ describe('Cockpit navigation: what this test reads out of shell.tsx', () => {
     // every check in the other suites either vacuous or wrong — so they skip on
     // this and the reason is stated once, here.
     assert.equal(navFailure, null, navFailure ?? '')
-    assert.equal(
-      NAV.length,
-      ROUTES.length,
-      `${NAV.length} nav entries against ${ROUTES.length} routes — every route needs an entry`,
+    // Reachable means "something links to it", and the nav table is not the only
+    // thing that links. /profile is about the OPERATOR rather than the
+    // installation, so it is reached from the operator menu in the sidebar
+    // footer — filing it under Installation beside Credentials and Audit would
+    // say it is a property of the deployment.
+    //
+    // So the assertion stays "no route is unreachable" and gains a second source
+    // of reachability rather than becoming an exemption list. A route linked
+    // from neither still fails, and deleting the footer link starts failing here
+    // on the same commit.
+    const linkedFromShell = new Set([...source(shellPath).matchAll(/to="([^"]+)"/g)].map((match) => match[1]))
+    const unreachable = ROUTES.map((route) => route.to).filter(
+      (to) => !NAV.some((entry) => entry.to === to) && !linkedFromShell.has(to),
+    )
+    assert.deepEqual(
+      unreachable,
+      [],
+      `these routes are in neither NAV nor a shell link — pages nobody can find: ${unreachable.join(', ')}`,
     )
   })
 

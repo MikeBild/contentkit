@@ -23,6 +23,7 @@ function fakeEnvironment(initial: { stored?: string; prefersDark?: boolean; cook
   const applied: ResolvedTheme[] = []
   let prefersDark = initial.prefersDark ?? false
   let systemListener: (() => void) | null = null
+  let storageListener: (() => void) | null = null
   let cookie: string | null = initial.cookie ?? null
   const env: ThemeEnvironment = {
     read: (key) => store.get(key) ?? null,
@@ -34,6 +35,12 @@ function fakeEnvironment(initial: { stored?: string; prefersDark?: boolean; cook
       systemListener = onChange
       return () => {
         systemListener = null
+      }
+    },
+    watchStorage: (onChange) => {
+      storageListener = onChange
+      return () => {
+        storageListener = null
       }
     },
     writeCookie: (value) => {
@@ -51,6 +58,12 @@ function fakeEnvironment(initial: { stored?: string; prefersDark?: boolean; cook
     setSystem(dark: boolean) {
       prefersDark = dark
       systemListener?.()
+    },
+    /** Simulate another tab writing (or clearing) the key. */
+    setStored(value: string | null) {
+      if (value === null) store.delete(THEME_STORAGE_KEY)
+      else store.set(THEME_STORAGE_KEY, value)
+      storageListener?.()
     },
   }
 }
@@ -149,6 +162,41 @@ describe('the theme store', () => {
     const fake = fakeEnvironment({ stored: 'dark' })
     createThemeStore(fake.env)
     expect(fake.cookie()).toBe('dark')
+  })
+
+  // --- another tab ------------------------------------------------------------
+  // Two tabs of the same console are two copies of this store over ONE storage.
+  // Without a `storage` subscription the second copy never learns, and it then
+  // disagrees with what is actually stored — visibly, and for as long as the tab
+  // stays open.
+
+  test('a theme chosen in another tab reaches this one', () => {
+    const fake = fakeEnvironment({ prefersDark: false })
+    const store = createThemeStore(fake.env)
+    let notified = 0
+    store.subscribe(() => (notified += 1))
+    fake.setStored('dark')
+    expect(store.snapshot()).toEqual({ theme: 'dark', resolved: 'dark' })
+    expect(notified).toBe(1)
+    expect(fake.applied.at(-1)).toBe('dark')
+  })
+
+  test('another tab returning to `system` reaches this one too', () => {
+    // The delete half. A listener that only reacts to writes leaves the other
+    // tab claiming an explicit theme that no longer exists anywhere.
+    const fake = fakeEnvironment({ stored: 'dark', prefersDark: false })
+    const store = createThemeStore(fake.env)
+    fake.setStored(null)
+    expect(store.snapshot()).toEqual({ theme: 'system', resolved: 'light' })
+  })
+
+  test('a storage event that changed nothing notifies nobody', () => {
+    const fake = fakeEnvironment({ stored: 'dark' })
+    const store = createThemeStore(fake.env)
+    let notified = 0
+    store.subscribe(() => (notified += 1))
+    fake.setStored('dark')
+    expect(notified).toBe(0)
   })
 
   test('a stale cookie left behind by a cleared localStorage is deleted at construction', () => {

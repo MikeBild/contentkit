@@ -12,6 +12,7 @@ import { CredentialsPage } from '@/pages/credentials'
 import { DecksPage } from '@/pages/decks'
 import { ModerationPage } from '@/pages/moderation'
 import { OverviewPage } from '@/pages/overview'
+import { ProfilePage } from '@/pages/profile'
 import { PublishedPage } from '@/pages/published'
 import { ReleasesPage } from '@/pages/releases'
 import { SiteSettingsPage } from '@/pages/site-settings'
@@ -64,6 +65,7 @@ const routes = [
   ['/credentials', CredentialsPage],
   ['/audit', AuditPage],
   ['/assistant', AssistantPage],
+  ['/profile', ProfilePage],
   ['/system', SystemPage],
 ] as const
 

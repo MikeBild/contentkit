@@ -13,6 +13,7 @@ import {
   LogOut,
   MessagesSquare,
   Monitor,
+  UserRound,
   Moon,
   Presentation,
   Rocket,
@@ -40,6 +41,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -697,38 +700,9 @@ export function Shell() {
                 <ThemeMenu />
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  data-testid="sign-out"
-                  tooltip="Sign out"
-                  onClick={async () => {
-                    await ck.identity.logout()
-                    window.location.assign(ck.identity.loginUrl('/cockpit/'))
-                  }}
-                >
-                  <LogOut data-icon="inline-start" />
-                  <span>Sign out</span>
-                </SidebarMenuButton>
+                <OperatorMenu />
               </SidebarMenuItem>
             </SidebarMenu>
-            <div className="flex flex-col gap-0.5 px-2 pb-1 group-data-[collapsible=icon]:hidden">
-              {/*
-               * The footer shows the friendliest name the session has; the subject
-               * is what an audit log and a support request are keyed by, so it has
-               * to stay reachable — by focus and by tap, not only by hover, which
-               * is what the native `title` here used to mean.
-               */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div tabIndex={0} data-testid="operator-name" className="truncate text-left text-xs text-muted-foreground">
-                    {session.display_name || session.email || session.subject}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent data-testid="operator-subject">{session.subject}</TooltipContent>
-              </Tooltip>
-              <div data-testid="operator-role" className="truncate text-xs uppercase text-muted-foreground">
-                {session.role}
-              </div>
-            </div>
           </SidebarFooter>
 
           <SidebarRail data-testid="sidebar-rail" />
@@ -864,6 +838,75 @@ const THEMES: { value: Theme; label: string; icon: ComponentType<{ className?: s
  * shape that can actually express that, and the sibling console proved it in a
  * 3rem rail first.
  */
+/**
+ * The operator's own menu: who you are, and the two things you can do about it.
+ *
+ * This replaced a footer that printed the name and role as inert text with Sign
+ * out as a separate row above them. Three elements said one thing between them,
+ * and the identity — the part an operator actually looks for — was the only one
+ * that could not be clicked. The subject was reachable only through a tooltip,
+ * which on a phone means not reachable at all, and it is what an audit line and
+ * a support request are keyed by.
+ *
+ * The sibling console grew the same menu in the same place. Two independent
+ * implementations over two different session shapes; the shared part is where
+ * an operator looks, not the code.
+ */
+function OperatorMenu() {
+  const session = useSession()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <SidebarMenuButton
+          size="lg"
+          data-testid="operator-menu"
+          tooltip={session.display_name || session.email || session.subject}
+          className="data-[state=open]:bg-sidebar-accent"
+        >
+          <UserRound data-icon="inline-start" />
+          <span className="flex min-w-0 flex-col text-left leading-tight">
+            <span data-testid="operator-name" className="truncate text-sm">
+              {session.display_name || session.email || session.subject}
+            </span>
+            <span data-testid="operator-role" className="truncate text-xs uppercase text-muted-foreground">
+              {session.role}
+            </span>
+          </span>
+          <ChevronsUpDown className="ml-auto size-4 shrink-0" />
+        </SidebarMenuButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="right" align="end" className="min-w-56">
+        <DropdownMenuLabel className="font-normal">
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">{session.display_name || session.email || 'Signed in'}</span>
+            <span data-testid="operator-subject" className="font-mono text-xs break-all text-muted-foreground">
+              {session.subject}
+            </span>
+          </span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild data-testid="profile-link">
+          <AppLink to="/profile" data-testid="nav-profile">
+            <UserRound data-icon="inline-start" />
+            Profile
+          </AppLink>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          data-testid="sign-out"
+          onSelect={async () => {
+            await ck.identity.logout()
+            window.location.assign(ck.identity.loginUrl('/cockpit/'))
+          }}
+        >
+          <LogOut data-icon="inline-start" />
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function ThemeMenu() {
   const { theme, resolved, setTheme } = useTheme()
   const Icon = resolved === 'dark' ? Moon : Sun

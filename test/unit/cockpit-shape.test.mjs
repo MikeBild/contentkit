@@ -468,6 +468,12 @@ const PRIMARY_LESS = {
   // them gains a mutation it is no longer a reader and the exemption fails.
   'audit.tsx': { because: 'read-only' },
   'published.tsx': { because: 'read-only' },
+  // Profile shows the session it is looking at and changes nothing about it.
+  // Every account setting ContentKit has is decided at sign-in by the identity
+  // provider, so there is deliberately no control here to be primary — and the
+  // moment one appears, this page has started changing something and the
+  // exemption should fail.
+  'profile.tsx': { because: 'read-only' },
 
   // Two scheduled jobs, run by hand only when you know why — the page says so
   // in its own words. One of them is irreversible and is `destructive`; the
