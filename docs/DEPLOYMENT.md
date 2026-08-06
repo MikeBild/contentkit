@@ -87,7 +87,7 @@ OAuth decision responses use cross-origin `303` redirects to the client's
 registered callback; the reverse proxy must pass their `Location` header
 unchanged.
 
-The deployment gate must observe `mcp-auth-v2`, `Continue with SSO` before
+The deployment gate must observe `mcp-auth`, `Continue with SSO` before
 `Continue with API key`, canonical provider labels (`SSO`, `API key`), an
 opaque `login_state` redirect, and absence of provider-named routes. It also
 executes the API-key PKCE/token/MCP/revoke round-trip; SSO is verified through

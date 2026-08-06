@@ -91,6 +91,6 @@ if (drifted === 0) {
 console.log(
   `\n${drifted} shared file(s) differ. A contract change is not finished until it has landed\n` +
     'in every product — see contract/RITUAL.md. If the sibling is simply behind, the\n' +
-    "Ledger in its COCKPIT-UI-V1.md is missing the row this product's has.",
+    "Ledger in its COCKPIT-UI.md is missing the row this product's has.",
 )
 process.exit(1)

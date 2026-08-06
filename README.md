@@ -173,7 +173,7 @@ secret, callback registration, sessions, identity grants and deployment; no
 shared cross-product login component exists. OIDC uses discovery and
 Authorization Code + PKCE. The visible consent UI follows the shared compact card design and
 shows client, identity, sites and independently selectable capability tiers.
-The method chooser implements the same `mcp-auth-v2` contract as WikiKit and
+The method chooser implements the same `mcp-auth` contract as WikiKit and
 SubKit: **Continue with SSO** is always first and **Continue with API key** is
 always second. Configured provider labels cannot change those actions. OAuth
 authorize always enters the generic

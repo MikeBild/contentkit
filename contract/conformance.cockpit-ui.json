@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "What THIS product actually enforces of cockpit-ui-v1, rule by rule.",
+    "What THIS product actually enforces of cockpit-ui, rule by rule.",
     "",
     "Deliberately NOT identical to the sibling's. The contract document is family law",
     "and is byte-identical; this file is the honest local record, and the two products",
@@ -10,7 +10,7 @@
     "",
     "The contract document never names a test. That is why this file exists."
   ],
-  "contract": "cockpit-ui-v1",
+  "contract": "cockpit-ui",
   "rules": {
     "CUI-TOKEN-1": { "enforced_by": ["test/unit/cockpit-ui-contract.test.mjs"] },
     "CUI-TOKEN-2": { "enforced_by": ["test/unit/cockpit-ui-contract.test.mjs"] },

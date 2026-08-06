@@ -15,7 +15,7 @@ import {
   renderProviderChoice,
 } from '../../src/oauth/ui.mjs'
 
-const COMMON_STYLE_SHA256 = 'fb9d19063e79757a73139720508cf27207214b98405e156bab894bad85796a0c'
+const COMMON_STYLE_SHA256 = 'ebdaece15b70206254f6430990bd14abfbc51a62d319cda6383bc8163b10b4d3'
 
 test('the live product ceiling constrains effective scopes and derives the display role', () => {
   assert.deepEqual(effectiveProductScopes(['mcp:admin'], ['content:read', 'identity:admin']), [
@@ -68,8 +68,8 @@ test('common consent escapes identities and keeps baseline read mandatory', asyn
   assert.match(html, /value="mcp:read" checked disabled/)
   assert.match(html, /type="hidden" name="scope" value="mcp:read"/)
   assert.match(html, /max-width:420px/)
-  assert.match(html, /data-auth-contract="mcp-auth-v2"/)
-  assert.match(html, /name="mcp-auth-ui-contract" content="2"/)
+  assert.match(html, /data-auth-contract="mcp-auth"/)
+  assert.match(html, /name="mcp-auth-ui-contract" content="sha256-ebdaece15b70"/)
   assert.match(html, /value="switch_account"/)
   const response = authHtmlResponse(html)
   assert.equal(response.headers.get('content-security-policy'), AUTH_UI_CSP)
@@ -88,8 +88,17 @@ test('provider chooser exposes the canonical SSO-first CTA contract', () => {
   assert.ok(html.indexOf('Continue with SSO') < html.indexOf('Continue with API key'))
   assert.match(html, /class="provider-stack"/)
   assert.doesNotMatch(html, /Continue with Continue with/)
-  const styles = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? ''
-  assert.match(styles, /--primary:#1f2328;--primary-hover:#000/)
+  // Delimited by the sentinels rather than by "everything inside <style>", so a
+  // product may add CSS of its own without the family hash reporting drift that
+  // is not drift. The sentinels ship to the browser: View Source on any product
+  // in the family and the same marker is greppable.
+  const styles = html.match(/\/\*mcp-auth:begin\*\/([\s\S]*?)\/\*mcp-auth:end\*\//)?.[1] ?? ''
+  // The block carries the cockpit palette in both schemes, by the cockpit's own names.
+  // The funnel used to be `color-scheme:light` and nothing else, so an operator
+  // working in dark crossed a white login page on the way into a dark console.
+  assert.match(styles, /--background:#ffffff;--foreground:#020817/)
+  assert.match(styles, /--background:#020817;--foreground:#f8fafc/)
+  assert.match(styles, /@media\(prefers-color-scheme:dark\)/)
   assert.equal(createHash('sha256').update(styles).digest('hex'), COMMON_STYLE_SHA256)
 })
 
@@ -99,6 +108,6 @@ test('sign-in error page keeps the common template contract and escapes content'
   assert.doesNotMatch(html, /<b>Broken/)
   assert.match(html, /&lt;b&gt;Broken&lt;\/b&gt; &amp; unsafe/)
   assert.match(html, /<a class="button approve" href="\/v1\/identity\/login\/start">Sign in again<\/a>/)
-  assert.match(html, /data-auth-contract="mcp-auth-v2"/)
-  assert.match(html, /name="mcp-auth-ui-contract" content="2"/)
+  assert.match(html, /data-auth-contract="mcp-auth"/)
+  assert.match(html, /name="mcp-auth-ui-contract" content="sha256-ebdaece15b70"/)
 })

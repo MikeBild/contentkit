@@ -1,18 +1,18 @@
-/* cockpit-ui-v1 — the shared regions of the family cockpit, verbatim.
+/* cockpit-ui — the shared regions of the family cockpit, verbatim.
  *
  * This file is not a stylesheet. Nothing imports it, nothing builds it, nothing
- * bundles it. It is the bytes that must appear between the cockpit-ui-v1 sentinels
+ * bundles it. It is the bytes that must appear between the cockpit-ui sentinels
  * in every family product's apps/cockpit/src/index.css, stored once so a test can
  * compare against something rather than against a promise.
  *
- * It is byte-identical in every product that implements cockpit-ui-v1. Its sha256
- * is pinned in COCKPIT-UI-V1.md's Tokens-Digest line. Changing it is RITUAL.md.
+ * It is byte-identical in every product that implements cockpit-ui. Its sha256
+ * is pinned in COCKPIT-UI.md's Tokens-Digest line. Changing it is RITUAL.md.
  *
  * The products remain separate products: each keeps its own components, its own
  * shell, its own build and its own release. What is shared is a palette and a set
  * of names, carried by copy — not a package, not a dependency, not a deployment. */
 
-/* cockpit-ui-v1:begin tokens-light */
+/* cockpit-ui:begin tokens-light */
 :root {
   --background: #ffffff;
   --foreground: #020817;
@@ -50,9 +50,9 @@
   --sidebar-border: #e2e8f0;
   --sidebar-ring: #2563eb;
 }
-/* cockpit-ui-v1:end tokens-light */
+/* cockpit-ui:end tokens-light */
 
-/* cockpit-ui-v1:begin tokens-dark */
+/* cockpit-ui:begin tokens-dark */
 .dark {
   --background: #020817;
   --foreground: #f8fafc;
@@ -89,9 +89,9 @@
   --sidebar-border: #334155;
   --sidebar-ring: #60a5fa;
 }
-/* cockpit-ui-v1:end tokens-dark */
+/* cockpit-ui:end tokens-dark */
 
-/* cockpit-ui-v1:begin theme-map */
+/* cockpit-ui:begin theme-map */
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-foreground: var(--foreground);
@@ -130,4 +130,4 @@
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
-/* cockpit-ui-v1:end theme-map */
+/* cockpit-ui:end theme-map */

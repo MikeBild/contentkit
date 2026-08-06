@@ -1,11 +1,11 @@
-# cockpit-ui-v1
+# cockpit-ui
 
-Contract: cockpit-ui-v1
-Tokens-File: contract/cockpit-ui-v1.css
-Tokens-Digest: sha256:2974e7b72bcdd93a54b2456d81e9e153b36bd105f53276875b162e46e20ac97f
+Contract: cockpit-ui
+Tokens-File: contract/cockpit-ui.css
+Tokens-Digest: sha256:4ca18a25cbcfa991384c86a72051c5651b1a8861594486ed902145781d47a36e
 Rules-Digest: sha256:db3fd7e6323ef8cbf4c29707de08f34d577ae1c2bee4950c2a12ad198253492c
 
-This file is byte-identical in every product that implements `cockpit-ui-v1`.
+This file is byte-identical in every product that implements `cockpit-ui`.
 Nothing imports it. It is law, carried by copy.
 
 ## What this is, and what it is deliberately not
@@ -25,8 +25,8 @@ So: three files are shared, all of them text, none of them code.
 
 | | |
 |---|---|
-| `contract/COCKPIT-UI-V1.md` | this file — the rules, each with an ID |
-| `contract/cockpit-ui-v1.css` | the token bytes |
+| `contract/COCKPIT-UI.md` | this file — the rules, each with an ID |
+| `contract/cockpit-ui.css` | the token bytes |
 | `contract/RITUAL.md` | how a change to either one travels |
 
 There is **no shared package, no shared component, no shared build and no shared
@@ -35,7 +35,7 @@ product genuinely needs to differ, it differs, and says so in its own
 `apps/cockpit/UI-UX.md`.
 
 This file **never names a test.** Enforcement is per-product and lives in
-`contract/conformance.cockpit-ui-v1.json`, which maps each rule ID to the local
+`contract/conformance.cockpit-ui.json`, which maps each rule ID to the local
 test that holds it — or to nothing, with a stated reason. That file is
 deliberately *not* identical between products: it is the honest record of what
 each one actually enforces, and an empty `enforced_by` with a real `why` is a
@@ -43,12 +43,11 @@ truthful entry, not a gap to be papered over.
 
 ## 1. Tokens
 
-- **CUI-TOKEN-1** — The three regions delimited by the `cockpit-ui-v1` sentinels
-  in `apps/cockpit/src/index.css` are byte-identical to `contract/cockpit-ui-v1.css`:
+- **CUI-TOKEN-1** — The three regions delimited by the `cockpit-ui` sentinels
+  in `apps/cockpit/src/index.css` are byte-identical to `contract/cockpit-ui.css`:
   `tokens-light`, `tokens-dark`, `theme-map`, in that order.
 - **CUI-TOKEN-2** — The names declared in `tokens-light` are exactly the names
-  listed under the current version below, and include every name listed under
-  every earlier version.
+  listed below.
 - **CUI-TOKEN-3** — A custom property declared outside the sentinels carries the
   product's prefix (`--ck-`, `--wt-`). The type stack of §2 is the only exception.
 
@@ -56,9 +55,7 @@ The tokens are shadcn's **names** with the family's **values**, so a component
 pasted from the registry works unmodified in either console and still looks like
 it belongs there.
 
-### Names, by version
-
-#### v1 (current)
+### Names
 
 ```
 background, foreground, surface, card, card-foreground, popover,
@@ -70,20 +67,21 @@ sidebar-primary-foreground, sidebar-accent, sidebar-accent-foreground,
 sidebar-border, sidebar-ring
 ```
 
-### Versioning
+### There is no version number
 
-| Change | Digest | Version |
-|---|---|---|
-| A value changes | new | `v1` |
-| A name is added | new | `v1` |
-| A name is removed or renamed | new | **`v2`** |
+The identity of this contract is the digest of its bytes, and `Tokens-Digest`
+above is it.
 
-A value change is a colour: a product may lag it for a day and nothing breaks. A
-removed name is a component rendering unstyled, so the version string must change
-and a lagging product must be loudly a *different contract* rather than a slightly
-different blue. Removing a name therefore costs a new `#### v2` list, a new
-`Contract:` line and six rewritten sentinel lines — deliberately more friction
-than editing a hex.
+A version number was tried and removed. It existed so that a product which had
+NOT yet taken a change would fail loudly rather than render a component unstyled
+— but `RITUAL.md`'s first rule is that a change lands in every product in one
+wave, so that lagging product does not exist. What the number actually bought was
+a second thing to keep in step, hand-typed, which is precisely the failure it was
+meant to prevent: four repositories can all claim the same version while their
+bytes diverge, and for a while the auth funnel's `content="2"` did exactly that.
+
+So: any change to `contract/cockpit-ui.css` is a new digest — a changed value, an
+added name and a removed name alike — and the wave lands together.
 
 ## 2. Type
 
@@ -119,7 +117,7 @@ than editing a hex.
 ## 5. Markers
 
 - **CUI-MARK-1** — The served `index.html` declares
-  `<meta name="cockpit-ui-contract" content="cockpit-ui-v1">` and
+  `<meta name="cockpit-ui-contract" content="cockpit-ui">` and
   `<meta name="cockpit-ui-digest" content="sha256-…">`, the latter **derived at
   build time from the bytes of the tokens file** and never hand-typed.
 - **CUI-MARK-2** — The shell's outermost element carries `data-cockpit-ui`.
@@ -228,9 +226,10 @@ different bytes announce different strings, in the DOM, in every screenshot.
 
 ## Ledger
 
-Every change to `contract/cockpit-ui-v1.css` appends a row here, in both
-products, in the same wave.
+Every change to `contract/cockpit-ui.css` appends a row here, in both products,
+in the same wave.
 
 | Date | Digest | Change |
 |---|---|---|
 | 2026-08-05 | `sha256:2974e7b7` | Contract established from the bytes both consoles already shipped. No value changed. |
+| 2026-08-06 | `sha256:4ca18a25` | Dropped the version number: the sentinels lose their `-v1`, so the file's bytes change and no token value does. The digest is the identity now. |

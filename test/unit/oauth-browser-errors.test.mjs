@@ -166,7 +166,7 @@ test('a missing identity grant without a validated client renders the human sign
   assert.match(html, /<h1>Sign-in failed<\/h1>/)
   assert.match(html, /Your account is not authorized for ContentKit\. Contact the operator\./)
   assert.match(html, /href="\/v1\/identity\/login\/start">Sign in again<\/a>/)
-  assert.match(html, /data-auth-contract="mcp-auth-v2"/)
+  assert.match(html, /data-auth-contract="mcp-auth"/)
 })
 
 test('an OIDC code-exchange failure unblocks the validated waiting client instead of dead-ending', async () => {

@@ -5,9 +5,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * What this product actually enforces of `cockpit-ui-v1`, held honest.
+ * What this product actually enforces of `cockpit-ui`, held honest.
  *
- * `contract/COCKPIT-UI-V1.md` is byte-identical across the family and therefore
+ * `contract/COCKPIT-UI.md` is byte-identical across the family and therefore
  * cannot name a test: the two products are at different stages and a shared file
  * that claimed one product's coverage for the other would be false in one of them.
  * So the rules carry IDs and each product maps them locally.
@@ -22,13 +22,13 @@ import { fileURLToPath } from 'node:url'
 const here = fileURLToPath(import.meta.url)
 const root = dirname(dirname(dirname(here)))
 
-const doc = readFileSync(join(root, 'contract', 'COCKPIT-UI-V1.md'), 'utf8')
-const map = JSON.parse(readFileSync(join(root, 'contract', 'conformance.cockpit-ui-v1.json'), 'utf8'))
+const doc = readFileSync(join(root, 'contract', 'COCKPIT-UI.md'), 'utf8')
+const map = JSON.parse(readFileSync(join(root, 'contract', 'conformance.cockpit-ui.json'), 'utf8'))
 
 /** The rule IDs the contract declares, in document order. */
 const declared = [...new Set([...doc.matchAll(/\*\*(CUI-[A-Z0-9]+-\d+)\*\*/g)].map((match) => match[1]))]
 
-describe('cockpit-ui-v1 conformance', () => {
+describe('cockpit-ui conformance', () => {
   test('the map names the contract it maps', () => {
     assert.equal(map.contract, doc.match(/^Contract:\s*(.+)$/m)?.[1].trim())
   })
@@ -40,7 +40,7 @@ describe('cockpit-ui-v1 conformance', () => {
     assert.deepEqual(
       missing,
       [],
-      `contract/conformance.cockpit-ui-v1.json says nothing about ${missing.join(', ')}.\n` +
+      `contract/conformance.cockpit-ui.json says nothing about ${missing.join(', ')}.\n` +
         'A rule with no entry is a rule nobody decided about. Add it, with an empty\n' +
         '`enforced_by` and a `why` if nothing holds it yet.',
     )
@@ -70,7 +70,7 @@ describe('cockpit-ui-v1 conformance', () => {
   test('coverage is reported rather than implied', (t) => {
     const total = declared.length
     const held = declared.filter((id) => map.rules[id].enforced_by.length > 0).length
-    t.diagnostic(`cockpit-ui-v1: ${held} of ${total} rules enforced in this product`)
+    t.diagnostic(`cockpit-ui: ${held} of ${total} rules enforced in this product`)
     // Deliberately not a threshold. The number is the point; a bar would invite
     // meeting it with a test that asserts nothing.
     assert.ok(total > 0)
