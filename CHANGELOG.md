@@ -6,6 +6,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.13.0 — 2026-08-06
+
+### Added
+
+- The theme an operator picks in the console now reaches the login page it hands
+  over to. The sign-in funnel is server-rendered under a CSP that allows no
+  script, so it could never read `localStorage`; its stylesheet has carried
+  `.scheme-light` / `.scheme-dark` override classes that nothing set. The
+  console now mirrors an **explicit** choice into a `ck-cockpit-theme` cookie —
+  same name as the storage key — and the server reads it and puts the class on
+  `<html>`. Choosing dark and signing out no longer ends in a white page.
+
+  `system` is the absence of the cookie, exactly as it is the absence of the
+  storage key, so anyone who never chose still follows `prefers-color-scheme`.
+  A value that is neither `light` nor `dark` is treated as absent: the cookie is
+  user-editable and carries no authority, so garbage costs a colour and never an
+  error page. Funnel responses now send `vary: cookie`.
+
+  The cookie is reconciled with the stored choice once at start-up, in both
+  directions — that is what reaches an operator who chose dark before this
+  release and would otherwise keep meeting a white login page.
+
+- `<meta name="color-scheme" content="light dark">` in the console. Without it
+  the browser painted a white canvas and light-scheme form controls before the
+  stylesheet landed, partly defeating the pre-paint script.
+
+### Fixed
+
+- The theme control could not express what the store holds. It read the
+  *resolved* scheme and wrote its opposite, so for anyone on `system` the first
+  click stored an explicit choice and no path led back to key-absence: "follow
+  the OS" was destroyed, for the life of the browser profile, by the one control
+  that claimed to manage it. It is a three-item radio menu now.
+
+- The theme store touched `localStorage` and `matchMedia` unguarded at import
+  time, so a tab with site data blocked threw during module evaluation and took
+  the whole console down. It is now an injected-environment factory with every
+  access guarded, which also lets it be tested without a browser — three
+  `CUI-THEME` contract clauses move out of `enforced_by: []` as a result. An
+  unrecognised stored value falls back to `system` instead of being cast
+  straight to a theme.
+
+- `apps/cockpit/vite.config.ts` declared no `@/` alias, so `npm run dev` failed
+  on the first import in `main.tsx`. `vite build` resolves tsconfig paths itself
+  and `vitest.config.ts` declares the alias, so every build and every test
+  stayed green while the documented dev workflow did not start.
+
 ## 4.9.0 — 2026-08-04
 
 ### Changed
