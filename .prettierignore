@@ -8,3 +8,9 @@ src/db/migrations/embedded.mjs
 *.md
 tests/real-world/elicitation/shots/
 apps/
+
+# contract/ holds fixtures, not source. cockpit-ui-v1.css is the exact bytes that
+# must appear between the sentinels in apps/cockpit/src/index.css — including the
+# indentation of the lines that live inside `@theme inline`. Prettier strips that
+# indentation, which changes the digest and breaks the contract it exists to hold.
+contract/

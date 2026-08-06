@@ -1,0 +1,115 @@
+{
+  "$comment": [
+    "What THIS product actually enforces of cockpit-ui-v1, rule by rule.",
+    "",
+    "Deliberately NOT identical to the sibling's. The contract document is family law",
+    "and is byte-identical; this file is the honest local record, and the two products",
+    "are at different stages. An empty `enforced_by` with a real `why` is a truthful",
+    "entry, not a gap to be papered over — a style guide that is wrong about itself is",
+    "worse than none.",
+    "",
+    "The contract document never names a test. That is why this file exists."
+  ],
+  "contract": "cockpit-ui-v1",
+  "rules": {
+    "CUI-TOKEN-1": { "enforced_by": ["test/unit/cockpit-ui-contract.test.mjs"] },
+    "CUI-TOKEN-2": { "enforced_by": ["test/unit/cockpit-ui-contract.test.mjs"] },
+    "CUI-TOKEN-3": { "enforced_by": ["test/unit/cockpit-ui-contract.test.mjs"] },
+    "CUI-TYPE-1": { "enforced_by": ["test/unit/cockpit-ui-contract.test.mjs"] },
+
+    "CUI-THEME-1": {
+      "enforced_by": [],
+      "why": "The store in apps/cockpit/src/lib/theme.ts is a module singleton with no injectable environment, so its behaviour cannot be asserted without a DOM. WatchKit's equivalent is a pure factory and IS tested; adopting that factoring here is the fix, not a test against this shape."
+    },
+    "CUI-THEME-2": {
+      "enforced_by": [],
+      "why": "Same reason as CUI-THEME-1. `system` is spelled as key-absence in lib/theme.ts:58 and nothing asserts it."
+    },
+    "CUI-THEME-3": {
+      "enforced_by": [],
+      "why": "The blocking pre-paint script is the only inline script in index.html, but nothing asserts that it exists, that it runs before paint, or that it resolves the same way the store does. A first frame in the wrong scheme would ship silently."
+    },
+    "CUI-THEME-4": {
+      "enforced_by": [],
+      "why": "Nothing asserts the `dark` class is what carries the resolved scheme, which is what every `@custom-variant dark` rule in index.css depends on."
+    },
+    "CUI-THEME-5": {
+      "enforced_by": [],
+      "why": "Sign-out is a navigation in shell.tsx and no test drives it. This becomes load-bearing the moment the auth funnel learns to read a theme preference: clearing it on logout would flash the operator's own console white on the way out."
+    },
+
+    "CUI-MOUNT-1": { "enforced_by": ["test/unit/cockpit.test.mjs"] },
+    "CUI-MOUNT-2": { "enforced_by": ["test/unit/cockpit.test.mjs"] },
+    "CUI-MOUNT-3": { "enforced_by": ["test/unit/cockpit.test.mjs"] },
+    "CUI-MOUNT-4": { "enforced_by": ["test/unit/cockpit.test.mjs"] },
+
+    "CUI-MARK-1": {
+      "enforced_by": [],
+      "why": "The build-time meta injection is not written yet. Until it is, this product declares no contract version and no token digest to a browser, which is exactly the blindness that let mcp-auth-v2 carry a hand-typed marker across four repos."
+    },
+    "CUI-MARK-2": {
+      "enforced_by": [],
+      "why": "The shell renders no `data-cockpit-ui` attribute yet, so a screenshot or a cross-product probe cannot tell which contract this console implements."
+    },
+
+    "CUI-PAGE-1": { "enforced_by": ["test/unit/cockpit-shape.test.mjs"] },
+    "CUI-PAGE-2": {
+      "enforced_by": ["test/unit/cockpit-shape.test.mjs", "test/unit/cockpit-governance-split.test.mjs"]
+    },
+    "CUI-LADDER-1": { "enforced_by": ["test/unit/cockpit-shape.test.mjs"] },
+    "CUI-LADDER-2": { "enforced_by": ["test/unit/cockpit-shape.test.mjs"] },
+    "CUI-LADDER-3": { "enforced_by": ["test/unit/cockpit-shape.test.mjs"] },
+
+    "CUI-ACT-1": { "enforced_by": ["test/unit/cockpit-affordances.test.mjs"] },
+    "CUI-ACT-2": { "enforced_by": ["test/unit/cockpit-affordances.test.mjs"] },
+    "CUI-ACT-3": { "enforced_by": ["test/unit/cockpit-affordances.test.mjs"] },
+    "CUI-ACT-4": { "enforced_by": ["test/unit/cockpit-affordances.test.mjs"] },
+    "CUI-ACT-5": { "enforced_by": ["test/unit/cockpit-affordances.test.mjs"] },
+
+    "CUI-WORDS-1": { "enforced_by": ["test/unit/cockpit-forms-density.test.mjs"] },
+    "CUI-WORDS-2": { "enforced_by": ["test/unit/cockpit-forms-density.test.mjs"] },
+
+    "CUI-SEV-1": { "enforced_by": ["test/unit/cockpit-lists.test.mjs"] },
+    "CUI-SEV-2": { "enforced_by": ["test/unit/cockpit-dates-progress.test.mjs"] },
+
+    "CUI-LOAD-1": { "enforced_by": ["test/unit/cockpit-shape.test.mjs"] },
+    "CUI-LOAD-2": { "enforced_by": ["test/unit/cockpit-behavioural-floor.test.mjs"] },
+    "CUI-LOAD-3": { "enforced_by": ["test/unit/cockpit-shape.test.mjs"] },
+    "CUI-LOAD-4": {
+      "enforced_by": [],
+      "why": "The three states are each checked; that they render VISIBLY differently from one another is graded by reading source. This is the rule the four-states section exists for and it is the one nothing holds."
+    },
+
+    "CUI-LAYOUT-1": { "enforced_by": ["test/unit/cockpit-scroll-containment.test.mjs"] },
+    "CUI-LAYOUT-2": { "enforced_by": ["test/unit/cockpit-scroll-containment.test.mjs"] },
+    "CUI-LAYOUT-3": { "enforced_by": ["scripts/validate-cockpit-browser.mjs"] },
+
+    "CUI-RESP-1": { "enforced_by": ["scripts/validate-cockpit-browser.mjs"] },
+
+    "CUI-A11Y-1": { "enforced_by": ["test/unit/cockpit-confirm.test.mjs"] },
+    "CUI-A11Y-2": { "enforced_by": ["apps/cockpit/src/components/confirm.test.tsx"] },
+    "CUI-A11Y-3": { "enforced_by": ["test/unit/cockpit-dialog-guards.test.mjs"] },
+    "CUI-A11Y-4": { "enforced_by": ["test/unit/cockpit-testids.test.mjs"] },
+    "CUI-A11Y-5": {
+      "enforced_by": [],
+      "why": "Aspirational. UI-UX.md has said so in as many words since the review that found it credited to two files asserting no such thing."
+    },
+
+    "CUI-NAV-1": { "enforced_by": ["test/unit/cockpit-navigation.test.mjs"] },
+    "CUI-NAV-2": { "enforced_by": ["test/unit/cockpit-navigation.test.mjs"] },
+
+    "CUI-AI-1": {
+      "enforced_by": [],
+      "why": "The assistant renders model output as chat, where no health-or-confirmation token applies. The rule binds this product only once structured model output lands in a card."
+    },
+    "CUI-AI-2": { "enforced_by": [], "why": "pages/assistant.tsx shows no model identity or generation time today." },
+    "CUI-AI-3": {
+      "enforced_by": [],
+      "why": "Elicitations carry their own context; free-text turns state no provenance and nothing checks it."
+    },
+    "CUI-AI-4": {
+      "enforced_by": [],
+      "why": "Elicitation approval posts to /v1/assistant/elicitations/{id}, so the affordance does record the answer — but nothing asserts the pair is absent where no endpoint exists."
+    }
+  }
+}
