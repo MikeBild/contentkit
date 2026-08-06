@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
@@ -21,6 +22,13 @@ const proxy = Object.fromEntries(
 export default defineConfig({
   base: '/cockpit/',
   plugins: [react(), tailwind()],
+  // `@/` spelled out here rather than left to tsconfig `paths`. `vite build`
+  // resolves those on its own, so this file got away without the alias — but the
+  // dev server's import-analysis pass does not, and `npm run dev` has therefore
+  // been failing on the very first import in main.tsx while every build and
+  // every test stayed green. vitest.config.ts already declares this exact alias
+  // for the same reason; this is the third consumer finally saying it too.
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   // assets/composition.js and assets/site.css live in the repository root: the
   // console shares the published site's implementation rather than copying it,
   // so the dev server has to be allowed to read one level above this app.

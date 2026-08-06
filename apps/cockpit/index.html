@@ -4,6 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex,nofollow,noarchive" />
+    <!-- Without this the UA paints its default white canvas and light-scheme
+         scrollbars and form controls before the stylesheet lands, partly
+         defeating the pre-paint script below. The sibling console carries the
+         same line for the same reason. -->
+    <meta name="color-scheme" content="light dark" />
     <title>ContentKit Cockpit</title>
     <script>
       // Applied before first paint so a dark-mode reload never flashes light.

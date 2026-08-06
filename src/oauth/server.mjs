@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { validReturnTo } from '../access.mjs'
+import { parseCookies, validReturnTo } from '../access.mjs'
 import { csrfSecretFor, csrfSetCookie, signCsrf } from '../csrf.mjs'
 import { decryptSecret, encryptSecret } from '../secrets.mjs'
 import {
@@ -1270,8 +1270,48 @@ export function createOAuthMount(config, { db, auth, audit, logger, oidc: oidcOv
     )
   }
 
+  /**
+   * The operator's explicit theme, if they made one, read from the cookie the
+   * cockpit's theme store mirrors its choice into (apps/cockpit/src/lib/theme.ts).
+   *
+   * `system` is the ABSENCE of the cookie, exactly as it is the absence of the
+   * localStorage key on the cockpit side — no cookie means the funnel's own
+   * `prefers-color-scheme` media query is the whole answer. Anything that is
+   * not exactly `light` or `dark` is treated as absent rather than rejected:
+   * the cookie is user-editable and carries no authority, so garbage costs a
+   * colour, never an error page.
+   */
+  function schemeFromRequest(request) {
+    const value = parseCookies(request.headers.get('cookie'))['ck-cockpit-theme']
+    return value === 'light' || value === 'dark' ? value : null
+  }
+
+  /**
+   * Wraps the dispatcher so every HTML page the funnel serves carries the
+   * operator's explicit scheme as a class on <html>.
+   *
+   * The funnel's stylesheet ships `.scheme-light` / `.scheme-dark` override
+   * classes precisely so an explicit choice can beat the media query — and the
+   * page allows no script, so the SERVER is the only party that can set them.
+   * One wrapper at the single dispatch point, rather than a scheme parameter
+   * threaded through six render helpers that would each need the request.
+   */
+  async function themedHandler(request) {
+    const response = await handler(request)
+    if (!(response.headers.get('content-type') || '').includes('text/html')) return response
+    const headers = new Headers(response.headers)
+    // The page now varies on the theme cookie, and says so. `private,no-store`
+    // already forbids caching; this is free insurance against an intermediary
+    // that honours vary and not cache-control.
+    headers.set('vary', 'cookie')
+    const scheme = schemeFromRequest(request)
+    const html = await response.text()
+    const themed = scheme ? html.replace('<html lang="en">', `<html lang="en" class="scheme-${scheme}">`) : html
+    return new Response(themed, { status: response.status, headers })
+  }
+
   return {
-    handler,
+    handler: themedHandler,
     start() {
       if (cleanupTimer) return
       cleanup().catch(() => {})

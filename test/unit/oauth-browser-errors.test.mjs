@@ -249,3 +249,51 @@ test('non-browser OAuth endpoints keep the JSON error contract', async () => {
   assert.match(response.headers.get('content-type'), /application\/json/)
   assert.equal((await response.json()).error, 'invalid_client')
 })
+
+// --- the operator's theme, crossing into the funnel --------------------------
+// The funnel's stylesheet carries `.scheme-light` / `.scheme-dark` override
+// classes, and the server is the only party that can set them — the page allows
+// no script, so it cannot read localStorage. The cockpit's theme store mirrors
+// an explicit choice into the `ck-cockpit-theme` cookie; these three tests are
+// the whole contract of that bridge.
+
+test('with no theme cookie the funnel carries no scheme class — the media query decides', async () => {
+  const config = baseConfig()
+  const mount = mountWith(config, fakeDb({ ck_oauth_login_states: [] }), {})
+  const response = await mount.handler(new Request(`${config.publicUrl}/v1/identity/cockpit-login`))
+  const html = await response.text()
+  // The stylesheet always CARRIES the .scheme-* selectors — that is the hook.
+  // What must be absent is the class on <html> that would engage one.
+  assert.match(html, /<html lang="en">/)
+  assert.doesNotMatch(html, /class="scheme-/)
+})
+
+test('an explicit choice in the theme cookie lands as a class on <html>', async () => {
+  const config = baseConfig()
+  for (const scheme of ['dark', 'light']) {
+    const mount = mountWith(config, fakeDb({ ck_oauth_login_states: [] }), {})
+    const response = await mount.handler(
+      new Request(`${config.publicUrl}/v1/identity/cockpit-login`, {
+        headers: { cookie: `ck-cockpit-theme=${scheme}` },
+      }),
+    )
+    const html = await response.text()
+    assert.match(html, new RegExp(`<html lang="en" class="scheme-${scheme}">`))
+    // The response varies on the cookie now, and says so.
+    assert.equal(response.headers.get('vary'), 'cookie')
+  }
+})
+
+test('a garbage theme cookie costs a colour, never an error page', async () => {
+  // The cookie is user-editable and carries no authority. Anything that is not
+  // exactly light or dark is treated as absent.
+  const config = baseConfig()
+  const mount = mountWith(config, fakeDb({ ck_oauth_login_states: [] }), {})
+  const response = await mount.handler(
+    new Request(`${config.publicUrl}/v1/identity/cockpit-login`, {
+      headers: { cookie: 'ck-cockpit-theme=chartreuse' },
+    }),
+  )
+  assert.equal(response.status, 200)
+  assert.match(await response.text(), /<html lang="en">/)
+})

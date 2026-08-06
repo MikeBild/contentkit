@@ -654,6 +654,71 @@ const CONTRACTS = [
   },
 ]
 
+const THEME_CONTRACTS = [
+  {
+    id: 'theme/system-is-the-absence-of-a-choice',
+    promise:
+      'With nothing stored the theme is `system` and resolves from the OS, and choosing `system` again REMOVES the key — "follow the OS" and "was once set to whatever the OS said" stay different states.',
+    incident:
+      'The pre-paint script in index.html distinguishes them by the key being absent, so a store that wrote the literal string would light the console differently before and after first paint.',
+    title: /follows the OS|way back to system/,
+    asserts: [/theme: 'system'/],
+    min: 2,
+  },
+  {
+    id: 'theme/an-explicit-choice-wins-and-keeps-winning',
+    promise: 'An explicit theme overrides the OS at read time and keeps overriding it when the OS changes underneath.',
+    title: /overrides the OS|ignores the OS changing/,
+    asserts: [/resolved/],
+    min: 2,
+  },
+  {
+    id: 'theme/a-hand-edited-key-costs-a-colour-not-the-console',
+    promise: 'An unrecognised stored value falls back to `system` instead of passing through as a scheme.',
+    incident:
+      'The module-level singleton this store replaced cast whatever it found straight to `Theme`; a hand-edited value became a "resolved" scheme that was neither light nor dark and every reader of it misrendered quietly.',
+    title: /garbage in localStorage/,
+    asserts: [/theme: 'system'/],
+    min: 1,
+  },
+  {
+    id: 'theme/subscribers-are-notified-exactly-when-something-changed',
+    promise:
+      'The snapshot is reference-stable, an OS change reaches subscribers and applies the class, and setting the theme it already has notifies nobody.',
+    incident:
+      'useSyncExternalStore compares snapshots by identity; one rebuilt per read re-renders every consumer on every unrelated event and React eventually reports it as an infinite loop rather than as slowness.',
+    title: /reference-stable|tracks the OS changing|notifies nobody/,
+    asserts: [/snapshot\(\)|notified/],
+    min: 3,
+  },
+  {
+    id: 'theme/the-choice-reaches-the-server-rendered-funnel',
+    promise:
+      'An explicit choice is mirrored into the cookie, `system` deletes it, and construction reconciles both directions — so the login page the operator meets is the scheme they chose.',
+    incident:
+      'The funnel is server-rendered under a CSP that allows no script, so it cannot read localStorage; the cookie is the only channel, and an operator who chose dark before it existed would otherwise keep meeting a white login page forever.',
+    title: /funnel cookie|deletes the cookie|reconciled at construction|stale cookie/,
+    asserts: [/cookie\(\)/],
+    min: 4,
+  },
+]
+
+/* ── The theme store: lib/theme-store.ts ───────────────────────────────────────
+ *
+ * The only non-rendering subject in this file, and deliberately so. The store is
+ * a pure module — the whole point of the factoring — so its cases assert
+ * snapshots and cookie lifecycle rather than the DOM, and the `asserts` tokens
+ * below name those instead of queries. The floor's promise is unchanged: no case
+ * may be deleted in silence, whatever it drives.
+ */
+
+/**
+ * Every contract, rendering and pure alike. The two lists are kept apart above
+ * because they assert in different currencies, and merged here because the floor
+ * is one floor: a case claimed by neither list is a case nobody would miss.
+ */
+const ALL_CONTRACTS = [...CONTRACTS, ...THEME_CONTRACTS]
+
 /** The modules a contract above actually asserts against. Everything else is grep. */
 const COVERED_SUBJECTS = [
   'components/confirm.tsx',
@@ -668,6 +733,11 @@ const COVERED_SUBJECTS = [
   'pages/compositions.tsx',
   'pages/releases.tsx',
   'pages/sites.tsx',
+  // Not a rendering subject — a pure module, asserted head-on with a fake
+  // environment and no DOM. It is listed here because the question this array
+  // answers is "does a test assert against this module", and for theme-store.ts
+  // the answer is now yes, more directly than any rendering test could manage.
+  'lib/theme-store.ts',
 ]
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -896,7 +966,7 @@ describe('the behavioural suite has a floor it cannot fall through', () => {
 
   test('every pinned contract is still held by a rendering case', () => {
     const broken = []
-    for (const contract of CONTRACTS) {
+    for (const contract of ALL_CONTRACTS) {
       const hits = cases.filter(
         (kase) => contract.title.test(named(kase)) && contract.asserts.every((token) => token.test(kase.body)),
       )
@@ -925,7 +995,7 @@ describe('the behavioural suite has a floor it cannot fall through', () => {
     const orphans = cases
       .filter(
         (kase) =>
-          !CONTRACTS.some(
+          !ALL_CONTRACTS.some(
             (contract) => contract.title.test(named(kase)) && contract.asserts.every((token) => token.test(kase.body)),
           ),
       )

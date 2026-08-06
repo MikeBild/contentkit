@@ -12,6 +12,7 @@ import {
   Library,
   LogOut,
   MessagesSquare,
+  Monitor,
   Moon,
   Presentation,
   Rocket,
@@ -23,7 +24,7 @@ import {
   Volume2,
   Webhook,
 } from 'lucide-react'
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { ck } from '@/api/ck'
 import { AppLink } from '@/components/app-link'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -66,7 +67,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { useTheme } from '@/lib/theme'
+import { useTheme, type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
 /**
@@ -582,7 +583,6 @@ function switcherNote(open: NavEntry | undefined) {
 export function Shell() {
   const session = useSession()
   const selection = useSite()
-  const { resolved, setTheme } = useTheme()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const open = entryFor(pathname)
   const note = switcherNote(open)
@@ -694,14 +694,7 @@ export function Shell() {
           <SidebarFooter>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  data-testid="theme-toggle"
-                  tooltip={resolved === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
-                  onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
-                >
-                  {resolved === 'dark' ? <Sun data-icon="inline-start" /> : <Moon data-icon="inline-start" />}
-                  <span>{resolved === 'dark' ? 'Light theme' : 'Dark theme'}</span>
-                </SidebarMenuButton>
+                <ThemeMenu />
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -851,6 +844,51 @@ function NavBlock({
  * without a tooltip, which meant the control answering "which site am I about to
  * change?" showed a globe and nothing else.
  */
+const THEMES: { value: Theme; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'Match system', icon: Monitor },
+]
+
+/**
+ * Three choices, in a menu rather than a two-way flip.
+ *
+ * This replaced `setTheme(resolved === 'dark' ? 'light' : 'dark')` — a toggle
+ * that read the RESOLVED scheme and wrote its opposite. For an operator on
+ * `system` that meant the first click stored an explicit choice and there was
+ * no UI path back to key-absence: "follow the OS" was silently destroyed, for
+ * the life of the browser profile, by the one control that claimed to manage
+ * it. The store always supported all three states; the button could only reach
+ * two. The family contract (CUI-THEME-1/2) says the choice is one of
+ * light|dark|system with `system` as the absence of the key — this menu is the
+ * shape that can actually express that, and the sibling console proved it in a
+ * 3rem rail first.
+ */
+function ThemeMenu() {
+  const { theme, resolved, setTheme } = useTheme()
+  const Icon = resolved === 'dark' ? Moon : Sun
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <SidebarMenuButton data-testid="theme-toggle" tooltip="Theme">
+          <Icon data-icon="inline-start" />
+          <span>Theme</span>
+        </SidebarMenuButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="right" align="end">
+        <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
+          {THEMES.map(({ value, label, icon: ItemIcon }) => (
+            <DropdownMenuRadioItem key={value} value={value} data-testid={`theme-${value}`}>
+              <ItemIcon data-icon="inline-start" />
+              {label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function SiteSwitcher({
   site,
   current,

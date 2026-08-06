@@ -1,66 +1,90 @@
 import { useSyncExternalStore } from 'react'
-
-const STORAGE_KEY = 'ck-cockpit-theme'
-export type Theme = 'light' | 'dark' | 'system'
-export type ResolvedTheme = 'light' | 'dark'
-
-function resolve(theme: Theme): ResolvedTheme {
-  if (theme !== 'system') return theme
-  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function read(): { theme: Theme; resolved: ResolvedTheme } {
-  const theme = (localStorage.getItem(STORAGE_KEY) as Theme) || 'system'
-  return { theme, resolved: resolve(theme) }
-}
+import {
+  createThemeStore,
+  THEME_STORAGE_KEY,
+  type ResolvedTheme,
+  type Theme,
+  type ThemeEnvironment,
+  type ThemeStore,
+} from './theme-store'
 
 /**
- * One store, not one `useState` per caller.
+ * The browser half of the theme store: the DOM facts, and the React binding.
  *
- * The theme is read in two very different places: the chrome, which only needs a
- * class on `<html>`, and every surface that asks the server to rasterise at a
- * colour scheme (src/content/scheme.ts — report charts and Mermaid are drawn
- * server-side, so the scheme is a request parameter, not a stylesheet). With
- * per-hook state the toggle updated only the component holding it: the console
- * turned dark while the rendered fragment kept its light rasterisation, and no
- * re-render was ever requested because the reader's copy of the theme never
- * changed. A shared snapshot makes one toggle reach both.
+ * Kept apart from theme-store.ts so the store itself stays a pure module the
+ * test runner can exercise with no DOM at all.
  *
- * No next-themes: the blocking script in index.html has already applied the
- * class before first paint, so this only has to keep it in step afterwards.
- *
- * `useSyncExternalStore` compares snapshots by identity, so the snapshot is a
- * stored object rather than one rebuilt on every read.
+ * Every localStorage access is guarded — it throws outright in a tab where the
+ * user has blocked site data, and a colour preference is not worth a blank
+ * screen. The singleton this replaced was unguarded at module scope, which made
+ * that failure a crash during import rather than a fallback.
  */
-let snapshot = read()
-const listeners = new Set<() => void>()
-
-function publish() {
-  const next = read()
-  if (next.theme === snapshot.theme && next.resolved === snapshot.resolved) return
-  snapshot = next
-  document.documentElement.classList.toggle('dark', snapshot.resolved === 'dark')
-  for (const listener of listeners) listener()
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
+function browserThemeEnvironment(): ThemeEnvironment {
+  const media = window.matchMedia('(prefers-color-scheme: dark)')
+  return {
+    read: (key) => {
+      try {
+        return window.localStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+    write: (key, value) => {
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        /* private mode: the class still applies for this tab's lifetime */
+      }
+    },
+    remove: (key) => {
+      try {
+        window.localStorage.removeItem(key)
+      } catch {
+        /* as above */
+      }
+    },
+    prefersDark: () => media.matches,
+    apply: (resolved) => document.documentElement.classList.toggle('dark', resolved === 'dark'),
+    watchSystem: (onChange) => {
+      media.addEventListener('change', onChange)
+      return () => media.removeEventListener('change', onChange)
+    },
+    // The cookie shares the localStorage key's NAME on purpose: one string for
+    // one concept, greppable across both storages.
+    //
+    // Deliberately NOT HttpOnly — this code is what writes it. Deliberately not
+    // `__Host-` — that prefix requires Secure, which breaks the http dev origin,
+    // and this cookie carries no authority: the worst an attacker who can set
+    // cookies for this origin achieves with it is a dark login page. Say that
+    // here so nobody later "hardens" it and silently kills the feature.
+    writeCookie: (value) => {
+      try {
+        const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+        document.cookie = `${THEME_STORAGE_KEY}=${value}; Path=/; SameSite=Lax; Max-Age=31536000${secure}`
+      } catch {
+        /* a blocked cookie jar costs the funnel the preference, nothing else */
+      }
+    },
+    clearCookie: () => {
+      try {
+        document.cookie = `${THEME_STORAGE_KEY}=; Path=/; SameSite=Lax; Max-Age=0`
+      } catch {
+        /* as above */
+      }
+    },
   }
 }
 
-// A `system` theme follows the OS for as long as the console is open, and that
-// outlives every component, so the listener is registered once here.
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', publish)
+// ONE store for the whole tab. The theme is read by the chrome (which needs a
+// class) and by every surface that asks the server to rasterise at a scheme
+// (src/content/scheme.ts), and per-component state would leave the second group
+// on the old theme forever.
+const store: ThemeStore = createThemeStore(browserThemeEnvironment())
 
-function setTheme(next: Theme) {
-  if (next === 'system') localStorage.removeItem(STORAGE_KEY)
-  else localStorage.setItem(STORAGE_KEY, next)
-  publish()
-}
+export { THEME_STORAGE_KEY }
+export type { Theme, ResolvedTheme }
 
-export function useTheme() {
-  const current = useSyncExternalStore(subscribe, () => snapshot)
-  return { theme: current.theme, resolved: current.resolved, setTheme }
+export function useTheme(): { theme: Theme; resolved: ResolvedTheme; setTheme: (theme: Theme) => void } {
+  const snapshot = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
+  return { theme: snapshot.theme, resolved: snapshot.resolved, setTheme: store.set }
 }
