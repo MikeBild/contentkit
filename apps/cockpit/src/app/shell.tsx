@@ -876,12 +876,20 @@ function OperatorMenu() {
         </SidebarMenuButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" className="min-w-56">
+        {/*
+          The subject is deliberately NOT here. It is the identifier an audit
+          line and a support request are keyed by, which is why it must be
+          reachable — but a menu is where somebody confirms they are the right
+          person before acting, and a 36-character UUID answers nobody's
+          question at that moment. It lives on Profile, one item below, where
+          there is room to say what it is for.
+        */}
         <DropdownMenuLabel className="font-normal">
           <span className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">{session.display_name || session.email || 'Signed in'}</span>
-            <span data-testid="operator-subject" className="font-mono text-xs break-all text-muted-foreground">
-              {session.subject}
-            </span>
+            {session.display_name && session.email ? (
+              <span className="text-xs break-all text-muted-foreground">{session.email}</span>
+            ) : null}
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

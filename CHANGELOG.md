@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.14.1 — 2026-08-06
+
+### Fixed
+
+- The operator menu no longer prints the session subject. It is a 36-character
+  UUID, and a menu is where somebody confirms they are the right person before
+  acting — an identifier nobody can read answers no question at that moment. The
+  email takes its place where there is one, and the subject remains on Profile,
+  one item below, where there is room to say what it is for.
+
 ## 4.14.0 — 2026-08-06
 
 ### Added
