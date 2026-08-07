@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.18.0 — 2026-08-07
+
+Every ContentKit probe timeout in the three days to 2026-08-07 — eighteen of
+eighteen — was a deploy restart, not a slow service: each `systemctl restart`
+spent 30–60 seconds unpacking the runtime and sweeping stale deck builds before
+the listener opened, and the monitor's ten-second probes ran out inside that
+window. This release makes the window small enough that a deploy is invisible
+to a probe.
+
+### Added
+
+- **`--prepare`** on the launcher unpacks the runtime cache and exits without
+  serving, printing the payload's version. A deployment runs it as the service
+  user before restarting the unit, so the ~20s unpack happens while the old
+  version is still serving. `--prepare` deliberately skips the cache GC — the
+  running version may still be lazily reading assets out of its own entry.
+
+### Changed
+
+- Superseded runtime caches are now collected on every real start rather than
+  only in the unpack branch, so a pre-warmed boot still removes the previous
+  version's entry.
+- The stale deck build sweep no longer gates the listener. It is cleanup, not a
+  serving precondition, and recursively removing leftover Slidev work trees
+  held every boot — and every deploy's restart window — for about ten seconds.
+  The bucket check alone now decides `storageReady`; the sweep runs in the
+  background and logs a warning if it fails.
+
 ## 4.17.0 — 2026-08-07
 
 Contract coverage: **46 of 48 enforced, 2 not applicable, 0 open.** Every clause

@@ -235,7 +235,14 @@ export function createApp(config = loadConfig(), dependencies = {}) {
     database,
     handle,
     async ensureStorage() {
-      await Promise.all([storage.ensureBucket(), deckRenderer.sweep?.()])
+      // The sweep clears orphaned deck build trees — cleanup, not a serving
+      // precondition. Recursively removing leftover Slidev work dirs held the
+      // listener (and every deploy's restart window) for ~10s, so it runs in
+      // the background while the bucket check alone gates readiness.
+      void Promise.resolve(deckRenderer.sweep?.()).catch(error =>
+        logger.warn('stale deck build sweep failed', { error: String(error?.message || error) }),
+      )
+      await storage.ensureBucket()
       state.storageReady = true
     },
   }
