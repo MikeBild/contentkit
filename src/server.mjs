@@ -109,7 +109,16 @@ export function createApp(config = loadConfig(), dependencies = {}) {
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()
   const loginLimiter = dependencies.loginLimiter || createLimiter(15 * 60 * 1000, 5)
-  const state = { draining: false, storageReady: false }
+  // `startedAt` is stamped when the app is CONSTRUCTED, not when the socket
+  // opens. The difference is the boot itself — migrations, storage checks — and
+  // counting it is the honest choice: an installation that takes ninety seconds
+  // to become ready spent ninety seconds not serving, and an uptime that starts
+  // at `listen()` hides exactly that.
+  //
+  // What this number is for: a value that reset is a process that restarted, and
+  // a restart nobody ordered is the first thing worth knowing about an
+  // installation. The sibling console shows the same reading for the same reason.
+  const state = { draining: false, storageReady: false, startedAt: new Date().toISOString() }
 
   const handle = createRequestHandler({
     config,

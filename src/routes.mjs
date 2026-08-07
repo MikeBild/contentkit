@@ -1105,6 +1105,11 @@ export function createRequestHandler(ctx) {
       return sendJson(res, 200, {
         service: 'contentkit',
         version: config.version,
+        // When this process came up. A watcher comparing two captures can tell
+        // "the documentation changed" from "the documentation changed because
+        // the service was replaced", which are different findings — and an
+        // operator reading it directly learns whether anything restarted.
+        started_at: state.startedAt,
         artifacts,
         capabilities: ['health', 'ready', 'metrics', 'openapi', 'llms-txt', 'mcp', 'descriptor'],
       })

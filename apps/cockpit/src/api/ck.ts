@@ -546,5 +546,26 @@ export const ck = {
     health: () => unwrap(api.GET('/health', { parseAs: 'text' })),
     /** A 503 body is the same report; the client middleware turns it into an error. */
     ready: () => unwrap(api.GET('/ready', {})),
+    /**
+     * What this installation says about itself, including when it came up.
+     *
+     * NOT typed from the OpenAPI document: the descriptor is described there as
+     * a path with a prose response and no schema, so generating a type would
+     * produce `unknown`. Declaring the two fields this console actually reads is
+     * honest about that — and narrower than pretending the whole document is
+     * typed.
+     */
+    descriptor: async (): Promise<{ service: string; version: string; started_at: string | null }> => {
+      const response = await fetch('/.well-known/service-descriptor.json', { credentials: 'same-origin' })
+      if (!response.ok) throw new Error(`descriptor answered ${response.status}`)
+      const body = (await response.json()) as { service?: string; version?: string; started_at?: string }
+      return {
+        service: body.service ?? 'contentkit',
+        version: body.version ?? '—',
+        // Absent is null, never "now". An installation that does not report a
+        // start time has not been up for zero seconds.
+        started_at: body.started_at ?? null,
+      }
+    },
   },
 }

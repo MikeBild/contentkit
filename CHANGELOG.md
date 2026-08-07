@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.15.0 — 2026-08-07
+
+### Added
+
+- **Uptime on the System page**, and the start time behind it. The service
+  descriptor did not report one at all, so this needed the server as well as the
+  console: `started_at` is stamped when the app is constructed — not when the
+  socket opens, because the difference is the boot itself, and an installation
+  that took ninety seconds to become ready spent ninety seconds not serving.
+
+  A value that reset is a process that restarted, and a restart nobody ordered
+  is the first thing worth knowing about an installation. The sibling console
+  has shown this reading for a while; it had no equivalent here.
+
+  The reading is deliberately **neutral**: there is no uptime that is good news
+  or bad news on its own. Three minutes is alarming after a quiet week and
+  unremarkable during a deploy, and only the operator knows which one it is.
+  `StatusReading` had narrowed away the neutral tone `StatusBadge` already
+  supported, which forced every row to claim a verdict — that narrowing is
+  lifted.
+
+  Absent is `—`, never `0s`. An installation that does not report a start time
+  has not been up for zero seconds.
+
 ## 4.14.1 — 2026-08-06
 
 ### Fixed

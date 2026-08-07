@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { lazy, Suspense, type ReactNode } from 'react'
 import { ck } from '@/api/ck'
+import { useNow } from '@/hooks/use-now'
 import { Page } from '@/app/shell'
 import { Confirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
@@ -32,7 +33,13 @@ function StatusReading({
 }: {
   label: string
   value: string
-  tone: 'success' | 'warning' | 'danger'
+  // `neutral` is here because not every reading is a verdict. StatusBadge has
+  // always supported it; this wrapper narrowed it away, which forced any new row
+  // to claim good news or bad news. Uptime has neither: three minutes is
+  // alarming after a quiet week and unremarkable during a deploy, and only the
+  // operator knows which one this is. A reading dressed in green that means
+  // nothing is the failure this console's own rules are about.
+  tone: 'success' | 'warning' | 'danger' | 'neutral'
   detail?: ReactNode
   testId: string
 }) {
@@ -64,6 +71,13 @@ export function SystemPage() {
     refetchInterval: 15_000,
     retry: false,
   })
+  const descriptor = useQuery({
+    queryKey: [...keys.system, 'descriptor'],
+    queryFn: () => ck.system.descriptor(),
+    refetchInterval: 15_000,
+    retry: false,
+  })
+  const now = useNow()
 
   // /ready answers 503 while draining, which the client turns into an error —
   // so "no data" here is itself the status, not a missing reading.
@@ -104,6 +118,31 @@ export function SystemPage() {
                       ? ready.error.message
                       : 'Refusing traffic.'
                     : `Version ${readiness?.version ?? '—'}`
+                }
+              />
+              {/*
+                Labelled by what it MEASURES rather than by the field it reads.
+                The server reports an instant; the number here is a duration, and
+                the duration is the operationally interesting half — a value that
+                reset is a process that restarted, and a restart nobody ordered is
+                the first thing worth knowing about an installation. The absolute
+                instant stays in the detail line, where it answers "when" once
+                somebody cares.
+
+                Tone stays neutral on purpose. There is no uptime that is good
+                news or bad news on its own: three minutes is alarming after a
+                quiet week and unremarkable during a deploy, and only the
+                operator knows which one this is.
+              */}
+              <StatusReading
+                testId="system-uptime"
+                label="Uptime"
+                value={descriptor.isPending ? 'checking' : uptime(descriptor.data?.started_at ?? null, now)}
+                tone="neutral"
+                detail={
+                  descriptor.data?.started_at
+                    ? `since ${new Date(descriptor.data.started_at).toLocaleString()}`
+                    : 'This installation does not report a start time.'
                 }
               />
               {/* Green is a claim as much as the number is: a count nobody reported is
@@ -190,4 +229,24 @@ export function SystemPage() {
       </div>
     </Page>
   )
+}
+
+/**
+ * `3d 4h`, `4h 12m`, `38m`, `9s` — and `—` when nothing was reported.
+ *
+ * Absent is never "0s". A zero would say the process just started, which is a
+ * measurement; not knowing is a different fact and reads differently.
+ */
+function uptime(startedAt: string | null, now: number): string {
+  if (!startedAt) return '—'
+  const elapsed = now - new Date(startedAt).getTime()
+  if (Number.isNaN(elapsed) || elapsed < 0) return '—'
+  const seconds = Math.floor(elapsed / 1000)
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m`
+  return `${seconds}s`
 }
