@@ -311,7 +311,17 @@ export async function start(config = loadConfig()) {
       await app.database.close().catch(() => {})
       process.exit(0)
     })
-    setTimeout(() => process.exit(1), 30000).unref()
+    // Idle keep-alive sockets (Caddy pools upstream connections) would pin
+    // close() until they time out on their own.
+    app.server.closeIdleConnections?.()
+    setTimeout(() => {
+      // Reaching the deadline is the designed outcome of a bounded drain, not
+      // a crash: sever what is left so close() can finish, and exit 0 either
+      // way — Restart=on-failure must not reinterpret a deliberate stop.
+      logger.warn('drain deadline reached; severing remaining connections')
+      app.server.closeAllConnections?.()
+      setTimeout(() => process.exit(0), 2000).unref()
+    }, 30000).unref()
     logger.info('draining', { signal })
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'))

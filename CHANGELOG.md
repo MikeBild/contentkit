@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.18.3 — 2026-08-07
+
+### Fixed
+
+- A drain that reaches its 30-second deadline now severs the remaining
+  connections and exits 0 instead of exiting 1. Reaching the deadline is the
+  designed outcome of a bounded drain, not a crash — and under
+  `Restart=on-failure` an exit code 1 lets systemd reinterpret a deliberate
+  stop. Idle keep-alive sockets (Caddy pools upstream connections) are closed
+  as draining begins, so they no longer pin `close()` until they time out on
+  their own.
+- The changelog entries for 4.10.0, 4.11.0, 4.11.2 and 4.12.0 were never
+  written; they are backfilled below from the release commits.
+
 ## 4.18.2 — 2026-08-07
 
 4.18.1 moved the renderer warm-up behind `listen()` and the production probes
@@ -263,6 +277,97 @@ to 45**.
   on the first import in `main.tsx`. `vite build` resolves tsconfig paths itself
   and `vitest.config.ts` declares the alias, so every build and every test
   stayed green while the documented dev workflow did not start.
+
+## 4.12.0 — 2026-08-06
+
+*Backfilled 2026-08-07 from the release commits; this entry and the two below
+were missing when the versions shipped.*
+
+### Added
+
+- The family's dark login funnel. The auth pages declared `color-scheme:light`
+  and nothing else, so an operator working in dark crossed a white login page on
+  the way into a dark console. The funnel now declares both schemes in the
+  cockpit's own token vocabulary — `prefers-color-scheme` as the floor, an
+  optional `.scheme-*` class as the override — byte-identical across ContentKit,
+  WatchKit, WikiKit and SubKit, with the CSP unchanged and still script-free.
+- The shared cockpit palette became a contract instead of a coincidence:
+  `contract/cockpit-ui.css`, `contract/COCKPIT-UI.md` and `contract/RITUAL.md`,
+  byte-identical with the sibling products. Two consoles had duplicated
+  seventy-five custom properties by paste; a drifted token renders perfectly and
+  says nothing, which is why the bytes now have a register and a ledger.
+
+### Removed
+
+- The hand-typed contract version numbers (`mcp-auth-v2`, `cockpit-ui-v1`).
+  Four repositories all claimed `content="2"` while nothing compared the bytes;
+  the served marker is now derived from the token bytes at module load, so two
+  products serving different CSS announce different strings in the DOM.
+
+## 4.11.2 — 2026-08-05
+
+### Added
+
+- `GET /.well-known/service-descriptor.json` — the version plus a sha256 per
+  self-description artifact in one small response, so a monitor asking "has
+  anything changed" no longer downloads ~112 KB of `llms-full.txt` per poll.
+  Hashes are computed per request from the bytes actually served: a cached hash
+  gone stale would make the endpoint lie in exactly the situation it exists to
+  report. A document missing from the build is omitted rather than listed.
+
+### Fixed
+
+- The descriptor's `operationId` collided with `GET /`, the route was missing
+  from the llms-full endpoint table, and the Cockpit's generated API types were
+  stale — all three caught by the drift gates, which is what they are for.
+  (4.11.1 was never tagged; 4.11.2 is the release that shipped these fixes.)
+
+## 4.11.0 — 2026-08-05
+
+### Removed
+
+- **The command palette.** The ⌘K trigger and its panel were proposed and built
+  on analysis; the person operating this console found them unhelpful, and use
+  beats analysis. The palette was a closed island, so this is a deletion —
+  five files and the `cmdk` dependency. The sidebar keeps the site switcher.
+  The palette-versus-sidebar scope-gate cross-check goes with it; the sidebar's
+  own gate keeps its independent test, and only the agreement check between two
+  implementations is lost, because there is no second implementation left.
+
+### Fixed
+
+- `SidebarInset` refused to shrink horizontally — flex-child `min-width:auto`,
+  the horizontal twin of the 4.8.0 defect. macOS overlay scrollbars hid it;
+  the browser job's first Linux run surfaced fourteen route/viewport overflows
+  that one `min-w-0` takes to zero.
+
+## 4.10.0 — 2026-08-04
+
+### Changed
+
+- **Release builds leave the request thread.** Site builds run in a worker
+  thread; the worst `/health` reading during a 1000-document publish went from
+  10.2 seconds to 4.7 milliseconds. The load harness that proves it is wired
+  into an npm script and a CI job, so the claim stays checked.
+
+### Added
+
+- The console is driven in a real browser at three viewports in CI — which is
+  what makes its layout and mobile claims checkable, and what found the defects
+  below.
+- Counts on the four tab strips that carried none, with three distinct
+  readings: a number, an em dash for asked-and-refused, and nothing for not
+  asked yet. A failed query no longer borrows the silence that means "empty".
+
+### Fixed
+
+- A build queued behind a worker that died was never served: a worker killed
+  mid-job never reaches the check-in that shifts the queue. The capacity freed
+  by the death is now spent on the queue, proven by a test that drives a real
+  worker death under a 40 MB heap limit.
+- One malformed directive no longer suppresses a whole assistant reply.
+- The console is usable at 390 px, from what a browser measured rather than
+  what a viewport simulation claimed.
 
 ## 4.9.0 — 2026-08-04
 
