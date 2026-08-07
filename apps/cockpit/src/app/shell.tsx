@@ -624,7 +624,14 @@ export function Shell() {
         refuses to shrink below its content, so without it the inset would push the
         same way from the inside.
       */}
-      <SidebarProvider className="h-full min-h-0">
+      {/*
+        `data-cockpit-ui` on the outermost element — CUI-MARK-2. The meta tags
+        say which contract the DOCUMENT implements; this says which contract the
+        rendered console implements, and it is what a cross-product probe or a
+        screenshot diff can actually see. A console whose head says one thing
+        and whose body carries nothing has told a machine only half of it.
+      */}
+      <SidebarProvider data-cockpit-ui="cockpit-ui" className="h-full min-h-0">
         <Sidebar collapsible="icon" data-testid="sidebar">
           <SidebarHeader>
             {/*

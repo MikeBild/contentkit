@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 
@@ -19,9 +21,42 @@ const proxy = Object.fromEntries(
   ]),
 )
 
+/**
+ * The contract marker, DERIVED rather than typed — CUI-MARK-1.
+ *
+ * Two meta tags in the served document: which contract this console implements,
+ * and a digest of the token bytes it implements it with, computed at build time
+ * from `contract/cockpit-ui.css` — the same file the offline contract test
+ * compares `index.css` against.
+ *
+ * Derived is the whole point. The family's earlier marker was a hand-typed
+ * version number, and four repositories could each keep claiming version 2 while
+ * their bytes drifted apart; a number somebody types cannot notice. A digest can
+ * only agree when the bytes agree, so two products serving different colours
+ * announce different strings — in the DOM, in every screenshot, without anybody
+ * having to run a comparison.
+ *
+ * No test inside one repository can prove its bytes match an absent sibling's.
+ * What this buys is that the divergence is VISIBLE instead of silent.
+ */
+function contractMeta(): Plugin {
+  return {
+    name: 'contentkit-cockpit-contract-meta',
+    transformIndexHtml(html) {
+      const css = readFileSync(fileURLToPath(new URL('../../contract/cockpit-ui.css', import.meta.url)), 'utf8')
+      const digest = createHash('sha256').update(css).digest('hex').slice(0, 12)
+      return html.replace(
+        '</head>',
+        `  <meta name="cockpit-ui-contract" content="cockpit-ui" />\n` +
+          `    <meta name="cockpit-ui-digest" content="sha256-${digest}" />\n  </head>`,
+      )
+    },
+  }
+}
+
 export default defineConfig({
   base: '/cockpit/',
-  plugins: [react(), tailwind()],
+  plugins: [react(), tailwind(), contractMeta()],
   // `@/` spelled out here rather than left to tsconfig `paths`. `vite build`
   // resolves those on its own, so this file got away without the alias — but the
   // dev server's import-analysis pass does not, and `npm run dev` has therefore

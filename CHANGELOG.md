@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.16.0 — 2026-08-07
+
+Seven contract clauses this console did not hold. Coverage goes from **38 of 48
+to 45**.
+
+### Added
+
+- **The console declares which contract it implements** (CUI-MARK-1/2). The
+  served document carries the contract name and a digest computed at build time
+  from `contract/cockpit-ui.css`, and the shell carries `data-cockpit-ui`.
+  Derived, not typed: a hand-written version number cannot notice when two
+  products' bytes drift apart. The digest here matches the sibling's exactly,
+  which is the contract working.
+
+- **The assistant says which model answers** (CUI-AI-1/2). This console streamed
+  a model's prose on a whole page and attributed it to nobody — it could not,
+  because the model is deployment configuration and the stream carries text.
+  `OPTIONS /v1/assistant/messages`, the probe the console already makes to learn
+  whether the assistant is enabled, now answers with the model name.
+
+  The identity renders in the outline variant, never a success one: the
+  assistant's answers are the one thing here nobody measured, and every other
+  number on screen came from a count of rows or a duration.
+
+### Added — enforcement
+
+- Tests for CUI-THEME-3 (the pre-paint script and the store resolve the scheme
+  by the same rule), CUI-THEME-5 (signing out does not reset the theme — the
+  login page is the next paint) and CUI-LOAD-4 (no page hand-rolls the error
+  branch `TableState` owns).
+
+  These arrived as a group for one reason: the sibling closed its own contract
+  gap and, doing so, wrote tests for rules BOTH consoles carry. The family
+  document is byte-identical in both repositories; the enforcement was not.
+
 ## 4.15.1 — 2026-08-07
 
 ### Fixed

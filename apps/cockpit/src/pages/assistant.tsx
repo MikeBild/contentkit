@@ -4,6 +4,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BotMessageSquare, ExternalLink, ShieldQuestionMark, TriangleAlert } from 'lucide-react'
 import { Page } from '@/app/shell'
+import { ModelAttribution } from '@/components/ai/model-attribution'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -39,6 +40,7 @@ export function AssistantPage() {
   const { site } = useSite()
   const [input, setInput] = useState('')
   const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [model, setModel] = useState<string | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
   // The AI SDK drives this POST itself, so it never passes through the API
@@ -73,7 +75,15 @@ export function AssistantPage() {
   // Without CONTENTKIT_ANTHROPIC_API_KEY the route does not exist at all.
   useEffect(() => {
     fetch('/v1/assistant/messages', { method: 'OPTIONS' })
-      .then((response) => setEnabled(response.status !== 404))
+      .then((response) => {
+        setEnabled(response.status !== 404)
+        // The same probe now answers WHICH model replies — CUI-AI-2. This page
+        // streams a model's prose and attributed it to nobody, which it could
+        // not fix on its own: the model is deployment configuration, and the
+        // stream carries text. Null when the header is absent, and the
+        // attribution then renders nothing rather than inventing a name.
+        setModel(response.headers.get('x-assistant-model'))
+      })
       .catch(() => setEnabled(false))
   }, [])
 
@@ -103,7 +113,12 @@ export function AssistantPage() {
       title="Assistant"
       description="Describe what you want to publish. The assistant drafts revisions; publishing still needs your explicit approval."
       actions={
-        messages.length > 0 ? (
+        <div className="flex items-center gap-3">
+          {/* Which model is answering, beside the words it produces — CUI-AI-2.
+              Not on a settings page and not behind a disclosure: this is where
+              somebody decides whether to act on what they just read. */}
+          <ModelAttribution model={model} />
+          {messages.length > 0 ? (
           <Button
             variant="outline"
             data-testid="assistant-new"
@@ -115,7 +130,8 @@ export function AssistantPage() {
           >
             New conversation
           </Button>
-        ) : null
+          ) : null}
+        </div>
       }
     >
       <Card className="h-[calc(100vh-11rem)] gap-0 py-0">

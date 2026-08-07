@@ -776,6 +776,12 @@ const UNCOVERED = [
     ],
   },
   {
+    id: 'ai/how-model-output-is-labelled',
+    missing:
+      'That the attribution renders nothing when no model is reported rather than an empty chip; that a confidence with a denominator reads differently from a self-reported one; that the assistant page shows the name the OPTIONS probe returned and not a stale one from a previous deployment.',
+    where: ['components/ai/model-attribution.tsx'],
+  },
+  {
     id: 'profile/the-account-surface',
     missing:
       'That both session clocks count down against one shared tick; that the held and not-held scope lists are complements over PRODUCT_SCOPES; that an absent display_name falls back to email and then to subject rather than rendering blank; that the operator menu opens, names the subject, and routes to this page.',

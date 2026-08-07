@@ -43,8 +43,9 @@
       ]
     },
     "CUI-THEME-3": {
-      "enforced_by": [],
-      "why": "The blocking pre-paint script and the store now resolve identically by construction (both treat key-absence as system), but nothing asserts the two agree — they are still edited independently."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-THEME-4": {
       "enforced_by": [
@@ -53,8 +54,9 @@
       "why": "The store applies the class through its environment and the test asserts it; that index.css's dark variant keys off the same class is held by the css itself."
     },
     "CUI-THEME-5": {
-      "enforced_by": [],
-      "why": "Sign-out is a navigation and no test drives it. The funnel now reads the ck-cockpit-theme cookie, so clearing it on logout would flash the operator's own login page — this clause is now load-bearing and still ungraded."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-MOUNT-1": {
       "enforced_by": [
@@ -77,12 +79,14 @@
       ]
     },
     "CUI-MARK-1": {
-      "enforced_by": [],
-      "why": "The build-time meta injection is not written yet. Until it is, this product declares no contract version and no token digest to a browser, which is exactly the blindness that let mcp-auth-v2 carry a hand-typed marker across four repos."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-MARK-2": {
-      "enforced_by": [],
-      "why": "The shell renders no `data-cockpit-ui` attribute yet, so a screenshot or a cross-product probe cannot tell which contract this console implements."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-PAGE-1": {
       "enforced_by": [
@@ -171,8 +175,9 @@
       ]
     },
     "CUI-LOAD-4": {
-      "enforced_by": [],
-      "why": "The three states are each checked; that they render VISIBLY differently from one another is graded by reading source. This is the rule the four-states section exists for and it is the one nothing holds."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-LAYOUT-1": {
       "enforced_by": [
@@ -229,20 +234,22 @@
       ]
     },
     "CUI-AI-1": {
-      "enforced_by": [],
-      "why": "The assistant renders model output as chat, where no health-or-confirmation token applies. The rule binds this product only once structured model output lands in a card."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-AI-2": {
-      "enforced_by": [],
-      "why": "pages/assistant.tsx shows no model identity or generation time today."
+      "enforced_by": [
+        "test/unit/cockpit-marker-and-theme.test.mjs"
+      ]
     },
     "CUI-AI-3": {
       "enforced_by": [],
-      "why": "Elicitations carry their own context; free-text turns state no provenance and nothing checks it."
+      "why": "The assistant streams a conversation, not a finding with named inputs. There is no provenance to state and none to check: what the model was shown is the whole thread, which is already on screen. The clause reads as not-applicable here rather than unmet, and saying so is different from leaving it blank."
     },
     "CUI-AI-4": {
       "enforced_by": [],
-      "why": "Elicitation approval posts to /v1/assistant/elicitations/{id}, so the affordance does record the answer — but nothing asserts the pair is absent where no endpoint exists."
+      "why": "Nothing in this console asks an operator to accept or reject model output. The assistant's own elicitation flow is the approval mechanism and it is server-driven, so there is no local accept/reject pair that could discard a judgement. Not-applicable rather than unmet."
     }
   }
 }

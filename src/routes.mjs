@@ -1040,7 +1040,17 @@ export function createRequestHandler(ctx) {
     // gate rather than growing a second way in.
     if (apiHost && path === '/v1/assistant/messages') {
       if (req.method === 'OPTIONS')
-        return assistant ? send(res, 204, '', { allow: 'POST, OPTIONS' }) : sendJson(res, 404, { error: 'not_found' })
+        // The probe the console already makes to learn whether the assistant is
+        // enabled now also answers WHICH MODEL replies. The console rendered
+        // model output — a whole page of it — and attributed it to nobody,
+        // because it had no way to know: the model is configuration, the stream
+        // carries prose, and nothing in between said the name.
+        //
+        // A header rather than a body, because the probe is a 204 and turning it
+        // into a document would change a contract the console already depends on.
+        return assistant
+          ? send(res, 204, '', { allow: 'POST, OPTIONS', 'x-assistant-model': config.assistantModel })
+          : sendJson(res, 404, { error: 'not_found' })
       if (req.method !== 'POST') return send(res, 405, '', { allow: 'POST, OPTIONS' })
       if (!assistant) return sendJson(res, 404, { error: 'assistant_not_enabled' })
       const principal = await requireScope(req, res, 'content:read')
