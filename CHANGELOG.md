@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.15.1 — 2026-08-07
+
+### Fixed
+
+- The operator menu printed the display name twice — once on the trigger and
+  again in the header directly below it. Two elements saying one thing is the
+  defect the menu was built to remove, arriving from the other side. The header
+  now carries the email and nothing else, and only when the trigger is not
+  already showing it; the email is the part that is genuinely additional,
+  because it tells two people with the same display name apart.
+
+  The same defect was reported and fixed in the sibling console first. It was
+  present here and went unfixed, which is what a report about one product of a
+  family is worth remembering for.
+
 ## 4.15.0 — 2026-08-07
 
 ### Added

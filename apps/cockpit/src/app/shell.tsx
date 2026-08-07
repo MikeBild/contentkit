@@ -884,15 +884,27 @@ function OperatorMenu() {
           question at that moment. It lives on Profile, one item below, where
           there is room to say what it is for.
         */}
-        <DropdownMenuLabel className="font-normal">
-          <span className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium">{session.display_name || session.email || 'Signed in'}</span>
-            {session.display_name && session.email ? (
+        {/*
+          The header carries the email and NOTHING ELSE — and only when the
+          trigger is not already showing it.
+
+          It used to repeat the display name that the trigger directly above
+          already prints, which is the same defect this menu was built to fix
+          arriving from the other side: two elements saying one thing. The email
+          is the part that is genuinely additional, because it is what tells two
+          people with the same display name apart.
+
+          When there is no display name the trigger already shows the email, so
+          the header would be the duplicate — and then there is no header.
+        */}
+        {session.display_name && session.email ? (
+          <>
+            <DropdownMenuLabel className="font-normal">
               <span className="text-xs break-all text-muted-foreground">{session.email}</span>
-            ) : null}
-          </span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem asChild data-testid="profile-link">
           <AppLink to="/profile" data-testid="nav-profile">
             <UserRound data-icon="inline-start" />
