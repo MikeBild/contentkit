@@ -102,9 +102,6 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       deckJobs,
       secretHandoffs,
     })
-  // Cold rendering pays for Shiki grammars and ECharts init once. Paying it at
-  // boot rather than on a reader's first request keeps that request fast.
-  void warmRenderer()
   const outbox = dependencies.outbox || createOutboxWorker(config, db, logger)
   const maintenance = dependencies.maintenance || createMaintenance(config, db, storage, logger)
   const limiter = createLimiter()
@@ -290,6 +287,11 @@ export async function start(config = loadConfig()) {
     version: config.version,
     migrations: migrationReport,
   })
+  // Cold rendering pays for Shiki grammars and ECharts init once. Warming at
+  // boot keeps a reader's first request fast — but the warm-up chews the event
+  // loop for ~10s on the production droplet, so it runs after the listener is
+  // open rather than gating it: that was most of the deploy restart window.
+  void warmRenderer()
   let stopping = false
   async function shutdown(signal) {
     if (stopping) return

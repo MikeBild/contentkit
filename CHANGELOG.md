@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.18.1 — 2026-08-07
+
+4.18.0 cut the deploy restart window from 30–60s to ~15s; measuring that boot
+showed the renderer warm-up, not storage, holding the remaining ten seconds:
+`warmRenderer()` fired during app construction and chewed the event loop while
+the bucket check waited behind it, all before the listener opened.
+
+### Changed
+
+- The renderer warm-up now runs after `listen()` instead of gating it. The
+  restart window drops to roughly the Node module import (~5s on the
+  production droplet) — inside every probe's budget, so a deploy can no longer
+  produce a probe timeout at all. A reader whose request beats the warm-up
+  pays the cold render, exactly as a failed warm-up always has.
+
 ## 4.18.0 — 2026-08-07
 
 Every ContentKit probe timeout in the three days to 2026-08-07 — eighteen of
