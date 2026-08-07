@@ -2,7 +2,7 @@
   "name": "contentkit-cockpit",
   "private": true,
   "type": "module",
-  "description": "ContentKit Cockpit — the first-party operator console, served by ContentKit itself under /cockpit/",
+  "description": "ContentKit Cockpit \u2014 the first-party operator console, served by ContentKit itself under /cockpit/",
   "engines": {
     "node": ">=22.12"
   },
@@ -57,6 +57,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8"
+    "brace-expansion": "^5.0.8",
+    "js-yaml": "^4.3.1"
   }
 }
