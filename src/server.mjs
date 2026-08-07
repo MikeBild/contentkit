@@ -22,7 +22,6 @@ import { createUsageTelemetry } from './usage.mjs'
 import { createAudit } from './audit.mjs'
 import { createOAuthMount } from './oauth/server.mjs'
 import { createAssistant } from './assistant.mjs'
-import { warmRenderer } from './render-fragment.mjs'
 import { createMcpMount } from './mcp/server.mjs'
 import { createSecretHandoffs } from './secret-handoffs.mjs'
 import { nodeWebHandler } from './web-bridge.mjs'
@@ -287,11 +286,13 @@ export async function start(config = loadConfig()) {
     version: config.version,
     migrations: migrationReport,
   })
-  // Cold rendering pays for Shiki grammars and ECharts init once. Warming at
-  // boot keeps a reader's first request fast — but the warm-up chews the event
-  // loop for ~10s on the production droplet, so it runs after the listener is
-  // open rather than gating it: that was most of the deploy restart window.
-  void warmRenderer()
+  // No renderer warm-up here, deliberately. Initializing Shiki's full language
+  // bundle monopolizes the event loop for ~10s on a small droplet, and it does
+  // so wherever it runs — before listen() it held the restart window at 15s,
+  // after listen() it starved probes of an open-but-unresponsive socket.
+  // Release builds pay the cost inside their own Worker (build-runner.mjs);
+  // in-process rendering is only the console's preview, whose first caller
+  // pays the cold cost exactly as a failed warm-up always implied.
   let stopping = false
   async function shutdown(signal) {
     if (stopping) return

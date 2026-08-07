@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.18.2 — 2026-08-07
+
+4.18.1 moved the renderer warm-up behind `listen()` and the production probes
+answered the theory precisely: one health probe arrived 0.4s after the socket
+opened and starved for ten seconds against an open-but-unresponsive listener.
+The warm-up — Shiki's full language bundle — monopolizes the event loop
+wherever it is placed; there is no ordering that hides a ten-second
+monopolization from a ten-second probe.
+
+### Removed
+
+- The boot-time renderer warm-up. Release builds already pay Shiki's
+  initialization inside their own Worker (`build-runner.mjs`), published sites
+  are static and never touch the renderer, and the one in-process caller — the
+  console's preview — now pays the cold cost on its first render, exactly what
+  a failed warm-up always implied. The deploy restart window becomes the Node
+  module import alone (~6s on the production droplet), inside every probe's
+  budget.
+
 ## 4.18.1 — 2026-08-07
 
 4.18.0 cut the deploy restart window from 30–60s to ~15s; measuring that boot

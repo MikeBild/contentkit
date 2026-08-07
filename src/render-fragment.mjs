@@ -101,13 +101,3 @@ export async function renderFragment({ markdown, site = {}, locale, scheme = 'au
     etag: renderFragmentEtag({ markdown: source, scheme, themeHash, locale: resolvedLocale, version }),
   })
 }
-
-/** Boot-time warm-up. Cold rendering pays for Shiki grammars and ECharts init. */
-export async function warmRenderer() {
-  try {
-    await renderFragment({ markdown: '# Warm\n\nText with `code`.\n', version: 'warmup' })
-  } catch {
-    // A failed warm-up must never keep the server from starting; the first real
-    // request simply pays the cold cost instead.
-  }
-}

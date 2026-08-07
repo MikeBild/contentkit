@@ -1,6 +1,6 @@
 {
   "name": "contentkit",
-  "version": "4.18.1",
+  "version": "4.18.2",
   "description": "Headless Markdown mini-CMS with semantic visual composition and information patterns",
   "private": true,
   "type": "module",
