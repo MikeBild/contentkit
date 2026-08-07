@@ -220,8 +220,9 @@
       ]
     },
     "CUI-A11Y-5": {
-      "enforced_by": [],
-      "why": "Aspirational. UI-UX.md has said so in as many words since the review that found it credited to two files asserting no such thing."
+      "enforced_by": [
+        "test/unit/cockpit-colour.test.mjs"
+      ]
     },
     "CUI-NAV-1": {
       "enforced_by": [
@@ -245,11 +246,15 @@
     },
     "CUI-AI-3": {
       "enforced_by": [],
-      "why": "The assistant streams a conversation, not a finding with named inputs. There is no provenance to state and none to check: what the model was shown is the whole thread, which is already on screen. The clause reads as not-applicable here rather than unmet, and saying so is different from leaving it blank."
+      "not_applicable": true,
+      "why": "The assistant streams a CONVERSATION, not a finding with named inputs. What the model was shown is the thread, and the thread is already on screen — there is no hidden source to state and none to check.",
+      "trigger": "Applies as soon as this console renders model output that is not the conversation itself: a generated summary, a suggested rewrite presented outside the thread, or any surface where the inputs are not visible beside the output."
     },
     "CUI-AI-4": {
       "enforced_by": [],
-      "why": "Nothing in this console asks an operator to accept or reject model output. The assistant's own elicitation flow is the approval mechanism and it is server-driven, so there is no local accept/reject pair that could discard a judgement. Not-applicable rather than unmet."
+      "not_applicable": true,
+      "why": "Nothing here asks an operator to accept or reject model output. The assistant's own elicitation flow is the approval mechanism and it is server-driven, so there is no local accept/reject pair that could discard a judgement.",
+      "trigger": "Applies with the first accept/reject control rendered by the console itself rather than by an elicitation — for example a 'use this rewrite' button on a suggestion."
     }
   }
 }

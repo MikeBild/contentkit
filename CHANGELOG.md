@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.17.0 — 2026-08-07
+
+Contract coverage: **46 of 48 enforced, 2 not applicable, 0 open.** Every clause
+is now either held by a test or explicitly parked with the change that would
+revive it.
+
+### Changed — the conformance map has three states, not two
+
+A rule can be *enforced*, *unenforced*, or **not applicable**, and the third
+requires a `trigger` naming what would make it bite. Counting "does not apply
+here" with "nobody has got to it" made the number lie in the pessimistic
+direction.
+
+The two AI clauses parked here were already described as not-applicable in
+prose; they now say it structurally and carry their triggers. CUI-AI-3 applies
+as soon as this console renders model output that is not the conversation
+itself — a generated summary, a suggested rewrite presented outside the thread.
+CUI-AI-4 applies with the first accept/reject control the console renders
+itself rather than through an elicitation.
+
+### Added
+
+- **Colour is never alone** (CUI-A11Y-5). No badge or alert conveys its state by
+  colour with no word, and `StatusBadge` still attaches a glyph for warnings.
+
+### Fixed
+
+- One destructive alert carried its severity in colour alone — the site
+  switcher's error. Every other destructive alert in this console leads with a
+  triangle; that one did not, because the registry `Alert` draws no glyph of its
+  own and the icon is a call-site responsibility here.
+
 ## 4.16.0 — 2026-08-07
 
 Seven contract clauses this console did not hold. Coverage goes from **38 of 48

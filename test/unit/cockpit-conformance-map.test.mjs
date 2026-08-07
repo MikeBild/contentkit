@@ -55,6 +55,30 @@ describe('cockpit-ui conformance', () => {
     }
   })
 
+  test('a rule marked not-applicable says what would make it apply', () => {
+    // Three states, not two. A rule can be enforced, unenforced, or NOT
+    // APPLICABLE — and counting the third with the second made the coverage
+    // number lie in the pessimistic direction.
+    //
+    // `trigger` is what stops this being an escape hatch. Without it the state
+    // is a shrug; with it there is a sentence somebody meets on the day it stops
+    // being true. A rule that silently became applicable is worse than one
+    // openly unenforced, because nobody is looking for it.
+    for (const [id, entry] of Object.entries(map.rules)) {
+      if (!entry.not_applicable) continue
+      assert.equal(
+        entry.enforced_by.length,
+        0,
+        `${id} is marked not-applicable AND names enforcement. Pick one: either the rule bites here, or it does not.`,
+      )
+      assert.ok(
+        typeof entry.trigger === 'string' && entry.trigger.trim().length > 20,
+        `${id} is parked as not-applicable with no trigger. Say what would make it apply — ` +
+          'without that sentence this is an exemption nobody will ever revisit.',
+      )
+    }
+  })
+
   test('a rule nothing enforces says why, in words', () => {
     for (const [id, entry] of Object.entries(map.rules)) {
       if (entry.enforced_by.length > 0) continue
@@ -70,7 +94,9 @@ describe('cockpit-ui conformance', () => {
   test('coverage is reported rather than implied', (t) => {
     const total = declared.length
     const held = declared.filter((id) => map.rules[id].enforced_by.length > 0).length
-    t.diagnostic(`cockpit-ui: ${held} of ${total} rules enforced in this product`)
+    const parked = declared.filter((id) => map.rules[id].not_applicable).length
+    const open = declared.length - held - parked
+    t.diagnostic(`cockpit-ui: ${held} of ${total} enforced · ${parked} not applicable · ${open} open in this product`)
     // Deliberately not a threshold. The number is the point; a bar would invite
     // meeting it with a test that asserts nothing.
     assert.ok(total > 0)

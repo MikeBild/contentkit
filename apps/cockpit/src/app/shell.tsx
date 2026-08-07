@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  TriangleAlert,
   Volume2,
   Webhook,
 } from 'lucide-react'
@@ -989,6 +990,11 @@ function SiteSwitcher({
   if (error)
     return (
       <Alert variant="destructive" data-testid="site-switcher-error" className="group-data-[collapsible=icon]:hidden">
+        {/* Direct child, before the title: the destructive variant states its
+            severity in a hue, and a hue is not a statement — CUI-A11Y-5. It also
+            has to be a direct child, because the CVA only re-grids on
+            `has-[>svg]` and an icon in a wrapper is not one. */}
+        <TriangleAlert />
         <AlertTitle>Sites could not be loaded</AlertTitle>
         <AlertDescription>{error instanceof Error ? error.message : 'The site list is unavailable.'}</AlertDescription>
       </Alert>
