@@ -253,7 +253,16 @@ export function AudioPage() {
 
       <Card className="py-0">
         <div className="scrollbar-thin overflow-x-auto">
-          <Table>
+          <Table
+            mobileLabels={[
+              t('audio.title'),
+              t('audio.status'),
+              t('audio.characters'),
+              t('audio.attempts'),
+              t('audio.created'),
+              '',
+            ]}
+          >
             <TableHeader>
               <TableRow>
                 <TableHead>{t('audio.title')}</TableHead>

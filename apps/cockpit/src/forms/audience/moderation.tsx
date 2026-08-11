@@ -121,7 +121,16 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
         </Select>
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('moderation.comments.author'),
+            t('moderation.comments.post'),
+            t('moderation.comments.comment'),
+            t('moderation.comments.status'),
+            t('moderation.comments.received'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('moderation.comments.author')}</TableHead>
@@ -269,7 +278,15 @@ export function ContactCard({ siteId }: { siteId: string }) {
         <CardTitle>{t('moderation.contact.title')}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('moderation.contact.from'),
+            t('moderation.contact.message'),
+            t('moderation.comments.status'),
+            t('moderation.comments.received'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('moderation.contact.from')}</TableHead>
@@ -438,7 +455,14 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
         </Select>
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('moderation.comments.post'),
+            t('moderation.feedback.up'),
+            t('moderation.feedback.down'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('moderation.comments.post')}</TableHead>

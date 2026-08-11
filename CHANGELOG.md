@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.19.1 — 2026-08-11
+
+### Fixed
+
+- Remove horizontal scrolling from Cockpit data tables. At narrow widths rows
+  now become translated label/value records with their actions at the end; at
+  wider widths cells wrap within a fixed table layout instead of widening the
+  application pane.
+- Strengthen the Cockpit browser gate across every route so a table no longer
+  receives an exception for horizontal overflow at 390 px.
+
 ## 4.19.0 — 2026-08-11
 
 ### Added

@@ -349,7 +349,7 @@ export function DataTable<Row>({
         </Card>
       ) : null}
       <Card className={cn('gap-0 py-0', renderMobileRow && describable && 'hidden md:flex')}>
-        <Table data-testid={`${testId}-table`}>
+        <Table data-testid={`${testId}-table`} mobileLabels={shown.map((column) => column.label)}>
           <TableHeader>
             <TableRow>
               {shown.map((column) => {

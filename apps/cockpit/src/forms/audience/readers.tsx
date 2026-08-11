@@ -292,7 +292,15 @@ export function ReadersCard({ site }: { site: string }) {
         ) : null}
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('audience.readers.username'),
+            t('audience.readers.displayName'),
+            t('audience.readers.active'),
+            t('audience.readers.groups'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('audience.readers.username')}</TableHead>

@@ -51,7 +51,15 @@ export function SitesPage() {
           reserves for stacked blocks is taken back rather than drawn around a
           header row that already has its own. */}
       <Card className="py-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('sites.name'),
+            t('sites.slug'),
+            t('sites.baseUrl'),
+            t('sites.defaultLocale'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('sites.name')}</TableHead>

@@ -204,7 +204,17 @@ export function ReleasesPage() {
       <PreviewsCard site={site} />
 
       <Card className="py-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('releases.status'),
+            t('releases.kind'),
+            t('releases.reason'),
+            t('releases.revisions'),
+            t('releases.files'),
+            t('releases.completed'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('releases.status')}</TableHead>

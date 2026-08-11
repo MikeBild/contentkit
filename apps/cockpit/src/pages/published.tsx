@@ -109,7 +109,16 @@ export function PublishedPage() {
 
       <Card className="py-0">
         <div className="scrollbar-thin overflow-x-auto">
-          <Table>
+          <Table
+            mobileLabels={[
+              t('published.title'),
+              t('published.kind'),
+              t('published.locale'),
+              t('published.slug'),
+              searching ? t('published.match') : t('published.updated'),
+              '',
+            ]}
+          >
             <TableHeader>
               <TableRow>
                 <TableHead>{t('published.title')}</TableHead>

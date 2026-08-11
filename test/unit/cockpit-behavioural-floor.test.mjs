@@ -137,6 +137,18 @@ const named = (kase) => `${kase.suite} ${kase.title}`
  * they are what stops a case being emptied while keeping its title.
  */
 const CONTRACTS = [
+  // ── Responsive tables: components/ui/table.tsx ────────────────────────────
+  {
+    id: 'table/mobile-labels-distinguish-data-from-actions',
+    promise:
+      'Every narrow table row receives its translated data labels in column order, while an intentionally blank final label identifies controls that belong after the data rather than beside a fake heading.',
+    incident:
+      'Pinning the last cell kept controls reachable but left every table two to five phone widths wide; the data still required horizontal scrolling.',
+    title: /marks an action column|ordinary final data column/i,
+    asserts: [/mobileLabels/, /data-mobile-actions/],
+    min: 2,
+  },
+
   // ── The console's one Dialog: components/ui/dialog.tsx ─────────────────────
   //
   // Added when `ui/dialog.tsx` stopped being the console's own `role="dialog"`

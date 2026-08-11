@@ -213,7 +213,15 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
             />
           </div>
         ) : null}
-        <Table>
+        <Table
+          mobileLabels={[
+            t('siteForm.url'),
+            t('webhook.events'),
+            t('webhook.description'),
+            t('webhook.state'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('siteForm.url')}</TableHead>
@@ -435,7 +443,17 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('webhook.event'),
+            t('webhook.endpoint'),
+            t('webhook.status'),
+            t('webhook.attempts'),
+            t('webhook.response'),
+            t('webhook.created'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('webhook.event')}</TableHead>

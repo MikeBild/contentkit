@@ -309,7 +309,15 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
         ) : null}
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('audience.groups.slug'),
+            t('audience.groups.name'),
+            t('audience.groups.members'),
+            t('audience.groups.usedBy'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('audience.groups.slug')}</TableHead>

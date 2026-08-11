@@ -193,12 +193,10 @@ const measure = () => {
  *
  * Two questions, both of them §7's:
  *
- *  - **What scrolls sideways?** §7 allows a table to and nothing else. Every
- *    other sideways scroller in the page is reported by name.
- *  - **What did that scroll take with it?** A table is allowed to hold data off
- *    screen. It is not allowed to hold the row's own controls off screen: an
- *    `Approve` that is 600px to the right of a 390px window is a control the
- *    operator has no reason to believe exists.
+ *  - **What scrolls sideways?** Nothing. Tables stack into labelled records at
+ *    this width, so they no longer receive the old exemption.
+ *  - **Where are row controls?** Every control remains inside the viewport; this
+ *    catches a malformed row even when its container itself does not scroll.
  */
 const measureNarrow = (viewportWidth) => {
   const sideways = []
@@ -208,9 +206,6 @@ const measureNarrow = (viewportWidth) => {
     if (style.display === 'none' || style.visibility === 'hidden') continue
     if (!['auto', 'scroll'].includes(style.overflowX)) continue
     if (element.scrollWidth <= element.clientWidth + 1) continue
-    // The one exemption §7 grants, and it is granted to the element that holds
-    // a table rather than to anything that happens to contain one.
-    if (element.querySelector(':scope > table')) continue
     sideways.push({
       tag: element.tagName.toLowerCase(),
       testId: element.getAttribute('data-testid'),
@@ -414,7 +409,7 @@ try {
       } else {
         expect(
           overflow <= 0,
-          `${where} (${seen.title}): the document is ${overflow}px wider than the window and body is overflow:hidden, so that ${overflow}px is unreachable. Outside a table's own scroll container, nothing may overflow. Widest offenders: ${
+          `${where} (${seen.title}): the document is ${overflow}px wider than the window and body is overflow:hidden, so that ${overflow}px is unreachable. Nothing may overflow horizontally. Widest offenders: ${
             seen.spilling
               .map((item) => `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> "${item.text}"`)
               .join(', ') || 'none identified'
@@ -422,14 +417,14 @@ try {
         )
       }
 
-      // ── Case 8. At a phone width, only a table scrolls sideways, and a row's
-      //    controls are never what a table takes off screen.
+      // ── Case 8. At a phone width nothing scrolls sideways, and every row's
+      //    controls remain inside the viewport.
       if (viewport.narrow) {
         const narrow = await page.evaluate(measureNarrow, viewport.width)
         note({ viewport: viewport.name, route, ...narrow })
         expect(
           narrow.sidewaysCount === 0,
-          `${where} (${seen.title}): ${narrow.sidewaysCount} element(s) scroll sideways that are not a table. UI-UX.md §7 allows a table to and nothing else — a tab strip or a step strip with entries past its right edge hides them with no scrollbar an operator reads as one. Offenders: ${
+          `${where} (${seen.title}): ${narrow.sidewaysCount} element(s) scroll sideways. UI-UX.md §7 requires one vertical reading axis, including for tables. Offenders: ${
             narrow.sideways
               .map(
                 (item) =>
@@ -440,7 +435,7 @@ try {
         )
         expect(
           narrow.strandedCount === 0,
-          `${where} (${seen.title}): ${narrow.strandedCount} control(s) in table rows sit outside the ${viewport.width}px window. A table may hold its data off screen; the row's own actions are not data, and an operator has no reason to believe they exist. Stranded: ${
+          `${where} (${seen.title}): ${narrow.strandedCount} control(s) in table rows sit outside the ${viewport.width}px window. A stacked row keeps every value and action in the viewport. Stranded: ${
             narrow.stranded.map((item) => `"${item.text}" (${item.testId}) at x=${item.at}`).join(', ') ||
             'none identified'
           }`,
@@ -835,8 +830,7 @@ try {
               const style = getComputedStyle(element)
               if (style.display === 'none' || style.visibility === 'hidden') return false
               if (!['auto', 'scroll'].includes(style.overflowX)) return false
-              if (element.scrollWidth <= element.clientWidth + 1) return false
-              return !element.querySelector(':scope > table')
+              return element.scrollWidth > element.clientWidth + 1
             })
             .map((element) => ({
               testId: element.getAttribute('data-testid'),
@@ -870,9 +864,7 @@ try {
         seen !== null && seen.sideways.length === 0,
         `390×667 ${route} ${label}: ${seen?.sideways.length} element(s) inside the dialog scroll sideways — ${seen?.sideways
           .map((entry) => `${entry.testId} by ${entry.by}px`)
-          .join(
-            ', ',
-          )}. §7 grants that to a table and to nothing else, and a wizard whose remaining steps are off the edge of its own strip is the case the rule is about.`,
+          .join(', ')}. §7 requires one vertical reading axis, including inside dialogs.`,
       )
 
       await page.keyboard.press('Escape')
@@ -919,7 +911,7 @@ if (failures.length > 0) {
           'below 768 the sidebar is an off-canvas sheet its trigger opens',
           'the collapsed rail names every entry, the site switcher included',
           "a tab's count equals the list behind it, and the open tab's count is deferred rather than dropped",
-          'at 390 only a table scrolls sideways, and no row keeps its own controls off screen',
+          'at 390 nothing scrolls sideways, and no row keeps its own controls off screen',
           "at 390×667 a dialog's footer is inside the dialog and inside the window",
         ],
         known_horizontal_overflow: [...KNOWN_HORIZONTAL_OVERFLOW],

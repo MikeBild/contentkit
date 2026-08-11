@@ -638,7 +638,15 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
             )}
           </Confirm>
         </div>
-        <Table>
+        <Table
+          mobileLabels={[
+            t('content.audio.status'),
+            t('content.audio.attempts'),
+            t('content.audio.characters'),
+            t('content.audio.error'),
+            t('content.audio.updated'),
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('content.audio.status')}</TableHead>

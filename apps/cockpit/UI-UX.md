@@ -170,8 +170,9 @@ reason this is written down.
   an unbounded wrapper once made nine tenths of a page unreachable with no scrollbar
   to say so.
 - Spacing is `flex` + `gap-*`. Never `space-y-*`.
-- A table wide enough to overflow scrolls inside its own container, never by pushing
-  the page sideways.
+- Tables use the pane they have: cells wrap at desktop widths and rows become
+  labelled records below `md`. A data list never introduces a second horizontal
+  navigation axis.
 - **A list is a `DataTable`.** It carries the four states, cursor pagination, the
   column chooser and the sort-capability rule in one place. `Card` + `Table` +
   `TableState` is the older hand-rolled shape; it is not wrong, but it is a second
@@ -190,9 +191,9 @@ reason this is written down.
 
 ## 7. Responsiveness
 
-Minimum for a new or touched page: **usable at 390px wide.** A table may scroll
-horizontally inside its own container; nothing else may, and a table may not take
-the row's own controls with it.
+Minimum for a new or touched page: **usable at 390px wide.** Nothing scrolls
+horizontally. Below `md`, every table row stacks into label/value pairs and keeps
+its controls in the normal vertical reading order.
 
 ### The count of responsive classes was the wrong measurement
 
@@ -211,7 +212,7 @@ So the console was driven at 390 instead, every route and every dialog
 
 | Measured at 390 | Was | Is |
 |---|---|---|
-| Row actions in lists | `Edit`/`Revoke`/`Approve`/`Delete` 370–1400px off the right of the window on **every** list — the tables are 713px (groups) to 1749px (webhook endpoints) inside a 342px container, and the last column is the actions on all of them | The last cell is pinned to the right edge below `md`, bounded to `max-w-36` so it cannot eat the identity column |
+| Tables and row actions | `Edit`/`Revoke`/`Approve`/`Delete` were 370–1400px off the right of the window; pinning that last cell still left the data two to five windows wide | Below `md`, rows are labelled records with actions at the end. At wider widths the native table uses fixed layout and wrapping, so neither the data nor its controls scroll sideways |
 | Dialog footers | Four dialogs put their own answer below the fold at 390×667; `ck-api-key-dialog` laid out 1406px of form in a 635px panel and left Create 700px past a window that cannot scroll | The panel's middle row gives, so the body scrolls and the footer stays |
 | The wizard's step strip | Scrolled sideways at every viewport; at 390 steps 3 and 4 were 219px and 361px past the window | Wraps |
 | Tab strips | Adding counts took the moderation strip to 349px inside 342px | Wrap |
@@ -221,18 +222,9 @@ So the console was driven at 390 instead, every route and every dialog
 Every row above is held by a case at 390 in the browser suite, so this table
 cannot quietly stop being true.
 
-### What is still true and is not fixed
-
-A list at 390 is a table two to five times the width of the window, and pinning
-its actions does not change that: on `/moderation` a row is 257px tall because
-the comment being moderated is off to the right, so the page whose job is reading
-a comment shows an author and whitespace. Letting cells wrap below `md` was
-measured — it takes moderation from 943px to 703px and webhooks from 1749px to
-886px, at the cost of row heights of 77–257px — and it is a trade, not a fix.
-**The honest statement is that lists are reachable at 390 and not yet readable
-at it.** The answer is a row that stacks below `md` rather than a table that
-scrolls, and that is a change to `DataTable` and the nine hand-rolled lists §6
-already wants moved onto it — not a class.
+The stacked presentation keeps the native `<table>` and its headers in the DOM;
+only the visual layout changes. `Table.mobileLabels` is required, so a new table
+cannot silently ship a narrow layout whose values have no visible names.
 
 ---
 

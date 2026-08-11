@@ -382,7 +382,17 @@ export function IdentityGrantsCard() {
         </Button>
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('identity.subject'),
+            t('identity.provider'),
+            t('identity.role'),
+            t('identity.ceiling'),
+            t('identity.sites'),
+            t('webhook.created'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('identity.subject')}</TableHead>

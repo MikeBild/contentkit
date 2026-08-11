@@ -358,7 +358,14 @@ export function CompositionsPage() {
 
         <Card className="py-0">
           <div className="scrollbar-thin overflow-x-auto">
-            <Table>
+            <Table
+              mobileLabels={[
+                t('composition.table.pattern'),
+                t('composition.filter.category'),
+                t('composition.filter.scope'),
+                t('composition.filter.status'),
+              ]}
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('composition.table.pattern')}</TableHead>
@@ -425,7 +432,14 @@ export function CompositionsPage() {
         </p>
         <Card className="py-0">
           <div className="scrollbar-thin overflow-x-auto">
-            <Table>
+            <Table
+              mobileLabels={[
+                t('composition.table.guide'),
+                t('composition.table.kind'),
+                t('composition.table.summary'),
+                t('composition.filter.status'),
+              ]}
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('composition.table.guide')}</TableHead>

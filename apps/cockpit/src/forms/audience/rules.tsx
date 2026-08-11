@@ -249,7 +249,15 @@ export function RulesCard({
         ) : null}
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
+        <Table
+          mobileLabels={[
+            t('audience.rules.match'),
+            t('audience.rules.path'),
+            t('audience.readers.groups'),
+            t('audience.readers.title'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('audience.rules.match')}</TableHead>

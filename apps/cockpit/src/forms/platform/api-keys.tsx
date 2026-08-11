@@ -216,7 +216,18 @@ export function ApiKeysCard() {
             />
           </div>
         ) : null}
-        <Table>
+        <Table
+          mobileLabels={[
+            t('apiKey.name'),
+            t('apiKey.prefix'),
+            t('apiKey.scopes'),
+            t('identity.sites'),
+            t('apiKey.expires'),
+            t('webhook.created'),
+            t('apiKey.lastUsed'),
+            '',
+          ]}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('apiKey.name')}</TableHead>

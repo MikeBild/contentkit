@@ -45,7 +45,16 @@ export function Revisions({
 
   return (
     <div data-testid={testId} className="rounded-xl border border-border bg-surface">
-      <Table>
+      <Table
+        mobileLabels={[
+          t('content.revisions.status'),
+          t('content.revisions.slug'),
+          t('content.revisions.created'),
+          t('content.revisions.published'),
+          t('content.revisions.sourceHash'),
+          '',
+        ]}
+      >
         <TableHeader>
           <TableRow>
             <TableHead>{t('content.revisions.status')}</TableHead>

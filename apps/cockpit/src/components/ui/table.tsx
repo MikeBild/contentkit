@@ -4,50 +4,42 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+type TableProps = React.ComponentProps<"table"> & {
+  /**
+   * Column names in visual order. They become the left-hand labels of the
+   * stacked row below `md`; an empty final label marks an action cell.
+   */
+  mobileLabels: readonly string[]
+}
+
 /**
- * The one local deviation from what `shadcn add table` writes: below `md`, a
- * row's last cell is pinned to the right edge of the scroller.
- *
- * Measured at 390, every list in this console: the tables are 713px (groups) to
- * 1749px (webhook endpoints) wide inside a 342px container, and **the last
- * column is the row's actions on every one of them**. So `edit`, `revoke`,
- * `delete`, `approve` and `expand` sat between 370px and 1400px off the right
- * of the window — reachable only by scrolling a table sideways first, on a
- * surface where that gesture is also how you scroll the page. On a phone the
- * console was read-only by accident.
- *
- * UI-UX.md §7 lets a table scroll horizontally, and this keeps that: the data
- * still scrolls, in full, with nothing hidden. What stops scrolling is the
- * column that is not data. `md` rather than `sm` because 768px is the console's
- * own breakpoint — `useIsMobile`, the sidebar sheet and this now change shape
- * at the same width — and above it nothing about a table changes at all.
- *
- * `max-w-36` and `flex-wrap` are the other half, and they are what a first
- * attempt without them measured: pinned but unbounded, Readers' three controls
- * ("Edit", "Revoke sessions", "Delete") held 230px of a 342px window open
- * permanently and cut the username to 110px at *every* scroll position — the
- * column that says which reader is being revoked. Bounded, that cell is 139px,
- * the username gets 219px, and the three controls stack. Cells whose actions
- * already fit are untouched: `content` is 62px, `audio` 16px.
- *
- * `:last-child` rather than a marker class because the alternative is a prop
- * threaded through ten call sites that all already put their actions last; the
- * structure is the signal, and the narrow-viewport case in
- * `scripts/validate-cockpit-browser.mjs` is what checks it stays true.
+ * A table at desktop widths and a labelled record list below the shell's `md`
+ * breakpoint. The native table remains in the DOM, so its headers and row
+ * relationships stay available to assistive technology while CSS changes only
+ * the visual layout. Fixed desktop layout plus wrapping keeps long identifiers,
+ * URLs and translated headings inside the available pane instead of creating a
+ * second horizontal navigation axis.
  */
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({ className, mobileLabels, style, ...props }: TableProps) {
+  const labelProperties = Object.fromEntries(
+    mobileLabels.map((label, index) => [`--ck-table-label-${index + 1}`, JSON.stringify(label)]),
+  ) as React.CSSProperties
+  const hasActionColumn = mobileLabels.at(-1) === ''
+
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative min-w-0 w-full overflow-x-clip"
     >
       <table
         data-slot="table"
+        data-responsive-table="true"
+        data-mobile-actions={hasActionColumn ? 'true' : undefined}
         className={cn(
-          "w-full caption-bottom text-sm",
-          "max-md:[&_tr>:last-child]:sticky max-md:[&_tr>:last-child]:right-0 max-md:[&_tr>:last-child]:max-w-36 max-md:[&_tr>:last-child]:flex-wrap max-md:[&_tr>:last-child]:bg-card",
+          "w-full table-fixed caption-bottom text-sm",
           className
         )}
+        style={{ ...labelProperties, ...style }}
         {...props}
       />
     </div>
@@ -105,7 +97,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "h-10 px-2 text-left align-middle font-medium whitespace-normal break-words text-foreground [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -118,7 +110,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "p-2 align-middle whitespace-normal break-words [overflow-wrap:anywhere] [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
