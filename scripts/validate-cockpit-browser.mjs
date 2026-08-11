@@ -165,6 +165,46 @@ const measure = () => {
       testId: element.getAttribute('data-testid'),
       by: element.scrollWidth - element.clientWidth,
     }))
+  /**
+   * Text-bearing table controls must remain controls, not columns of letters.
+   *
+   * A max-width:0 rule on cells once kept the table itself inside its surface,
+   * so every overflow assertion above stayed green, while the German
+   * "Bearbeiten" button became nine one-character lines and a status badge
+   * clipped most of its word. Range rectangles observe the rendered text lines
+   * rather than inferring them from classes; scrollWidth catches the badge case
+   * whose fixed height hides the overflow instead of growing.
+   */
+  const crampedTableControls = [
+    ...document.querySelectorAll(
+      '[data-responsive-table="true"] [data-slot="button"]:not([data-size^="icon"]), [data-responsive-table="true"] [data-slot="badge"]',
+    ),
+  ]
+    .map((element) => {
+      const style = getComputedStyle(element)
+      const box = element.getBoundingClientRect()
+      const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ')
+      if (!text || style.display === 'none' || style.visibility === 'hidden' || box.width <= 1 || box.height <= 1)
+        return null
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const lines = new Set(
+        [...range.getClientRects()]
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .map((rect) => Math.round(rect.top)),
+      ).size
+      const clipped = element.scrollWidth > element.clientWidth + 1
+      if (lines <= 2 && !clipped) return null
+      return {
+        testId: element.getAttribute('data-testid'),
+        text: text.slice(0, 48),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        lines,
+        clipped,
+      }
+    })
+    .filter(Boolean)
 
   /** The nearest scrolling ancestor of the page, found by computed style. */
   let pane = page?.parentElement ?? null
@@ -216,6 +256,7 @@ const measure = () => {
     duplicateTestIds: duplicateTestIds.slice(0, 12),
     invalidTestIds: invalidTestIds.slice(0, 12),
     overflowingDataSurfaces: overflowingDataSurfaces.slice(0, 8),
+    crampedTableControls: crampedTableControls.slice(0, 8),
   }
 }
 
@@ -410,6 +451,15 @@ try {
         expect(
           seen.overflowingDataSurfaces.length === 0,
           `${where}: data surfaces are wider than their available container: ${seen.overflowingDataSurfaces.map((item) => `${item.testId ?? 'unnamed'} +${item.by}px`).join(', ')}.`,
+        )
+        expect(
+          seen.crampedTableControls.length === 0,
+          `${where}: table controls clip their words or break them into more than two lines: ${seen.crampedTableControls
+            .map(
+              (item) =>
+                `${item.testId ?? 'unnamed'} "${item.text}" ${item.width}×${item.height}px ${item.lines} line(s)${item.clipped ? ', clipped' : ''}`,
+            )
+            .join(', ')}.`,
         )
 
         // ── Case 1. Every route scrolls when its content exceeds the viewport.
@@ -1016,6 +1066,7 @@ if (failures.length > 0) {
           'no page scrolls the document; body is overflow:hidden by design',
           'nothing overflows horizontally outside a scroll container',
           'every visible data surface fits its own container',
+          'table buttons and badges neither clip nor split into columns of letters',
           'every rendered data-testid is globally unique',
           'every rendered data-testid uses lowercase kebab-case',
           'below 768 the sidebar is an off-canvas sheet its trigger opens',

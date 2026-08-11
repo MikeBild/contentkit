@@ -205,7 +205,6 @@
 [data-responsive-table='true'] [data-slot='table-head'],
 [data-responsive-table='true'] [data-slot='table-cell'] {
   min-width: 0;
-  max-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -218,6 +217,13 @@
 [data-responsive-table='true'] [data-slot='table-head'] > *,
 [data-responsive-table='true'] [data-slot='table-cell'] > * {
   max-width: 100%;
+}
+
+/* Status badges carry controlled, compact vocabulary and remain atomic. Their
+   border box may use the cell padding; constraining them to the content box
+   clips the last few pixels of timestamped states such as a paused webhook. */
+[data-responsive-table='true'] [data-slot='badge'] {
+  max-width: none;
 }
 
 [data-responsive-table='true'] [data-slot='table-head'] button {

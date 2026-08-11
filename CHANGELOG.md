@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.21.1 — 2026-08-11
+
+### Fixed
+
+- Keep Cockpit table cells at their assigned fixed-layout width instead of
+  collapsing status badges and row actions into clipped or letter-by-letter
+  columns. Timestamped status badges may use the cell padding without losing
+  their final characters.
+- Extend the real-browser Cockpit gate across both interface languages and all
+  routes so clipped badges and controls split across more than two rendered
+  text lines cannot ship again.
+
 ## 4.20.0 — 2026-08-11
 
 ### Added
