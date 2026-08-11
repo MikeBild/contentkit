@@ -284,10 +284,10 @@ export function MultiCombobox({
   return (
     <div ref={root} className={cn('relative', className)} data-testid={testId}>
       <div className={cn(SHELL, 'flex-wrap py-1')} aria-invalid={aria['aria-invalid']}>
-        {value.map((entry) => (
+        {value.map((entry, index) => (
           <Chip
             key={entry}
-            data-testid={`${testId}-chip-${entry}`}
+            data-testid={`${testId}-chip-${index}`}
             removeLabel={t('tag.remove', { value: entry })}
             onRemove={disabled ? undefined : () => toggle(entry)}
           >

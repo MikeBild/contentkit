@@ -218,7 +218,7 @@ describe('an error is linked, announced, and marks the control invalid', () => {
   it('a checkbox group marks its boxes, which is where aria-invalid is allowed', () => {
     const group = renderScopes()
     expect(group).toHaveAccessibleDescription(/Choose at least one scope/)
-    expect(screen.getByTestId('ck-field-scopes-control-content:read')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByTestId('ck-field-scopes-control-content-read')).toHaveAttribute('aria-invalid', 'true')
   })
 
   it('the error is a live region, so an operator who has moved on still hears it', () => {
@@ -281,7 +281,7 @@ describe('a disabled field says so in the accessibility tree', () => {
 
   it('a checkbox group disables every box in it', () => {
     renderScopes({ disabled: true })
-    expect(screen.getByTestId('ck-field-scopes-control-content:read')).toBeDisabled()
+    expect(screen.getByTestId('ck-field-scopes-control-content-read')).toBeDisabled()
   })
 
   it('a disabled field is not reachable by keyboard', async () => {

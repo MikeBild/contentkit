@@ -21,6 +21,7 @@ import {
   WEBHOOK_DELIVERY_STATUS,
   WEBHOOK_EVENT_TYPES,
   type WebhookDeliveryStatus,
+  type WebhookEventType,
 } from '@/forms/contracts/enums.generated'
 import { EnumMultiSelect, RevealOnce, TextField, TriToggle, UrlField } from '@/forms/fields'
 import { StatusBadge } from '@/forms/status-badge'
@@ -38,10 +39,20 @@ import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 const ANY = '__ck_any__'
 
 
-const EVENT_OPTIONS = WEBHOOK_EVENT_TYPES.map((value) => ({
-  value,
-  label: value.replace('contentkit.', ''),
-}))
+const EVENT_KEYS = {
+  'contentkit.contact.submitted': 'webhook.event.contactSubmitted',
+  'contentkit.comment.submitted': 'webhook.event.commentSubmitted',
+  'contentkit.comment.approved': 'webhook.event.commentApproved',
+  'contentkit.content.published': 'webhook.event.contentPublished',
+  'contentkit.content.unpublished': 'webhook.event.contentUnpublished',
+  'contentkit.deck.published': 'webhook.event.deckPublished',
+  'contentkit.release.published': 'webhook.event.releasePublished',
+  'contentkit.release.failed': 'webhook.event.releaseFailed',
+  'contentkit.deck.release_failed': 'webhook.event.deckReleaseFailed',
+} as const satisfies Record<WebhookEventType, TranslationKey>
+
+const eventLabel = (t: (key: TranslationKey) => string, value: string) =>
+  value in EVENT_KEYS ? t(EVENT_KEYS[value as WebhookEventType]) : value
 
 /** `disabled_at` is the stored truth; "active" is the reading of it. */
 function isEnabled(endpoint: WebhookEndpoint) {
@@ -60,6 +71,7 @@ function EndpointDialog({
   onClose: () => void
 }) {
   const { t } = useI18n()
+  const eventOptions = WEBHOOK_EVENT_TYPES.map((value) => ({ value, label: t(EVENT_KEYS[value]) }))
   const client = useQueryClient()
   const editing = Boolean(endpoint)
   const [url, setUrl] = useState(endpoint?.url ?? '')
@@ -129,7 +141,7 @@ function EndpointDialog({
             label={t('webhook.events')}
             help={t('webhook.eventsHelp')}
             value={events}
-            options={EVENT_OPTIONS}
+            options={eventOptions}
             allEmptyMeans={{ allLabel: t('webhook.allEvents'), someLabel: t('webhook.onlyEvents') }}
             onChange={(next) => setEvents([...next])}
           />
@@ -176,7 +188,7 @@ function EndpointDialog({
 }
 
 export function WebhookEndpointsCard({ site }: { site: string }) {
-  const { t, dateTime } = useI18n()
+  const { t, dateTime, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [editing, setEditing] = useState<{ endpoint?: WebhookEndpoint } | null>(null)
@@ -245,7 +257,9 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                 <TableRow key={endpoint.id} data-testid={`ck-webhook-row-${endpointIndex}`} data-endpoint={endpoint.id}>
                   <TableCell className="max-w-[22rem] truncate font-mono text-xs">{endpoint.url}</TableCell>
                   <TableCell className="max-w-[16rem] text-xs text-muted-foreground">
-                    {endpoint.events?.length ? endpoint.events.join(', ') : t('webhook.allEvents')}
+                    {endpoint.events?.length
+                      ? list(endpoint.events.map((event) => eventLabel(t, event)))
+                      : t('webhook.allEvents')}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{endpoint.description || '—'}</TableCell>
                   <TableCell>
@@ -491,7 +505,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                 return (
                   <Fragment key={delivery.id}>
                     <TableRow data-testid={`ck-delivery-row-${deliveryIndex}`} data-delivery={delivery.id}>
-                      <TableCell className="font-mono text-xs">{delivery.type}</TableCell>
+                      <TableCell className="text-xs">{eventLabel(t, delivery.type)}</TableCell>
                       <TableCell className="max-w-[16rem] truncate text-xs text-muted-foreground">
                         {/* A null endpoint_id is the legacy env-configured target. */}
                         {target?.url ?? t(delivery.endpoint_id ? 'webhook.unavailableEndpoint' : 'webhook.configuredDefault')}
@@ -520,7 +534,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                           <Confirm
                             title={t('webhook.redeliverTitle')}
                             description={t('webhook.redeliverDescription', {
-                              event: delivery.type,
+                              event: eventLabel(t, delivery.type),
                               endpoint: target?.url ?? t('webhook.itsEndpoint'),
                             })}
                             confirmLabel={t('webhook.retry')}

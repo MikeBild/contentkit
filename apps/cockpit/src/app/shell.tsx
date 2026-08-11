@@ -1116,7 +1116,6 @@ function SiteSwitcher({
                   data-testid="site-switcher"
                   aria-label={t('site.contextLabel', { site: name || t('common.none') })}
                 >
-                  <Globe data-icon="inline-start" />
                   <span className="flex min-w-0 flex-col text-left">
                     {/*
                      * The trigger is as wide as the sidebar and no wider, so this
@@ -1244,7 +1243,7 @@ export function Page({
 }) {
   const crumbs = useCrumbs(title)
   return (
-    <div data-testid="page" data-page={title} className="mx-auto max-w-7xl p-6">
+    <div data-testid="page" data-page={title} className="mx-auto max-w-7xl p-4 sm:p-6">
       {/*
         The actions drop below the title on a phone. Beside it they are
         `shrink-0`, which is right at 1280 and wrong at 390: a 100px button and

@@ -60,6 +60,26 @@ const AUDIT_RESULT_KEYS = {
   cancelled: 'audit.result.cancelled',
 } as const satisfies Record<string, TranslationKey>
 
+const AUDIT_ACTION_KEYS = {
+  'api_key.create': 'audit.action.apiKeyCreate',
+  'api_key.revoke': 'audit.action.apiKeyRevoke',
+  'identity.create': 'audit.action.identityCreate',
+  'identity.update': 'audit.action.identityUpdate',
+  'identity.restore': 'audit.action.identityRestore',
+  'identity.revoke': 'audit.action.identityRevoke',
+  'site.create': 'audit.action.siteCreate',
+  'site.delete': 'audit.action.siteDelete',
+  'release.create': 'audit.action.releaseCreate',
+  'release.activate': 'audit.action.releaseActivate',
+  'release.delete': 'audit.action.releaseDelete',
+  'content.publish': 'audit.action.contentPublish',
+  'content.unpublish': 'audit.action.contentUnpublish',
+  'content.delete': 'audit.action.contentDelete',
+} as const satisfies Record<(typeof AUDIT_ACTIONS)[number], TranslationKey>
+
+const auditActionLabel = (t: (key: TranslationKey) => string, action: string) =>
+  action in AUDIT_ACTION_KEYS ? t(AUDIT_ACTION_KEYS[action as keyof typeof AUDIT_ACTION_KEYS]) : action
+
 /**
  * "No filter", as a value Radix will accept.
  *
@@ -130,6 +150,7 @@ export function AuditPage() {
         id: 'when',
         label: t('audit.when'),
         required: true,
+        priority: 'essential',
         compare: (left, right) => compareTime(left.created_at, right.created_at),
         descFirst: true,
         className: 'whitespace-nowrap text-muted-foreground',
@@ -137,6 +158,8 @@ export function AuditPage() {
       },
       {
         id: 'actor',
+        priority: 'supporting',
+        kind: 'identity',
         label: t('audit.actor'),
         compare: (left, right) => compareText(left.actor_label, right.actor_label),
         className: 'text-muted-foreground',
@@ -144,13 +167,16 @@ export function AuditPage() {
       },
       {
         id: 'action',
+        priority: 'essential',
+        kind: 'identity',
         label: t('audit.action'),
         compare: (left, right) => compareText(left.action, right.action),
         className: 'font-mono text-xs',
-        cell: (event) => event.action,
+        cell: (event) => auditActionLabel(t, event.action),
       },
       {
         id: 'resource',
+        priority: 'detail',
         label: t('audit.resource'),
         compare: (left, right) => compareText(left.resource_label, right.resource_label),
         className: 'text-muted-foreground',
@@ -158,6 +184,8 @@ export function AuditPage() {
       },
       {
         id: 'result',
+        priority: 'essential',
+        kind: 'status',
         label: t('audit.result'),
         compare: (left, right) => compareText(left.result, right.result),
         cell: (event) => (
@@ -168,6 +196,7 @@ export function AuditPage() {
       },
       {
         id: 'transport',
+        priority: 'detail',
         label: t('audit.transport'),
         hiddenByDefault: true,
         compare: (left, right) => compareText(left.transport, right.transport),
@@ -178,15 +207,17 @@ export function AuditPage() {
         id: 'actions',
         label: t('common.actions'),
         required: true,
+        priority: 'essential',
+        kind: 'actions',
         headerHidden: true,
-        cell: (event) => {
+        cell: (event, rowIndex) => {
           const open = expanded === event.id
           return (
             <Button
               size="sm"
               variant="ghost"
               aria-expanded={open}
-              data-testid="ck-audit-expand"
+              data-testid={`ck-audit-row-${rowIndex}-expand`}
               onClick={() => setExpanded(open ? null : event.id)}
             >
               {t(open ? 'common.hide' : 'common.details')}
@@ -265,7 +296,7 @@ export function AuditPage() {
               <SelectItem value={ANY}>{t('audit.allActions')}</SelectItem>
               {AUDIT_ACTIONS.map((value) => (
                 <SelectItem key={value} value={value}>
-                  {value}
+                  {t(AUDIT_ACTION_KEYS[value])}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -329,13 +360,13 @@ export function AuditPage() {
         onPageChange={setPage}
         pageSize={limit}
         unit={t('common.events')}
-        renderMobileRow={(event) => {
+        renderMobileRow={(event, rowIndex) => {
           const open = expanded === event.id
           return (
             <div className="grid gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-mono text-xs font-medium">{event.action}</p>
+                  <p className="text-xs font-medium">{auditActionLabel(t, event.action)}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {event.actor_label || t(AUDIT_ACTOR_KEYS[event.actor_type as keyof typeof AUDIT_ACTOR_KEYS] ?? 'audit.unknownActor')}
                     {' · '}
@@ -354,7 +385,7 @@ export function AuditPage() {
                   size="sm"
                   variant="ghost"
                   aria-expanded={open}
-                  data-testid="ck-audit-expand-mobile"
+                  data-testid={`ck-audit-row-${rowIndex}-expand`}
                   onClick={() => setExpanded(open ? null : event.id)}
                 >
                   {t(open ? 'common.hide' : 'common.details')}

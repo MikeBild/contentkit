@@ -271,7 +271,7 @@ function MembersDialog({
 }
 
 export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (rule: AccessRule) => void }) {
-  const { t } = useI18n()
+  const { t, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [editing, setEditing] = useState<{ group?: AccessGroup } | null>(null)
@@ -347,7 +347,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                     <TableCell className="font-mono text-xs">{group.slug}</TableCell>
                     <TableCell>{group.name}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {memberList.length ? memberList.map((reader) => reader.username).join(', ') : '—'}
+                      {memberList.length ? list(memberList.map((reader) => reader.username)) : '—'}
                     </TableCell>
                     <TableCell>
                       {blockers.length ? (

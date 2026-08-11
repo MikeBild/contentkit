@@ -88,6 +88,9 @@ Consequences, and they are not optional:
 - **One primary action per surface.** `variant="default"` is the thing this page
   exists for. Everything else is `outline` or `ghost`. Two filled buttons side by
   side ask the reader to choose without saying which is which.
+- `default` uses `primary` (neutral black in the light scheme, neutral white in
+  the dark scheme). Blue is reserved for links, focus and data; a blue filled
+  action is not a second primary-button system.
 Enforced by `test/unit/cockpit-affordances.test.mjs`, and the testid requirement by
 `test/unit/cockpit-testids.test.mjs`.
 
@@ -171,13 +174,14 @@ reason this is written down.
   to say so.
 - Spacing is `flex` + `gap-*`. Never `space-y-*`.
 - Tables use the pane they have: cells wrap at desktop widths and rows become
-  labelled records below `md`. A data list never introduces a second horizontal
+  labelled records below 640px. A data list never introduces a second horizontal
   navigation axis.
 - **A list is a `DataTable`.** It carries the four states, cursor pagination, the
   column chooser and the sort-capability rule in one place. `Card` + `Table` +
   `TableState` is the older hand-rolled shape; it is not wrong, but it is a second
   answer to "how do I render a list", and a console with two answers has none. New
-  lists use `DataTable`; existing ones move when they are next touched.
+  lists use `DataTable`; touched list surfaces migrate rather than adding another
+  hand-written variant.
 - **Prefer not to truncate.** Give the text the space — `max-w-*` with `break-words`,
   or let the secondary value wrap beneath the primary one. An earlier version of this
   rule said a cut name may keep its full value in a `title`; that contradicts §3 and is
@@ -192,7 +196,7 @@ reason this is written down.
 ## 7. Responsiveness
 
 Minimum for a new or touched page: **usable at 390px wide.** Nothing scrolls
-horizontally. Below `md`, every table row stacks into label/value pairs and keeps
+horizontally. Below 640px, every table row stacks into label/value pairs and keeps
 its controls in the normal vertical reading order.
 
 ### The count of responsive classes was the wrong measurement
@@ -212,7 +216,7 @@ So the console was driven at 390 instead, every route and every dialog
 
 | Measured at 390 | Was | Is |
 |---|---|---|
-| Tables and row actions | `Edit`/`Revoke`/`Approve`/`Delete` were 370–1400px off the right of the window; pinning that last cell still left the data two to five windows wide | Below `md`, rows are labelled records with actions at the end. At wider widths the native table uses fixed layout and wrapping, so neither the data nor its controls scroll sideways |
+| Tables and row actions | `Edit`/`Revoke`/`Approve`/`Delete` were 370–1400px off the right of the window; pinning that last cell still left the data two to five windows wide | Below 640px, rows are labelled records with actions at the end. At wider widths the native table uses fixed layout and wrapping, so neither the data nor its controls scroll sideways |
 | Dialog footers | Four dialogs put their own answer below the fold at 390×667; `ck-api-key-dialog` laid out 1406px of form in a 635px panel and left Create 700px past a window that cannot scroll | The panel's middle row gives, so the body scrolls and the footer stays |
 | The wizard's step strip | Scrolled sideways at every viewport; at 390 steps 3 and 4 were 219px and 361px past the window | Wraps |
 | Tab strips | Adding counts took the moderation strip to 349px inside 342px | Wrap |
@@ -236,7 +240,8 @@ cannot silently ship a narrow layout whose values have no visible names.
 - A dialog that owns a mutation cannot be dismissed while the request is in flight.
 - Every interactive element carries a `data-testid`. This is a standing project
   requirement, not a testing convenience.
-- Nothing is conveyed by colour alone. A status has a word; a warning has an icon.
+- Nothing is conveyed by colour alone. A status and a warning always have words;
+  Alerts additionally carry their severity icon.
 
 Enforced, rule by rule rather than by a blanket claim, because an earlier version of
 this paragraph credited two files with a rule neither of them asserts:
@@ -259,7 +264,7 @@ the repository is never mistaken for coverage.
 ContentKit shares the Cockpit grammar used by WorkKit, CodeKit, Subkit, WatchKit
 and WikiKit: the same shadcn primitives and semantic tokens, one viewport-bound
 shell, one account menu in the sidebar footer, wrapping tabs, compact cards and
-one accent-filled action per surface. A user moving between products should not
+one neutral primary action per surface. A user moving between products should not
 have to relearn where navigation, personal settings, help or destructive actions
 live.
 

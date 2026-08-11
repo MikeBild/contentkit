@@ -175,7 +175,7 @@ export function PublishedPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        data-testid="published-inspect"
+                        data-testid={`published-row-${entryIndex}-inspect`}
                         onClick={() => setSelected({ kind: entry.kind, locale: entry.locale, slug: entry.slug })}
                       >
                         {t('published.inspect')}

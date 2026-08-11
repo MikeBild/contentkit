@@ -203,33 +203,20 @@ describe('a status has a word — CUI-A11Y-5', () => {
   })
 })
 
-describe('a warning has an icon — CUI-A11Y-5', () => {
+describe('a warning keeps one readable signal — CUI-A11Y-5', () => {
   const statusBadge = readFileSync(join(SRC, 'forms', 'status-badge.tsx'), 'utf8')
   const code = stripComments(statusBadge)
 
-  test('StatusBadge attaches an icon on the warning tone, and that is the whole reason it exists', () => {
-    // This is the mechanism the module was written for, spelled out in its own
-    // header: shadcn's Badge ships `destructive` as its ONLY severity, so
-    // `warning` and `info` both land on `outline` and render IDENTICALLY. The
-    // colour cannot tell them apart, so the icon does. Remove it and two
-    // different readings become one grey pill with no way back.
-    assert.match(code, /tone === 'warning' \?/, 'the warning tone no longer branches on anything')
-    const branch = code.slice(code.indexOf("tone === 'warning' ?"))
-    const glyph = branch.match(/<([A-Z][A-Za-z0-9]*)\b/)
-    assert.ok(glyph, 'the warning tone renders no element at all')
-    assert.ok(
-      lucideNames(code).has(glyph[1]),
-      `the warning tone renders <${glyph?.[1]}>, which is not an icon this module imported`,
-    )
+  test('StatusBadge does not add a second glyph beside a trigger or alert icon', () => {
+    // StatusBadge is used inside disclosures that already carry their own
+    // affordance icon. The written status is the durable signal; severity
+    // variants add emphasis without producing the duplicated icon pairs that
+    // made compact rows noisy.
+    assert.deepEqual(lucideNames(code), new Set())
+    assert.doesNotMatch(code, /data-icon=/)
   })
 
-  test('that icon is decoration beside the word, never a replacement for it', () => {
-    // `aria-hidden` because the word is already there and announcing the glyph
-    // as well would say the status twice. `data-icon="inline-start"` is what
-    // earns the leading padding Badge reserves — without it the glyph collides
-    // with the text and the pair reads as one smudge.
-    assert.match(code, /aria-hidden/, 'the warning glyph is announced as well as drawn')
-    assert.match(code, /data-icon="inline-start"/)
+  test('the written status remains present for every tone', () => {
     assert.match(code, /\{children\}/, 'StatusBadge no longer renders the word it was handed')
   })
 

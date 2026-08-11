@@ -141,6 +141,30 @@ const measure = () => {
   const opaqueTestIds = [...document.querySelectorAll('[data-testid]')]
     .map((element) => element.getAttribute('data-testid'))
     .filter((value) => value && uuid.test(value))
+  const testIdCounts = new Map()
+  for (const element of document.querySelectorAll('[data-testid]')) {
+    const value = element.getAttribute('data-testid')
+    if (value) testIdCounts.set(value, (testIdCounts.get(value) ?? 0) + 1)
+  }
+  const duplicateTestIds = [...testIdCounts]
+    .filter(([, count]) => count > 1)
+    .map(([value, count]) => `${value}×${count}`)
+  const invalidTestIds = [...testIdCounts.keys()].filter((value) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value))
+  const overflowingDataSurfaces = [...document.querySelectorAll('[data-data-surface="true"]')]
+    .filter((element) => {
+      const style = getComputedStyle(element)
+      const box = element.getBoundingClientRect()
+      return (
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        box.width > 1 &&
+        element.scrollWidth > element.clientWidth + 1
+      )
+    })
+    .map((element) => ({
+      testId: element.getAttribute('data-testid'),
+      by: element.scrollWidth - element.clientWidth,
+    }))
 
   /** The nearest scrolling ancestor of the page, found by computed style. */
   let pane = page?.parentElement ?? null
@@ -189,6 +213,9 @@ const measure = () => {
     spilling: spilling.slice(0, 4),
     visibleUuid,
     opaqueTestIds: opaqueTestIds.slice(0, 4),
+    duplicateTestIds: duplicateTestIds.slice(0, 12),
+    invalidTestIds: invalidTestIds.slice(0, 12),
+    overflowingDataSurfaces: overflowingDataSurfaces.slice(0, 8),
   }
 }
 
@@ -371,6 +398,18 @@ try {
         expect(
           seen.opaqueTestIds.length === 0,
           `${where}: test selectors contain opaque UUIDs: ${seen.opaqueTestIds.join(', ')}.`,
+        )
+        expect(
+          seen.duplicateTestIds.length === 0,
+          `${where}: data-testid values are not unique at runtime: ${seen.duplicateTestIds.join(', ')}.`,
+        )
+        expect(
+          seen.invalidTestIds.length === 0,
+          `${where}: runtime data-testid values must use lowercase kebab-case: ${seen.invalidTestIds.join(', ')}.`,
+        )
+        expect(
+          seen.overflowingDataSurfaces.length === 0,
+          `${where}: data surfaces are wider than their available container: ${seen.overflowingDataSurfaces.map((item) => `${item.testId ?? 'unnamed'} +${item.by}px`).join(', ')}.`,
         )
 
         // ── Case 1. Every route scrolls when its content exceeds the viewport.
@@ -855,6 +894,17 @@ try {
         const footer = panel.querySelector('[data-slot="dialog-footer"]')
         const body = [...panel.children].find((child) => ['auto', 'scroll'].includes(getComputedStyle(child).overflowY))
         const box = panel.getBoundingClientRect()
+        const testIds = [...document.querySelectorAll('[data-testid]')]
+          .filter((element) => {
+            const style = getComputedStyle(element)
+            return style.display !== 'none' && style.visibility !== 'hidden'
+          })
+          .map((element) => element.getAttribute('data-testid'))
+          .filter(Boolean)
+        const testIdCounts = testIds.reduce((counts, testId) => {
+          counts[testId] = (counts[testId] ?? 0) + 1
+          return counts
+        }, {})
         return {
           testId: panel.getAttribute('data-testid'),
           bottom: Math.round(box.bottom),
@@ -863,6 +913,10 @@ try {
             panel.scrollHeight > panel.clientHeight + 1,
           footerBottom: footer ? Math.round(footer.getBoundingClientRect().bottom) : null,
           bodyFits: body ? body.scrollHeight <= body.clientHeight + 1 : null,
+          duplicateTestIds: Object.entries(testIdCounts)
+            .filter(([, count]) => count > 1)
+            .map(([testId, count]) => ({ testId, count })),
+          invalidTestIds: [...new Set(testIds.filter((testId) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(testId)))],
           // §7 inside a dialog, which is where the wizard's four-step strip
           // lives: 4 × `min-w-44` is 728px of strip, and the widest dialog here
           // is `sm:max-w-2xl`, so it scrolled sideways at every viewport and at
@@ -908,6 +962,16 @@ try {
           .map((entry) => `${entry.testId} by ${entry.by}px`)
           .join(', ')}. §7 requires one vertical reading axis, including inside dialogs.`,
       )
+      expect(
+        seen !== null && seen.duplicateTestIds.length === 0,
+        `390×667 ${route} ${label}: duplicate runtime data-testid values — ${seen?.duplicateTestIds
+          .map((entry) => `${entry.testId} × ${entry.count}`)
+          .join(', ')}. Every visible test handle must resolve to one element in the current UI state.`,
+      )
+      expect(
+        seen !== null && seen.invalidTestIds.length === 0,
+        `390×667 ${route} ${label}: runtime data-testid values are not lowercase kebab-case — ${seen?.invalidTestIds.join(', ')}. Dynamic values must be normalized before becoming selectors.`,
+      )
 
       await page.keyboard.press('Escape')
       await page
@@ -951,6 +1015,9 @@ if (failures.length > 0) {
           'every route scrolls its pane and the pane is bounded by the viewport',
           'no page scrolls the document; body is overflow:hidden by design',
           'nothing overflows horizontally outside a scroll container',
+          'every visible data surface fits its own container',
+          'every rendered data-testid is globally unique',
+          'every rendered data-testid uses lowercase kebab-case',
           'below 768 the sidebar is an off-canvas sheet its trigger opens',
           'the collapsed rail names every entry, the site switcher included',
           "a tab's count equals the list behind it, and the open tab's count is deferred rather than dropped",

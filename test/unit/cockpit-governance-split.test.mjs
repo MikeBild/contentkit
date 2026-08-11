@@ -71,7 +71,7 @@ const OWNED_TESTIDS = {
     'ck-audit-limit-filter',
     'ck-audit-follow-site',
     'ck-audit-row',
-    'ck-audit-expand',
+    'ck-audit-row-${rowIndex}-expand',
     'ck-audit-detail',
   ],
 }

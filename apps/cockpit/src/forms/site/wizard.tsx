@@ -173,7 +173,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
 
   return (
     <>
-      <Button data-testid="site-new" variant="outline" onClick={() => setOpen(true)}>
+      <Button data-testid="site-new" onClick={() => setOpen(true)}>
         {t('wizard.newSite')}
       </Button>
       {isOpen ? (

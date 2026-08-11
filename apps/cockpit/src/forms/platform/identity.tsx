@@ -18,8 +18,9 @@ import {
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { OPERATOR_ROLE, type OperatorRole } from '@/forms/contracts/enums.generated'
+import { OPERATOR_ROLE, type OperatorRole, type ProductScope } from '@/forms/contracts/enums.generated'
 import { ChoiceCards, EntityMultiSelect, EnumSelect, ScopePicker, TextField } from '@/forms/fields'
+import { SCOPE_LABEL_KEYS } from '@/forms/fields/scopes'
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
@@ -38,6 +39,12 @@ const ROLE_CONSEQUENCE_KEYS: Record<OperatorRole, TranslationKey> = {
   reader: 'identity.role.reader',
   author: 'identity.role.author',
   admin: 'identity.role.admin',
+}
+
+const ROLE_LABEL_KEYS: Record<OperatorRole, TranslationKey> = {
+  reader: 'account.role.reader',
+  author: 'account.role.author',
+  admin: 'account.role.admin',
 }
 
 /**
@@ -337,7 +344,7 @@ function GrantDialog({
 }
 
 export function IdentityGrantsCard() {
-  const { t, dateTime } = useI18n()
+  const { t, dateTime, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { sites } = useSite()
@@ -425,12 +432,18 @@ export function IdentityGrantsCard() {
                     {visibleLabel(grant.provider_id) ?? t('common.unknown')}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge tone={grant.role === 'admin' ? 'warning' : 'info'}>{grant.role ?? '—'}</StatusBadge>
+                    <StatusBadge tone={grant.role === 'admin' ? 'warning' : 'info'}>
+                      {grant.role ? t(ROLE_LABEL_KEYS[grant.role as OperatorRole]) : '—'}
+                    </StatusBadge>
                   </TableCell>
-                  <TableCell className="max-w-[18rem] text-xs text-muted-foreground">{grant.product_scopes?.join(', ')}</TableCell>
+                  <TableCell className="max-w-[18rem] text-xs text-muted-foreground">
+                    {list((grant.product_scopes ?? []).map((scope) =>
+                      scope in SCOPE_LABEL_KEYS ? t(SCOPE_LABEL_KEYS[scope as ProductScope]) : scope,
+                    ))}
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {grant.site_ids?.length
-                      ? grant.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite')).join(', ')
+                      ? list(grant.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite')))
                       : t('identity.everySite')}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">

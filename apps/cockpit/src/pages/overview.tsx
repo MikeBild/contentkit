@@ -378,7 +378,7 @@ function StatCard({ tile }: { tile: Tile }) {
   const { kind, usage, result, shown, lead } = tile
 
   return (
-    <Card data-testid="stat-card" data-kind={kind}>
+    <Card data-testid={`ck-overview-stat-${kind}`} data-kind={kind}>
       <CardHeader>
         <CardTitle>{t(STAT_KIND_KEYS[kind])}</CardTitle>
         {/* The opt-in note is a status about this tile's data, so it is a Badge
@@ -395,7 +395,7 @@ function StatCard({ tile }: { tile: Tile }) {
           // The tile's own shape: a sparkline band and four metric rows. Twelve of
           // these load at once, so a one-line "Loading…" made the grid settle at
           // twelve short cards and then jolt to full height a moment later.
-          <SkeletonGroup label={t('overview.loading')} data-testid="stat-card-skeleton">
+          <SkeletonGroup label={t('overview.loading')} data-testid={`ck-overview-stat-${kind}-skeleton`}>
             <Skeleton className="h-10 w-full" />
             <div className="mt-3 flex flex-col gap-2">
               {Array.from({ length: 4 }, (_, row) => (
@@ -424,7 +424,7 @@ function StatCard({ tile }: { tile: Tile }) {
                       <TooltipTrigger asChild>
                         <dt
                           tabIndex={0}
-                          data-testid={`ck-overview-metric-${metric.name}`}
+                          data-testid={`ck-overview-stat-${kind}-metric-${metric.name}`}
                           className="truncate rounded text-xs text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                         >
                           {METRIC_KEYS[metric.name] ? t(METRIC_KEYS[metric.name]!) : metric.name.replace(/_/g, ' ')}

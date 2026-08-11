@@ -1298,7 +1298,7 @@ console defect.
    **Fail if** the parameters are missing from the request — filtering client-side over a truncated
    page silently hides events.
 3. **Expect** the `api_key.create` from §16.1 and the `api_key.revoke` from §16.4 are both listed.
-4. Within the matching `ck-audit-row`, click `ck-audit-expand` → **Expect** `ck-audit-detail` shows
+4. Within the matching `ck-audit-row`, click its `ck-audit-row-{index}-expand` → **Expect** `ck-audit-detail` shows
    safe metadata and human-readable actor, resource and site labels as a definition list.
    **Fail if** it is a `JSON.stringify` dump.
 5. **Create / edit / delete:** the audit log is append-only and has none.

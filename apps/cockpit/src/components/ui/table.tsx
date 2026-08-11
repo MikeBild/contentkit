@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 type TableProps = React.ComponentProps<"table"> & {
   /**
    * Column names in visual order. They become the left-hand labels of the
-   * stacked row below `md`; an empty final label marks an action cell.
+ * stacked row below 640px; an empty final label marks an action cell.
    */
   mobileLabels: readonly string[]
 }
@@ -29,7 +29,8 @@ function Table({ className, mobileLabels, style, ...props }: TableProps) {
   return (
     <div
       data-slot="table-container"
-      className="relative min-w-0 w-full overflow-x-clip"
+      data-data-surface="true"
+      className="relative w-full min-w-0"
     >
       <table
         data-slot="table"

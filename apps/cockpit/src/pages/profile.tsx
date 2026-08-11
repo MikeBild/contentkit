@@ -2,7 +2,7 @@ import { Page } from '@/app/shell'
 import { ContextHelp } from '@/components/context-help'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { SCOPE_DESCRIPTION_KEYS } from '@/forms/fields/scopes'
+import { SCOPE_DESCRIPTION_KEYS, SCOPE_LABEL_KEYS } from '@/forms/fields/scopes'
 import { PRODUCT_SCOPES, type ProductScope } from '@/forms/contracts/enums.generated'
 import { useSession } from '@/lib/session'
 import { visibleLabel } from '@/lib/opaque'
@@ -197,14 +197,14 @@ function ScopeList({
         <p className="text-sm text-muted-foreground">{t('common.none')}</p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
-          {scopes.map((scope) => (
+          {scopes.map((scope, scopeIndex) => (
             <li
               key={scope}
               className="flex items-start gap-2 rounded-md border border-border p-2.5"
-              data-testid={testid}
+              data-testid={`${testid}-${scopeIndex}`}
             >
-              <Badge variant={variant} className="font-mono">
-                {scope}
+              <Badge variant={variant}>
+                {t(SCOPE_LABEL_KEYS[scope])}
               </Badge>
               <span className="text-xs text-muted-foreground">{t(SCOPE_DESCRIPTION_KEYS[scope])}</span>
             </li>

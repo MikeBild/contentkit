@@ -3,7 +3,7 @@ import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ck, type ContentItem, type ContentKind, type Revision } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import { useI18n } from '@/lib/i18n-context'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +22,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { StatusBadge } from '@/forms/status-badge'
+import { type AudioJobStatus } from '@/forms/contracts/enums.generated'
 import { TableState } from '@/forms/table-state'
 import { SkeletonFields, SkeletonText } from '@/components/ui/skeleton'
 import { Tabs, TabPanel } from '@/components/ui/tabs'
@@ -52,6 +53,14 @@ const KIND_KEYS = {
  * still holds '' and the request is built from it exactly as before.
  */
 const ANY_KIND = '__any'
+
+const AUDIO_STATUS_KEYS = {
+  pending: 'audio.status.pending',
+  processing: 'audio.status.processing',
+  done: 'audio.status.done',
+  failed: 'audio.status.failed',
+  skipped: 'audio.status.skipped',
+} as const satisfies Record<AudioJobStatus, TranslationKey>
 
 const TEMPLATE = `---
 title: New article
@@ -121,12 +130,15 @@ export function ContentPage() {
         // The only field that says which document a row is, and the row's
         // heading for a screen reader. It cannot be put away.
         required: true,
+        priority: 'essential',
+        kind: 'identity',
         compare: (left, right) => compareText(name(left), name(right)),
         className: 'max-w-[22rem] truncate font-medium',
         cell: (item) => name(item),
       },
       {
         id: 'kind',
+        priority: 'supporting',
         label: t('content.kind'),
         compare: (left, right) => compareText(left.kind, right.kind),
         className: 'text-muted-foreground',
@@ -134,6 +146,7 @@ export function ContentPage() {
       },
       {
         id: 'locale',
+        priority: 'supporting',
         label: t('content.locale'),
         compare: (left, right) => compareText(left.locale, right.locale),
         className: 'text-muted-foreground',
@@ -141,6 +154,7 @@ export function ContentPage() {
       },
       {
         id: 'slug',
+        priority: 'detail',
         label: t('content.list.slug'),
         compare: (left, right) => compareText(left.slug, right.slug),
         className: 'text-muted-foreground',
@@ -148,6 +162,8 @@ export function ContentPage() {
       },
       {
         id: 'live',
+        priority: 'essential',
+        kind: 'status',
         label: t('content.list.live'),
         // Deliberately not comparable. The cell is two independent facts —
         // whether the item is published, and whether newer work is waiting — and
@@ -176,6 +192,7 @@ export function ContentPage() {
       },
       {
         id: 'updated',
+        priority: 'supporting',
         label: t('content.list.updated'),
         compare: (left, right) => compareTime(left.updated_at, right.updated_at),
         descFirst: true,
@@ -183,10 +200,11 @@ export function ContentPage() {
         // "vor 2 Stunden" is what the operator reads; the instant is in `title`
         // and in `<time datetime>`, because deciding whether an edit landed
         // before or after a release needs the timestamp, not a rounding of it.
-        cell: (item) => <RelativeTime value={item.updated_at} data-testid="content-updated" />,
+        cell: (item, rowIndex) => <RelativeTime value={item.updated_at} data-testid={`content-row-${rowIndex}-updated`} />,
       },
       {
         id: 'created',
+        priority: 'detail',
         label: t('content.list.created'),
         compare: (left, right) => compareTime(left.created_at, right.created_at),
         descFirst: true,
@@ -195,18 +213,20 @@ export function ContentPage() {
         // is the list in this order".
         hiddenByDefault: true,
         className: 'text-muted-foreground',
-        cell: (item) => <RelativeTime value={item.created_at} data-testid="content-created" />,
+        cell: (item, rowIndex) => <RelativeTime value={item.created_at} data-testid={`content-row-${rowIndex}-created`} />,
       },
       {
         id: 'actions',
         label: t('content.list.rowActions'),
         required: true,
+        priority: 'essential',
+        kind: 'actions',
         headerHidden: true,
         className: 'flex gap-2',
-        cell: (item) => (
+        cell: (item, rowIndex) => (
           <>
             <Button
-              data-testid="content-open"
+              data-testid={`content-row-${rowIndex}-open`}
               size="sm"
               variant="outline"
               onClick={() => setOpen({ itemId: item.id })}
@@ -225,7 +245,7 @@ export function ContentPage() {
                 }}
               >
                 {(openConfirm) => (
-                  <Button data-testid="content-discard" size="sm" variant="destructive" onClick={openConfirm}>
+                  <Button data-testid={`content-row-${rowIndex}-discard`} size="sm" variant="destructive" onClick={openConfirm}>
                     {t('content.list.discard')}
                   </Button>
                 )}
@@ -243,7 +263,7 @@ export function ContentPage() {
                 }}
               >
                 {(openConfirm) => (
-                  <Button data-testid="content-unpublish" size="sm" variant="destructive" onClick={openConfirm}>
+                  <Button data-testid={`content-row-${rowIndex}-unpublish`} size="sm" variant="destructive" onClick={openConfirm}>
                     {t('content.list.unpublish')}
                   </Button>
                 )}
@@ -672,7 +692,7 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
                     <StatusBadge
                       tone={job.status === 'failed' ? 'danger' : job.status === 'done' ? 'success' : 'neutral'}
                     >
-                      {job.status}
+                      {t(AUDIO_STATUS_KEYS[job.status])}
                     </StatusBadge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{job.attempts}</TableCell>

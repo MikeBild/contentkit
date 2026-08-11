@@ -22,7 +22,8 @@ describe('responsive Table', () => {
     expect(table.style.getPropertyValue('--ck-table-label-1')).toBe('"Name"')
     expect(table.style.getPropertyValue('--ck-table-label-2')).toBe('"Status"')
     expect(table.style.getPropertyValue('--ck-table-label-3')).toBe('""')
-    expect(table.parentElement).toHaveClass('overflow-x-clip')
+    expect(table.parentElement).toHaveAttribute('data-data-surface', 'true')
+    expect(table.parentElement).not.toHaveClass('overflow-x-clip')
     expect(table.parentElement).not.toHaveClass('overflow-x-auto')
   })
 

@@ -1519,7 +1519,7 @@ const redesignedHtml = `<!doctype html>
 .pattern-head>div{align-items:flex-start;gap:.75rem}.pattern-index{margin-top:.18rem}.pattern-head .pattern-copy>p:first-child{margin:0;color:#71717a;font-size:.68rem;font-weight:760;letter-spacing:.09em;text-transform:uppercase}.pattern-copy h3{margin:.08rem 0 .12rem;font-size:1.15rem;letter-spacing:-.025em}.pattern-head .pattern-copy>p:last-child{max-width:42rem;margin:0;color:#71717a;font-size:.78rem;font-weight:400;letter-spacing:0;text-transform:none}
 .pattern-tools{display:flex;flex:none;gap:.45rem;align-items:center}
 :root[data-theme="dark"] .mobile-bar summary{border-color:#3f3f46;background:#18181b;color:#fafafa}
-@media(max-width:760px){.capabilities,.family{scroll-margin-top:18rem}}
+@media(max-width:900px){.capabilities,.family{scroll-margin-top:18rem}}
 :root[data-theme="light"]{--background:0 0% 100%;--foreground:240 10% 3.9%;--muted:240 4.8% 95.9%;--muted-foreground:240 3.8% 32%;--border:240 5.9% 90%;--primary:240 5.9% 10%;--primary-foreground:0 0% 98%}:root[data-theme="dark"]{--background:240 10% 3.9%;--foreground:0 0% 98%;--muted:240 3.7% 15.9%;--muted-foreground:240 5% 64.9%;--border:240 3.7% 20%;--primary:0 0% 98%;--primary-foreground:240 5.9% 10%}
 @media(max-width:900px){.controls{display:grid;grid-template-columns:1fr 1fr}.controls label:first-child{grid-column:1/-1}.controls input,.controls select{width:100%;min-width:0}.result-count{display:none}}
 @media(max-width:760px){.pattern-head>div{min-width:0}.pattern-copy{min-width:0}.pattern-copy h3{font-size:1.05rem}.pattern-head code{max-width:9rem;overflow:hidden;text-overflow:ellipsis}.pattern-tools>span{display:none}}

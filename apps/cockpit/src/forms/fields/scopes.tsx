@@ -26,6 +26,22 @@ export const SCOPE_DESCRIPTION_KEYS: Record<ProductScope, TranslationKey> = {
   'stats:read': 'scope.statsRead',
 }
 
+export const SCOPE_LABEL_KEYS: Record<ProductScope, TranslationKey> = {
+  'content:read': 'scope.label.contentRead',
+  'content:write': 'scope.label.contentWrite',
+  'deck:render': 'scope.label.deckRender',
+  'release:preview': 'scope.label.releasePreview',
+  'release:write': 'scope.label.releaseWrite',
+  'site:admin': 'scope.label.siteAdmin',
+  'access:admin': 'scope.label.accessAdmin',
+  'webhook:admin': 'scope.label.webhookAdmin',
+  'api-key:admin': 'scope.label.apiKeyAdmin',
+  'identity:admin': 'scope.label.identityAdmin',
+  'moderation:write': 'scope.label.moderationWrite',
+  'audit:read': 'scope.label.auditRead',
+  'stats:read': 'scope.label.statsRead',
+}
+
 /**
  * The scope set of a credential.
  *
@@ -68,6 +84,7 @@ export function ScopePicker({
         >
           {PRODUCT_SCOPES.map((scope) => {
             const held = unlimited || ceiling.includes(scope)
+            const scopeTestId = scope.replace(':', '-')
             const row = (
               <label
                 className={cn(
@@ -77,7 +94,7 @@ export function ScopePicker({
               >
                 <span className="pt-0.5">
                   <Checkbox
-                    data-testid={`${control['data-testid']}-${scope}`}
+                    data-testid={`${control['data-testid']}-${scopeTestId}`}
                     // `aria-invalid` is not allowed on `role="group"`, and the
                     // refusal is about the set rather than any one box, so every
                     // box carries it — whichever one the operator lands on says
@@ -91,7 +108,8 @@ export function ScopePicker({
                   />
                 </span>
                 <span>
-                  <span className="font-mono text-xs">{scope}</span>
+                  <span className="block text-xs font-medium">{t(SCOPE_LABEL_KEYS[scope])}</span>
+                  <span className="block font-mono text-[0.7rem] text-muted-foreground">{scope}</span>
                   <span className="block text-xs text-muted-foreground">{t(SCOPE_DESCRIPTION_KEYS[scope])}</span>
                 </span>
               </label>
@@ -108,7 +126,11 @@ export function ScopePicker({
               <TooltipProvider key={scope}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span tabIndex={0} className="block" data-testid={`${control['data-testid']}-${scope}-locked`}>
+                    <span
+                      tabIndex={0}
+                      className="block"
+                      data-testid={`${control['data-testid']}-${scopeTestId}-locked`}
+                    >
                       {row}
                     </span>
                   </TooltipTrigger>

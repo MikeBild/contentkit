@@ -261,7 +261,7 @@ function ReaderDialog({
 }
 
 export function ReadersCard({ site }: { site: string }) {
-  const { t } = useI18n()
+  const { t, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [editing, setEditing] = useState<{ reader?: AccessUser } | null>(null)
@@ -331,7 +331,7 @@ export function ReadersCard({ site }: { site: string }) {
                       <StatusBadge>{t('audience.readers.disabledStatus')}</StatusBadge>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{reader.groups?.join(', ') || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{reader.groups?.length ? list(reader.groups) : '—'}</TableCell>
                   <TableCell className="flex gap-2">
                     {writable ? (
                       <>

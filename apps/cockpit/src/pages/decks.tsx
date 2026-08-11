@@ -232,12 +232,12 @@ export function DecksPage() {
               <FieldSet>
                 <FieldLegend variant="label">{t('decks.theme')}</FieldLegend>
                 <div className="flex flex-wrap gap-2">
-                  {(themes.data?.themes ?? []).map((name) => (
+                  {(themes.data?.themes ?? []).map((name, themeIndex) => (
                     <Button
                       key={name}
                       size="sm"
                       variant="outline"
-                      data-testid={`deck-theme-${name}`}
+                      data-testid={`deck-theme-${themeIndex}`}
                       onClick={() => applyFrontmatter('theme', name)}
                     >
                       {name}
@@ -249,12 +249,12 @@ export function DecksPage() {
               <FieldSet>
                 <FieldLegend variant="label">{t('decks.template')}</FieldLegend>
                 <div className="flex flex-wrap gap-2">
-                  {(templates.data?.ids ?? []).map((id) => (
+                  {(templates.data?.ids ?? []).map((id, templateIndex) => (
                     <Button
                       key={id}
                       size="sm"
                       variant="outline"
-                      data-testid={`deck-template-${id}`}
+                      data-testid={`deck-template-${templateIndex}`}
                       onClick={() => applyFrontmatter('template', id)}
                     >
                       {id}

@@ -116,8 +116,8 @@ export function CompositionsPage() {
     { key: 'status' as const, label: t('composition.filter.status'), options: PATTERN_STATUS },
   ]
   const patternTextFilters = [
-    { key: 'nodeType' as const, label: t('composition.filter.nodeType'), placeholder: t('composition.filter.nodeTypePlaceholder') },
-    { key: 'capability' as const, label: t('composition.filter.capability'), placeholder: t('composition.filter.capabilityPlaceholder') },
+    { key: 'nodeType' as const, testId: 'node-type', label: t('composition.filter.nodeType'), placeholder: t('composition.filter.nodeTypePlaceholder') },
+    { key: 'capability' as const, testId: 'capability', label: t('composition.filter.capability'), placeholder: t('composition.filter.capabilityPlaceholder') },
   ]
 
   /**
@@ -358,7 +358,7 @@ export function CompositionsPage() {
             <Input
               key={filter.key}
               className="w-40"
-              data-testid={`pattern-filter-${filter.key}`}
+              data-testid={`pattern-filter-${filter.testId}`}
               aria-label={filter.label}
               placeholder={filter.placeholder}
               value={filters[filter.key] ?? ''}

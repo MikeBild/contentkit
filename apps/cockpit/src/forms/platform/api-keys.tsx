@@ -18,6 +18,8 @@ import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigg
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DateTimeField, EntityMultiSelect, RevealOnce, ScopePicker, TextField } from '@/forms/fields'
+import { SCOPE_LABEL_KEYS } from '@/forms/fields/scopes'
+import { type ProductScope } from '@/forms/contracts/enums.generated'
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
@@ -162,7 +164,7 @@ function keyState(key: ApiKey, t: I18nValue['t']): { tone: 'success' | 'danger' 
 }
 
 export function ApiKeysCard() {
-  const { t, dateTime } = useI18n()
+  const { t, dateTime, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { sites } = useSite()
@@ -255,12 +257,14 @@ export function ApiKeysCard() {
                   <TableRow key={key.id} data-testid={`ck-api-key-row-${keyIndex}`} data-key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{key.key_prefix}</TableCell>
-                    <TableCell className="max-w-[18rem] text-xs text-muted-foreground">{key.scopes?.join(', ')}</TableCell>
+                    <TableCell className="max-w-[18rem] text-xs text-muted-foreground">
+                      {list((key.scopes ?? []).map((scope) =>
+                        scope in SCOPE_LABEL_KEYS ? t(SCOPE_LABEL_KEYS[scope as ProductScope]) : scope,
+                      ))}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {key.site_ids?.length
-                        ? key.site_ids
-                            .map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite'))
-                            .join(', ')
+                        ? list(key.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite')))
                         : t('identity.everySite')}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">

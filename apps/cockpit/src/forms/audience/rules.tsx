@@ -205,7 +205,7 @@ export function RulesCard({
   onEditingChange: (editing: { rule?: AccessRule } | null) => void
   onRebuildRequired: () => void
 }) {
-  const { t } = useI18n()
+  const { t, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
 
@@ -284,7 +284,7 @@ export function RulesCard({
                     </StatusBadge>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{rule.path}</TableCell>
-                  <TableCell className="text-muted-foreground">{rule.group_slugs?.join(', ') || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{rule.group_slugs?.length ? list(rule.group_slugs) : '—'}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {rule.user_ids?.length
                       ? rule.user_ids

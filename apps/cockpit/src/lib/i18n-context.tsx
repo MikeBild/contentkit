@@ -27,6 +27,7 @@ export interface I18nValue {
   setPreference(preference: LocalePreference): void
   t(key: TranslationKey, values?: Readonly<Record<string, string | number>>): string
   number(value: number): string
+  list(values: readonly string[]): string
   dateTime(value: string | number | Date): string
   relativeTime(value: number, unit: Intl.RelativeTimeFormatUnit): string
 }
@@ -37,6 +38,7 @@ const FALLBACK_I18N: I18nValue = {
   setPreference: () => undefined,
   t: (key, values) => translate('en', key, values),
   number: (value) => formatNumber('en', value),
+  list: (values) => new Intl.ListFormat(LOCALE_TAGS.en, { style: 'short', type: 'conjunction' }).format(values),
   dateTime: (value) => formatDateTime('en', value),
   relativeTime: (value, unit) => new Intl.RelativeTimeFormat(LOCALE_TAGS.en, { numeric: 'auto' }).format(value, unit),
 }
@@ -50,6 +52,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setPreference: localeStore.set,
     t: (key, values) => translate(snapshot.locale, key, values),
     number: (value) => formatNumber(snapshot.locale, value),
+    list: (values) => new Intl.ListFormat(LOCALE_TAGS[snapshot.locale], { style: 'short', type: 'conjunction' }).format(values),
     dateTime: (value) => formatDateTime(snapshot.locale, value),
     relativeTime: (value, unit) => new Intl.RelativeTimeFormat(LOCALE_TAGS[snapshot.locale], { numeric: 'auto' }).format(value, unit),
   }), [snapshot])
