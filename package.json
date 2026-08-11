@@ -39,19 +39,19 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.23",
+    "@ai-sdk/anthropic": "^4.0.36",
     "@fontsource-variable/inter": "^5.3.0",
-    "@iconify-json/material-symbols": "^1.2.87",
+    "@iconify-json/material-symbols": "^1.2.88",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@resvg/resvg-wasm": "^2.6.2",
-    "@shikijs/rehype": "^4.3.1",
+    "@shikijs/rehype": "^4.4.2",
     "@slidev/cli": "^52.18.0",
     "@slidev/parser": "^52.18.0",
     "@slidev/theme-default": "^0.25.0",
     "@slidev/theme-seriph": "^0.25.0",
-    "ai": "^7.0.41",
+    "ai": "^7.0.58",
     "echarts": "^6.1.0",
-    "jose": "^6.2.4",
+    "jose": "^6.2.8",
     "katex": "^0.18.1",
     "mermaid": "^11.12.2",
     "openid-client": "^6.8.4",
@@ -75,9 +75,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.8.0",
-    "globals": "^17.8.0",
-    "playwright": "^1.62.0",
+    "eslint": "^10.8.1",
+    "globals": "^17.9.0",
+    "playwright": "^1.62.1",
     "prettier": "^3.9.6"
   },
   "overrides": {
