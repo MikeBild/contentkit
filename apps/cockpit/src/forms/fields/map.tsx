@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StatusBadge } from '@/forms/status-badge'
 import { cn } from '@/lib/utils'
+import { useI18n, type I18nValue, type TranslationKey } from '@/lib/i18n-context'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -23,17 +24,20 @@ const KEY_GRAMMAR = /^[a-z][a-z0-9_]{0,63}$/
 export function KeyValueField({
   value,
   onChange,
-  keyLabel = 'Key',
-  valueLabel = 'Value',
+  keyLabel,
+  valueLabel,
   ...shell
 }: FieldShellProps &
   ValueProps<Record<string, string>> & {
     keyLabel?: string
     valueLabel?: string
   }) {
+  const { t } = useI18n()
+  const shownKeyLabel = keyLabel ?? t('map.key')
+  const shownValueLabel = valueLabel ?? t('map.value')
   const [draftKey, setDraftKey] = useState('')
   const entries = Object.entries(value)
-  const keyError = draftKey && !KEY_GRAMMAR.test(draftKey) ? 'Lower-case letters, digits and underscores' : undefined
+  const keyError = draftKey && !KEY_GRAMMAR.test(draftKey) ? t('map.keyValidation') : undefined
 
   return (
     <FieldShell {...shell} error={shell.error ?? keyError}>
@@ -60,7 +64,7 @@ export function KeyValueField({
                 </Tooltip>
               </TooltipProvider>
               <Input
-                aria-label={`${valueLabel} for ${key}`}
+                aria-label={t('map.valueFor', { label: shownValueLabel, key })}
                 data-testid={`${control['data-testid']}-value-${key}`}
                 disabled={control.disabled}
                 value={entry}
@@ -70,7 +74,7 @@ export function KeyValueField({
                 type="button"
                 variant="destructive"
                 size="icon-sm"
-                aria-label={`Remove ${key}`}
+                aria-label={t('map.remove', { key })}
                 data-testid={`${control['data-testid']}-remove-${key}`}
                 disabled={control.disabled}
                 onClick={() => {
@@ -84,8 +88,8 @@ export function KeyValueField({
           ))}
           <div className="flex items-center gap-2">
             <Input
-              aria-label={keyLabel}
-              placeholder={keyLabel}
+              aria-label={shownKeyLabel}
+              placeholder={shownKeyLabel}
               data-testid={`${control['data-testid']}-new-key`}
               disabled={control.disabled}
               value={draftKey}
@@ -104,7 +108,7 @@ export function KeyValueField({
               }}
             >
               <Plus data-icon="inline-start" />
-              Add
+              {t('common.add')}
             </Button>
           </div>
         </div>
@@ -142,13 +146,14 @@ export function TokenMapField({
   tokens: readonly TokenDefinition[]
   /** Each token's own editor — a colour, a length, a font stack. */
   renderValue: (token: TokenDefinition, entry: unknown, set: (next: unknown) => void) => ReactNode
-}) {
+  }) {
+  const { t } = useI18n()
   const [picked, setPicked] = useState('')
   const set = new Set(Object.keys(value))
   const available = tokens.filter((token) => !set.has(token.key))
 
   return (
-    <FieldShell {...shell} hint={shell.hint ?? `${set.size}/${tokens.length} set`}>
+    <FieldShell {...shell} hint={shell.hint ?? t('map.tokensSet', { count: set.size, total: tokens.length })}>
       {(control) => (
         <div className="flex flex-col gap-3" data-testid={control['data-testid']}>
           {tokens
@@ -169,7 +174,7 @@ export function TokenMapField({
                     }}
                   >
                     <RotateCcw data-icon="inline-start" />
-                    Reset to default
+                    {t('map.resetDefault')}
                   </Button>
                 </div>
                 {renderValue(token, value[token.key], (next) => onChange({ ...value, [token.key]: next }))}
@@ -186,11 +191,11 @@ export function TokenMapField({
               onValueChange={setPicked}
             >
               <SelectTrigger
-                aria-label="Token to add"
+                aria-label={t('map.tokenToAdd')}
                 data-testid={`${control['data-testid']}-picker`}
                 className="flex-1"
               >
-                <SelectValue placeholder={available.length ? 'Add a token…' : 'Every token is set'} />
+                <SelectValue placeholder={t(available.length ? 'map.addToken' : 'map.allTokensSet')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -202,7 +207,7 @@ export function TokenMapField({
                       data-testid={`${control['data-testid']}-picker-${token.key}`}
                     >
                       {token.label}
-                      {token.unavailableReason ? ' — not available' : ''}
+                      {token.unavailableReason ? ` — ${t('map.unavailable')}` : ''}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -220,7 +225,7 @@ export function TokenMapField({
               }}
             >
               <Plus data-icon="inline-start" />
-              Add
+              {t('common.add')}
             </Button>
           </div>
 
@@ -250,13 +255,13 @@ export function TokenMapField({
 
 type ExtraShape = 'text' | 'number' | 'boolean' | 'list' | 'map'
 
-const SHAPES: { value: ExtraShape; label: string }[] = [
-  { value: 'text', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Yes/no' },
-  { value: 'list', label: 'List of text' },
-  { value: 'map', label: 'Map of text' },
-]
+const SHAPE_KEYS: Record<ExtraShape, TranslationKey> = {
+  text: 'map.shape.text',
+  number: 'map.shape.number',
+  boolean: 'map.shape.boolean',
+  list: 'map.shape.list',
+  map: 'map.shape.map',
+}
 
 function shapeOf(entry: unknown): ExtraShape {
   if (typeof entry === 'number') return 'number'
@@ -291,13 +296,14 @@ export function ExtraFieldsField({
   value: Record<string, unknown>
   onChange: (value: Record<string, unknown>) => void
   maxBytes?: number
-}) {
+  }) {
+  const { t } = useI18n()
   const [draftKey, setDraftKey] = useState('')
   const [draftShape, setDraftShape] = useState<ExtraShape>('text')
   const bytes = encoder.encode(JSON.stringify(value)).length
-  const keyError = draftKey && !KEY_GRAMMAR.test(draftKey) ? 'Lower-case letters, digits and underscores' : undefined
+  const keyError = draftKey && !KEY_GRAMMAR.test(draftKey) ? t('map.keyValidation') : undefined
   const error =
-    shell.error ?? keyError ?? (maxBytes !== undefined && bytes > maxBytes ? `${bytes - maxBytes} bytes over` : undefined)
+    shell.error ?? keyError ?? (maxBytes !== undefined && bytes > maxBytes ? t('map.bytesOver', { count: bytes - maxBytes }) : undefined)
 
   const editable = Object.entries(value).filter(([, entry]) => isEditable(entry))
 
@@ -305,7 +311,7 @@ export function ExtraFieldsField({
     <FieldShell
       {...shell}
       error={error}
-      hint={shell.hint ?? (maxBytes !== undefined ? `${bytes}/${maxBytes} bytes` : `${bytes} bytes`)}
+      hint={shell.hint ?? (maxBytes !== undefined ? `${bytes}/${maxBytes}` : t('map.bytes', { count: bytes }))}
     >
       {(control) => (
         <div className="flex flex-col gap-2" data-testid={control['data-testid']}>
@@ -337,7 +343,7 @@ export function ExtraFieldsField({
                 type="button"
                 variant="destructive"
                 size="icon-sm"
-                aria-label={`Remove ${key}`}
+                aria-label={t('map.remove', { key })}
                 data-testid={`${control['data-testid']}-remove-${key}`}
                 disabled={control.disabled}
                 onClick={() => {
@@ -352,7 +358,7 @@ export function ExtraFieldsField({
 
           <div className="flex items-center gap-2">
             <Input
-              aria-label="New field name"
+              aria-label={t('map.newFieldName')}
               placeholder="field_name"
               data-testid={`${control['data-testid']}-new-key`}
               disabled={control.disabled}
@@ -365,18 +371,18 @@ export function ExtraFieldsField({
               value={draftShape}
               onValueChange={(next) => setDraftShape(next as ExtraShape)}
             >
-              <SelectTrigger aria-label="New field shape" data-testid={`${control['data-testid']}-new-shape`}>
+              <SelectTrigger aria-label={t('map.newFieldShape')} data-testid={`${control['data-testid']}-new-shape`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {SHAPES.map((shape) => (
+                  {Object.entries(SHAPE_KEYS).map(([value, key]) => (
                     <SelectItem
-                      key={shape.value}
-                      value={shape.value}
-                      data-testid={`${control['data-testid']}-new-shape-${shape.value}`}
+                      key={value}
+                      value={value}
+                      data-testid={`${control['data-testid']}-new-shape-${value}`}
                     >
-                      {shape.label}
+                      {t(key)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -394,7 +400,7 @@ export function ExtraFieldsField({
               }}
             >
               <Plus data-icon="inline-start" />
-              Add
+              {t('common.add')}
             </Button>
           </div>
         </div>
@@ -421,6 +427,7 @@ function ExtraValue({
   disabled?: boolean
   testId: string
 }) {
+  const { t } = useI18n()
   const shape = shapeOf(entry)
   if (shape === 'boolean')
     return (
@@ -446,7 +453,7 @@ function ExtraValue({
       <Input
         data-testid={`${testId}-value`}
         disabled={disabled}
-        placeholder="one, two, three"
+        placeholder={t('map.listExample')}
         value={(entry as string[]).join(', ')}
         onChange={(event) =>
           onChange(
@@ -461,7 +468,7 @@ function ExtraValue({
   if (shape === 'map')
     return (
       <KeyValueField
-        label="Entries"
+        label={t('map.entries')}
         data-testid={`${testId}-value`}
         disabled={disabled}
         value={entry as Record<string, string>}
@@ -498,24 +505,25 @@ export function CarriedKeys({
   className?: string
   'data-testid': string
 }) {
+  const { t } = useI18n()
   const entries = Object.entries(value)
   if (entries.length === 0) return null
 
   return (
     <div data-testid={testId} className={cn('rounded-lg border border-border p-3', className)}>
       <p className="text-xs text-muted-foreground">
-        Kept as they are — written by something other than this form, and preserved on save.
+        {t('map.carried')}
       </p>
       <ul className="mt-2 flex flex-col gap-1">
         {entries.map(([key, entry]) => (
           <li key={key} className="flex items-center gap-2 text-xs">
             <span className="font-mono text-muted-foreground">{key}</span>
-            <span className="min-w-0 flex-1 truncate font-mono">{describe(entry)}</span>
+            <span className="min-w-0 flex-1 truncate font-mono">{describe(entry, t)}</span>
             <Button
               type="button"
               variant="destructive"
               size="icon-sm"
-              aria-label={`Remove ${key}`}
+              aria-label={t('map.remove', { key })}
               data-testid={`${testId}-remove-${key}`}
               onClick={() => onRemove(key)}
             >
@@ -530,9 +538,9 @@ export function CarriedKeys({
 
 // A shape summary, not a serialisation: the point is to recognise the key, not
 // to read the value back out of a wall of braces.
-function describe(entry: unknown): string {
-  if (entry === null) return 'empty'
-  if (Array.isArray(entry)) return `${entry.length} item${entry.length === 1 ? '' : 's'}`
-  if (typeof entry === 'object') return `${Object.keys(entry).length} key(s)`
+function describe(entry: unknown, t: I18nValue['t']): string {
+  if (entry === null) return t('map.empty')
+  if (Array.isArray(entry)) return t(entry.length === 1 ? 'map.item' : 'map.items', { count: entry.length })
+  if (typeof entry === 'object') return t('map.keys', { count: Object.keys(entry).length })
   return String(entry)
 }

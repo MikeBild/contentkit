@@ -523,7 +523,7 @@ try {
        * being mounted where it is not shown, the first press will close the
        * sheet, this assertion will fail, and the constant is what gets flipped.
        */
-      const KNOWN_TOOLTIP_SWALLOWS_ESCAPE = true
+      const KNOWN_TOOLTIP_SWALLOWS_ESCAPE = false
       await page.keyboard.press('Escape')
       const closedOnFirst = await sheet
         .waitFor({ state: 'hidden', timeout: 1500 })
@@ -621,7 +621,7 @@ try {
      * obstruction fails, and a listed one that has been fixed fails until the
      * line is deleted.
      */
-    const KNOWN_RAIL_OBSTRUCTIONS = new Set(['nav-overview', 'nav-decks', 'nav-audio', 'nav-webhooks'])
+    const KNOWN_RAIL_OBSTRUCTIONS = new Set()
     const blocked = await page.evaluate(
       (entries) =>
         entries

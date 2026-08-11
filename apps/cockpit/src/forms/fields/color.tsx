@@ -1,6 +1,7 @@
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -35,7 +36,15 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
  * hex, and only when it is used; it never rewrites what was typed.
  */
 export function ColorField({ value, onChange, ...shell }: FieldShellProps & ValueProps<string>) {
-  const error = shell.error ?? checkTokenValue(value)
+  const { t } = useI18n()
+  const rawError = checkTokenValue(value)
+  const error =
+    shell.error ??
+    (rawError === '“<” is not allowed in a token value'
+      ? t('color.tokenCharacter')
+      : rawError
+        ? t('color.tokenLength', { count: MAX_BYTES })
+        : undefined)
   const pickable = HEX.test(value) ? value : '#000000'
 
   return (
@@ -56,7 +65,7 @@ export function ColorField({ value, onChange, ...shell }: FieldShellProps & Valu
           />
           <input
             type="color"
-            aria-label={`${shell.label} colour picker`}
+            aria-label={t('color.picker', { label: shell.label })}
             data-testid={`${control['data-testid']}-picker`}
             disabled={control.disabled}
             value={pickable}
@@ -82,10 +91,18 @@ export function SchemeColorField({
   onChange,
   ...shell
 }: FieldShellProps & ValueProps<SchemeValue>) {
+  const { t } = useI18n()
   const split = typeof value !== 'string'
   const light = split ? value.light : value
   const dark = split ? value.dark : value
-  const error = shell.error ?? checkTokenValue(light) ?? checkTokenValue(dark)
+  const rawError = checkTokenValue(light) ?? checkTokenValue(dark)
+  const error =
+    shell.error ??
+    (rawError === '“<” is not allowed in a token value'
+      ? t('color.tokenCharacter')
+      : rawError
+        ? t('color.tokenLength', { count: MAX_BYTES })
+        : undefined)
 
   return (
     <FieldShell {...shell} error={error}>
@@ -98,12 +115,12 @@ export function SchemeColorField({
               checked={!split}
               onCheckedChange={(same) => onChange(same ? light : { light, dark: dark || light })}
             />
-            Same in both colour schemes
+            {t('color.sameSchemes')}
           </label>
           <div className={cn('grid gap-2', split && 'sm:grid-cols-2')}>
             <ColorField
               data-testid={`${control['data-testid']}-light`}
-              label={split ? `${shell.label} — light` : shell.label}
+              label={split ? `${shell.label} — ${t('color.light')}` : shell.label}
               disabled={control.disabled}
               value={light}
               onChange={(next) => onChange(split ? { light: next, dark } : next)}
@@ -111,7 +128,7 @@ export function SchemeColorField({
             {split ? (
               <ColorField
                 data-testid={`${control['data-testid']}-dark`}
-                label={`${shell.label} — dark`}
+                label={`${shell.label} — ${t('color.dark')}`}
                 disabled={control.disabled}
                 value={dark}
                 onChange={(next) => onChange({ light, dark: next })}
@@ -132,10 +149,11 @@ const FONT_FAMILY = /^[\p{L}\p{N}\s,'"_-]+$/u
  * this machine, and the specimen tells you immediately.
  */
 export function FontFamilyField({ value, onChange, ...shell }: FieldShellProps & ValueProps<string>) {
+  const { t } = useI18n()
   const error =
     shell.error ??
     checkTokenValue(value) ??
-    (value && !FONT_FAMILY.test(value) ? 'Letters, digits, spaces, commas and quotes only' : undefined)
+    (value && !FONT_FAMILY.test(value) ? t('color.fontCharacters') : undefined)
 
   return (
     <FieldShell {...shell} error={error}>
@@ -153,7 +171,7 @@ export function FontFamilyField({ value, onChange, ...shell }: FieldShellProps &
             className="rounded-lg border border-border bg-background px-3 py-2 text-base"
             style={error ? undefined : { fontFamily: value || undefined }}
           >
-            The quick brown fox jumps over the lazy dog — 0123456789
+            {t('color.specimen')}
           </p>
         </div>
       )}

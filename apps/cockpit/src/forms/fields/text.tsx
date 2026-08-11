@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { FieldShell, type FieldShellProps } from './field'
 
 export interface ValueProps<T> {
@@ -30,12 +31,13 @@ export function TextField({
     placeholder?: string
     /** Applied on blur, not per keystroke: a cursor that jumps mid-word is worse than a late fix. */
     transform?: (value: string) => string
-  }) {
+}) {
+  const { t } = useI18n()
   const over = maxLength !== undefined && value.length > maxLength
   return (
     <FieldShell
       {...shell}
-      error={shell.error ?? (over ? `${value.length - maxLength} characters over the limit` : undefined)}
+      error={shell.error ?? (over ? t('validation.charactersOver', { count: value.length - maxLength }) : undefined)}
       hint={
         shell.hint ??
         (maxLength !== undefined ? (
@@ -96,7 +98,8 @@ export function SlugField({
     grammar?: keyof typeof SLUG_GRAMMAR
     /** Slugs already taken beside this one. Excludes the value's own, if editing. */
     siblings?: readonly string[]
-  }) {
+}) {
+  const { t } = useI18n()
   const edited = useRef(false)
   const suggestion = derivedFrom ? slugify(derivedFrom) : ''
 
@@ -111,9 +114,9 @@ export function SlugField({
   const error =
     shell.error ??
     (value && !SLUG_GRAMMAR[grammar].test(value)
-      ? 'Lower-case letters, digits and single hyphens only'
+      ? t('validation.slug')
       : siblings.includes(value)
-        ? 'Already taken here'
+        ? t('validation.taken')
         : undefined)
 
   return (
@@ -141,10 +144,11 @@ const USERNAME = /^[a-z0-9][a-z0-9._-]{2,63}$/
 
 /** Mirrors the server's reader-username rule exactly, and lower-cases on blur. */
 export function UsernameField({ value, onChange, ...shell }: FieldShellProps & ValueProps<string>) {
+  const { t } = useI18n()
   const error =
     shell.error ??
     (value && !USERNAME.test(value)
-      ? '3–64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or digit'
+      ? t('validation.username')
       : undefined)
   return (
     <FieldShell {...shell} error={error}>
@@ -193,16 +197,17 @@ export function TextAreaField({
     forbidMessage?: string
     monospace?: boolean
     placeholder?: string
-  }) {
+}) {
+  const { t } = useI18n()
   const bytes = maxBytes === undefined ? 0 : encoder.encode(value).length
   const error =
     shell.error ??
     (maxBytes !== undefined && bytes > maxBytes
-      ? `${bytes - maxBytes} bytes over the limit`
+      ? t('validation.bytesOver', { count: bytes - maxBytes })
       : maxChars !== undefined && value.length > maxChars
-        ? `${value.length - maxChars} characters over the limit`
+        ? t('validation.charactersOver', { count: value.length - maxChars })
         : forbid && forbid.test(value)
-          ? (forbidMessage ?? 'Contains a sequence this field does not allow')
+          ? (forbidMessage ?? t('validation.forbiddenSequence'))
           : undefined)
 
   const budget =
@@ -242,14 +247,15 @@ export function PathField({
   onChange,
   ...shell
 }: FieldShellProps & ValueProps<string> & { placeholder?: string }) {
+  const { t } = useI18n()
   const [touched, setTouched] = useState(false)
   const effective = normalisePath(value)
   const error =
     shell.error ??
     (value && /\\|\?|#/.test(value)
-      ? 'No backslashes, query strings or fragments'
+      ? t('validation.pathCharacters')
       : value && /(^|\/)\.\.?(\/|$)/.test(value)
-        ? '“.” and “..” are not path segments here'
+        ? t('validation.pathSegments')
         : undefined)
 
   return (

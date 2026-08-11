@@ -578,11 +578,11 @@ describe('Cockpit primitives: what the sources have to say', () => {
     // pointer and of nothing else, which is what the console-wide rule in
     // cockpit-forms-density.test.mjs forbids; the instant now lives in a Tooltip
     // whose trigger is a tab stop, so hover, focus and tap all reach it.
-    assert.match(relative, /formatExact\(value\)/, 'and the exact instant is still computed')
+    assert.match(relative, /formatExact\(value,\s*LOCALE_TAGS\[locale\]\)/, 'and the exact instant is still computed')
     assert.match(relative, /<TooltipTrigger asChild>/, 'hung on a real trigger')
     assert.match(relative, /<TooltipContent[^>]*>\{exact\}<\/TooltipContent>/, 'that opens onto it')
     assert.doesNotMatch(relative, /\btitle=/, 'and never on a native title')
-    assert.doesNotMatch(relative, /'de'|'en'|'de-DE'|'en-US'/, 'the locale is the browser’s')
+    assert.match(relative, /LOCALE_TAGS\[locale\]/, 'the locale is the operator’s selected locale')
   })
 
   test('an indeterminate bar reports no percentage to anyone', () => {
@@ -758,8 +758,16 @@ describe('Cockpit primitives: what the sources have to say', () => {
   test('the way back to empty says what empty does in the field it is in', () => {
     const number = source('forms', 'fields', 'number.tsx')
     const fields = source('forms', 'content', 'fields.tsx')
-    assert.match(number, /unsetLabel = 'Never'/, 'a credential that never expires keeps the word that is true for it')
-    assert.match(number, /preset\.days === null \? unsetLabel : preset\.label/, 'and a caller may say it differently')
+    assert.match(
+      number,
+      /unsetLabel \?\? t\('common\.never'\)/,
+      'a credential that never expires keeps the translated word that is true for it',
+    )
+    assert.match(
+      number,
+      /preset\.days === null[\s\S]{0,100}\(unsetLabel \?\? t\('common\.never'\)\)/,
+      'and a caller may say it differently',
+    )
     assert.match(
       number,
       /-preset-\$\{preset\.days \?\? 'never'\}/,
@@ -767,7 +775,11 @@ describe('Cockpit primitives: what the sources have to say', () => {
     )
     // "Never", printed beside "Unset means it publishes with the next release.",
     // reads as "never publish" — which is not what that button does.
-    assert.match(fields, /fallback="Unset means it publishes with the next release\."/)
-    assert.match(fields, /unsetLabel="No schedule"/, 'the scheduler’s empty is a schedule nobody set, not a never')
+    assert.match(fields, /fallback=\{t\('content\.scheduledForFallback'\)\}/)
+    assert.match(
+      fields,
+      /unsetLabel=\{t\('content\.noSchedule'\)\}/,
+      'the scheduler’s empty is a schedule nobody set, not a never',
+    )
   })
 })

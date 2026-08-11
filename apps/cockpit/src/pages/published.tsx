@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck, type ContentKind, type PublishedList } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { TabCountBadge } from '@/components/tab-count'
 import { TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -25,9 +26,9 @@ import { ContentHtml, useContentScheme } from '@/content/lazy'
 import { keys } from '@/lib/query'
 import { ANY } from '@/lib/select-any'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
 
 export function PublishedPage() {
+  const { t, dateTime } = useI18n()
   const { site } = useSite()
   const [term, setTerm] = useState('')
   const [kind, setKind] = useState<'' | ContentKind>('')
@@ -47,7 +48,7 @@ export function PublishedPage() {
 
   if (!site)
     return (
-      <Page title="Published">
+      <Page title={t('page.published.title')}>
         <NoSite />
       </Page>
     )
@@ -70,12 +71,12 @@ export function PublishedPage() {
   const searching = term.length > 1
 
   return (
-    <Page title="Published" description="What the live release actually serves, plus full-text search over it.">
+    <Page title={t('page.published.title')} description={t('page.published.description')}>
       <div className="mb-3 flex flex-wrap gap-2">
         <Input
           className="max-w-md"
           data-testid="published-search"
-          placeholder="Search the published snapshot…"
+          placeholder={t('published.search')}
           value={term}
           onChange={(event) => setTerm(event.target.value)}
         />
@@ -89,16 +90,16 @@ export function PublishedPage() {
           <SelectTrigger
             className="w-40"
             data-testid="published-kind"
-            aria-label="Filter the published snapshot by kind"
+            aria-label={t('published.filterKind')}
           >
-            <SelectValue placeholder="All kinds" />
+            <SelectValue placeholder={t('published.allKinds')} />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value={ANY}>All kinds</SelectItem>
+              <SelectItem value={ANY}>{t('published.allKinds')}</SelectItem>
               {(['page', 'post', 'project', 'deck'] as ContentKind[]).map((value) => (
                 <SelectItem key={value} value={value}>
-                  {value}
+                  {t(`content.kind.${value}`)}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -111,11 +112,11 @@ export function PublishedPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead>Locale</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>{searching ? 'Match' : 'Updated'}</TableHead>
+                <TableHead>{t('published.title')}</TableHead>
+                <TableHead>{t('published.kind')}</TableHead>
+                <TableHead>{t('published.locale')}</TableHead>
+                <TableHead>{t('published.slug')}</TableHead>
+                <TableHead>{searching ? t('published.match') : t('published.updated')}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -126,9 +127,9 @@ export function PublishedPage() {
                 error={searching ? search.error : list.error}
                 isEmpty={(searching ? hits : entries).length === 0}
                 onRetry={() => (searching ? search.refetch() : list.refetch())}
-                emptyTitle={searching ? 'No matches' : 'Nothing published yet'}
+                emptyTitle={searching ? t('published.noMatches') : t('published.empty')}
                 emptyMessage={
-                  searching ? 'Nothing in the active release matches this search.' : 'Build and activate a release.'
+                  searching ? t('published.noMatchesDescription') : t('published.emptyDescription')
                 }
               >
                 {(searching ? hits : entries).map((entry) => (
@@ -146,7 +147,7 @@ export function PublishedPage() {
                     <TableCell className="max-w-[22rem] font-medium break-words">
                       {entry.title || entry.slug}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{entry.kind}</TableCell>
+                    <TableCell className="text-muted-foreground">{t(`content.kind.${entry.kind}`)}</TableCell>
                     <TableCell className="text-muted-foreground">{entry.locale}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{entry.slug}</TableCell>
                     <TableCell className="text-muted-foreground">
@@ -157,7 +158,9 @@ export function PublishedPage() {
                           {String((entry as { headline?: string }).headline ?? '').replace(/<\/?mark>/g, '·')}
                         </span>
                       ) : (
-                        formatDate((entry as { updated_at?: string }).updated_at)
+                        (entry as { updated_at?: string }).updated_at
+                          ? dateTime((entry as { updated_at?: string }).updated_at!)
+                          : '—'
                       )}
                     </TableCell>
                     <TableCell>
@@ -167,7 +170,7 @@ export function PublishedPage() {
                         data-testid="published-inspect"
                         onClick={() => setSelected({ kind: entry.kind, locale: entry.locale, slug: entry.slug })}
                       >
-                        Inspect
+                        {t('published.inspect')}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -202,6 +205,7 @@ function PublishedDetail({
   target: { kind: ContentKind; locale: string; slug: string }
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const document = useQuery({
     queryKey: keys.published.detail(site, target.kind, target.locale, target.slug),
     queryFn: () => ck.published.get(site, target.kind, target.locale, target.slug),
@@ -248,7 +252,7 @@ function PublishedDetail({
       <DialogContent data-testid="published-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>
-            {target.kind} · {target.locale} · {target.slug}
+            {t(`content.kind.${target.kind}`)} · {target.locale} · {target.slug}
           </DialogTitle>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-3 overflow-y-auto">
@@ -263,21 +267,21 @@ function PublishedDetail({
             onValueChange={setTab}
             className="overflow-x-auto"
             tabs={[
-              { id: 'rendered', label: 'Rendered' },
-              { id: 'markdown', label: 'Markdown' },
-              { id: 'semantic', label: 'Semantic' },
-              { id: 'diagnostics', label: 'Diagnostics', badge: diagnosticsBadge },
-              { id: 'composition', label: 'Composition' },
+              { id: 'rendered', label: t('published.rendered') },
+              { id: 'markdown', label: t('published.markdown') },
+              { id: 'semantic', label: t('published.semantic') },
+              { id: 'diagnostics', label: t('published.diagnostics'), badge: diagnosticsBadge },
+              { id: 'composition', label: t('published.composition') },
             ]}
           />
           {document.isPending ? (
-            <SkeletonText lines={10} label="Loading the published document…" data-testid="published-skeleton" />
+            <SkeletonText lines={10} label={t('published.loading')} data-testid="published-skeleton" />
           ) : document.error ? (
             <Alert variant="destructive" data-testid="published-error">
               <TriangleAlert />
-              <AlertTitle>This document could not be read</AlertTitle>
+              <AlertTitle>{t('published.error')}</AlertTitle>
               <AlertDescription>
-                {document.error instanceof Error ? document.error.message : 'Could not load the document'}
+                {document.error instanceof Error ? document.error.message : t('published.errorFallback')}
               </AlertDescription>
             </Alert>
           ) : (
@@ -297,7 +301,7 @@ function PublishedDetail({
                 <img
                   className="w-full rounded-lg border border-border"
                   src={ck.published.compositionUrl(site, target.kind, target.locale, target.slug, 'svg')}
-                  alt="Rendered composition"
+                  alt={t('published.compositionAlt')}
                 />
               </TabPanel>
               {(['markdown', 'semantic', 'diagnostics'] as const).map((view) => (
@@ -314,7 +318,7 @@ function PublishedDetail({
         </div>
         <DialogFooter>
           <Button data-testid="published-close" variant="outline" onClick={onClose}>
-            Close
+            {t('published.close')}
           </Button>
         </DialogFooter>
       </DialogContent>

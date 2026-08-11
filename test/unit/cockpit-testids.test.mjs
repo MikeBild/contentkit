@@ -199,11 +199,7 @@ function delegatesName(body) {
  *    `<summary>` is a disclosure control a keyboard reaches and a browser check
  *    has to click; its `<details>` parent is named and it is not.
  */
-const UNNAMED = new Set([
-  'components/ui/relative-time.tsx <TooltipTrigger asChild>',
-  'components/ui/release-chain.tsx <TooltipTrigger asChild>',
-  'forms/content/body.tsx <summary>',
-])
+const UNNAMED = new Set()
 
 describe('every interactive element carries a data-testid — UI-UX.md §8', () => {
   const controls = []
@@ -293,11 +289,7 @@ describe('every interactive element carries a data-testid — UI-UX.md §8', () 
     // maximum so that trading one fix for one regression is still red.
     assert.deepEqual(
       [...UNNAMED].sort(),
-      [
-        'components/ui/relative-time.tsx <TooltipTrigger asChild>',
-        'components/ui/release-chain.tsx <TooltipTrigger asChild>',
-        'forms/content/body.tsx <summary>',
-      ].sort(),
+      [],
       'UNNAMED is the list of §8 violations this sweep found and did not own. Removing an entry is the fix landing;\n' +
         'adding one needs an argument in the block comment above it.',
     )

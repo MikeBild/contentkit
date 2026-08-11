@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck } from '@/api/ck'
 import { Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -29,18 +30,6 @@ import { keys } from '@/lib/query'
 import { ANY } from '@/lib/select-any'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
-
-const PATTERN_FILTERS = [
-  { key: 'category' as const, label: 'Category', options: PATTERN_CATEGORY },
-  { key: 'scope' as const, label: 'Scope', options: PATTERN_SCOPE },
-  { key: 'status' as const, label: 'Status', options: PATTERN_STATUS },
-]
-
-/** The two free-text filters the registry accepts; neither is a closed set. */
-const PATTERN_TEXT_FILTERS = [
-  { key: 'nodeType' as const, label: 'Node type', placeholder: 'metric, chart, table…' },
-  { key: 'capability' as const, label: 'Capability', placeholder: 'svg, print, zoom…' },
-]
 
 const CANVAS = ['portrait', 'landscape', 'square', 'flow'] as const
 
@@ -85,6 +74,7 @@ type CompositionTab = 'compile' | 'patterns' | 'guides'
 const GROUP = 'composition'
 
 export function CompositionsPage() {
+  const { t } = useI18n()
   const { site } = useSite()
   const can = useCan()
   const [tab, setTab] = useState<CompositionTab>('compile')
@@ -104,6 +94,15 @@ export function CompositionsPage() {
   const guideRows = guides.data?.guides ?? []
   const diagnostics = compile.data?.diagnostics ?? []
   const compiled = compile.data
+  const patternFilters = [
+    { key: 'category' as const, label: t('composition.filter.category'), options: PATTERN_CATEGORY },
+    { key: 'scope' as const, label: t('composition.filter.scope'), options: PATTERN_SCOPE },
+    { key: 'status' as const, label: t('composition.filter.status'), options: PATTERN_STATUS },
+  ]
+  const patternTextFilters = [
+    { key: 'nodeType' as const, label: t('composition.filter.nodeType'), placeholder: t('composition.filter.nodeTypePlaceholder') },
+    { key: 'capability' as const, label: t('composition.filter.capability'), placeholder: t('composition.filter.capabilityPlaceholder') },
+  ]
 
   /**
    * Every refusal on this page, in the order the buttons stand in.
@@ -114,15 +113,15 @@ export function CompositionsPage() {
    * them gained a fourth mutation.
    */
   const failures = [
-    { label: 'Compile', state: compile },
-    { label: 'Validate', state: validate },
-    { label: 'Recommend', state: recommend },
+    { id: 'compile', label: t('composition.compile'), state: compile },
+    { id: 'validate', label: t('composition.validate'), state: validate },
+    { id: 'recommend', label: t('composition.recommend'), state: recommend },
   ].filter((entry) => entry.state.error)
 
   return (
     <Page
-      title="Compositions"
-      description="The deterministic pattern registry, and a compiler you can point at Markdown without persisting anything."
+      title={t('page.compositions.title')}
+      description={t('composition.description')}
     >
       {/*
         Above the strip, not inside a panel: this is the page's own answer to a
@@ -135,14 +134,14 @@ export function CompositionsPage() {
         <div data-testid="composition-failures" className="mb-4 flex flex-col gap-2">
           {failures.map((entry) => (
             <Alert
-              key={entry.label}
+              key={entry.id}
               variant="destructive"
-              data-testid={`composition-error-${entry.label.toLowerCase()}`}
+              data-testid={`composition-error-${entry.id}`}
             >
               <TriangleAlert />
-              <AlertTitle>{entry.label} failed</AlertTitle>
+              <AlertTitle>{t('composition.failed', { action: entry.label })}</AlertTitle>
               <AlertDescription>
-                {entry.state.error instanceof Error ? entry.state.error.message : 'failed'}
+                {entry.state.error instanceof Error ? entry.state.error.message : t('common.operationFailed')}
               </AlertDescription>
             </Alert>
           ))}
@@ -161,7 +160,7 @@ export function CompositionsPage() {
         tabs={[
           {
             id: 'compile',
-            label: 'Compile',
+            label: t('composition.compile'),
             /*
               The strip already says how many patterns and how many guides are
               behind their tabs; this is the same sentence for the one state
@@ -174,18 +173,18 @@ export function CompositionsPage() {
             badge:
               failures.length > 0 ? (
                 <Badge variant="destructive" data-testid="composition-tab-compile-failed">
-                  {failures.length} failed
+                  {t('composition.failedCount', { count: failures.length })}
                 </Badge>
               ) : undefined,
           },
           {
             id: 'patterns',
-            label: 'Patterns',
+            label: t('composition.patterns'),
             badge: patterns.data ? <Badge variant="outline">{rows.length}</Badge> : undefined,
           },
           {
             id: 'guides',
-            label: 'Guides',
+            label: t('composition.guides'),
             badge: guides.data ? <Badge variant="outline">{guideRows.length}</Badge> : undefined,
           },
         ]}
@@ -202,11 +201,11 @@ export function CompositionsPage() {
             It belongs to the three buttons below rather than to the page, which
             is why it sits with the control and not in the Page description. */}
         <p className="text-sm text-muted-foreground">
-          Nothing is stored: this returns the semantic tree, the chosen pattern and diagnostics only.
+          {t('composition.compileHint')}
         </p>
         <Textarea
           data-testid="composition-source"
-          aria-label="Markdown to compile"
+          aria-label={t('composition.sourceLabel')}
           className="h-64 font-mono text-xs"
           spellCheck={false}
           value={source}
@@ -223,7 +222,7 @@ export function CompositionsPage() {
             disabled={!site || !can('content:write') || recommend.isPending}
           >
             {recommend.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Recommend
+            {t('composition.recommend')}
           </Button>
           <Button
             data-testid="composition-validate"
@@ -232,7 +231,7 @@ export function CompositionsPage() {
             disabled={!site || !can('content:write') || validate.isPending}
           >
             {validate.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Validate
+            {t('composition.validate')}
           </Button>
           <Button
             data-testid="composition-compile"
@@ -240,7 +239,7 @@ export function CompositionsPage() {
             disabled={!site || !can('content:write') || compile.isPending}
           >
             {compile.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Compile
+            {t('composition.compile')}
           </Button>
         </div>
 
@@ -249,15 +248,15 @@ export function CompositionsPage() {
             data-testid="composition-result"
             className="grid gap-x-6 gap-y-1 rounded-lg border border-border p-3 text-xs sm:grid-cols-[9rem_1fr]"
           >
-            <dt className="text-muted-foreground">Title</dt>
+            <dt className="text-muted-foreground">{t('composition.result.title')}</dt>
             <dd>{compiled.semantic.title}</dd>
-            <dt className="text-muted-foreground">Nodes</dt>
+            <dt className="text-muted-foreground">{t('composition.result.nodes')}</dt>
             <dd className="font-mono">{compiled.semantic.nodes.map((node) => node.type).join(', ') || '—'}</dd>
-            <dt className="text-muted-foreground">Presentation</dt>
+            <dt className="text-muted-foreground">{t('composition.result.presentation')}</dt>
             <dd>
               {compiled.rendering.html_presentation} · {compiled.rendering.fidelity}
             </dd>
-            <dt className="text-muted-foreground">Accessible text</dt>
+            <dt className="text-muted-foreground">{t('composition.result.accessibleText')}</dt>
             <dd>{compiled.accessible_text}</dd>
           </dl>
         ) : null}
@@ -289,7 +288,7 @@ export function CompositionsPage() {
           {/* Each filter's id sits on its trigger — `Select` renders no DOM —
               and the sentinel is what stands in for "no filter", which the
               handler turns straight back into `undefined`. */}
-          {PATTERN_FILTERS.map((filter) => (
+          {patternFilters.map((filter) => (
             <Select
               key={filter.key}
               value={filters[filter.key] ?? ANY}
@@ -300,16 +299,16 @@ export function CompositionsPage() {
               <SelectTrigger
                 className="w-40"
                 data-testid={`pattern-filter-${filter.key}`}
-                aria-label={`Filter patterns by ${filter.label.toLowerCase()}`}
+                aria-label={t('composition.filter.by', { filter: filter.label.toLocaleLowerCase() })}
               >
-                <SelectValue placeholder={`All ${filter.label.toLowerCase()}`} />
+                <SelectValue placeholder={t('composition.filter.all', { filter: filter.label.toLocaleLowerCase() })} />
               </SelectTrigger>
               {/* An option is a control a reader picks and a browser check has
                   to address, so it carries a name of its own — UI-UX.md §8. */}
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value={ANY} data-testid={`pattern-filter-${filter.key}-any`}>
-                    All {filter.label.toLowerCase()}
+                    {t('composition.filter.all', { filter: filter.label.toLocaleLowerCase() })}
                   </SelectItem>
                   {filter.options.map((option) => (
                     <SelectItem key={option} value={option} data-testid={`pattern-filter-${filter.key}-${option}`}>
@@ -326,13 +325,13 @@ export function CompositionsPage() {
               setFilters({ ...filters, canvas: next === ANY ? undefined : (next as PatternQuery['canvas']) })
             }
           >
-            <SelectTrigger className="w-40" data-testid="pattern-filter-canvas" aria-label="Filter patterns by canvas">
-              <SelectValue placeholder="All canvases" />
+            <SelectTrigger className="w-40" data-testid="pattern-filter-canvas" aria-label={t('composition.filter.by', { filter: t('composition.filter.canvas') })}>
+              <SelectValue placeholder={t('composition.filter.canvases')} />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
                 <SelectItem value={ANY} data-testid="pattern-filter-canvas-any">
-                  All canvases
+                  {t('composition.filter.canvases')}
                 </SelectItem>
                 {CANVAS.map((option) => (
                   <SelectItem key={option} value={option} data-testid={`pattern-filter-canvas-${option}`}>
@@ -342,7 +341,7 @@ export function CompositionsPage() {
               </SelectGroup>
             </SelectContent>
           </Select>
-          {PATTERN_TEXT_FILTERS.map((filter) => (
+          {patternTextFilters.map((filter) => (
             <Input
               key={filter.key}
               className="w-40"
@@ -362,10 +361,10 @@ export function CompositionsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Pattern</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t('composition.table.pattern')}</TableHead>
+                  <TableHead>{t('composition.filter.category')}</TableHead>
+                  <TableHead>{t('composition.filter.scope')}</TableHead>
+                  <TableHead>{t('composition.filter.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -375,8 +374,8 @@ export function CompositionsPage() {
                   error={patterns.error}
                   isEmpty={rows.length === 0}
                   onRetry={() => patterns.refetch()}
-                  emptyTitle="No pattern matches these filters"
-                  emptyMessage="Widen the category, scope, status or canvas above."
+                  emptyTitle={t('composition.patterns.empty')}
+                  emptyMessage={t('composition.patterns.emptyDescription')}
                 >
                   {rows.map((descriptor) => (
                     <TableRow key={descriptor.id} data-testid="pattern-row" data-pattern={descriptor.id}>
@@ -422,17 +421,17 @@ export function CompositionsPage() {
         className="flex flex-col gap-3"
       >
         <p className="text-sm text-muted-foreground">
-          What each authoring construct is for, when to reject it, and which patterns it is compatible with.
+          {t('composition.guides.hint')}
         </p>
         <Card className="py-0">
           <div className="scrollbar-thin overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Guide</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Summary</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t('composition.table.guide')}</TableHead>
+                  <TableHead>{t('composition.table.kind')}</TableHead>
+                  <TableHead>{t('composition.table.summary')}</TableHead>
+                  <TableHead>{t('composition.filter.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -442,8 +441,8 @@ export function CompositionsPage() {
                   error={guides.error}
                   isEmpty={guideRows.length === 0}
                   onRetry={() => guides.refetch()}
-                  emptyTitle="No publishing guides"
-                  emptyMessage="This installation's registry answered an empty list."
+                  emptyTitle={t('composition.guides.empty')}
+                  emptyMessage={t('composition.guides.emptyDescription')}
                 >
                   {guideRows.map((entry) => (
                     <TableRow key={entry.id} data-testid="guide-row" data-guide={entry.id}>
@@ -496,6 +495,7 @@ function Bullets({ label, items }: { label: string; items: readonly string[] | u
 }
 
 function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => void }) {
+  const { t } = useI18n()
   const descriptor = useQuery({
     queryKey: [...keys.patterns(), pattern],
     queryFn: () => ck.compositions.pattern(pattern),
@@ -520,47 +520,47 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
         </DialogHeader>
         <div className="scrollbar-thin overflow-y-auto">
           {descriptor.isPending ? (
-            <SkeletonFields fields={5} label="Loading the pattern…" data-testid="pattern-skeleton" />
+            <SkeletonFields fields={5} label={t('composition.loadingPattern')} data-testid="pattern-skeleton" />
           ) : descriptor.error ? (
             <Alert variant="destructive" data-testid="pattern-error">
               <TriangleAlert />
-              <AlertTitle>This pattern could not be read</AlertTitle>
+              <AlertTitle>{t('composition.patternError')}</AlertTitle>
               <AlertDescription>
-                {descriptor.error instanceof Error ? descriptor.error.message : 'Could not load the pattern'}
+                {descriptor.error instanceof Error ? descriptor.error.message : t('composition.patternErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : data ? (
             <div className="flex flex-col gap-4">
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
-                <dt className="text-muted-foreground">Category</dt>
+                <dt className="text-muted-foreground">{t('composition.filter.category')}</dt>
                 <dd>{data.category}</dd>
-                <dt className="text-muted-foreground">Scope</dt>
+                <dt className="text-muted-foreground">{t('composition.filter.scope')}</dt>
                 <dd>{data.scope}</dd>
-                <dt className="text-muted-foreground">Status</dt>
+                <dt className="text-muted-foreground">{t('composition.filter.status')}</dt>
                 <dd>{data.status}</dd>
-                <dt className="text-muted-foreground">Version</dt>
+                <dt className="text-muted-foreground">{t('composition.detail.version')}</dt>
                 <dd>{data.version}</dd>
-                <dt className="text-muted-foreground">Accepts</dt>
+                <dt className="text-muted-foreground">{t('composition.detail.accepts')}</dt>
                 <dd>
-                  {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} items
+                  {data.accepts.node_types.join(', ')} · {data.accepts.min_items}–{data.accepts.max_items} {t('composition.detail.items')}
                 </dd>
-                <dt className="text-muted-foreground">Outputs</dt>
+                <dt className="text-muted-foreground">{t('composition.detail.outputs')}</dt>
                 <dd>{data.capabilities.outputs.join(', ')}</dd>
-                <dt className="text-muted-foreground">Question</dt>
+                <dt className="text-muted-foreground">{t('composition.detail.question')}</dt>
                 <dd>{data.narrative.question}</dd>
-                <dt className="text-muted-foreground">Reader takeaway</dt>
+                <dt className="text-muted-foreground">{t('composition.detail.takeaway')}</dt>
                 <dd>{data.narrative.reader_takeaway}</dd>
               </dl>
-              <Bullets label="Story arc" items={data.narrative.story_arc} />
-              <Bullets label="Fallbacks" items={data.fallbacks} />
+              <Bullets label={t('composition.detail.storyArc')} items={data.narrative.story_arc} />
+              <Bullets label={t('composition.detail.fallbacks')} items={data.fallbacks} />
               <div>
-                <h4 className="text-xs font-medium text-muted-foreground">Slots</h4>
+                <h4 className="text-xs font-medium text-muted-foreground">{t('composition.detail.slots')}</h4>
                 <ul className="mt-1 flex flex-col gap-0.5 text-sm">
                   {data.slots.map((slot) => (
                     <li key={slot.name}>
                       <span className="font-mono text-xs">{slot.name}</span> · {slot.accepts.join(', ')} · {slot.min}–
                       {slot.max}
-                      {slot.required ? ' · required' : ''}
+                      {slot.required ? ` · ${t('composition.detail.required')}` : ''}
                     </li>
                   ))}
                 </ul>
@@ -570,7 +570,7 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" data-testid="pattern-close" onClick={onClose}>
-            Close
+            {t('composition.close')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -579,6 +579,7 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
 }
 
 function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void }) {
+  const { t } = useI18n()
   const detail = useQuery({ queryKey: [...keys.guides, guide], queryFn: () => ck.compositions.guide(guide) })
   const data = detail.data
 
@@ -597,37 +598,37 @@ function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void })
         </DialogHeader>
         <div className="scrollbar-thin overflow-y-auto">
           {detail.isPending ? (
-            <SkeletonFields fields={5} label="Loading the guide…" data-testid="guide-skeleton" />
+            <SkeletonFields fields={5} label={t('composition.loadingGuide')} data-testid="guide-skeleton" />
           ) : detail.error ? (
             <Alert variant="destructive" data-testid="guide-error">
               <TriangleAlert />
-              <AlertTitle>This guide could not be read</AlertTitle>
+              <AlertTitle>{t('composition.guideError')}</AlertTitle>
               <AlertDescription>
-                {detail.error instanceof Error ? detail.error.message : 'Could not load the guide'}
+                {detail.error instanceof Error ? detail.error.message : t('composition.guideErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : data ? (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">{data.summary}</p>
-              <Bullets label="Use when" items={data.selection.use_when} />
-              <Bullets label="Reject when" items={data.selection.reject_when} />
-              <Bullets label="Required input" items={data.input_contract.required} />
-              <Bullets label="Optional input" items={data.input_contract.optional} />
-              <Bullets label="Constraints" items={data.input_contract.constraints} />
-              <Bullets label="Guidance" items={data.authoring.guidance} />
+              <Bullets label={t('composition.detail.useWhen')} items={data.selection.use_when} />
+              <Bullets label={t('composition.detail.rejectWhen')} items={data.selection.reject_when} />
+              <Bullets label={t('composition.detail.requiredInput')} items={data.input_contract.required} />
+              <Bullets label={t('composition.detail.optionalInput')} items={data.input_contract.optional} />
+              <Bullets label={t('composition.detail.constraints')} items={data.input_contract.constraints} />
+              <Bullets label={t('composition.detail.guidance')} items={data.authoring.guidance} />
               <div>
-                <h4 className="text-xs font-medium text-muted-foreground">Syntax</h4>
+                <h4 className="text-xs font-medium text-muted-foreground">{t('composition.detail.syntax')}</h4>
                 <pre className="scrollbar-thin mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
                   {data.authoring.syntax}
                 </pre>
               </div>
-              <Bullets label="Compatible patterns" items={data.compatible_patterns} />
+              <Bullets label={t('composition.detail.compatiblePatterns')} items={data.compatible_patterns} />
             </div>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" data-testid="guide-close" onClick={onClose}>
-            Close
+            {t('composition.close')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ck, type Site } from '@/api/ck'
 import { ApiError } from '@/api/client'
 import { Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { AppLink } from '@/components/app-link'
 import { Confirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,7 @@ import { useSite } from '@/lib/site'
  * sidebar says so — and the settings of the selected site live at /settings.
  */
 export function SitesPage() {
+  const { t } = useI18n()
   // Deliberately no `site`/`siteId`: the selection must not decide anything
   // here. `setSite` is a write — the wizard hands its new slug to it so the
   // rest of the console follows the site that was just created.
@@ -41,8 +43,8 @@ export function SitesPage() {
 
   return (
     <Page
-      title="Sites"
-      description="Every site this credential may read. Creating and deleting one is an installation act; a site's own settings are under Site settings."
+      title={t('page.sites.title')}
+      description={t('sites.description')}
       actions={can('site:admin') ? <CreateSiteWizard onCreated={setSite} /> : null}
     >
       {/* The table is the card's whole content, so the vertical padding a Card
@@ -52,10 +54,10 @@ export function SitesPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Slug</TableHead>
-              <TableHead>Base URL</TableHead>
-              <TableHead>Default locale</TableHead>
+              <TableHead>{t('sites.name')}</TableHead>
+              <TableHead>{t('sites.slug')}</TableHead>
+              <TableHead>{t('sites.baseUrl')}</TableHead>
+              <TableHead>{t('sites.defaultLocale')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -65,8 +67,8 @@ export function SitesPage() {
               isLoading={isLoading}
               error={error}
               isEmpty={sites.length === 0}
-              emptyTitle="No sites yet"
-              emptyMessage="Create one — nothing is public until a release of it is built and activated."
+              emptyTitle={t('sites.empty')}
+              emptyMessage={t('sites.emptyDescription')}
             >
               {sites.map((entry) => (
                 <TableRow key={entry.id} data-testid="ck-sites-row" data-site={entry.slug}>
@@ -97,7 +99,7 @@ export function SitesPage() {
                         search={(() => ({ site: entry.slug })) as never}
                         data-testid={`ck-sites-settings-${entry.slug}`}
                       >
-                        Settings
+                        {t('sites.settings')}
                       </AppLink>
                     </Button>
                     {can('site:admin') ? <DeleteSite site={entry} /> : null}
@@ -141,6 +143,7 @@ export function SitesPage() {
  * reads the site switcher.
  */
 function DeleteSite({ site }: { site: Site }) {
+  const { t } = useI18n()
   /**
    * Sticky, and reset every time the dialog is opened.
    *
@@ -160,14 +163,12 @@ function DeleteSite({ site }: { site: Site }) {
 
   return (
     <Confirm
-      title={`Delete ${site.name}?`}
+      title={t('sites.deleteTitle', { name: site.name })}
       description={
         <>
-          The site row, its content, its releases and the stored objects behind them are removed. None of it is
-          recoverable.{' '}
-          {refused
-            ? 'The server has named what would go; answering again deletes it with the site.'
-            : 'A site that still owns content refuses once and names what would go, so the second answer is a decision about known numbers.'}
+          {t('sites.deleteDescription', {
+            step: refused ? t('sites.deletePurgeStep') : t('sites.deleteFirstStep'),
+          })}
           {/* The slug, because two sites may carry the same name and only one of
               them is in this row. A span rather than a paragraph: the
               description Radix renders is itself a <p>. */}
@@ -176,7 +177,7 @@ function DeleteSite({ site }: { site: Site }) {
           </span>
         </>
       }
-      confirmLabel={refused ? 'Delete the site and all of it' : 'Delete site'}
+      confirmLabel={refused ? t('sites.deleteAll') : t('sites.delete')}
       destructive
       // The names `scripts/verify-cockpit-prod.md` drives this by, including the
       // one that separates the first answer from the one that destroys a live
@@ -199,7 +200,7 @@ function DeleteSite({ site }: { site: Site }) {
           setFailure(conflict ? 'refusal' : 'error')
           throw thrown
         }
-        toast({ tone: 'success', title: `${site.name} was deleted` })
+        toast({ tone: 'success', title: t('sites.deleted', { name: site.name }) })
         // Awaited, so the row is gone before the dialog closes: the trigger this
         // was opened from unmounts with it, and focus lands on the table rather
         // than on a control that is about to disappear.
@@ -211,7 +212,7 @@ function DeleteSite({ site }: { site: Site }) {
         <Button
           variant="destructive"
           size="sm"
-          aria-label={`Delete ${site.name}`}
+          aria-label={t('sites.deleteAria', { name: site.name })}
           data-testid={`ck-site-delete-${site.slug}`}
           onClick={() => {
             setRefused(false)
@@ -225,7 +226,7 @@ function DeleteSite({ site }: { site: Site }) {
               the reader decides whether to press *this* before any dialog exists,
               and next to it in the same cell sits a link that only navigates. */}
           <Trash2 data-icon="inline-start" />
-          Delete
+          {t('sites.delete')}
         </Button>
       )}
     </Confirm>

@@ -1384,9 +1384,13 @@ describe('the release chain, on screen', () => {
     assert.doesNotMatch(stripComments(releasesPage), /file_count \?\? 0/, 'and the page has to keep it')
     assert.doesNotMatch(stripComments(releasesPage), /\?\? 0/, 'in every column, not only that one')
     assert.match(releasesPage, /count === null \|\| count === undefined/, 'absent is tested for, not defaulted away')
-    assert.match(releasesPage, /'no file count reported'/, 'and named')
+    assert.match(releasesPage, /t\('releases\.fileCountUnknown'\)/, 'and named in the active locale')
     assert.match(releasesPage, /\{fileCount\(active\.file_count\)\}/, 'the live summary goes through it')
-    assert.match(releasesPage, /count === 1 \? 'file' : 'files'/, 'and one file is not "1 files"')
+    assert.match(
+      releasesPage,
+      /count === 1 \? t\('releases\.fileCountOne'\) : t\('releases\.fileCountMany', \{ count \}\)/,
+      'and one file is not pluralized like many',
+    )
   })
 
   test('the overview draws no missing product total as a zero either', () => {

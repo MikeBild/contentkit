@@ -9,6 +9,7 @@ import { CopyButton } from '@/components/ui/copy-button'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabPanel } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/toast'
+import { useI18n } from '@/lib/i18n-context'
 import { slugify } from '../fields'
 import { SaveBar, UnsavedPill } from '../save-bar'
 import { useForm } from '../use-form'
@@ -66,6 +67,7 @@ export function ContentEditor({
   canPreview,
   onSaved,
 }: ContentEditorProps) {
+  const { t } = useI18n()
   const { toast } = useToast()
   const [tab, setTab] = useState<PreviewTab>('structure')
   const [preview, setPreview] = useState<{ preview_url: string; invitation_url: string } | null>(null)
@@ -80,10 +82,10 @@ export function ContentEditor({
         frontmatter: {} as Record<string, unknown>,
         body: source,
         raw: source,
-        failure: failure instanceof FrontmatterError ? failure.message : 'The document could not be parsed',
+        failure: failure instanceof FrontmatterError ? failure.message : t('content.editor.parseFallback'),
       }
     }
-  }, [source])
+  }, [source, t])
 
   const initial = useMemo<ContentUI>(
     () => ({ fm: detect(parsed.frontmatter), body: parsed.body }),
@@ -143,17 +145,17 @@ export function ContentEditor({
       const revisions = await ck.content.revisions(id)
       const newest = revisions[0]
       if (!newest) return
-      const name = slugify(`draft-${form.values.fm.slug || form.values.fm.title || id}`).slice(0, 80)
+      const name = slugify(`draft-${form.values.fm.slug || form.values.fm.title || 'document'}`).slice(0, 80)
       const built = await ck.releases.preview(site, {
-        slug: name.length >= 3 ? name : `draft-${id.slice(0, 8)}`,
+        slug: name.length >= 3 ? name : 'draft',
         revision_ids: [newest.id],
-        reason: 'Editor preview',
+        reason: t('content.editor.previewReason'),
       })
       setPreview({ preview_url: built.preview_url, invitation_url: built.invitation_url })
     } catch (failure) {
       toast({
         tone: 'danger',
-        title: 'The preview could not be built',
+        title: t('content.editor.previewError'),
         detail: failure instanceof Error ? failure.message : undefined,
       })
     } finally {
@@ -177,16 +179,14 @@ export function ContentEditor({
                 variant="ghost"
                 size="icon-xs"
                 data-testid="ck-content-immutability-info"
-                aria-label="What saving does to a revision"
+                aria-label={t('content.editor.saveInfoLabel')}
               >
                 <InfoIcon />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="start" data-testid="ck-content-immutability-content">
-              <PopoverTitle>Revisions are immutable</PopoverTitle>
-              <PopoverDescription>
-                Saving writes a new draft; nothing is live until a release carries it.
-              </PopoverDescription>
+              <PopoverTitle>{t('content.editor.immutableTitle')}</PopoverTitle>
+              <PopoverDescription>{t('content.editor.immutableDescription')}</PopoverDescription>
             </PopoverContent>
           </Popover>
         </div>
@@ -209,7 +209,7 @@ export function ContentEditor({
                 onClick={() => void buildPreview()}
               >
                 {isBuilding ? <Spinner data-icon="inline-start" /> : null}
-                Save and build a preview
+                {t('content.editor.savePreview')}
               </Button>
             ) : null
           }
@@ -217,16 +217,17 @@ export function ContentEditor({
       </div>
 
       {parsed.failure ? (
-        <Banner tone="error" testId="ck-content-parse-error" title="The frontmatter does not parse">
-          {parsed.failure} — the document cannot be edited here until its frontmatter parses.
+        <Banner tone="error" testId="ck-content-parse-error" title={t('content.editor.parseTitle')}>
+          {t('content.editor.parseDescription', { error: parsed.failure })}
         </Banner>
       ) : null}
 
       {drift.keys.length ? (
-        <Banner tone="error" testId="ck-content-drift" title="This document is not editable here">
-          This form does not read {drift.keys.map((key) => `“${key}”`).join(', ')} the way it is written, so
-          saving would rewrite it. Editing is disabled for this document rather than changing an author's file silently.
-          {drift.reason ? ` (${drift.reason})` : ''}
+        <Banner tone="error" testId="ck-content-drift" title={t('content.editor.driftTitle')}>
+          {t('content.editor.driftDescription', {
+            keys: drift.keys.map((key) => `“${key}”`).join(', '),
+            reason: drift.reason ? ` (${drift.reason})` : '',
+          })}
         </Banner>
       ) : null}
 
@@ -234,20 +235,18 @@ export function ContentEditor({
         <Banner
           tone="error"
           testId="ck-content-server-error"
-          title="The write was rejected"
+          title={t('content.editor.writeTitle')}
           onDismiss={form.clearUnassigned}
         >
-          The write was rejected and no revision was created: {form.unassignedError}
+          {t('content.editor.writeDescription', { error: form.unassignedError })}
         </Banner>
       ) : null}
 
       {preview ? (
         <Alert data-testid="ck-content-preview-built">
           <CircleCheck />
-          <AlertTitle>The preview is built</AlertTitle>
-          <AlertDescription>
-            The invitation is a one-time secret: opening it creates the session and consumes it.
-          </AlertDescription>
+          <AlertTitle>{t('content.editor.previewBuilt')}</AlertTitle>
+          <AlertDescription>{t('content.editor.previewSecret')}</AlertDescription>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <a
               href={preview.preview_url}
@@ -258,7 +257,11 @@ export function ContentEditor({
             >
               {preview.preview_url}
             </a>
-            <CopyButton value={preview.invitation_url} data-testid="ck-content-invitation-copy" label="Copy invitation" />
+            <CopyButton
+              value={preview.invitation_url}
+              data-testid="ck-content-invitation-copy"
+              label={t('content.editor.copyInvitation')}
+            />
           </div>
         </Alert>
       ) : null}
@@ -296,9 +299,9 @@ export function ContentEditor({
                 value={tab}
                 onValueChange={setTab}
                 tabs={[
-                  { id: 'structure', label: 'Structure' },
-                  { id: 'rendered', label: 'Rendered' },
-                  { id: 'validate', label: 'Validate' },
+                  { id: 'structure', label: t('content.editor.structure') },
+                  { id: 'rendered', label: t('content.editor.rendered') },
+                  { id: 'validate', label: t('content.editor.validate') },
                 ]}
               />
               <div className="pt-4">
@@ -357,6 +360,7 @@ function Banner({
   onDismiss?: () => void
   children: React.ReactNode
 }) {
+  const { t } = useI18n()
   return (
     <Alert variant={tone === 'error' ? 'destructive' : 'default'} data-testid={testId}>
       <TriangleAlert />
@@ -365,7 +369,7 @@ function Banner({
       {onDismiss ? (
         <AlertAction>
           <Button variant="ghost" size="sm" data-testid={`${testId}-dismiss`} onClick={onDismiss}>
-            Dismiss
+            {t('content.editor.dismiss')}
           </Button>
         </AlertAction>
       ) : null}

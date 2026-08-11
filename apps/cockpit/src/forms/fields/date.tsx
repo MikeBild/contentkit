@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { dateState, fromDayInput, toDayInput, todayInput } from './date-value'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
@@ -48,9 +49,10 @@ export function DateField({
     /** Bounds for the control, as ISO instants or as days. */
     min?: string
     max?: string
-  }) {
+}) {
+  const { t } = useI18n()
   const state = dateState(value)
-  const error = shell.error ?? (state === 'invalid' ? `Not a date: ${value}` : undefined)
+  const error = shell.error ?? (state === 'invalid' ? t('validation.notDate', { value: value ?? '' }) : undefined)
 
   return (
     <FieldShell {...shell} error={error}>
@@ -86,7 +88,7 @@ export function DateField({
                 unset date will stay unset on save, an unreadable one is kept
                 exactly as the author wrote it. */}
             <span data-testid={`${control['data-testid']}-state`} className="text-xs text-muted-foreground">
-              {state === 'set' ? 'Set' : state === 'invalid' ? 'Not a date' : 'Not set'}
+              {t(state === 'set' ? 'date.set' : state === 'invalid' ? 'date.notDate' : 'date.notSet')}
             </span>
             {state === 'unset' ? null : (
               <Button
@@ -97,7 +99,7 @@ export function DateField({
                 disabled={control.disabled}
                 onClick={() => onChange(undefined)}
               >
-                Clear
+                {t('common.clear')}
               </Button>
             )}
           </div>
@@ -116,7 +118,7 @@ export function DateField({
               // the time of day of an instant it replaces.
               onClick={() => onChange(fromDayInput(todayInput(), value))}
             >
-              Today
+              {t('common.today')}
             </Button>
           ) : null}
         </div>

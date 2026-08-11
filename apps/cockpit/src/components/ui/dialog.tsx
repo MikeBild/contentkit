@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/lib/i18n-context"
 import { Button } from "@/components/ui/button"
 
 /**
@@ -137,6 +138,7 @@ function DialogContent({
   closeDisabled?: boolean
   "data-testid"?: string
 }) {
+  const { t } = useI18n()
   /**
    * Whatever had focus when this content first rendered — the control the
    * operator pressed to open the dialog.
@@ -220,7 +222,7 @@ function DialogContent({
               data-testid={testId ? `${testId}-close` : "dialog-close"}
             >
               <XIcon />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{t('dialog.close')}</span>
             </Button>
           </DialogPrimitive.Close>
         )}
@@ -249,6 +251,7 @@ function DialogFooter({
   showCloseButton?: boolean
   "data-testid"?: string
 }) {
+  const { t } = useI18n()
   return (
     <div
       data-slot="dialog-footer"
@@ -266,7 +269,7 @@ function DialogFooter({
             variant="outline"
             data-testid={testId ? `${testId}-close` : "dialog-footer-close"}
           >
-            Close
+            {t('dialog.close')}
           </Button>
         </DialogPrimitive.Close>
       )}

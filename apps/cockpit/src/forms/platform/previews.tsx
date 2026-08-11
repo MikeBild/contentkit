@@ -19,6 +19,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { EntityMultiSelect, NumberField, SlugField, TextField } from '@/forms/fields'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 
 const HOUR_SECONDS = 3600
 /** The server's own bounds on `expires_in`, in the unit this form speaks. */
@@ -26,6 +27,7 @@ const MIN_HOURS = 1
 const MAX_HOURS = 168
 
 function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: (preview: Preview) => void; onClose: () => void }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const [slug, setSlug] = useState('')
   const [itemIds, setItemIds] = useState<string[]>([])
@@ -86,75 +88,76 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
         }}
       >
         <DialogHeader>
-          <DialogTitle>New preview</DialogTitle>
-          <DialogDescription>
-            A preview is a full build behind a one-time invitation. It is never activated and never becomes the live
-            site.
-          </DialogDescription>
+          <DialogTitle>{t('previews.new')}</DialogTitle>
+          <DialogDescription>{t('previews.newDescription')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           <SlugField
             data-testid="ck-preview-slug"
-            label="Name"
+            label={t('previews.name')}
             required
             derivedFrom={reason}
-            help="Appears in the preview URL."
-            about="Reusing a name atomically replaces the previous preview under it."
+            help={t('previews.nameHelp')}
+            about={t('previews.nameAbout')}
             value={slug}
             onChange={setSlug}
           />
 
           <EntityMultiSelect
             data-testid="ck-preview-items"
-            label="Documents to overlay"
-            about="Their newest revision is built on top of what is published. One revision per document."
-            fallback="Empty previews the published set exactly as it stands."
+            label={t('previews.documents')}
+            about={t('previews.documentsAbout')}
+            fallback={t('previews.documentsFallback')}
             value={itemIds}
             isLoading={content.isPending}
             optionsError={content.error}
-            emptyMessage="No content on this site yet"
+            emptyMessage={t('previews.noContent')}
             options={items.map((item) => ({
               value: item.id,
-              label: item.title || item.slug || item.id.slice(0, 8),
-              hint: `${item.kind} · ${item.latest_revision_status ?? 'draft'}`,
+              label: item.title || item.slug || t('common.unavailableDocument'),
+              hint: `${t(`content.kind.${item.kind}`)} · ${t(
+                item.latest_revision_status === 'published'
+                  ? 'content.revisions.publishedStatus'
+                  : 'content.revisions.draftStatus',
+              )}`,
             }))}
             onChange={(next) => setItemIds([...next])}
           />
 
           <NumberField
             data-testid="ck-preview-expires"
-            label="Expires in"
+            label={t('previews.expiresIn')}
             required
             integer
-            unit="hours"
+            unit={t('previews.hours')}
             min={MIN_HOURS}
             max={MAX_HOURS}
-            help="After this the invitation and the preview URL both stop working."
+            help={t('previews.expiresHelp')}
             value={hours}
             onChange={setHours}
           />
 
           <TextField
             data-testid="ck-preview-reason"
-            label="Reason"
+            label={t('previews.reason')}
             value={reason}
-            fallback="Recorded on the release row; empty is fine."
+            fallback={t('previews.reasonFallback')}
             onChange={setReason}
           />
 
           {create.error ? (
             <Alert variant="destructive" data-testid="ck-preview-error">
               <TriangleAlert />
-              <AlertTitle>The preview was not built</AlertTitle>
+              <AlertTitle>{t('previews.buildError')}</AlertTitle>
               <AlertDescription>
-                {create.error instanceof Error ? create.error.message : 'Could not build the preview'}
+                {create.error instanceof Error ? create.error.message : t('previews.buildErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-preview-cancel" disabled={create.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             data-testid="ck-preview-submit"
@@ -162,7 +165,7 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
             onClick={() => create.mutate()}
           >
             {create.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Build preview
+            {t('previews.build')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -176,19 +179,19 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
  * access to the first person who follows it.
  */
 function PreviewLinks({ preview, onDismiss }: { preview: Preview; onDismiss: () => void }) {
+  const { t } = useI18n()
   return (
     // An `Alert`, not a `div` painted amber and told to announce itself: the
     // component already carries `role="alert"`, the border and the icon grid.
     <Alert data-testid="ck-preview-links" className="mb-4">
       <TriangleAlert />
-      <AlertTitle>Preview built</AlertTitle>
+      <AlertTitle>{t('previews.built')}</AlertTitle>
       <AlertDescription>
-        It expires in {Math.round(preview.expires_in / HOUR_SECONDS)} hours. The invitation is a secret: the first
-        person who opens it is signed in to the preview.
+        {t('previews.builtDescription', { hours: Math.round(preview.expires_in / HOUR_SECONDS) })}
       </AlertDescription>
       <dl className="mt-3 flex flex-col gap-2 text-xs">
         <div>
-          <dt className="text-muted-foreground">Preview URL</dt>
+          <dt className="text-muted-foreground">{t('previews.previewUrl')}</dt>
           <dd className="mt-1 flex items-center gap-2">
             <code data-testid="ck-preview-url" className="min-w-0 flex-1 break-all rounded-lg border border-border bg-background p-2 font-mono">
               {preview.preview_url}
@@ -197,7 +200,7 @@ function PreviewLinks({ preview, onDismiss }: { preview: Preview; onDismiss: () 
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Invitation URL — hand out once</dt>
+          <dt className="text-muted-foreground">{t('previews.invitationUrl')}</dt>
           <dd className="mt-1 flex items-center gap-2">
             <code data-testid="ck-preview-invitation" className="min-w-0 flex-1 break-all rounded-lg border border-border bg-background p-2 font-mono">
               {preview.invitation_url}
@@ -208,7 +211,7 @@ function PreviewLinks({ preview, onDismiss }: { preview: Preview; onDismiss: () 
       </dl>
       <div className="mt-3 flex justify-end">
         <Button variant="outline" size="sm" data-testid="ck-preview-dismiss" onClick={onDismiss}>
-          Dismiss
+          {t('previews.dismiss')}
         </Button>
       </div>
     </Alert>
@@ -216,6 +219,7 @@ function PreviewLinks({ preview, onDismiss }: { preview: Preview; onDismiss: () 
 }
 
 export function PreviewsCard({ site }: { site: string }) {
+  const { t } = useI18n()
   const can = useCan()
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState<Preview | null>(null)
@@ -225,7 +229,7 @@ export function PreviewsCard({ site }: { site: string }) {
       <CardHeader className="flex-row items-center justify-between">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1">
-            <CardTitle>Previews</CardTitle>
+            <CardTitle>{t('previews.title')}</CardTitle>
             {/* The second sentence is a pointer to another part of the page, not
                 something to read before acting — so it waits behind the
                 affordance instead of sitting under the heading. */}
@@ -235,24 +239,22 @@ export function PreviewsCard({ site }: { site: string }) {
                   variant="ghost"
                   size="icon-xs"
                   data-testid="ck-previews-about"
-                  aria-label="What a preview is and where to delete one"
+                  aria-label={t('previews.aboutLabel')}
                 >
                   <InfoIcon />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" data-testid="ck-previews-about-content">
-                <PopoverTitle>Previews are temporary builds</PopoverTitle>
-                <PopoverDescription>Delete one from the release list below.</PopoverDescription>
+                <PopoverTitle>{t('previews.aboutTitle')}</PopoverTitle>
+                <PopoverDescription>{t('previews.aboutDescription')}</PopoverDescription>
               </PopoverContent>
             </Popover>
           </div>
-          <CardDescription>
-            A real build of unpublished work, reachable only through an invitation and only until it expires.
-          </CardDescription>
+          <CardDescription>{t('previews.description')}</CardDescription>
         </div>
         {can('release:preview') || can('release:write') ? (
           <Button size="sm" variant="outline" data-testid="ck-preview-new" onClick={() => setCreating(true)}>
-            New preview
+            {t('previews.new')}
           </Button>
         ) : null}
       </CardHeader>

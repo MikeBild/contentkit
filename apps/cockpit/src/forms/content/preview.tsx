@@ -7,6 +7,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { Spinner } from '@/components/ui/spinner'
 import { ContentHtml, useContentScheme } from '@/content/lazy'
 import { StatusBadge } from '@/forms/status-badge'
+import { useI18n } from '@/lib/i18n-context'
 import { SEMANTIC_DIRECTIVES } from './body'
 import { contentRoute, effectiveLayout } from './fields'
 import type { FrontmatterUI } from './frontmatter'
@@ -31,22 +32,30 @@ export function StructurePane({
   preset: string
   'data-testid'?: string
 }) {
-  const outline = outlineOf(body)
+  const { t } = useI18n()
+  const outline = outlineOf(body, {
+    diagram: t('content.preview.diagram'),
+    chart: t('content.preview.chart'),
+    code: t('content.preview.code'),
+    emptyHeading: t('content.preview.emptyHeading'),
+    semanticBlock: t('content.preview.semanticBlock'),
+    unknownDirective: t('content.preview.unknownDirective'),
+  })
   const layout = effectiveLayout(fm, preset)
 
   return (
     <div data-testid={testId} className="flex flex-col gap-4 text-sm">
       <dl className="grid gap-2 sm:grid-cols-2">
-        <Fact label="Resolved layout">
+        <Fact label={t('content.preview.resolvedLayout')}>
           {fm.layout ? (
-            <>authored <code>{fm.layout}</code></>
+            <>{t('content.preview.authored')} <code>{fm.layout}</code></>
           ) : (
             <>
-              preset <code>{preset || 'portfolio'}</code> → <code>{layout}</code>
+              {t('content.preview.preset')} <code>{preset || 'portfolio'}</code> → <code>{layout}</code>
             </>
           )}
         </Fact>
-        <Fact label="Route">
+        <Fact label={t('content.preview.route')}>
           <code data-testid={`${testId}-route`}>{contentRoute(fm, preset)}</code>
         </Fact>
       </dl>
@@ -68,7 +77,7 @@ export function StructurePane({
           <ul className="mt-1 flex flex-col gap-1 text-xs">
             {fm.faq.map((entry, index) => (
               <li key={index} className="truncate">
-                {entry.q || '(no question)'}
+                {entry.q || t('content.preview.noQuestion')}
               </li>
             ))}
           </ul>
@@ -76,9 +85,9 @@ export function StructurePane({
       ) : null}
 
       <section>
-        <h3 className="text-xs font-medium text-muted-foreground">Outline</h3>
+        <h3 className="text-xs font-medium text-muted-foreground">{t('content.preview.outline')}</h3>
         {outline.length === 0 ? (
-          <p className="mt-1 text-xs text-muted-foreground">No headings or directives yet.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('content.preview.emptyOutline')}</p>
         ) : (
           <ul data-testid={`${testId}-outline`} className="mt-1 flex flex-col gap-0.5 text-xs">
             {outline.map((entry, index) => (
@@ -121,7 +130,17 @@ const DIRECTIVE = /^(:{3,})\s*([a-z][a-z0-9-]*)/
 const FENCE = /^```+\s*([a-z][a-z0-9-]*)/
 
 /** Line-based on purpose: a parser here would be the second renderer, again. */
-function outlineOf(body: string): OutlineEntry[] {
+function outlineOf(
+  body: string,
+  labels: {
+    diagram: string
+    chart: string
+    code: string
+    emptyHeading: string
+    semanticBlock: string
+    unknownDirective: string
+  },
+): OutlineEntry[] {
   const entries: OutlineEntry[] = []
   let inFence = false
   body.split('\n').forEach((raw, index) => {
@@ -131,7 +150,7 @@ function outlineOf(body: string): OutlineEntry[] {
       if (!inFence && fence) {
         entries.push({
           tag: fence[1]!,
-          text: fence[1] === 'mermaid' ? 'diagram' : fence[1] === 'chart' ? 'chart' : 'code',
+          text: fence[1] === 'mermaid' ? labels.diagram : fence[1] === 'chart' ? labels.chart : labels.code,
           depth: 2,
           line: index + 1,
           tone: fence[1] === 'mermaid' || fence[1] === 'chart' ? 'info' : 'neutral',
@@ -145,7 +164,7 @@ function outlineOf(body: string): OutlineEntry[] {
     if (heading) {
       entries.push({
         tag: `h${heading[1]!.length}`,
-        text: heading[2]!.replace(/[`*_~]/g, '') || '(empty heading)',
+        text: heading[2]!.replace(/[`*_~]/g, '') || labels.emptyHeading,
         depth: heading[1]!.length,
         line: index + 1,
         tone: 'neutral',
@@ -157,7 +176,7 @@ function outlineOf(body: string): OutlineEntry[] {
       const known = (SEMANTIC_DIRECTIVES as readonly string[]).includes(directive[2]!)
       entries.push({
         tag: directive[2]!,
-        text: known ? 'semantic block' : 'not a documented directive',
+        text: known ? labels.semanticBlock : labels.unknownDirective,
         depth: 2,
         line: index + 1,
         tone: known ? 'info' : 'warning',
@@ -191,6 +210,7 @@ export function ServerPreview({
   disabled?: boolean
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   const scheme = useContentScheme()
   const [result, setResult] = useState<RenderResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -209,24 +229,32 @@ export function ServerPreview({
         setError(null)
       } catch (failure) {
         if (generation.current !== mine) return
-        setError(failure instanceof Error ? failure.message : 'The document could not be rendered')
+        setError(failure instanceof Error ? failure.message : t('content.preview.renderErrorFallback'))
       } finally {
         if (generation.current === mine) setPending(false)
       }
     }, 400)
     return () => clearTimeout(timer)
-  }, [site, source, locale, scheme, disabled])
+  }, [site, source, locale, scheme, disabled, t])
 
   const diagnostics = result?.diagnostics ?? []
 
   return (
     <div data-testid={testId} className="flex flex-col gap-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span data-testid={`${testId}-state`}>{isPending ? 'Rendering…' : error ? 'Rejected' : 'Rendered'}</span>
+        <span data-testid={`${testId}-state`}>
+          {isPending
+            ? t('content.preview.rendering')
+            : error
+              ? t('content.preview.rejected')
+              : t('content.preview.rendered')}
+        </span>
         {result ? (
           <>
-            {result.chart_count ? <StatusBadge tone="info">{result.chart_count} charts</StatusBadge> : null}
-            {result.has_mermaid ? <StatusBadge tone="info">diagrams</StatusBadge> : null}
+            {result.chart_count ? (
+              <StatusBadge tone="info">{t('content.preview.charts', { count: result.chart_count })}</StatusBadge>
+            ) : null}
+            {result.has_mermaid ? <StatusBadge tone="info">{t('content.preview.diagrams')}</StatusBadge> : null}
           </>
         ) : null}
       </div>
@@ -234,7 +262,7 @@ export function ServerPreview({
       {error ? (
         <Alert variant="destructive" data-testid={`${testId}-error`}>
           <TriangleAlert />
-          <AlertTitle>The render was refused</AlertTitle>
+          <AlertTitle>{t('content.preview.refused')}</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
@@ -254,7 +282,7 @@ export function ServerPreview({
 
       {result ? <ContentHtml html={result.html} scheme={scheme} testId={`${testId}-html`} /> : null}
       {!result && !error && !isPending ? (
-        <p className="text-xs text-muted-foreground">Nothing to render yet.</p>
+        <p className="text-xs text-muted-foreground">{t('content.preview.empty')}</p>
       ) : null}
     </div>
   )
@@ -282,6 +310,7 @@ export function ValidatePane({
   disabled?: boolean
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   const [verdict, setVerdict] = useState<{ ok: boolean; message: string } | null>(null)
   const [isPending, setPending] = useState(false)
   const applicable = layout === 'composition' || kind === 'deck'
@@ -293,8 +322,8 @@ export function ValidatePane({
           <EmptyMedia variant="icon">
             <FileQuestion />
           </EmptyMedia>
-          <EmptyTitle>Nothing to validate</EmptyTitle>
-          <EmptyDescription>Only compositions and decks have a structural validator.</EmptyDescription>
+          <EmptyTitle>{t('content.preview.validationEmpty')}</EmptyTitle>
+          <EmptyDescription>{t('content.preview.validationEmptyDescription')}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     )
@@ -313,16 +342,19 @@ export function ValidatePane({
           try {
             if (kind === 'deck') await ck.decks.validate(site, { markdown: source })
             else await ck.compositions.validate(site, { markdown: source })
-            setVerdict({ ok: true, message: 'Accepted — this is the check the release runs.' })
+            setVerdict({ ok: true, message: t('content.preview.accepted') })
           } catch (failure) {
-            setVerdict({ ok: false, message: failure instanceof Error ? failure.message : 'The document was refused' })
+            setVerdict({
+              ok: false,
+              message: failure instanceof Error ? failure.message : t('content.preview.validationRefused'),
+            })
           } finally {
             setPending(false)
           }
         }}
       >
         {isPending ? <Spinner data-icon="inline-start" /> : null}
-        {kind === 'deck' ? 'Validate the deck' : 'Validate the composition'}
+        {kind === 'deck' ? t('content.preview.validateDeck') : t('content.preview.validateComposition')}
       </Button>
       {verdict ? (
         // Accepted or refused, and the server's own words for the second. Both

@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck } from '@/api/ck'
 import { Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -46,6 +47,7 @@ const DECK_PLACEHOLDER = [
  * arrangement that would make the sentence under "Themes and templates" untrue.
  */
 export function DecksPage() {
+  const { t } = useI18n()
   const { site } = useSite()
   const can = useCan()
   const themes = useQuery({ queryKey: keys.deckThemes, queryFn: () => ck.decks.themes() })
@@ -99,16 +101,16 @@ export function DecksPage() {
     ?.diagnostics ?? []) as { severity?: string; message?: string }[]
 
   return (
-    <Page title="Decks" description="Plan, validate and render Slidev decks. Rendering may run asynchronously as a job.">
+    <Page title={t('page.decks.title')} description={t('page.decks.description')}>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Deck source</CardTitle>
+            <CardTitle>{t('decks.source')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Textarea
               data-testid="deck-source"
-              aria-label="Deck Markdown"
+              aria-label={t('decks.markdownLabel')}
               className="h-72 font-mono text-xs"
               spellCheck={false}
               value={source}
@@ -122,12 +124,12 @@ export function DecksPage() {
                 disabled={!site || validate.isPending}
               >
                 {validate.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Validate
+                {t('decks.validate')}
               </Button>
               <Confirm
-                title="Render this deck?"
-                description="Rendering runs the real Slidev compiler and can take a while. Nothing is published by it."
-                confirmLabel="Render"
+                title={t('decks.renderTitle')}
+                description={t('decks.renderDescription')}
+                confirmLabel={t('decks.renderAction')}
                 onConfirm={() => compile.mutateAsync()}
               >
                 {(open) => (
@@ -138,7 +140,7 @@ export function DecksPage() {
                     aria-busy={compile.isPending}
                   >
                     {compile.isPending ? <Spinner data-icon="inline-start" /> : null}
-                    Render
+                    {t('decks.renderAction')}
                   </Button>
                 )}
               </Confirm>
@@ -147,9 +149,9 @@ export function DecksPage() {
             {validate.error ? (
               <Alert variant="destructive" data-testid="deck-validate-error">
                 <TriangleAlert />
-                <AlertTitle>Validation failed</AlertTitle>
+                <AlertTitle>{t('decks.validationFailed')}</AlertTitle>
                 <AlertDescription>
-                  {validate.error instanceof Error ? validate.error.message : 'Validation failed'}
+                  {validate.error instanceof Error ? validate.error.message : t('decks.validationFailed')}
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -174,15 +176,22 @@ export function DecksPage() {
               // it. The words are unchanged and `success` is still a named tone,
               // never a chart colour.
               <p data-testid="deck-diagnostics-clean" className="flex gap-2 text-xs">
-                <StatusBadge tone="success">No diagnostics</StatusBadge>
-                <span className="text-muted-foreground">The deck compiles as written.</span>
+                <StatusBadge tone="success">{t('decks.noDiagnostics')}</StatusBadge>
+                <span className="text-muted-foreground">{t('decks.compiles')}</span>
               </p>
             ) : null}
 
             {job ? (
               <div data-testid="deck-job" className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span>
-                  Job {job.slice(0, 8)} · {jobStatus.data?.status ?? 'queued'}
+                  {t('decks.render')} ·{' '}
+                  {jobStatus.data?.status === 'done'
+                    ? t('decks.status.done')
+                    : jobStatus.data?.status === 'failed'
+                      ? t('decks.status.failed')
+                      : jobStatus.data?.status
+                        ? t('decks.status.running')
+                        : t('decks.queued')}
                   {jobStatus.data?.error ? <span className="text-destructive"> · {jobStatus.data.error}</span> : null}
                 </span>
                 {/*
@@ -201,7 +210,7 @@ export function DecksPage() {
                         new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' }),
                       )}
                     >
-                      Download result
+                      {t('decks.download')}
                     </a>
                   </Button>
                 ) : null}
@@ -212,10 +221,8 @@ export function DecksPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Themes and templates</CardTitle>
-            <CardDescription>
-              Choosing one writes it into the deck's frontmatter above — the only place it takes effect.
-            </CardDescription>
+            <CardTitle>{t('decks.themesTemplates')}</CardTitle>
+            <CardDescription>{t('decks.themesTemplatesDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             {/* Two labelled groups of controls, so a FieldSet each with a
@@ -223,7 +230,7 @@ export function DecksPage() {
                 wrap named nothing, which is what it was doing here. */}
             <FieldGroup>
               <FieldSet>
-                <FieldLegend variant="label">Theme</FieldLegend>
+                <FieldLegend variant="label">{t('decks.theme')}</FieldLegend>
                 <div className="flex flex-wrap gap-2">
                   {(themes.data?.themes ?? []).map((name) => (
                     <Button
@@ -234,13 +241,13 @@ export function DecksPage() {
                       onClick={() => applyFrontmatter('theme', name)}
                     >
                       {name}
-                      {name === themes.data?.default ? ' · default' : ''}
+                      {name === themes.data?.default ? ` · ${t('decks.default')}` : ''}
                     </Button>
                   ))}
                 </div>
               </FieldSet>
               <FieldSet>
-                <FieldLegend variant="label">Template</FieldLegend>
+                <FieldLegend variant="label">{t('decks.template')}</FieldLegend>
                 <div className="flex flex-wrap gap-2">
                   {(templates.data?.ids ?? []).map((id) => (
                     <Button
@@ -251,7 +258,7 @@ export function DecksPage() {
                       onClick={() => applyFrontmatter('template', id)}
                     >
                       {id}
-                      {id === templates.data?.default ? ' · default' : ''}
+                      {id === templates.data?.default ? ` · ${t('decks.default')}` : ''}
                     </Button>
                   ))}
                 </div>
@@ -259,8 +266,8 @@ export function DecksPage() {
               {themes.error || templates.error ? (
                 <Alert variant="destructive" data-testid="deck-registry-error">
                   <TriangleAlert />
-                  <AlertTitle>The deck registry could not be read</AlertTitle>
-                  <AlertDescription>No themes or templates can be offered until it answers.</AlertDescription>
+                  <AlertTitle>{t('decks.registryError')}</AlertTitle>
+                  <AlertDescription>{t('decks.registryErrorDescription')}</AlertDescription>
                 </Alert>
               ) : null}
             </FieldGroup>

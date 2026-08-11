@@ -6,6 +6,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Every field in the console takes these. They are spelled out once so a field
@@ -77,6 +78,7 @@ export function FieldShell({
   'data-testid': testId,
   children,
 }: FieldShellProps & { children: (control: ControlProps) => ReactNode }) {
+  const { t } = useI18n()
   const id = useId()
   const helpId = `${id}-help`
   const messageId = `${id}-message`
@@ -114,7 +116,7 @@ export function FieldShell({
                     variant="ghost"
                     size="icon-xs"
                     data-testid={`${testId}-definition`}
-                    aria-label={`${label} — what this means`}
+                    aria-label={t('field.definitionLabel', { label })}
                   >
                     <InfoIcon />
                   </Button>
@@ -131,7 +133,7 @@ export function FieldShell({
                   variant="ghost"
                   size="icon-xs"
                   data-testid={`${testId}-about`}
-                  aria-label={`${label} — more about this field`}
+                  aria-label={t('field.aboutLabel', { label })}
                 >
                   <InfoIcon />
                 </Button>

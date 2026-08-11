@@ -2076,11 +2076,14 @@ export interface components {
             id: string;
             actor_type: string;
             actor_id?: string | null;
+            actor_label?: string | null;
             action: string;
             resource_type?: string | null;
             resource_id?: string | null;
+            resource_label?: string | null;
             /** Format: uuid */
             site_id?: string | null;
+            site_label?: string | null;
             result: string;
             transport?: string | null;
             metadata?: {

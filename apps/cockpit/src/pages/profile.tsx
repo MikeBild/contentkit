@@ -1,10 +1,12 @@
 import { Page } from '@/app/shell'
+import { ContextHelp } from '@/components/context-help'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { SCOPE_DESCRIPTIONS } from '@/forms/fields/scopes'
+import { SCOPE_DESCRIPTION_KEYS } from '@/forms/fields/scopes'
 import { PRODUCT_SCOPES, type ProductScope } from '@/forms/contracts/enums.generated'
 import { useSession } from '@/lib/session'
 import { useNow } from '@/hooks/use-now'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Who you are signed in as, what that lets you do, and how long it lasts.
@@ -26,8 +28,9 @@ import { useNow } from '@/hooks/use-now'
  * to relearn where their own account lives.
  */
 export function ProfilePage() {
+  const { t } = useI18n()
   return (
-    <Page title="Profile" description="Who this session belongs to, what it may do, and when it ends.">
+    <Page title={t('profile.title')} description={t('profile.description')}>
       <div className="grid gap-6 lg:grid-cols-2">
         <Identity />
         <SessionClocks />
@@ -41,24 +44,21 @@ export function ProfilePage() {
 
 function Identity() {
   const session = useSession()
+  const { t } = useI18n()
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Identity</CardTitle>
-        <CardDescription>What ContentKit knows about the account this session was opened with.</CardDescription>
+        <CardTitle>{t('profile.identity.title')}</CardTitle>
+        <CardDescription>{t('profile.identity.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-[9rem_1fr]">
-          <dt className="text-sm text-muted-foreground">Name</dt>
+          <dt className="text-sm text-muted-foreground">{t('profile.name')}</dt>
           <dd className="text-sm">{session.display_name ?? '—'}</dd>
-          <dt className="text-sm text-muted-foreground">Email</dt>
+          <dt className="text-sm text-muted-foreground">{t('profile.email')}</dt>
           <dd className="text-sm break-all">{session.email ?? '—'}</dd>
-          <dt className="text-sm text-muted-foreground">Signed in via</dt>
-          <dd className="text-sm">{session.provider_id ?? 'API key'}</dd>
-          {/* The subject, not the email, is what an audit line and a support
-              request are keyed by — and it was previously reachable nowhere. */}
-          <dt className="text-sm text-muted-foreground">Subject</dt>
-          <dd className="font-mono text-sm break-all">{session.subject}</dd>
+          <dt className="text-sm text-muted-foreground">{t('profile.provider')}</dt>
+          <dd className="text-sm">{session.provider_id ?? t('profile.apiKey')}</dd>
         </dl>
       </CardContent>
     </Card>
@@ -66,11 +66,11 @@ function Identity() {
 }
 
 /** `4h 12m`, `38m`, `9s`. Past due is `expired`, never a negative duration. */
-function until(iso: string | null | undefined, now: number): string {
+function until(iso: string | null | undefined, now: number, expired: string): string {
   if (!iso) return '—'
   const remaining = new Date(iso).getTime() - now
   if (Number.isNaN(remaining)) return '—'
-  if (remaining <= 0) return 'expired'
+  if (remaining <= 0) return expired
   const seconds = Math.floor(remaining / 1000)
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
@@ -84,31 +84,32 @@ function until(iso: string | null | undefined, now: number): string {
 function SessionClocks() {
   const session = useSession()
   const now = useNow()
+  const { t } = useI18n()
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>This session</CardTitle>
-        <CardDescription>Two clocks, and only one of them can be reset by working.</CardDescription>
+        <CardTitle>{t('profile.session.title')}</CardTitle>
+        <CardDescription>{t('profile.session.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-[10rem_1fr]">
-          <dt className="text-sm text-muted-foreground">Idle timeout</dt>
+          <dt className="text-sm text-muted-foreground">{t('profile.session.idle')}</dt>
           <dd className="text-sm">
             <span className="font-medium" data-testid="idle-remaining">
-              {until(session.expires_at, now)}
+              {until(session.expires_at, now, t('profile.session.expired'))}
             </span>
-            <span className="ml-2 text-muted-foreground">slides forward with every request</span>
+            <span className="ml-2 text-muted-foreground">{t('profile.session.idleHint')}</span>
           </dd>
-          <dt className="text-sm text-muted-foreground">Hard expiry</dt>
+          <dt className="text-sm text-muted-foreground">{t('profile.session.absolute')}</dt>
           <dd className="text-sm">
             {/* The one that cannot be extended. Naming the difference is the
                 whole point: an operator who assumes activity keeps a session
                 alive discovers otherwise in the middle of a save. */}
             <span className="font-medium" data-testid="absolute-remaining">
-              {until(session.absolute_expires_at, now)}
+              {until(session.absolute_expires_at, now, t('profile.session.expired'))}
             </span>
-            <span className="ml-2 text-muted-foreground">not extendable — sign in again after this</span>
+            <span className="ml-2 text-muted-foreground">{t('profile.session.absoluteHint')}</span>
           </dd>
         </dl>
       </CardContent>
@@ -124,27 +125,29 @@ function Authority() {
   // leaves "why is that page missing" unanswered — which is the question an
   // operator actually arrives with.
   const missing = PRODUCT_SCOPES.filter((scope) => !held.has(scope))
+  const { t } = useI18n()
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>What this session may do</CardTitle>
-        <CardDescription>
-          ContentKit stores a role, and the role is a name for a set of scopes. Both are shown, because the role is what
-          gets talked about and the scopes are what actually gate a request.
-        </CardDescription>
+        <div className="flex items-center gap-1">
+          <CardTitle>{t('profile.permissions.title')}</CardTitle>
+          <ContextHelp label={t('profile.permissions.description')} testId="profile-permissions-help">
+            {t('profile.permissions.description')}
+          </ContextHelp>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Role</span>
+          <span className="text-sm text-muted-foreground">{t('profile.role')}</span>
           <Badge variant="secondary" className="font-mono uppercase" data-testid="profile-role">
             {session.role}
           </Badge>
         </div>
 
         <ScopeList
-          title="Held"
-          caption="These are what a request is checked against."
+          title={t('profile.held')}
+          caption={t('profile.held.description')}
           scopes={PRODUCT_SCOPES.filter((scope) => held.has(scope))}
           variant="secondary"
           testid="scope-held"
@@ -152,8 +155,8 @@ function Authority() {
 
         {missing.length > 0 ? (
           <ScopeList
-            title="Not held"
-            caption="Pages needing one of these are hidden rather than shown and refused — hidden is not the same as absent, and this is where the difference is written down."
+            title={t('profile.missing')}
+            caption={t('profile.missing.description')}
             scopes={missing}
             variant="outline"
             testid="scope-missing"
@@ -177,12 +180,13 @@ function ScopeList({
   variant: 'secondary' | 'outline'
   testid: string
 }) {
+  const { t } = useI18n()
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-sm font-medium">{title}</h2>
       <p className="text-xs text-muted-foreground">{caption}</p>
       {scopes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">None.</p>
+        <p className="text-sm text-muted-foreground">{t('common.none')}</p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {scopes.map((scope) => (
@@ -194,7 +198,7 @@ function ScopeList({
               <Badge variant={variant} className="font-mono">
                 {scope}
               </Badge>
-              <span className="text-xs text-muted-foreground">{SCOPE_DESCRIPTIONS[scope]}</span>
+              <span className="text-xs text-muted-foreground">{t(SCOPE_DESCRIPTION_KEYS[scope])}</span>
             </li>
           ))}
         </ul>

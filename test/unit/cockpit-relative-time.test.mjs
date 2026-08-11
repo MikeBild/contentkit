@@ -217,7 +217,7 @@ describe('RelativeTime is live, or it is lying', () => {
     const [, name, setter] = state
     assert.match(
       component,
-      new RegExp(`formatRelative\\(value,\\s*${name}\\)`),
+      new RegExp(`formatRelative\\(value,\\s*${name},\\s*LOCALE_TAGS\\[locale\\]\\)`),
       `the label must be formatted from ${name}, the state ${setter} writes — otherwise the timer only re-renders ` +
         'the same sentence',
     )

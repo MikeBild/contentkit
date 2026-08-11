@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Stops a navigation away from unsaved work, and asks rather than decides.
@@ -38,6 +39,7 @@ export function useUnsavedGuard({
   onSave?: () => Promise<unknown>
   isSaving?: boolean
 }) {
+  const { t } = useI18n()
   const blocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
       current.routeId !== next.routeId ||
@@ -72,14 +74,12 @@ export function useUnsavedGuard({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Unsaved changes</DialogTitle>
-            <DialogDescription>
-              Leaving now discards everything changed on this page since the last save.
-            </DialogDescription>
+            <DialogTitle>{t('unsaved.title')}</DialogTitle>
+            <DialogDescription>{t('unsaved.description')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" size="sm" data-testid="ck-unsaved-stay" disabled={isSaving} onClick={blocker.reset}>
-              Stay
+              {t('unsaved.stay')}
             </Button>
             <Button
               variant="destructive"
@@ -88,7 +88,7 @@ export function useUnsavedGuard({
               disabled={isSaving}
               onClick={blocker.proceed}
             >
-              Discard and leave
+              {t('unsaved.discardAndLeave')}
             </Button>
             {onSave ? (
               <Button
@@ -118,7 +118,7 @@ export function useUnsavedGuard({
                 }}
               >
                 {isSaving ? <Spinner data-icon="inline-start" /> : null}
-                Save and leave
+                {t('unsaved.saveAndLeave')}
               </Button>
             ) : null}
           </DialogFooter>

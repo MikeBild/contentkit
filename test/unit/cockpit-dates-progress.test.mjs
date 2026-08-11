@@ -605,7 +605,7 @@ describe('Cockpit progress and dates: how the pages use them', () => {
     const date = element(fields, 'ck-fm-date', 'the publication date')
     assert.match(date, /^<DateField\b/, 'not a bare control showing tt.mm.jjjj')
     assert.match(date, /\bpresets\b/, 'the 30/90/365/Never quick sets it already had')
-    assert.match(date, /fallback="Unset uses the moment the release is built\."/)
+    assert.match(date, /fallback=\{t\('content\.publicationDateFallback'\)\}/)
     assert.match(date, /value=\{fm\.date \|\| undefined\}/, 'the empty string is handed over as absence')
     assert.match(date, /onChange=\{\(value\) => set\('date', value \?\? ''\)\}/, 'and comes back as absence')
   })
@@ -614,7 +614,7 @@ describe('Cockpit progress and dates: how the pages use them', () => {
     const updated = element(fields, 'ck-fm-updated-at', 'last updated')
     assert.match(updated, /^<DateField\b/)
     assert.match(updated, /\bpresets\b/)
-    assert.match(updated, /fallback="Unset shows no update line\."/)
+    assert.match(updated, /fallback=\{t\('content\.lastUpdatedFallback'\)\}/)
     assert.match(updated, /onChange=\{\(value\) => set\('updatedAt', value \?\? ''\)\}/)
   })
 
@@ -630,7 +630,7 @@ describe('Cockpit progress and dates: how the pages use them', () => {
       2,
       'both states are addressable — a script that can only find one of them cannot tell them apart',
     )
-    assert.match(scheduled, /fallback="Unset means it publishes with the next release\."/)
+    assert.match(scheduled, /fallback=\{t\('content\.scheduledForFallback'\)\}/)
   })
 
   test('nothing in the frontmatter form reads the clock', () => {
@@ -734,7 +734,7 @@ describe('Cockpit progress and dates: how the pages use them', () => {
     // they stay on screen next to the percentage rather than being replaced by it.
     assert.match(
       authoring,
-      /data-testid="audio-budget-value"[\s\S]{0,240}budget\.used\.toLocaleString\(\)[\s\S]{0,240}budget\.remaining\.toLocaleString\(\)/,
+      /data-testid="audio-budget-value"[\s\S]{0,320}t\('audio\.budgetValue',[\s\S]{0,200}used: number\(budget\.used\),[\s\S]{0,200}budget: number\(budget\.budget\),[\s\S]{0,200}remaining: number\(budget\.remaining\),/,
       'the characters used, the budget and what is left are all still written out',
     )
     // The escalation is the bar's colour AND a badge. `tone` is asserted above;
@@ -752,7 +752,7 @@ describe('Cockpit progress and dates: how the pages use them', () => {
     assert.match(authoring, /\{budget \? \(/, 'the bar is drawn only for a measurable budget')
     assert.match(
       authoring,
-      /data-testid="audio-budget-unmeasured"[\s\S]{0,240}no budget configured/,
+      /data-testid="audio-budget-unmeasured"[\s\S]{0,300}t\('audio\.noBudget'\)/,
       'and the count is still on screen when there is nothing to divide it by',
     )
     assert.equal(

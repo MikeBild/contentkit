@@ -3,6 +3,7 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { ck } from '@/api/ck'
 import { useNow } from '@/hooks/use-now'
 import { Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -58,6 +59,7 @@ function StatusReading({
 }
 
 export function SystemPage() {
+  const { t, dateTime, number } = useI18n()
   const can = useCan()
   const health = useQuery({
     queryKey: [...keys.system, 'health'],
@@ -92,32 +94,44 @@ export function SystemPage() {
   const deckQueued = reportedCount(readiness?.deck_queued)
 
   return (
-    <Page title="System" description="Liveness, readiness and the two scheduled maintenance actions.">
+    <Page title={t('page.system.title')} description={t('page.system.description')}>
       <div className="flex flex-col gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Process</CardTitle>
+            <CardTitle>{t('system.process')}</CardTitle>
           </CardHeader>
           <CardContent className="px-0">
             <dl className="flex flex-col divide-y divide-border">
               <StatusReading
                 testId="system-health"
-                label="Liveness"
-                value={health.isPending ? 'checking' : health.error ? 'unreachable' : 'ok'}
+                label={t('system.liveness')}
+                value={
+                  health.isPending
+                    ? t('system.checking')
+                    : health.error
+                      ? t('system.unreachable')
+                      : t('system.ok')
+                }
                 tone={health.error ? 'danger' : 'success'}
-                detail={health.error instanceof Error ? health.error.message : 'The process answers /health.'}
+                detail={health.error instanceof Error ? health.error.message : t('system.healthDetail')}
               />
               <StatusReading
                 testId="system-readiness"
-                label="Readiness"
-                value={ready.isPending ? 'checking' : (readiness?.status ?? 'not ready')}
+                label={t('system.readiness')}
+                value={
+                  ready.isPending
+                    ? t('system.checking')
+                    : readiness?.status === 'ready'
+                      ? t('system.ready')
+                      : t('system.notReady')
+                }
                 tone={draining ? 'danger' : readiness?.status === 'ready' ? 'success' : 'warning'}
                 detail={
                   draining
                     ? ready.error instanceof Error
                       ? ready.error.message
-                      : 'Refusing traffic.'
-                    : `Version ${readiness?.version ?? '—'}`
+                      : t('system.refusingTraffic')
+                    : t('system.version', { version: readiness?.version ?? '—' })
                 }
               />
               {/*
@@ -136,13 +150,22 @@ export function SystemPage() {
               */}
               <StatusReading
                 testId="system-uptime"
-                label="Uptime"
-                value={descriptor.isPending ? 'checking' : uptime(descriptor.data?.started_at ?? null, now)}
+                label={t('system.uptime')}
+                value={
+                  descriptor.isPending
+                    ? t('system.checking')
+                    : uptime(descriptor.data?.started_at ?? null, now, {
+                        day: t('system.dayShort'),
+                        hour: t('system.hourShort'),
+                        minute: t('system.minuteShort'),
+                        second: t('system.secondShort'),
+                      })
+                }
                 tone="neutral"
                 detail={
                   descriptor.data?.started_at
-                    ? `since ${new Date(descriptor.data.started_at).toLocaleString()}`
-                    : 'This installation does not report a start time.'
+                    ? t('system.since', { date: dateTime(descriptor.data.started_at) })
+                    : t('system.noStartTime')
                 }
               />
               {/* Green is a claim as much as the number is: a count nobody reported is
@@ -150,17 +173,17 @@ export function SystemPage() {
                   the Readiness row above it shows while it has no status. */}
               <StatusReading
                 testId="system-builds"
-                label="Release builds in flight"
-                value={`${inflight ?? '—'}`}
+                label={t('system.builds')}
+                value={inflight === null ? '—' : number(inflight)}
                 tone={inflight === null || inflight > 0 ? 'warning' : 'success'}
-                detail="A restart waits for these to finish."
+                detail={t('system.buildsDetail')}
               />
               <StatusReading
                 testId="system-decks"
-                label="Deck renders"
-                value={`${deckInflight ?? '—'} running`}
+                label={t('system.deckRenders')}
+                value={t('system.running', { count: deckInflight === null ? '—' : number(deckInflight) })}
                 tone={deckQueued === null || deckQueued > 0 ? 'warning' : 'success'}
-                detail={`${deckQueued ?? '—'} queued`}
+                detail={t('system.queued', { count: deckQueued === null ? '—' : number(deckQueued) })}
               />
             </dl>
           </CardContent>
@@ -169,34 +192,32 @@ export function SystemPage() {
         {can('release:write') ? (
           <Card>
             <CardHeader>
-              <CardTitle>Maintenance</CardTitle>
-              <CardDescription>
-                Both of these normally run on a schedule. Trigger them by hand only when you know why.
-              </CardDescription>
+              <CardTitle>{t('system.maintenance')}</CardTitle>
+              <CardDescription>{t('system.maintenanceDescription')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               <Confirm
-                title="Publish everything that is due?"
-                description="Scheduled revisions across every site you may write to are published and their sites rebuilt. Live sites change."
-                confirmLabel="Publish due"
+                title={t('system.publishDueTitle')}
+                description={t('system.publishDueDescription')}
+                confirmLabel={t('system.publishDue')}
                 onConfirm={() => ck.releases.publishDue()}
               >
                 {(open) => (
                   <Button data-testid="maintenance-publish-due" variant="outline" onClick={open}>
-                    Publish due
+                    {t('system.publishDue')}
                   </Button>
                 )}
               </Confirm>
               <Confirm
-                title="Collect old release objects?"
-                description="Superseded release objects are deleted from storage and stuck builds are reaped. Active releases are never touched."
-                confirmLabel="Run storage GC"
+                title={t('system.storageGcTitle')}
+                description={t('system.storageGcDescription')}
+                confirmLabel={t('system.storageGc')}
                 destructive
                 onConfirm={() => ck.releases.storageGc()}
               >
                 {(open) => (
                   <Button data-testid="maintenance-storage-gc" variant="destructive" onClick={open}>
-                    Storage GC
+                    {t('system.storageGc')}
                   </Button>
                 )}
               </Confirm>
@@ -210,15 +231,17 @@ export function SystemPage() {
         {import.meta.env.DEV ? (
           <Card>
             <CardHeader>
-              <CardTitle>Field gallery</CardTitle>
-              <CardDescription>
-                Every form field the console has, with live state. Not shown in a production build.
-              </CardDescription>
+              <CardTitle>{t('system.fieldGallery')}</CardTitle>
+              <CardDescription>{t('system.fieldGalleryDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Suspense
                 fallback={
-                  <SkeletonFields fields={6} label="Loading the field gallery…" data-testid="gallery-skeleton" />
+                  <SkeletonFields
+                    fields={6}
+                    label={t('system.fieldGalleryLoading')}
+                    data-testid="gallery-skeleton"
+                  />
                 }
               >
                 <FieldGallery />
@@ -237,7 +260,11 @@ export function SystemPage() {
  * Absent is never "0s". A zero would say the process just started, which is a
  * measurement; not knowing is a different fact and reads differently.
  */
-function uptime(startedAt: string | null, now: number): string {
+function uptime(
+  startedAt: string | null,
+  now: number,
+  units: { day: string; hour: string; minute: string; second: string },
+): string {
   if (!startedAt) return '—'
   const elapsed = now - new Date(startedAt).getTime()
   if (Number.isNaN(elapsed) || elapsed < 0) return '—'
@@ -245,8 +272,8 @@ function uptime(startedAt: string | null, now: number): string {
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m`
-  return `${seconds}s`
+  if (days > 0) return `${days}${units.day} ${hours}${units.hour}`
+  if (hours > 0) return `${hours}${units.hour} ${minutes}${units.minute}`
+  if (minutes > 0) return `${minutes}${units.minute}`
+  return `${seconds}${units.second}`
 }

@@ -3,6 +3,7 @@ import { hasNext, hasPrevious, nextPage, pageNumber, previousPage, type CursorPa
 import { cn } from '@/lib/utils'
 import { Button } from './button'
 import { Spinner } from './spinner'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Forward and back through a cursor-paged list.
@@ -39,23 +40,23 @@ export function Pagination({
   className?: string
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   const back = hasPrevious(page)
   const forward = hasNext(nextCursor)
   if (!back && !forward) return null
 
   return (
     <nav
-      aria-label="Pagination"
+      aria-label={t('pagination.label')}
       data-testid={testId}
       className={cn('flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs', className)}
     >
       <span data-testid={`${testId}-position`} className="flex items-center gap-2 text-muted-foreground">
-        Page {pageNumber(page)}
-        {shown === undefined ? null : ` · ${shown} ${unit}`}
+        {shown === undefined ? t('common.page', { page: pageNumber(page) }) : t('pagination.position', { page: pageNumber(page), shown, unit })}
         {/* The end of the list is worth saying: with no total on screen, a
             disabled Next is otherwise indistinguishable from a slow one. */}
-        {forward ? null : ' · end of the list'}
-        {isLoading ? <Spinner size="sm" label="Loading this page…" /> : null}
+        {forward ? null : ` · ${t('pagination.end')}`}
+        {isLoading ? <Spinner size="sm" label={t('table.loading')} /> : null}
       </span>
       <span className="flex items-center gap-2">
         <Button
@@ -68,7 +69,7 @@ export function Pagination({
           {/* No size class — the Button CVA sizes it for `sm`. `inline-start`
               is what pulls the left padding in so the glyph is not adrift. */}
           <ChevronLeft data-icon="inline-start" />
-          Previous
+          {t('common.previous')}
         </Button>
         <Button
           variant="outline"
@@ -80,7 +81,7 @@ export function Pagination({
           disabled={!forward || isLoading}
           onClick={() => onChange(nextPage(page, nextCursor))}
         >
-          Next
+          {t('common.next')}
           <ChevronRight data-icon="inline-end" />
         </Button>
       </span>

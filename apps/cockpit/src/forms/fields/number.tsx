@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { useI18n } from '@/lib/i18n-context'
 import { cn } from '@/lib/utils'
 import { DATE_PRESETS, presetInstant } from './date-value'
 import { FieldShell, type FieldShellProps } from './field'
@@ -24,7 +25,7 @@ export function NumberField({
   integer,
   unit,
   allowUnset,
-  unsetLabel = 'Unlimited',
+  unsetLabel,
   ...shell
 }: FieldShellProps &
   ValueProps<number | undefined> & {
@@ -36,18 +37,19 @@ export function NumberField({
     allowUnset?: boolean
     unsetLabel?: string
   }) {
+  const { t, number } = useI18n()
   const error =
     shell.error ??
     (value === undefined
       ? undefined
       : Number.isNaN(value)
-        ? 'Not a number'
+        ? t('validation.notNumber')
         : integer && !Number.isInteger(value)
-          ? 'Whole numbers only'
+          ? t('validation.wholeNumbers')
           : min !== undefined && value < min
-            ? `At least ${min}${unit ? ` ${unit}` : ''}`
+            ? t('validation.atLeast', { value: number(min), unit: unit ? ` ${unit}` : '' })
             : max !== undefined && value > max
-              ? `At most ${max}${unit ? ` ${unit}` : ''}`
+              ? t('validation.atMost', { value: number(max), unit: unit ? ` ${unit}` : '' })
               : undefined)
 
   return (
@@ -82,7 +84,7 @@ export function NumberField({
                 disabled={control.disabled}
                 onCheckedChange={(unset) => onChange(unset ? undefined : (min ?? 0))}
               />
-              {unsetLabel}
+              {unsetLabel ?? t('common.unlimited')}
             </label>
           ) : null}
         </div>
@@ -99,7 +101,8 @@ const DIMENSION = /^(0|\d+(?:\.\d+)?(?:px|rem|em|%|vh|vw|ch))$/
  * that ignored the setting rather than as an error.
  */
 export function DimensionField({ value, onChange, ...shell }: FieldShellProps & ValueProps<string>) {
-  const error = shell.error ?? (value && !DIMENSION.test(value) ? '0, or a number with px, rem, em, %, vh or vw' : undefined)
+  const { t } = useI18n()
+  const error = shell.error ?? (value && !DIMENSION.test(value) ? t('validation.cssDimension') : undefined)
   return (
     <FieldShell {...shell} error={error}>
       {(control) => (
@@ -137,19 +140,23 @@ export function DimensionField({ value, onChange, ...shell }: FieldShellProps & 
 export function DateTimeField({
   value,
   onChange,
-  unsetLabel = 'Never',
+  unsetLabel,
   ...shell
 }: FieldShellProps & ValueProps<string | undefined> & { placeholder?: string; unsetLabel?: string }) {
+  const { t } = useI18n()
   const parsed = value ? new Date(value) : null
   const invalid = Boolean(value) && Number.isNaN(parsed?.valueOf())
-  const error = shell.error ?? (invalid ? 'Not a date' : undefined)
+  const error = shell.error ?? (invalid ? t('date.notDate') : undefined)
 
   return (
     <FieldShell
       {...shell}
       error={error}
-      warning={shell.warning ?? (!invalid && parsed && parsed.valueOf() < Date.now() ? 'In the past — accepted, and effective immediately' : undefined)}
-      fallback={shell.fallback ?? (value ? undefined : 'Unset means no expiry.')}
+      warning={
+        shell.warning ??
+        (!invalid && parsed && parsed.valueOf() < Date.now() ? t('date.pastAccepted') : undefined)
+      }
+      fallback={shell.fallback ?? (value ? undefined : t('date.noExpiryFallback'))}
     >
       {(control) => (
         <div className="flex flex-wrap items-center gap-2">
@@ -172,7 +179,9 @@ export function DateTimeField({
               disabled={control.disabled}
               onClick={() => onChange(presetInstant(preset.days))}
             >
-              {preset.days === null ? unsetLabel : preset.label}
+              {preset.days === null
+                ? (unsetLabel ?? t('common.never'))
+                : t('date.presetDays', { count: preset.days })}
             </Button>
           ))}
         </div>

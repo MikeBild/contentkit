@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Every mutation in the console goes through this.
@@ -161,7 +162,7 @@ function focusOn(element: HTMLElement) {
 export function Confirm({
   title,
   description,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   destructive,
   onConfirm,
   ids,
@@ -176,6 +177,8 @@ export function Confirm({
   ids?: ConfirmIds
   children: (open: () => void) => ReactNode
 }) {
+  const { t } = useI18n()
+  const resolvedConfirmLabel = confirmLabel ?? t('common.confirm')
   const [isOpen, setOpen] = useState(false)
   const [isBusy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -343,7 +346,7 @@ export function Confirm({
       // The server's own words, verbatim: a 409 carries the counts that make the
       // refusal actionable ("still has 2 published and 1 scheduled content
       // item(s)"), and a summary of it would throw exactly those away.
-      setError(failure instanceof Error ? failure.message : 'The operation failed')
+      setError(failure instanceof Error ? failure.message : t('common.operationFailed'))
     } finally {
       setBusy(false)
     }
@@ -404,14 +407,14 @@ export function Confirm({
           {error ? (
             <Alert variant="destructive" id={refusalId} aria-atomic="true" data-testid={id('error')}>
               <TriangleAlert aria-hidden />
-              <AlertTitle>The server refused</AlertTitle>
+              <AlertTitle>{t('common.serverRefused')}</AlertTitle>
               <AlertDescription data-testid="confirm-error-message">{error}</AlertDescription>
             </Alert>
           ) : null}
 
           <AlertDialogFooter>
             <AlertDialogCancel data-testid={id('cancel')} size="sm" disabled={isBusy}>
-              Cancel
+              {t('common.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
               data-testid={id('accept')}
@@ -432,7 +435,7 @@ export function Confirm({
               }}
             >
               {isBusy ? <Spinner aria-hidden="true" data-icon="inline-start" /> : null}
-              {confirmLabel}
+              {resolvedConfirmLabel}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

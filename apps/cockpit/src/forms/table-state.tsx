@@ -6,6 +6,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { Skeleton } from '@/components/ui/skeleton'
 import { TableCell, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Every list in the console has the same four states, and conflating them is
@@ -31,7 +32,7 @@ export function TableState({
   isEmpty,
   onRetry,
   emptyTitle,
-  emptyMessage = 'Nothing here yet.',
+  emptyMessage,
   children,
 }: {
   columns: number
@@ -47,6 +48,8 @@ export function TableState({
   emptyMessage?: string
   children: ReactNode
 }) {
+  const { t } = useI18n()
+  const resolvedEmptyMessage = emptyMessage ?? t('table.empty')
   // Shape-preserving rows rather than one centred word: the header is already on
   // screen, so a single "Loading…" cell collapses the table to one line and then
   // shoves it open when the data lands. One announcement for the whole block, on
@@ -59,7 +62,7 @@ export function TableState({
           <TableRow key={row} data-testid={row === 0 ? 'table-state-loading' : undefined}>
             {Array.from({ length: columns }, (_column, column) => (
               <TableCell key={column}>
-                {row === 0 && column === 0 ? <span className="sr-only">Loading…</span> : null}
+                {row === 0 && column === 0 ? <span className="sr-only">{t('table.loading')}</span> : null}
                 <Skeleton aria-hidden="true" className={cn('h-4', column === 0 ? 'w-40' : 'w-16')} />
               </TableCell>
             ))}
@@ -81,14 +84,14 @@ export function TableState({
             {/* Direct child of Alert, before the title: the CVA switches to a
                 two-column grid on `has-[>svg]`, and an icon in a wrapper breaks it. */}
             <TriangleAlert />
-            <AlertTitle>This list could not be read</AlertTitle>
+            <AlertTitle>{t('table.error.title')}</AlertTitle>
             <AlertDescription data-testid="table-state-error-message">
-              {error instanceof Error ? error.message : 'Request failed'}
+              {error instanceof Error ? error.message : t('common.requestFailed')}
             </AlertDescription>
             {onRetry ? (
               <AlertAction>
                 <Button data-testid="table-retry" size="sm" variant="outline" onClick={onRetry}>
-                  Retry
+                  {t('common.retry')}
                 </Button>
               </AlertAction>
             ) : null}
@@ -109,8 +112,8 @@ export function TableState({
               <EmptyMedia variant="icon">
                 <Inbox />
               </EmptyMedia>
-              <EmptyTitle>{emptyTitle ?? emptyMessage}</EmptyTitle>
-              {emptyTitle ? <EmptyDescription>{emptyMessage}</EmptyDescription> : null}
+              <EmptyTitle>{emptyTitle ?? resolvedEmptyMessage}</EmptyTitle>
+              {emptyTitle ? <EmptyDescription>{resolvedEmptyMessage}</EmptyDescription> : null}
             </EmptyHeader>
           </Empty>
         </TableCell>

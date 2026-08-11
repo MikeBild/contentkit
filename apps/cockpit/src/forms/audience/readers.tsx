@@ -21,6 +21,7 @@ import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Readers are the only credential the console can mint for someone else, so the
@@ -68,6 +69,7 @@ function ReaderDialog({
   groupsQuery: { isPending: boolean; error: unknown }
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const [draft, setDraft] = useState(() => draftFrom(reader))
   // What "Generate" produced, if anything. A password the operator typed they
@@ -136,19 +138,21 @@ function ReaderDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit ${reader?.username}` : 'New reader'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle>
             {editing
-              ? 'A reader signs in to the published site. The username cannot be changed after creation.'
-              : 'A reader signs in to the published site with this username and password.'}
+              ? t('audience.readers.editTitle', { username: reader?.username ?? '' })
+              : t('audience.readers.new')}
+          </DialogTitle>
+          <DialogDescription>
+            {editing ? t('audience.readers.editDescription') : t('audience.readers.createDescription')}
           </DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           {issued ? (
             <RevealOnce
               data-testid="ck-reader-password-issued"
-              title="Hand this password over now"
-              description="ContentKit stores only a hash of it. Nothing here or anywhere else can show it again."
+              title={t('audience.readers.passwordTitle')}
+              description={t('audience.readers.passwordDescription')}
               value={issued}
               onDismiss={() => {
                 setIssued(null)
@@ -160,19 +164,19 @@ function ReaderDialog({
           {editing ? (
             <TextField
               data-testid="ck-reader-username"
-              label="Username"
+              label={t('audience.readers.username')}
               value={draft.username}
               disabled
-              help="Fixed at creation."
-              about="Delete and recreate the reader to change it."
+              help={t('audience.readers.usernameFixedHelp')}
+              about={t('audience.readers.usernameFixedAbout')}
               onChange={() => {}}
             />
           ) : (
             <UsernameField
               data-testid="ck-reader-username"
-              label="Username"
+              label={t('audience.readers.username')}
               required
-              help="What the reader types on the site's sign-in form."
+              help={t('audience.readers.usernameHelp')}
               value={draft.username}
               onChange={(username) => setDraft({ ...draft, username })}
             />
@@ -180,17 +184,17 @@ function ReaderDialog({
 
           <TextField
             data-testid="ck-reader-display-name"
-            label="Display name"
+            label={t('audience.readers.displayName')}
             value={draft.display_name}
-            fallback="Empty falls back to the username."
+            fallback={t('audience.readers.displayNameFallback')}
             onChange={(display_name) => setDraft({ ...draft, display_name })}
           />
 
           <SecretField
             data-testid="ck-reader-password"
-            label="Password"
+            label={t('audience.readers.password')}
             required={!editing}
-            help={editing ? 'Leave empty to keep the current password.' : undefined}
+            help={editing ? t('audience.readers.passwordKeepHelp') : undefined}
             value={draft.password}
             generate={() => {
               const password = generatePassword()
@@ -202,22 +206,22 @@ function ReaderDialog({
 
           <SwitchField
             data-testid="ck-reader-active"
-            label="Active"
+            label={t('audience.readers.active')}
             value={draft.active}
-            onLabel="Can sign in"
-            offLabel="Blocked from signing in"
+            onLabel={t('audience.readers.canSignIn')}
+            offLabel={t('audience.readers.cannotSignIn')}
             onChange={(active) => setDraft({ ...draft, active })}
           />
 
           <EntityMultiSelect
             data-testid="ck-reader-groups"
-            label="Groups"
-            help="Rules grant access to groups."
-            about="A reader in no group is only reachable by a rule naming them directly."
+            label={t('audience.readers.groups')}
+            help={t('audience.readers.groupsHelp')}
+            about={t('audience.readers.groupsAbout')}
             value={draft.groups}
             isLoading={groupsQuery.isPending}
             optionsError={groupsQuery.error}
-            emptyMessage="No groups on this site yet"
+            emptyMessage={t('audience.readers.noGroups')}
             options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
             onChange={(groups) => setDraft({ ...draft, groups: [...groups] })}
           />
@@ -225,10 +229,9 @@ function ReaderDialog({
           {revokes ? (
             <Alert data-testid="ck-reader-revoke-warning">
               <TriangleAlert />
-              <AlertTitle>Saving signs this reader out</AlertTitle>
+              <AlertTitle>{t('audience.readers.revokeWarning')}</AlertTitle>
               <AlertDescription>
-                Saving this revokes every session <strong>{reader?.username}</strong> currently holds. They are signed out
-                of the published site immediately and must sign in again.
+                {t('audience.readers.revokeDescription', { username: reader?.username ?? '' })}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -236,20 +239,20 @@ function ReaderDialog({
           {save.error ? (
             <Alert variant="destructive" data-testid="ck-reader-error">
               <TriangleAlert />
-              <AlertTitle>The reader was not saved</AlertTitle>
+              <AlertTitle>{t('audience.readers.saveError')}</AlertTitle>
               <AlertDescription>
-                {save.error instanceof Error ? save.error.message : 'Could not save the reader'}
+                {save.error instanceof Error ? save.error.message : t('audience.readers.saveErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-reader-cancel" disabled={save.isPending} onClick={onClose}>
-            {issued ? 'Done' : 'Cancel'}
+            {issued ? t('audience.readers.done') : t('common.cancel')}
           </Button>
           <Button data-testid="ck-reader-submit" disabled={!canSave} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {editing ? 'Save reader' : 'Create reader'}
+            {editing ? t('audience.readers.save') : t('audience.readers.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -258,6 +261,7 @@ function ReaderDialog({
 }
 
 export function ReadersCard({ site }: { site: string }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [editing, setEditing] = useState<{ reader?: AccessUser } | null>(null)
@@ -280,10 +284,10 @@ export function ReadersCard({ site }: { site: string }) {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Readers</CardTitle>
+        <CardTitle>{t('audience.readers.title')}</CardTitle>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-reader-new" onClick={() => setEditing({})}>
-            New reader
+            {t('audience.readers.new')}
           </Button>
         ) : null}
       </CardHeader>
@@ -291,10 +295,10 @@ export function ReadersCard({ site }: { site: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Username</TableHead>
-              <TableHead>Display name</TableHead>
-              <TableHead>Active</TableHead>
-              <TableHead>Groups</TableHead>
+              <TableHead>{t('audience.readers.username')}</TableHead>
+              <TableHead>{t('audience.readers.displayName')}</TableHead>
+              <TableHead>{t('audience.readers.active')}</TableHead>
+              <TableHead>{t('audience.readers.groups')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -305,14 +309,20 @@ export function ReadersCard({ site }: { site: string }) {
               error={readers.error}
               isEmpty={rows.length === 0}
               onRetry={() => readers.refetch()}
-              emptyTitle="No readers"
-              emptyMessage="The site is public unless a rule says otherwise."
+              emptyTitle={t('audience.readers.empty')}
+              emptyMessage={t('audience.readers.emptyDescription')}
             >
               {rows.map((reader) => (
                 <TableRow key={reader.id} data-testid="ck-reader-row" data-user={reader.id}>
                   <TableCell className="font-medium">{reader.username}</TableCell>
                   <TableCell className="text-muted-foreground">{reader.display_name}</TableCell>
-                  <TableCell>{reader.active ? <StatusBadge tone="success">active</StatusBadge> : <StatusBadge>disabled</StatusBadge>}</TableCell>
+                  <TableCell>
+                    {reader.active ? (
+                      <StatusBadge tone="success">{t('audience.readers.activeStatus')}</StatusBadge>
+                    ) : (
+                      <StatusBadge>{t('audience.readers.disabledStatus')}</StatusBadge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{reader.groups?.join(', ') || '—'}</TableCell>
                   <TableCell className="flex gap-2">
                     {writable ? (
@@ -323,17 +333,14 @@ export function ReadersCard({ site }: { site: string }) {
                           data-testid={`ck-reader-edit-${reader.id}`}
                           onClick={() => setEditing({ reader })}
                         >
-                          Edit
+                          {t('audience.readers.edit')}
                         </Button>
                         <Confirm
-                          title="Sign this reader out everywhere?"
-                          description={
-                            <>
-                              Every active session of <strong>{reader.username}</strong> is revoked immediately. The
-                              account, its password and its groups are untouched.
-                            </>
-                          }
-                          confirmLabel="Revoke sessions"
+                          title={t('audience.readers.revokeTitle')}
+                          description={t('audience.readers.revokeConfirmDescription', {
+                            username: reader.username,
+                          })}
+                          confirmLabel={t('audience.readers.revokeSessions')}
                           onConfirm={() => ck.access.revokeSessions(site, reader.id)}
                         >
                           {(open) => (
@@ -343,21 +350,23 @@ export function ReadersCard({ site }: { site: string }) {
                               data-testid={`ck-reader-revoke-${reader.id}`}
                               onClick={open}
                             >
-                              Revoke sessions
+                              {t('audience.readers.revokeSessions')}
                             </Button>
                           )}
                         </Confirm>
                         <Confirm
-                          title="Delete this reader?"
-                          description={
-                            <>
-                              The reader <strong>{reader.username}</strong> ({reader.display_name}) is deleted together
-                              with every session they hold, and removed from{' '}
-                              {reader.groups?.length ? `the groups ${reader.groups.join(', ')}` : 'every group'}. Any
-                              rule naming them directly loses that grant on the next release. This cannot be undone.
-                            </>
-                          }
-                          confirmLabel="Delete reader"
+                          title={t('audience.readers.deleteTitle')}
+                          description={t(
+                            reader.groups?.length
+                              ? 'audience.readers.deleteWithGroups'
+                              : 'audience.readers.deleteWithoutGroups',
+                            {
+                              username: reader.username,
+                              name: reader.display_name,
+                              groups: reader.groups?.join(', ') ?? '',
+                            },
+                          )}
+                          confirmLabel={t('audience.readers.delete')}
                           destructive
                           onConfirm={async () => {
                             await ck.access.deleteUser(site, reader.id)
@@ -371,7 +380,7 @@ export function ReadersCard({ site }: { site: string }) {
                               data-testid={`ck-reader-delete-${reader.id}`}
                               onClick={open}
                             >
-                              Delete
+                              {t('audience.readers.delete')}
                             </Button>
                           )}
                         </Confirm>

@@ -6,10 +6,12 @@ import './index.css'
 import { queryClient } from '@/lib/query'
 import { router } from '@/router'
 import { SessionGate } from '@/components/session-gate'
+import { I18nProvider } from '@/lib/i18n-context'
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
       {/* Nothing renders until the session is known: the console never shows a
           half-authenticated shell, and every child may assume a principal.
           The site provider lives inside the router — it carries the selection
@@ -17,6 +19,7 @@ createRoot(document.getElementById('root') as HTMLElement).render(
       <SessionGate>
         <RouterProvider router={router} />
       </SessionGate>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   </StrictMode>,
 )

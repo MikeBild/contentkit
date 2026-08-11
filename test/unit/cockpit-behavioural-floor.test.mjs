@@ -712,6 +712,37 @@ const THEME_CONTRACTS = [
   },
 ]
 
+const I18N_CONTRACTS = [
+  {
+    id: 'i18n/catalogs-have-one-shape',
+    promise: 'English and German expose exactly the same keys and interpolation fields.',
+    title: /catalogs structurally identical/i,
+    asserts: [/Object\.keys/, /toEqual/],
+    min: 1,
+  },
+  {
+    id: 'i18n/interpolation-keeps-values',
+    promise: 'Translated copy interpolates dynamic values rather than dropping them.',
+    title: /interpolates translated values/i,
+    asserts: [/translate\(/, /toContain/],
+    min: 1,
+  },
+  {
+    id: 'i18n/automatic-locale-has-a-safe-fallback',
+    promise: 'Automatic language selection recognizes German and English and otherwise chooses English.',
+    title: /resolves supported browser languages/i,
+    asserts: [/resolveLocale/, /toBe/],
+    min: 1,
+  },
+  {
+    id: 'i18n/manual-and-cross-tab-choice',
+    promise: 'Manual locale selection persists and storage changes from another tab are applied.',
+    title: /auto detection, manual choice and external storage changes/i,
+    asserts: [/store\.snapshot/, /storageChange/],
+    min: 1,
+  },
+]
+
 /* ── The theme store: lib/theme-store.ts ───────────────────────────────────────
  *
  * The only non-rendering subject in this file, and deliberately so. The store is
@@ -726,7 +757,7 @@ const THEME_CONTRACTS = [
  * because they assert in different currencies, and merged here because the floor
  * is one floor: a case claimed by neither list is a case nobody would miss.
  */
-const ALL_CONTRACTS = [...CONTRACTS, ...THEME_CONTRACTS]
+const ALL_CONTRACTS = [...CONTRACTS, ...THEME_CONTRACTS, ...I18N_CONTRACTS]
 
 /** The modules a contract above actually asserts against. Everything else is grep. */
 const COVERED_SUBJECTS = [
@@ -747,6 +778,8 @@ const COVERED_SUBJECTS = [
   // answers is "does a test assert against this module", and for theme-store.ts
   // the answer is now yes, more directly than any rendering test could manage.
   'lib/theme-store.ts',
+  'lib/i18n.ts',
+  'lib/locale-store.ts',
 ]
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -784,7 +817,7 @@ const UNCOVERED = [
   {
     id: 'profile/the-account-surface',
     missing:
-      'That both session clocks count down against one shared tick; that the held and not-held scope lists are complements over PRODUCT_SCOPES; that an absent display_name falls back to email and then to subject rather than rendering blank; that the operator menu opens, names the subject, and routes to this page.',
+      'That both session clocks count down against one shared tick; that the held and not-held scope lists are complements over PRODUCT_SCOPES; and that a profile remains useful when the session has neither a display name nor an email. The account-menu structure, safe fallback and route are pinned by cockpit-navigation.test.mjs.',
     where: ['pages/profile.tsx', 'hooks/use-now.ts'],
   },
   {
@@ -912,6 +945,7 @@ const UNCOVERED = [
       'components/ui/dropzone.tsx',
       'components/ui/copy-button.tsx',
       'components/ui/chip.tsx',
+      'components/context-help.tsx',
     ],
   },
   {
@@ -929,6 +963,7 @@ const UNCOVERED = [
       'components/ui/scroll-area.tsx',
       'components/ui/input-group.tsx',
       'components/ui/field.tsx',
+      'components/ui/avatar.tsx',
     ],
   },
   {
@@ -958,6 +993,8 @@ const UNCOVERED = [
       'lib/conversations.ts',
       'lib/utils.ts',
       'lib/select-any.ts',
+      'lib/i18n-context.tsx',
+      'lib/opaque.ts',
       'forms/aside.tsx',
       'forms/gallery.tsx',
       'forms/status-badge.tsx',

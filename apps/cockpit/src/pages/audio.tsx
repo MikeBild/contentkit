@@ -28,11 +28,19 @@ import { reportedCount } from '@/lib/reported'
 import { ANY } from '@/lib/select-any'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 const AUDIO_LIMITS = [50, 100, 250, 500]
+const STATUS_KEYS = {
+  pending: 'audio.status.pending',
+  processing: 'audio.status.processing',
+  done: 'audio.status.done',
+  failed: 'audio.status.failed',
+  skipped: 'audio.status.skipped',
+} as const
 
 export function AudioPage() {
+  const { t, number, dateTime } = useI18n()
   const { site, current } = useSite()
   const can = useCan()
   const [status, setStatus] = useState<AudioJobStatus | ''>('')
@@ -48,7 +56,7 @@ export function AudioPage() {
 
   if (!site)
     return (
-      <Page title="Audio">
+      <Page title={t('page.audio.title')}>
         <NoSite />
       </Page>
     )
@@ -68,25 +76,25 @@ export function AudioPage() {
   // screen inventing a measurement, so an absent numerator says it is absent.
   const usedThisMonth =
     usedChars === null
-      ? 'Characters used this month: not reported'
-      : `${usedChars.toLocaleString()} characters used this month`
+      ? t('audio.usedNotReported')
+      : t('audio.usedThisMonth', { count: number(usedChars) })
 
   return (
     <Page
-      title="Audio"
-      description="Read-aloud rendering jobs and the monthly character budget."
+      title={t('page.audio.title')}
+      description={t('audio.description')}
       actions={
         can('release:write') ? (
           <Confirm
-            title="Backfill read-aloud audio?"
-            description={
-              <>
-                Every published post of <strong>{site}</strong> without audio is queued for rendering. This spends the
-                monthly character budget
-                {limitChars === undefined ? '' : `, capped at ${limitChars.toLocaleString()} characters for this run`}.
-              </>
-            }
-            confirmLabel="Start backfill"
+            title={t('audio.backfillTitle')}
+            description={t('audio.backfillDescription', {
+              site,
+              cap:
+                limitChars === undefined
+                  ? ''
+                  : t('audio.backfillCap', { count: number(limitChars) }),
+            })}
+            confirmLabel={t('audio.startBackfill')}
             onConfirm={async () => {
               await ck.content.audio.backfill(site, limitChars === undefined ? {} : { limit_chars: limitChars })
               await jobs.refetch()
@@ -94,7 +102,7 @@ export function AudioPage() {
           >
             {(open) => (
               <Button data-testid="audio-backfill" onClick={open}>
-                Backfill
+                {t('audio.backfill')}
               </Button>
             )}
           </Confirm>
@@ -110,7 +118,7 @@ export function AudioPage() {
                 // Named rather than captioned: the sentence beside the bar is the
                 // numbers, and a reader who lands on the bar itself would
                 // otherwise be given a percentage with no noun on it.
-                aria-label="Characters used this month"
+                aria-label={t('audio.usedLabel')}
                 // The API's two numbers, unaltered: the rounding and the clamp a
                 // spent budget needs happen once, in progress-value.ts, which has
                 // a unit test by name.
@@ -122,8 +130,11 @@ export function AudioPage() {
                 // entered in characters.
                 valueLabel={
                   <span data-testid="audio-budget-value">
-                    {budget.used.toLocaleString()} of {budget.budget.toLocaleString()} characters ·{' '}
-                    {budget.remaining.toLocaleString()} left
+                    {t('audio.budgetValue', {
+                      used: number(budget.used),
+                      budget: number(budget.budget),
+                      remaining: number(budget.remaining),
+                    })}
                   </span>
                 }
               />
@@ -137,7 +148,7 @@ export function AudioPage() {
                   variant={budget.tone === 'danger' ? 'destructive' : 'outline'}
                   className="mt-1.5 w-fit"
                 >
-                  {budget.tone === 'danger' ? 'Budget spent' : 'Budget nearly spent'}
+                  {budget.tone === 'danger' ? t('audio.budgetSpent') : t('audio.budgetNearlySpent')}
                 </Badge>
               )}
               {budget.spent ? (
@@ -149,11 +160,8 @@ export function AudioPage() {
                 // would be discovered as a surprise bill.
                 <Alert variant="destructive" className="mt-1.5" data-testid="audio-budget-spent">
                   <TriangleAlert />
-                  <AlertTitle>The month's characters are spent</AlertTitle>
-                  <AlertDescription>
-                    Publishing a post no longer queues narration; it resets with the next calendar month (UTC). A
-                    backfill still runs — its cap applies to that one run, not to what is left of the month.
-                  </AlertDescription>
+                  <AlertTitle>{t('audio.monthSpentTitle')}</AlertTitle>
+                  <AlertDescription>{t('audio.monthSpentDescription')}</AlertDescription>
                 </Alert>
               ) : null}
             </div>
@@ -168,7 +176,9 @@ export function AudioPage() {
             <span data-testid="audio-budget-unmeasured">
               {usedThisMonth}
               {' · '}
-              {budgetChars === null ? 'no budget configured' : `budget ${budgetChars.toLocaleString()} characters`}
+              {budgetChars === null
+                ? t('audio.noBudget')
+                : t('audio.budgetConfigured', { count: number(budgetChars) })}
             </span>
           )}
           <div className="flex flex-wrap gap-4">
@@ -177,7 +187,8 @@ export function AudioPage() {
                 {/* A counter the response omitted is not a status with no jobs;
                     src/audio.mjs zero-fills the statuses it knows, and the ones it
                     does not know are the whole reason this is not `?? 0`. */}
-                {name}: {reportedCount(summary[name])?.toLocaleString() ?? '—'}
+                {t(STATUS_KEYS[name])}:{' '}
+                {reportedCount(summary[name]) === null ? '—' : number(reportedCount(summary[name])!)}
               </span>
             ))}
           </div>
@@ -188,14 +199,16 @@ export function AudioPage() {
         <div className="mb-3 max-w-sm">
           <NumberField
             data-testid="audio-limit-chars"
-            label="Backfill character cap"
+            label={t('audio.backfillCapLabel')}
             integer
-            unit="characters"
+            unit={t('audio.characters')}
             min={1}
             allowUnset
-            unsetLabel="Whole budget"
-            help="Stops the run once this many characters have been queued."
-            fallback={`Unset uses the site's configured budget${current?.settings?.audio ? '' : ', which this site has not set'}.`}
+            unsetLabel={t('audio.wholeBudget')}
+            help={t('audio.backfillCapHelp')}
+            fallback={t('audio.backfillCapFallback', {
+              missing: current?.settings?.audio ? '' : t('audio.budgetMissing'),
+            })}
             value={limitChars}
             onChange={setLimitChars}
           />
@@ -204,29 +217,33 @@ export function AudioPage() {
 
       <div className="mb-3 flex flex-wrap gap-2">
         <Select value={status || ANY} onValueChange={(next) => setStatus(next === ANY ? '' : (next as AudioJobStatus))}>
-          <SelectTrigger className="w-44" data-testid="audio-status-filter" aria-label="Filter audio jobs by status">
-            <SelectValue placeholder="All statuses" />
+          <SelectTrigger
+            className="w-44"
+            data-testid="audio-status-filter"
+            aria-label={t('audio.filterStatus')}
+          >
+            <SelectValue placeholder={t('audio.allStatuses')} />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value={ANY}>All statuses</SelectItem>
+              <SelectItem value={ANY}>{t('audio.allStatuses')}</SelectItem>
               {AUDIO_JOB_STATUS.map((value) => (
                 <SelectItem key={value} value={value}>
-                  {value}
+                  {t(STATUS_KEYS[value])}
                 </SelectItem>
               ))}
             </SelectGroup>
           </SelectContent>
         </Select>
         <Select value={String(limit)} onValueChange={(next) => setLimit(Number(next))}>
-          <SelectTrigger className="w-32" data-testid="audio-limit-filter" aria-label="Number of audio jobs to load">
+          <SelectTrigger className="w-32" data-testid="audio-limit-filter" aria-label={t('audio.limitLabel')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {AUDIO_LIMITS.map((value) => (
                 <SelectItem key={value} value={String(value)}>
-                  Last {value}
+                  {t('audio.last', { count: value })}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -239,11 +256,11 @@ export function AudioPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Characters</TableHead>
-                <TableHead>Attempts</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>{t('audio.title')}</TableHead>
+                <TableHead>{t('audio.status')}</TableHead>
+                <TableHead>{t('audio.characters')}</TableHead>
+                <TableHead>{t('audio.attempts')}</TableHead>
+                <TableHead>{t('audio.created')}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -254,11 +271,11 @@ export function AudioPage() {
                 error={jobs.error}
                 isEmpty={rows.length === 0}
                 onRetry={() => jobs.refetch()}
-                emptyTitle={status ? `No ${status} jobs` : 'No audio jobs'}
+                emptyTitle={status ? t('audio.emptyFiltered', { status: t(STATUS_KEYS[status]) }) : t('audio.empty')}
                 emptyMessage={
                   status
-                    ? 'Another status may have them — the filter is above.'
-                    : 'Enable settings.audio for this site to start.'
+                    ? t('audio.emptyFilteredDescription')
+                    : t('audio.emptyDescription')
                 }
               >
                 {rows.map((job) => (
@@ -268,34 +285,31 @@ export function AudioPage() {
                         `title`, and cockpit-forms-density.test.mjs enforces §3
                         with no exemption. Not cutting it satisfies both. */}
                     <TableCell className="max-w-[18rem] break-words">
-                      {job.title || job.slug || job.item_id.slice(0, 12)}
+                      {job.title || job.slug || t('common.unavailableDocument')}
                     </TableCell>
                     <TableCell>
                       <StatusBadge
                         tone={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}
                       >
-                        {job.status}
+                        {t(STATUS_KEYS[job.status])}
                       </StatusBadge>
                       {job.error ? <span className="ml-2 text-xs text-destructive">{job.error}</span> : null}
                     </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">
-                      {job.chars?.toLocaleString() ?? '—'}
+                      {job.chars === null || job.chars === undefined ? '—' : number(job.chars)}
                     </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">{job.attempts}</TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDate(job.created_at)}
+                      {dateTime(job.created_at)}
                     </TableCell>
                     <TableCell>
                       {can('release:write') && job.status === 'failed' ? (
                         <Confirm
-                          title="Retry this job?"
-                          description={
-                            <>
-                              <strong>{job.title || job.slug || job.item_id}</strong> is queued again with its backoff
-                              clock reset. This spends the monthly character budget and ends in a rebuild.
-                            </>
-                          }
-                          confirmLabel="Retry"
+                          title={t('audio.retryTitle')}
+                          description={t('audio.retryDescription', {
+                            name: job.title || job.slug || t('common.unavailableDocument'),
+                          })}
+                          confirmLabel={t('audio.retry')}
                           onConfirm={async () => {
                             await ck.content.audio.retry(site, job.id)
                             await jobs.refetch()
@@ -303,7 +317,7 @@ export function AudioPage() {
                         >
                           {(open) => (
                             <Button size="sm" variant="outline" data-testid={`audio-retry-${job.id}`} onClick={open}>
-                              Retry
+                              {t('audio.retry')}
                             </Button>
                           )}
                         </Confirm>

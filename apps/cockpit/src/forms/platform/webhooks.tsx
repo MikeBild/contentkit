@@ -27,7 +27,7 @@ import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
-import { formatDate } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * "No filter" as a value a Select can hold. Radix spells *deselected* as the
@@ -59,6 +59,7 @@ function EndpointDialog({
   onIssued: (secret: string, url: string) => void
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const editing = Boolean(endpoint)
   const [url, setUrl] = useState(endpoint?.url ?? '')
@@ -108,46 +109,44 @@ function EndpointDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit endpoint' : 'New webhook endpoint'}</DialogTitle>
-          <DialogDescription>
-            ContentKit signs every delivery with Standard Webhooks headers. The receiver must be reachable over https.
-          </DialogDescription>
+          <DialogTitle>{t(editing ? 'webhook.editEndpoint' : 'webhook.newEndpoint')}</DialogTitle>
+          <DialogDescription>{t('webhook.dialogDescription')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           <UrlField
             data-testid="ck-webhook-url"
-            label="URL"
+            label={t('siteForm.url')}
             required
             protocols={['https:']}
-            help="Where deliveries are POSTed."
-            about="Private and loopback addresses are refused."
+            help={t('webhook.urlHelp')}
+            about={t('webhook.urlAbout')}
             value={url}
             onChange={setUrl}
           />
 
           <EnumMultiSelect
             data-testid="ck-webhook-events"
-            label="Events"
-            help="Which events reach this endpoint."
+            label={t('webhook.events')}
+            help={t('webhook.eventsHelp')}
             value={events}
             options={EVENT_OPTIONS}
-            allEmptyMeans={{ allLabel: 'All events', someLabel: 'Only these events' }}
+            allEmptyMeans={{ allLabel: t('webhook.allEvents'), someLabel: t('webhook.onlyEvents') }}
             onChange={(next) => setEvents([...next])}
           />
 
           <TextField
             data-testid="ck-webhook-description"
-            label="Description"
+            label={t('webhook.description')}
             value={description}
-            fallback="Only a label for this list."
+            fallback={t('webhook.descriptionFallback')}
             onChange={setDescription}
           />
 
           <TriToggle
             data-testid="ck-webhook-enabled"
-            label="Enabled"
-            help="Re-enabling also clears the consecutive-failure counter that auto-paused it."
-            defaultLabel="its stored state"
+            label={t('webhook.enabled')}
+            help={t('webhook.enabledHelp')}
+            defaultLabel={t('webhook.storedState')}
             value={enabled}
             onChange={setEnabled}
           />
@@ -155,20 +154,20 @@ function EndpointDialog({
           {save.error ? (
             <Alert variant="destructive" data-testid="ck-webhook-error">
               <TriangleAlert />
-              <AlertTitle>The endpoint was not saved</AlertTitle>
+              <AlertTitle>{t('webhook.saveErrorTitle')}</AlertTitle>
               <AlertDescription>
-                {save.error instanceof Error ? save.error.message : 'Could not save the endpoint'}
+                {save.error instanceof Error ? save.error.message : t('webhook.saveError')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-webhook-cancel" disabled={save.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button data-testid="ck-webhook-submit" disabled={save.isPending || !url} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {editing ? 'Save endpoint' : 'Create endpoint'}
+            {t(editing ? 'webhook.saveEndpoint' : 'webhook.createEndpoint')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -177,6 +176,7 @@ function EndpointDialog({
 }
 
 export function WebhookEndpointsCard({ site }: { site: string }) {
+  const { t, dateTime } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [editing, setEditing] = useState<{ endpoint?: WebhookEndpoint } | null>(null)
@@ -194,10 +194,10 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Endpoints</CardTitle>
+        <CardTitle>{t('webhook.endpoints')}</CardTitle>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-webhook-new" onClick={() => setEditing({})}>
-            New endpoint
+            {t('webhook.newEndpoint')}
           </Button>
         ) : null}
       </CardHeader>
@@ -206,8 +206,8 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
           <div className="px-5 pt-3">
             <RevealOnce
               data-testid="ck-webhook-secret-issued"
-              title="Store this signing secret now"
-              description={`It verifies every delivery to ${issued.url}. ContentKit keeps it encrypted and will not show it again — rotating produces a different one.`}
+              title={t('webhook.secretTitle')}
+              description={t('webhook.secretDescription', { url: issued.url })}
               value={issued.secret}
               onDismiss={() => setIssued(null)}
             />
@@ -216,10 +216,10 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>URL</TableHead>
-              <TableHead>Events</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>State</TableHead>
+              <TableHead>{t('siteForm.url')}</TableHead>
+              <TableHead>{t('webhook.events')}</TableHead>
+              <TableHead>{t('webhook.description')}</TableHead>
+              <TableHead>{t('webhook.state')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -230,24 +230,30 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
               error={endpoints.error}
               isEmpty={rows.length === 0}
               onRetry={() => endpoints.refetch()}
-              emptyTitle="No endpoints yet"
-              emptyMessage="Content events are recorded either way, they just go nowhere."
+              emptyTitle={t('webhook.emptyTitle')}
+              emptyMessage={t('webhook.emptyMessage')}
             >
               {rows.map((endpoint) => (
                 <TableRow key={endpoint.id} data-testid="ck-webhook-row" data-endpoint={endpoint.id}>
                   <TableCell className="max-w-[22rem] truncate font-mono text-xs">{endpoint.url}</TableCell>
                   <TableCell className="max-w-[16rem] text-xs text-muted-foreground">
-                    {endpoint.events?.length ? endpoint.events.join(', ') : 'all events'}
+                    {endpoint.events?.length ? endpoint.events.join(', ') : t('webhook.allEvents')}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{endpoint.description || '—'}</TableCell>
                   <TableCell>
                     {isEnabled(endpoint) ? (
-                      <StatusBadge tone="success">active</StatusBadge>
+                      <StatusBadge tone="success">{t('webhook.active')}</StatusBadge>
                     ) : (
-                      <StatusBadge tone="warning">paused {formatDate(endpoint.disabled_at)}</StatusBadge>
+                      <StatusBadge tone="warning">
+                        {t('webhook.paused', {
+                          date: endpoint.disabled_at ? dateTime(endpoint.disabled_at) : '—',
+                        })}
+                      </StatusBadge>
                     )}
                     {endpoint.consecutive_failures ? (
-                      <span className="ml-2 text-xs text-destructive">{endpoint.consecutive_failures} failures in a row</span>
+                      <span className="ml-2 text-xs text-destructive">
+                        {t('webhook.failures', { count: endpoint.consecutive_failures })}
+                      </span>
                     ) : null}
                   </TableCell>
                   <TableCell className="flex gap-2">
@@ -259,18 +265,12 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                           data-testid={`ck-webhook-edit-${endpoint.id}`}
                           onClick={() => setEditing({ endpoint })}
                         >
-                          Edit
+                          {t('webhook.edit')}
                         </Button>
                         <Confirm
-                          title="Rotate the signing secret?"
-                          description={
-                            <>
-                              The current secret for <strong>{endpoint.url}</strong> stops being valid at once, and
-                              every receiver still verifying with it starts rejecting deliveries. The replacement is
-                              shown here once — copy it before dismissing.
-                            </>
-                          }
-                          confirmLabel="Rotate secret"
+                          title={t('webhook.rotateTitle')}
+                          description={t('webhook.rotateDescription', { url: endpoint.url })}
+                          confirmLabel={t('webhook.rotate')}
                           destructive
                           onConfirm={async () => {
                             const rotated = await ck.webhooks.rotate(site, endpoint.id)
@@ -284,19 +284,14 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                               data-testid={`ck-webhook-rotate-${endpoint.id}`}
                               onClick={open}
                             >
-                              Rotate secret
+                              {t('webhook.rotate')}
                             </Button>
                           )}
                         </Confirm>
                         <Confirm
-                          title="Delete this endpoint?"
-                          description={
-                            <>
-                              No further events are delivered to <strong>{endpoint.url}</strong>, and its signing secret
-                              is destroyed with it. Its delivery history stays readable. This cannot be undone.
-                            </>
-                          }
-                          confirmLabel="Delete endpoint"
+                          title={t('webhook.deleteTitle')}
+                          description={t('webhook.deleteDescription', { url: endpoint.url })}
+                          confirmLabel={t('webhook.deleteEndpoint')}
                           destructive
                           onConfirm={async () => {
                             await ck.webhooks.remove(site, endpoint.id)
@@ -310,7 +305,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                               data-testid={`ck-webhook-delete-${endpoint.id}`}
                               onClick={open}
                             >
-                              Delete
+                              {t('common.remove')}
                             </Button>
                           )}
                         </Confirm>
@@ -347,6 +342,7 @@ const DELIVERY_TONE: Record<WebhookDeliveryStatus, 'success' | 'danger' | 'warni
 const LIMITS = [25, 50, 100, 200]
 
 export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: string }) {
+  const { t, dateTime } = useI18n()
   const [endpoint, setEndpoint] = useState('')
   const [status, setStatus] = useState<WebhookDeliveryStatus | ''>('')
   const [limit, setLimit] = useState(50)
@@ -371,12 +367,12 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
-        <CardTitle>Deliveries</CardTitle>
+        <CardTitle>{t('webhook.deliveries')}</CardTitle>
         <div className="flex flex-wrap gap-2">
           <Select value={endpoint || ANY} onValueChange={(next) => setEndpoint(next === ANY ? '' : next)}>
             <SelectTrigger
               data-testid="ck-delivery-endpoint-filter"
-              aria-label="Filter deliveries by endpoint"
+              aria-label={t('webhook.filterEndpoint')}
               className="w-56"
             >
               <SelectValue />
@@ -384,7 +380,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
             <SelectContent>
               <SelectGroup>
                 <SelectItem value={ANY} data-testid="ck-delivery-endpoint-filter-any">
-                  All endpoints
+                  {t('webhook.allEndpoints')}
                 </SelectItem>
                 {endpointRows.map((row) => (
                   <SelectItem key={row.id} value={row.id} data-testid={`ck-delivery-endpoint-filter-${row.id}`}>
@@ -400,7 +396,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
           >
             <SelectTrigger
               data-testid="ck-delivery-status-filter"
-              aria-label="Filter deliveries by status"
+              aria-label={t('webhook.filterStatus')}
               className="w-40"
             >
               <SelectValue />
@@ -408,7 +404,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
             <SelectContent>
               <SelectGroup>
                 <SelectItem value={ANY} data-testid="ck-delivery-status-filter-any">
-                  All statuses
+                  {t('webhook.allStatuses')}
                 </SelectItem>
                 {WEBHOOK_DELIVERY_STATUS.map((value) => (
                   <SelectItem key={value} value={value} data-testid={`ck-delivery-status-filter-${value}`}>
@@ -421,7 +417,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
           <Select value={String(limit)} onValueChange={(next) => setLimit(Number(next))}>
             <SelectTrigger
               data-testid="ck-delivery-limit-filter"
-              aria-label="Number of deliveries to load"
+              aria-label={t('webhook.filterLimit')}
               className="w-32"
             >
               <SelectValue />
@@ -430,7 +426,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
               <SelectGroup>
                 {LIMITS.map((value) => (
                   <SelectItem key={value} value={String(value)} data-testid={`ck-delivery-limit-filter-${value}`}>
-                    Last {value}
+                    {t('webhook.last', { count: value })}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -442,12 +438,12 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Event</TableHead>
-              <TableHead>Endpoint</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Attempts</TableHead>
-              <TableHead>Response</TableHead>
-              <TableHead>Created</TableHead>
+              <TableHead>{t('webhook.event')}</TableHead>
+              <TableHead>{t('webhook.endpoint')}</TableHead>
+              <TableHead>{t('webhook.status')}</TableHead>
+              <TableHead>{t('webhook.attempts')}</TableHead>
+              <TableHead>{t('webhook.response')}</TableHead>
+              <TableHead>{t('webhook.created')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -458,11 +454,11 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
               error={deliveries.error}
               isEmpty={rows.length === 0}
               onRetry={() => deliveries.refetch()}
-              emptyTitle={endpoint || status ? 'Nothing matches these filters' : 'No deliveries yet'}
+              emptyTitle={t(endpoint || status ? 'webhook.filteredEmpty' : 'webhook.deliveriesEmpty')}
               emptyMessage={
                 endpoint || status
-                  ? 'Widen the endpoint or the status to see more.'
-                  : 'Nothing has been sent to an endpoint yet.'
+                  ? t('webhook.filteredEmptyMessage')
+                  : t('webhook.deliveriesEmptyMessage')
               }
             >
               {rows.map((delivery) => {
@@ -474,14 +470,14 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                       <TableCell className="font-mono text-xs">{delivery.type}</TableCell>
                       <TableCell className="max-w-[16rem] truncate text-xs text-muted-foreground">
                         {/* A null endpoint_id is the legacy env-configured target. */}
-                        {target?.url ?? (delivery.endpoint_id ? delivery.endpoint_id.slice(0, 8) : 'configured default')}
+                        {target?.url ?? t(delivery.endpoint_id ? 'webhook.unavailableEndpoint' : 'webhook.configuredDefault')}
                       </TableCell>
                       <TableCell>
                         <StatusBadge tone={DELIVERY_TONE[delivery.status]}>{delivery.status}</StatusBadge>
                       </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">{delivery.attempts}</TableCell>
                       <TableCell className="text-muted-foreground">{delivery.response_status ?? '—'}</TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(delivery.created_at)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(delivery.created_at)}</TableCell>
                       <TableCell className="flex gap-2">
                         <Button
                           size="sm"
@@ -490,20 +486,18 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                           data-testid={`ck-delivery-expand-${delivery.id}`}
                           onClick={() => setExpanded(open ? null : delivery.id)}
                         >
-                          {open ? 'Hide' : 'Details'}
+                          {t(open ? 'common.hide' : 'common.details')}
                         </Button>
                         {/* Re-queueing a delivered event would send it twice; only
                             a failure is safe to retry by hand. */}
                         {delivery.status === 'failed' ? (
                           <Confirm
-                            title="Redeliver this event?"
-                            description={
-                              <>
-                                <strong>{delivery.type}</strong> is queued for another attempt at{' '}
-                                {target?.url ?? 'its endpoint'}. The receiver sees it as a repeat of the same event id.
-                              </>
-                            }
-                            confirmLabel="Retry"
+                            title={t('webhook.redeliverTitle')}
+                            description={t('webhook.redeliverDescription', {
+                              event: delivery.type,
+                              endpoint: target?.url ?? t('webhook.itsEndpoint'),
+                            })}
+                            confirmLabel={t('webhook.retry')}
                             onConfirm={async () => {
                               await ck.webhooks.retry(delivery.id)
                               await deliveries.refetch()
@@ -516,7 +510,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                                 data-testid={`ck-delivery-retry-${delivery.id}`}
                                 onClick={openDialog}
                               >
-                                Retry
+                                {t('webhook.retry')}
                               </Button>
                             )}
                           </Confirm>
@@ -527,19 +521,17 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                       <TableRow data-testid={`ck-delivery-detail-${delivery.id}`}>
                         <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
-                            <dt className="text-muted-foreground">Event id</dt>
-                            <dd className="font-mono">{delivery.event_id}</dd>
-                            <dt className="text-muted-foreground">Next attempt</dt>
-                            <dd>{delivery.next_attempt_at ? formatDate(delivery.next_attempt_at) : '—'}</dd>
-                            <dt className="text-muted-foreground">Delivered</dt>
-                            <dd>{delivery.delivered_at ? formatDate(delivery.delivered_at) : '—'}</dd>
-                            <dt className="text-muted-foreground">Response status</dt>
+                            <dt className="text-muted-foreground">{t('webhook.nextAttempt')}</dt>
+                            <dd>{delivery.next_attempt_at ? dateTime(delivery.next_attempt_at) : '—'}</dd>
+                            <dt className="text-muted-foreground">{t('webhook.delivered')}</dt>
+                            <dd>{delivery.delivered_at ? dateTime(delivery.delivered_at) : '—'}</dd>
+                            <dt className="text-muted-foreground">{t('webhook.responseStatus')}</dt>
                             <dd>{delivery.response_status ?? '—'}</dd>
-                            <dt className="text-muted-foreground">Last error</dt>
+                            <dt className="text-muted-foreground">{t('webhook.lastError')}</dt>
                             <dd className="whitespace-pre-wrap break-words text-destructive">
                               {delivery.last_error ?? '—'}
                             </dd>
-                            <dt className="text-muted-foreground">Payload</dt>
+                            <dt className="text-muted-foreground">{t('webhook.payload')}</dt>
                             <dd>
                               <PayloadFields payload={delivery.payload} />
                             </dd>

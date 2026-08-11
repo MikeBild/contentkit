@@ -1,6 +1,7 @@
 import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from './button'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Values that exist exactly once — a raw API key, a webhook secret — have to be
@@ -15,7 +16,7 @@ import { Button } from './button'
  */
 export function CopyButton({
   value,
-  label = 'Copy',
+  label,
   size = 'sm',
   'data-testid': testId = 'ck-copy',
 }: {
@@ -24,6 +25,8 @@ export function CopyButton({
   size?: 'sm' | 'icon-sm'
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
+  const actionLabel = label ?? t('common.copy')
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   return (
@@ -32,7 +35,7 @@ export function CopyButton({
       variant="outline"
       size={size}
       data-testid={testId}
-      aria-label={size === 'icon-sm' ? label : undefined}
+      aria-label={size === 'icon-sm' ? actionLabel : undefined}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)
@@ -55,10 +58,10 @@ export function CopyButton({
       {size === 'icon-sm'
         ? null
         : state === 'failed'
-          ? 'Copy blocked — select it'
+          ? t('common.copyBlocked')
           : state === 'copied'
-            ? 'Copied'
-            : label}
+            ? t('common.copied')
+            : actionLabel}
     </Button>
   )
 }

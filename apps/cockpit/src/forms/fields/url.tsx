@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useI18n, type I18nValue } from '@/lib/i18n-context'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -74,7 +75,8 @@ export function UrlField({
     mode?: 'absolute' | 'asset'
     commitRef?: React.MutableRefObject<(() => void) | null>
     placeholder?: string
-  }) {
+}) {
+  const { t } = useI18n()
   const [draft, setDraft] = useState(value)
   const latest = useRef(draft)
   latest.current = draft
@@ -104,13 +106,13 @@ export function UrlField({
   })
 
   const check = checkUrl(draft, { protocols, base, mode })
-  const error = shell.error ?? check.error
+  const error = shell.error ?? localizeUrlMessage(check.error, t)
 
   return (
     <FieldShell
       {...shell}
       error={error}
-      warning={shell.warning ?? check.warning}
+      warning={shell.warning ?? localizeUrlMessage(check.warning, t)}
       hint={shell.hint ?? (check.resolved ? <span className="font-mono">{check.resolved}</span> : undefined)}
     >
       {(control) => (
@@ -128,6 +130,15 @@ export function UrlField({
       )}
     </FieldShell>
   )
+}
+
+function localizeUrlMessage(message: string | undefined, t: I18nValue['t']): string | undefined {
+  if (!message) return undefined
+  if (message === 'Not a URL — include the scheme, for example https://') return t('validation.url')
+  if (message === 'Remove the username and password from the URL') return t('validation.urlCredentials')
+  if (message === 'Plain http — the value travels unencrypted') return t('validation.urlHttp')
+  const protocols = /^Only (.+) are allowed here$/.exec(message)
+  return protocols ? t('validation.urlProtocols', { protocols: protocols[1]! }) : message
 }
 
 /**

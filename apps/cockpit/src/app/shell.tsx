@@ -8,6 +8,7 @@ import {
   FileText,
   Globe,
   KeyRound,
+  Languages,
   LayoutDashboard,
   Library,
   LogOut,
@@ -15,6 +16,7 @@ import {
   Monitor,
   UserRound,
   Moon,
+  Palette,
   Presentation,
   Rocket,
   ScrollText,
@@ -30,6 +32,7 @@ import { Fragment, useEffect, useState, type ComponentType, type ReactNode } fro
 import { ck } from '@/api/ck'
 import { AppLink } from '@/components/app-link'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -46,6 +49,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -69,10 +75,13 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Spinner } from '@/components/ui/spinner'
 import { useSession } from '@/lib/session'
+import { useI18n, type LocalePreference, type TranslationKey } from '@/lib/i18n-context'
 import { useSite } from '@/lib/site'
 import { useTheme, type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
+import { visibleLabel } from '@/lib/opaque'
 
 /**
  * The console's two contexts.
@@ -561,6 +570,40 @@ const SELECTION_NOTE = {
   ignored: 'Not used on this page',
 }
 
+const SELECTION_NOTE_KEYS: Record<Exclude<NavEntry['selection'], 'governs'>, TranslationKey> = {
+  requires: 'switcher.requires',
+  scopes: 'switcher.scopes',
+  seeds: 'switcher.seeds',
+  ignored: 'switcher.ignored',
+}
+
+const NAV_KEYS: Record<(typeof NAV)[number]['to'], TranslationKey> = {
+  '/': 'nav.overview',
+  '/content': 'nav.documents',
+  '/published': 'nav.published',
+  '/compositions': 'nav.compositions',
+  '/decks': 'nav.decks',
+  '/releases': 'nav.releases',
+  '/audio': 'nav.audio',
+  '/access': 'nav.readerAccess',
+  '/webhooks': 'nav.webhooks',
+  '/settings': 'nav.siteSettings',
+  '/sites': 'nav.sites',
+  '/moderation': 'nav.moderation',
+  '/credentials': 'nav.credentials',
+  '/audit': 'nav.audit',
+  '/assistant': 'nav.assistant',
+  '/system': 'nav.system',
+}
+
+const GROUP_KEYS: Partial<Record<NavGroupDefinition['id'], TranslationKey>> = {
+  content: 'nav.content',
+  deliver: 'nav.deliver',
+  access: 'nav.readerAccess',
+  settings: 'nav.settings',
+  installation: 'nav.installation',
+}
+
 /**
  * The two relations where moving the switcher changes nothing on the open page.
  *
@@ -588,8 +631,16 @@ export function Shell() {
   const session = useSession()
   const selection = useSite()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const { t } = useI18n()
   const open = entryFor(pathname)
   const note = switcherNote(open)
+  const noteText = open
+    ? open.selection !== 'governs'
+      ? t(SELECTION_NOTE_KEYS[open.selection])
+      : note.text
+        ? t('switcher.mixed')
+        : ''
+    : ''
 
   const visible = NAV.filter((item) => !item.scope || session.product_scopes.includes(item.scope))
   // The switcher is header chrome above every block, but installation pages read
@@ -666,19 +717,19 @@ export function Shell() {
                  * not reach the open page are not the ones with a mouse to spare.
                  * The trigger is a tab stop, so the sentence is one Tab away.
                  */}
-                {note.text ? (
+                {noteText ? (
                   note.reason ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div tabIndex={0} data-testid="site-switcher-note" className={NOTE_CLASS}>
-                          {note.text}
+                          {noteText}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent data-testid="site-switcher-note-reason">{note.reason}</TooltipContent>
                     </Tooltip>
                   ) : (
                     <div data-testid="site-switcher-note" className={NOTE_CLASS}>
-                      {note.text}
+                      {noteText}
                     </div>
                   )
                 ) : null}
@@ -687,7 +738,7 @@ export function Shell() {
           </SidebarHeader>
 
           <SidebarContent>
-            <nav data-testid="nav" aria-label="Cockpit">
+            <nav data-testid="nav" aria-label={t('nav.label')}>
               {GROUPS.map((group) => {
                 const items = visible.filter((item) => item.group === group.id)
                 const groupShown = items.length > 0
@@ -705,10 +756,7 @@ export function Shell() {
           <SidebarFooter>
             <SidebarMenu>
               <SidebarMenuItem>
-                <ThemeMenu />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <OperatorMenu />
+                <AccountMenu />
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarFooter>
@@ -766,6 +814,7 @@ function NavBlock({
   items: readonly NavEntry[]
   open: NavEntry | undefined
 }) {
+  const { t } = useI18n()
   const { state } = useSidebar()
   const [expanded, setExpanded] = useState(group.startsOpen)
   const holdsOpenPage = items.some((item) => item.to === open?.to)
@@ -777,16 +826,19 @@ function NavBlock({
   const menu = (
     <SidebarGroupContent>
       <SidebarMenu>
-        {items.map(({ to, label, icon: Icon }) => (
+        {items.map(({ to, icon: Icon }) => {
+          const translated = t(NAV_KEYS[to])
+          return (
           <SidebarMenuItem key={to}>
-            <SidebarMenuButton asChild isActive={open?.to === to} tooltip={label}>
+            <SidebarMenuButton asChild isActive={open?.to === to} tooltip={translated}>
               <AppLink to={to} data-testid={`nav-${to === '/' ? 'overview' : to.slice(1)}`}>
                 <Icon data-icon="inline-start" />
-                <span>{label}</span>
+                <span>{translated}</span>
               </AppLink>
             </SidebarMenuButton>
           </SidebarMenuItem>
-        ))}
+          )
+        })}
       </SidebarMenu>
     </SidebarGroupContent>
   )
@@ -803,7 +855,7 @@ function NavBlock({
       <SidebarGroup data-testid={group.testId} data-context={group.context}>
         <SidebarGroupLabel asChild>
           <CollapsibleTrigger data-testid={`${group.testId}-toggle`}>
-            {group.label}
+            {GROUP_KEYS[group.id] ? t(GROUP_KEYS[group.id] as TranslationKey) : group.label}
             <ChevronDown
               data-icon="inline-end"
               className="ml-auto transition-transform group-data-[state=closed]/collapsible:-rotate-90"
@@ -830,6 +882,18 @@ const THEMES: { value: Theme; label: string; icon: ComponentType<{ className?: s
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'Match system', icon: Monitor },
+]
+
+const THEME_KEYS: Record<Theme, TranslationKey> = {
+  light: 'account.theme.light',
+  dark: 'account.theme.dark',
+  system: 'account.theme.system',
+}
+
+const LANGUAGE_OPTIONS: readonly { value: LocalePreference; key: TranslationKey }[] = [
+  { value: 'auto', key: 'account.language.auto' },
+  { value: 'en', key: 'account.language.en' },
+  { value: 'de', key: 'account.language.de' },
 ]
 
 /**
@@ -860,51 +924,45 @@ const THEMES: { value: Theme; label: string; icon: ComponentType<{ className?: s
  * implementations over two different session shapes; the shared part is where
  * an operator looks, not the code.
  */
-function OperatorMenu() {
+function initials(value: string): string {
+  return value
+    .split(/[@\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'CK'
+}
+
+function AccountMenu() {
   const session = useSession()
+  const { t, preference, setPreference } = useI18n()
+  const { theme, setTheme } = useTheme()
+  const [signingOut, setSigningOut] = useState(false)
+  const name = visibleLabel(session.display_name, session.email) ?? t('account.unknown')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <SidebarMenuButton
           size="lg"
-          data-testid="operator-menu"
-          tooltip={session.display_name || session.email || session.subject}
+          data-testid="account-menu-trigger"
+          tooltip={t('account.menu')}
           className="data-[state=open]:bg-sidebar-accent"
         >
-          <UserRound data-icon="inline-start" />
+          <Avatar className="size-8 rounded-lg">
+            <AvatarFallback className="rounded-lg">{initials(name)}</AvatarFallback>
+          </Avatar>
           <span className="flex min-w-0 flex-col text-left leading-tight">
             <span data-testid="operator-name" className="truncate text-sm">
-              {session.display_name || session.email || session.subject}
+              {name}
             </span>
             <span data-testid="operator-role" className="truncate text-xs uppercase text-muted-foreground">
               {session.role}
             </span>
           </span>
-          <ChevronsUpDown className="ml-auto size-4 shrink-0" />
+          <ChevronsUpDown data-icon="inline-end" className="ml-auto shrink-0" />
         </SidebarMenuButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="end" className="min-w-56">
-        {/*
-          The subject is deliberately NOT here. It is the identifier an audit
-          line and a support request are keyed by, which is why it must be
-          reachable — but a menu is where somebody confirms they are the right
-          person before acting, and a 36-character UUID answers nobody's
-          question at that moment. It lives on Profile, one item below, where
-          there is room to say what it is for.
-        */}
-        {/*
-          The header carries the email and NOTHING ELSE — and only when the
-          trigger is not already showing it.
-
-          It used to repeat the display name that the trigger directly above
-          already prints, which is the same defect this menu was built to fix
-          arriving from the other side: two elements saying one thing. The email
-          is the part that is genuinely additional, because it is what tells two
-          people with the same display name apart.
-
-          When there is no display name the trigger already shows the email, so
-          the header would be the duplicate — and then there is no header.
-        */}
+      <DropdownMenuContent side="right" align="end" className="w-64" data-testid="account-menu">
         {session.display_name && session.email ? (
           <>
             <DropdownMenuLabel className="font-normal">
@@ -916,45 +974,65 @@ function OperatorMenu() {
         <DropdownMenuItem asChild data-testid="profile-link">
           <AppLink to="/profile" data-testid="nav-profile">
             <UserRound data-icon="inline-start" />
-            Profile
+            {t('account.profile')}
           </AppLink>
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger data-testid="account-language-menu">
+            <Languages data-icon="inline-start" />
+            {t('account.language')}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent data-testid="account-language-menu-content">
+            <DropdownMenuRadioGroup
+              value={preference}
+              onValueChange={(value) => setPreference(value as LocalePreference)}
+            >
+              {LANGUAGE_OPTIONS.map((option) => (
+                <DropdownMenuRadioItem
+                  key={option.value}
+                  value={option.value}
+                  data-testid={`account-language-${option.value}`}
+                >
+                  {t(option.key)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger data-testid="account-theme-menu">
+            <Palette data-icon="inline-start" />
+            {t('account.theme')}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent data-testid="account-theme-menu-content">
+            <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
+              {THEMES.map(({ value, icon: ItemIcon }) => (
+                <DropdownMenuRadioItem key={value} value={value} data-testid={`account-theme-${value}`}>
+                  <ItemIcon data-icon="inline-start" />
+                  {t(THEME_KEYS[value])}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          data-testid="sign-out"
+          variant="destructive"
+          disabled={signingOut}
+          data-testid="account-sign-out"
           onSelect={async () => {
-            await ck.identity.logout()
-            window.location.assign(ck.identity.loginUrl('/cockpit/'))
+            setSigningOut(true)
+            try {
+              await ck.identity.logout()
+              window.location.assign(ck.identity.loginUrl('/cockpit/'))
+            } finally {
+              setSigningOut(false)
+            }
           }}
         >
-          <LogOut data-icon="inline-start" />
-          Sign out
+          {signingOut ? <Spinner data-icon="inline-start" /> : <LogOut data-icon="inline-start" />}
+          {t(signingOut ? 'account.signingOut' : 'account.signOut')}
         </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function ThemeMenu() {
-  const { theme, resolved, setTheme } = useTheme()
-  const Icon = resolved === 'dark' ? Moon : Sun
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <SidebarMenuButton data-testid="theme-toggle" tooltip="Theme">
-          <Icon data-icon="inline-start" />
-          <span>Theme</span>
-        </SidebarMenuButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="end">
-        <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
-          {THEMES.map(({ value, label, icon: ItemIcon }) => (
-            <DropdownMenuRadioItem key={value} value={value} data-testid={`theme-${value}`}>
-              <ItemIcon data-icon="inline-start" />
-              {label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -975,6 +1053,7 @@ function SiteSwitcher({
   isLoading: boolean
   error: unknown
 }) {
+  const { t } = useI18n()
   const { state, isMobile } = useSidebar()
   const name = current?.name || site
 
@@ -995,8 +1074,8 @@ function SiteSwitcher({
             has to be a direct child, because the CVA only re-grids on
             `has-[>svg]` and an icon in a wrapper is not one. */}
         <TriangleAlert />
-        <AlertTitle>Sites could not be loaded</AlertTitle>
-        <AlertDescription>{error instanceof Error ? error.message : 'The site list is unavailable.'}</AlertDescription>
+        <AlertTitle>{t('site.error.title')}</AlertTitle>
+        <AlertDescription>{error instanceof Error ? error.message : t('site.error.description')}</AlertDescription>
       </Alert>
     )
 
@@ -1007,10 +1086,10 @@ function SiteSwitcher({
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton asChild tooltip="No sites yet — create the first one">
+          <SidebarMenuButton asChild tooltip={t('site.emptyLink')}>
             <AppLink to="/sites" data-testid="site-switcher-empty">
               <Globe data-icon="inline-start" />
-              <span>No sites yet</span>
+              <span>{t('site.none')}</span>
             </AppLink>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -1021,13 +1100,13 @@ function SiteSwitcher({
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <Tooltip>
+          <Tooltip open={state === 'collapsed' && !isMobile ? undefined : false}>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
                   size="lg"
                   data-testid="site-switcher"
-                  aria-label={`Site: ${name || 'none selected'}`}
+                  aria-label={t('site.contextLabel', { site: name || t('common.none') })}
                 >
                   <Globe data-icon="inline-start" />
                   <span className="flex min-w-0 flex-col text-left">
@@ -1041,9 +1120,9 @@ function SiteSwitcher({
                      * below, which now spells every name out in full, plus this
                      * button's own `aria-label`. See the note in the result.
                      */}
-                    <span className="truncate font-medium">{name || 'No site selected'}</span>
+                    <span className="truncate font-medium">{name || t('site.noneSelected')}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {name ? 'Site' : 'Choose a site to continue'}
+                      {name ? t('site.context') : t('site.chooseToContinue')}
                     </span>
                   </span>
                   <ChevronsUpDown data-icon="inline-end" className="ml-auto" />
@@ -1068,7 +1147,7 @@ function SiteSwitcher({
               hidden={state !== 'collapsed' || isMobile}
               data-testid="site-switcher-tooltip"
             >
-              Site · {name || 'none selected'}
+              {t('site.tooltip', { site: name || t('common.none') })}
             </TooltipContent>
           </Tooltip>
           {/*
@@ -1085,7 +1164,7 @@ function SiteSwitcher({
             data-testid="site-switcher-menu"
             className="w-auto min-w-56 max-w-(--radix-dropdown-menu-content-available-width)"
           >
-            <DropdownMenuLabel>Sites</DropdownMenuLabel>
+            <DropdownMenuLabel>{t('site.list')}</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={site} onValueChange={setSite}>
               {sites.map((candidate) => (
                 /*
@@ -1132,15 +1211,16 @@ interface Crumb {
  * site is a path parameter, 'Installation · <page>' where it is not.
  */
 function useCrumbs(title: string): Crumb[] {
+  const { t } = useI18n()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { site, current } = useSite()
   const open = entryFor(pathname)
   if (!open) return [{ label: title }]
-  if (open.context === 'installation') return [{ label: 'Installation' }, { label: title }]
+  if (open.context === 'installation') return [{ label: t('site.installation') }, { label: title }]
   // The name once the list has loaded, the slug meanwhile — never a blank crumb
   // where the site should be.
   const named = current?.name || site
-  return [{ label: 'Site' }, { label: named || 'No site selected', placeholder: !named }, { label: title }]
+  return [{ label: t('site.context') }, { label: named || t('site.noneSelected'), placeholder: !named }, { label: title }]
 }
 
 export function Page({
@@ -1209,14 +1289,15 @@ export function Page({
 
 /** Shown wherever a site-scoped page has no site selected yet. */
 export function NoSite() {
+  const { t } = useI18n()
   return (
     <Empty data-testid="no-site" className="border">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Globe />
         </EmptyMedia>
-        <EmptyTitle>No site selected</EmptyTitle>
-        <EmptyDescription>Choose a site at the top of the sidebar to continue.</EmptyDescription>
+        <EmptyTitle>{t('site.noneSelected')}</EmptyTitle>
+        <EmptyDescription>{t('site.noSelection.description')}</EmptyDescription>
       </EmptyHeader>
     </Empty>
   )

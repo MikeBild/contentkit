@@ -10,6 +10,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useI18n } from '@/lib/i18n-context'
 import { FieldShell, type ControlProps, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -248,6 +249,7 @@ export function SwitchField({
   offLabel,
   ...shell
 }: FieldShellProps & ValueProps<boolean> & { onLabel?: ReactNode; offLabel?: ReactNode }) {
+  const { t } = useI18n()
   return (
     <FieldShell {...shell}>
       {(control) => (
@@ -261,18 +263,14 @@ export function SwitchField({
             checked={value}
             onCheckedChange={onChange}
           />
-          <span className="text-sm text-muted-foreground">{value ? (onLabel ?? 'On') : (offLabel ?? 'Off')}</span>
+          <span className="text-sm text-muted-foreground">
+            {value ? (onLabel ?? t('common.on')) : (offLabel ?? t('common.off'))}
+          </span>
         </div>
       )}
     </FieldShell>
   )
 }
-
-const TRI: readonly Choice<'default' | 'on' | 'off'>[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'on', label: 'On' },
-  { value: 'off', label: 'Off' },
-]
 
 /**
  * `true | false | undefined`, and the third one is not a nicety.
@@ -288,18 +286,24 @@ export function TriToggle({
   defaultLabel,
   ...shell
 }: FieldShellProps & ValueProps<boolean | undefined> & { defaultLabel?: string }) {
+  const { t } = useI18n()
   const state = value === undefined ? 'default' : value ? 'on' : 'off'
+  const options: readonly Choice<'default' | 'on' | 'off'>[] = [
+    { value: 'default', label: t('common.default') },
+    { value: 'on', label: t('common.on') },
+    { value: 'off', label: t('common.off') },
+  ]
   return (
     <FieldShell
       {...shell}
-      fallback={shell.fallback ?? (defaultLabel ? `Unset, the server uses ${defaultLabel}.` : undefined)}
+      fallback={shell.fallback ?? (defaultLabel ? t('choice.unsetFallback', { value: defaultLabel }) : undefined)}
     >
       {(control) => (
         <OptionToggle
           control={control}
           label={shell.label}
           value={state}
-          options={TRI}
+          options={options}
           onChange={(next) => onChange(next === 'default' ? undefined : next === 'on')}
         />
       )}

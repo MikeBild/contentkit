@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ChevronsUpDown, Columns3 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { TableState } from '@/forms/table-state'
 import { firstPage, type CursorPage } from '@/lib/cursor'
 import {
@@ -21,6 +21,7 @@ import {
   type SortState,
 } from '@/lib/table-view'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { Button } from './button'
 import { Card } from './card'
 import { Checkbox } from './checkbox'
@@ -203,6 +204,7 @@ export function DataTable<Row>({
   rows,
   rowKey,
   rowTestId,
+  expandedRowTestId,
   rowAttributes,
   isLoading,
   error,
@@ -215,8 +217,10 @@ export function DataTable<Row>({
   pageSize = 25,
   paging = 'whole',
   nextCursor,
-  unit = 'items',
+  unit,
   toolbar,
+  renderMobileRow,
+  renderExpandedRow,
 }: {
   testId: string
   columns: readonly DataColumn<Row>[]
@@ -224,6 +228,7 @@ export function DataTable<Row>({
   rows: readonly Row[]
   rowKey: (row: Row) => string
   rowTestId?: string
+  expandedRowTestId?: string
   rowAttributes?: (row: Row) => Record<string, string>
   isLoading: boolean
   error: unknown
@@ -240,7 +245,13 @@ export function DataTable<Row>({
   unit?: string
   /** Filters and other controls that belong beside the column chooser. */
   toolbar?: ReactNode
+  /** A compact, fully readable row used below the `md` breakpoint. */
+  renderMobileRow?: (row: Row) => ReactNode
+  /** Optional evidence/details rendered directly after their owning row. */
+  renderExpandedRow?: (row: Row) => ReactNode
 }) {
+  const { t } = useI18n()
+  const unitLabel = unit ?? t('common.items')
   const specs = useMemo(() => capabilities(columns), [columns])
   const shown = useMemo(() => columns.filter((column) => view.visible.includes(column.id)), [columns, view.visible])
   const sort = reconcileSort(specs, paging, view.visible, view.sort)
@@ -300,8 +311,8 @@ export function DataTable<Row>({
           {describable && sort && activeLabel ? (
             <span data-testid={`${testId}-order-note`} className="text-xs text-muted-foreground">
               {activeReach === 'server'
-                ? `Ordered by ${activeLabel} by the API.`
-                : `Ordered by ${activeLabel} in the console, across all ${ordered.length} ${unit} — the API returns this list unpaged.`}
+                ? t('common.orderedApi', { label: activeLabel })
+                : t('common.orderedLocal', { label: activeLabel, count: ordered.length, unit: unitLabel })}
             </span>
           ) : null}
           <ColumnChooser testId={testId} columns={columns} view={view} onViewChange={onViewChange} specs={specs} />
@@ -312,7 +323,32 @@ export function DataTable<Row>({
           a Card spelled out. `gap-0 py-0` because the two children are a table
           and its pager, and the pager draws its own `border-t`: the card's own
           padding and row gap would float that rule away from the last row. */}
-      <Card className="gap-0 py-0">
+      {renderMobileRow && describable ? (
+        <Card className="gap-0 py-0 md:hidden" data-testid={`${testId}-mobile`}>
+          <div className="divide-y divide-border">
+            {visibleRows.map((row) => {
+              const expanded = renderExpandedRow?.(row)
+              return (
+                <Fragment key={rowKey(row)}>
+                  <div data-testid={rowTestId ? `${rowTestId}-mobile` : undefined} {...(rowAttributes?.(row) ?? {})} className="p-4">
+                    {renderMobileRow(row)}
+                  </div>
+                  {expanded ? (
+                    <div
+                      data-testid={expandedRowTestId ? `${expandedRowTestId}-mobile` : undefined}
+                      {...(rowAttributes?.(row) ?? {})}
+                      className="border-t border-border bg-muted/30 p-4"
+                    >
+                      {expanded}
+                    </div>
+                  ) : null}
+                </Fragment>
+              )
+            })}
+          </div>
+        </Card>
+      ) : null}
+      <Card className={cn('gap-0 py-0', renderMobileRow && describable && 'hidden md:flex')}>
         <Table data-testid={`${testId}-table`}>
           <TableHeader>
             <TableRow>
@@ -377,15 +413,30 @@ export function DataTable<Row>({
                 onRetry={onRetry}
                 emptyMessage={emptyMessage}
               >
-                {visibleRows.map((row) => (
-                  <TableRow key={rowKey(row)} data-testid={rowTestId} {...(rowAttributes?.(row) ?? {})}>
-                    {shown.map((column) => (
-                      <TableCell key={column.id} className={column.className}>
-                        {column.cell(row)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+                {visibleRows.map((row) => {
+                  const expanded = renderExpandedRow?.(row)
+                  return (
+                    <Fragment key={rowKey(row)}>
+                      <TableRow data-testid={rowTestId} {...(rowAttributes?.(row) ?? {})}>
+                        {shown.map((column) => (
+                          <TableCell key={column.id} className={column.className}>
+                            {column.cell(row)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      {expanded ? (
+                        <TableRow
+                          data-testid={expandedRowTestId ?? `${testId}-expanded-row`}
+                          {...(rowAttributes?.(row) ?? {})}
+                        >
+                          <TableCell colSpan={shown.length} className="bg-muted/30">
+                            {expanded}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </Fragment>
+                  )
+                })}
               </TableState>
             )}
           </TableBody>
@@ -399,7 +450,11 @@ export function DataTable<Row>({
           shown={visibleRows.length}
           // A total is printed only where the server supplied one by sending
           // every row. A cursor-paged list has no total and does not get one.
-          unit={paging === 'whole' ? `of ${ordered.length} ${unit}` : unit}
+          unit={
+            paging === 'whole'
+              ? t('pagination.totalUnit', { total: ordered.length, unit: unitLabel })
+              : unitLabel
+          }
         />
       </Card>
     </div>
@@ -427,6 +482,7 @@ function ColumnChooser<Row>({
   view: TableView
   onViewChange: (view: TableView) => void
 }) {
+  const { t } = useI18n()
   const hidden = columns.filter((column) => !view.visible.includes(column.id)).length
   return (
     <details className="relative" data-testid={`${testId}-columns`}>
@@ -435,10 +491,10 @@ function ColumnChooser<Row>({
         className="inline-flex h-8 cursor-pointer list-none items-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden"
       >
         <Columns3 className="size-3.5" />
-        Columns
+        {t('common.columns')}
         {/* The count is an exception, so it is the only thing printed: a chooser
             with nothing hidden has nothing to report. */}
-        {hidden ? <span className="text-muted-foreground">{hidden} hidden</span> : null}
+        {hidden ? <span className="text-muted-foreground">{t('common.hidden', { count: hidden })}</span> : null}
       </summary>
       <div className="absolute right-0 z-20 mt-1 w-60 rounded-lg border border-border bg-surface p-2 shadow-lg">
         {columns.map((column) => {
@@ -461,7 +517,7 @@ function ColumnChooser<Row>({
                 }
               />
               <span>{column.label || column.id}</span>
-              {column.required ? <span className="ml-auto text-muted-foreground">always</span> : null}
+              {column.required ? <span className="ml-auto text-muted-foreground">{t('common.always')}</span> : null}
             </label>
           )
         })}
@@ -472,7 +528,7 @@ function ColumnChooser<Row>({
           className="mt-1 w-full justify-start"
           onClick={() => onViewChange({ visible: defaultVisible(specs), sort: view.sort })}
         >
-          Reset columns
+          {t('common.resetColumns')}
         </Button>
       </div>
     </details>

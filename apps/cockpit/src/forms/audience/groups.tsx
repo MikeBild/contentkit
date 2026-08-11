@@ -22,6 +22,7 @@ import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 
 /** Readers currently in the group. Membership is stored on the reader's side. */
 function membersOf(group: AccessGroup, readers: AccessUser[]) {
@@ -39,6 +40,7 @@ function GroupDialog({
   siblings: readonly string[]
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const [slug, setSlug] = useState(group?.slug ?? '')
   const [name, setName] = useState(group?.name ?? '')
@@ -75,31 +77,31 @@ function GroupDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit ${group?.slug}` : 'New group'}</DialogTitle>
-          <DialogDescription>
-            A group is what an access rule points at. Readers join it, rules grant it.
-          </DialogDescription>
+          <DialogTitle>
+            {editing ? t('audience.groups.editTitle', { slug: group?.slug ?? '' }) : t('audience.groups.new')}
+          </DialogTitle>
+          <DialogDescription>{t('audience.groups.description')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           {editing ? (
             <TextField
               data-testid="ck-group-slug"
-              label="Slug"
+              label={t('audience.groups.slug')}
               value={slug}
               disabled
-              help="Rules reference a group by its slug, so it is fixed once anything can point at it."
+              help={t('audience.groups.slugFixedHelp')}
               onChange={() => {}}
             />
           ) : (
             <SlugField
               data-testid="ck-group-slug"
-              label="Slug"
+              label={t('audience.groups.slug')}
               required
               grammar="group"
               derivedFrom={name}
               siblings={siblings}
-              help="How rules name this group."
-              about="It cannot be changed afterwards."
+              help={t('audience.groups.slugHelp')}
+              about={t('audience.groups.slugAbout')}
               value={slug}
               onChange={setSlug}
             />
@@ -107,26 +109,26 @@ function GroupDialog({
 
           <TextField
             data-testid="ck-group-name"
-            label="Name"
+            label={t('audience.groups.name')}
             value={name}
             maxLength={120}
-            fallback="Empty falls back to the slug."
+            fallback={t('audience.groups.nameFallback')}
             onChange={setName}
           />
 
           {save.error ? (
             <Alert variant="destructive" data-testid="ck-group-error">
               <TriangleAlert />
-              <AlertTitle>The group was not saved</AlertTitle>
+              <AlertTitle>{t('audience.groups.saveError')}</AlertTitle>
               <AlertDescription>
-                {save.error instanceof Error ? save.error.message : 'Could not save the group'}
+                {save.error instanceof Error ? save.error.message : t('audience.groups.saveErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-group-cancel" disabled={save.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             data-testid="ck-group-submit"
@@ -134,7 +136,7 @@ function GroupDialog({
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {editing ? 'Save group' : 'Create group'}
+            {editing ? t('audience.groups.save') : t('audience.groups.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -160,6 +162,7 @@ function MembersDialog({
   readersQuery: { isPending: boolean; error: unknown }
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const [selected, setSelected] = useState<string[]>(() => membersOf(group, readers).map((reader) => reader.id))
 
@@ -201,24 +204,22 @@ function MembersDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Members of {group.name}</DialogTitle>
-          <DialogDescription>
-            This list replaces the group's membership exactly as shown. Anyone taken out here loses the group.
-          </DialogDescription>
+          <DialogTitle>{t('audience.groups.membersTitle', { name: group.name })}</DialogTitle>
+          <DialogDescription>{t('audience.groups.membersDescription')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           <EntityMultiSelect
             data-testid="ck-group-members"
-            label="Readers"
-            help="Every reader in the group, including the ones who were already in it."
+            label={t('audience.groups.readers')}
+            help={t('audience.groups.readersHelp')}
             value={selected}
             isLoading={readersQuery.isPending}
             optionsError={readersQuery.error}
-            emptyMessage="No readers on this site yet"
+            emptyMessage={t('audience.groups.noReaders')}
             options={readers.map((reader) => ({
               value: reader.id,
               label: reader.display_name || reader.username,
-              hint: reader.active ? reader.username : `${reader.username} · disabled`,
+              hint: reader.active ? reader.username : `${reader.username} · ${t('audience.groups.disabled')}`,
             }))}
             onChange={(next) => setSelected([...next])}
           />
@@ -230,14 +231,17 @@ function MembersDialog({
             <Alert data-testid="ck-group-members-removed">
               <TriangleAlert />
               <AlertTitle>
-                {removed.length} reader{removed.length === 1 ? '' : 's'} lose this group
+                {removed.length === 1
+                  ? t('audience.groups.removedOne')
+                  : t('audience.groups.removedMany', { count: removed.length })}
               </AlertTitle>
               <AlertDescription>
-                {readers
-                  .filter((reader) => removed.includes(reader.id))
-                  .map((reader) => reader.username)
-                  .join(', ')}
-                . Any rule granting only this group stops reaching them at the next release.
+                {t('audience.groups.removedDescription', {
+                  readers: readers
+                    .filter((reader) => removed.includes(reader.id))
+                    .map((reader) => reader.username)
+                    .join(', '),
+                })}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -245,20 +249,20 @@ function MembersDialog({
           {save.error ? (
             <Alert variant="destructive" data-testid="ck-group-members-error">
               <TriangleAlert />
-              <AlertTitle>The membership was not replaced</AlertTitle>
+              <AlertTitle>{t('audience.groups.membershipError')}</AlertTitle>
               <AlertDescription>
-                {save.error instanceof Error ? save.error.message : 'Could not replace the membership'}
+                {save.error instanceof Error ? save.error.message : t('audience.groups.membershipErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-group-members-cancel" disabled={save.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button data-testid="ck-group-members-submit" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Replace membership
+            {t('audience.groups.replaceMembership')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -267,6 +271,7 @@ function MembersDialog({
 }
 
 export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (rule: AccessRule) => void }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [editing, setEditing] = useState<{ group?: AccessGroup } | null>(null)
@@ -296,10 +301,10 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Groups</CardTitle>
+        <CardTitle>{t('audience.groups.title')}</CardTitle>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-group-new" onClick={() => setEditing({})}>
-            New group
+            {t('audience.groups.new')}
           </Button>
         ) : null}
       </CardHeader>
@@ -307,10 +312,10 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Slug</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Members</TableHead>
-              <TableHead>Used by</TableHead>
+              <TableHead>{t('audience.groups.slug')}</TableHead>
+              <TableHead>{t('audience.groups.name')}</TableHead>
+              <TableHead>{t('audience.groups.members')}</TableHead>
+              <TableHead>{t('audience.groups.usedBy')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -321,8 +326,8 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
               error={groups.error}
               isEmpty={rows.length === 0}
               onRetry={() => groups.refetch()}
-              emptyTitle="No groups yet"
-              emptyMessage="A rule can also name readers directly."
+              emptyTitle={t('audience.groups.empty')}
+              emptyMessage={t('audience.groups.emptyDescription')}
             >
               {rows.map((group) => {
                 // The server refuses to delete a group any rule still names, so
@@ -358,14 +363,14 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                                     the way to it — the refusal was only ever
                                     explained inside the confirmation. */}
                                 <TooltipContent>
-                                  The server refuses to delete a group a rule still names. Opens the rule.
+                                  {t('audience.groups.blockerTooltip')}
                                 </TooltipContent>
                               </Tooltip>
                             ))}
                           </div>
                         </TooltipProvider>
                       ) : (
-                        <StatusBadge>unused</StatusBadge>
+                        <StatusBadge>{t('audience.groups.unused')}</StatusBadge>
                       )}
                     </TableCell>
                     <TableCell className="flex gap-2">
@@ -377,7 +382,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                             data-testid={`ck-group-members-${group.id}`}
                             onClick={() => setMembers(group)}
                           >
-                            Members
+                            {t('audience.groups.members')}
                           </Button>
                           <Button
                             size="sm"
@@ -385,27 +390,30 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                             data-testid={`ck-group-edit-${group.id}`}
                             onClick={() => setEditing({ group })}
                           >
-                            Edit
+                            {t('audience.groups.edit')}
                           </Button>
                           <Confirm
-                            title={blockers.length ? 'This group is still in use' : 'Delete this group?'}
+                            title={blockers.length ? t('audience.groups.inUseTitle') : t('audience.groups.deleteTitle')}
                             description={
-                              blockers.length ? (
-                                <>
-                                  <strong>{group.name}</strong> is used by {blockers.length} rule
-                                  {blockers.length === 1 ? '' : 's'} ({blockers.map((rule) => rule.path).join(', ')}) and
-                                  cannot be deleted while that is true. Take the group out of those rules first — the
-                                  paths above are buttons that open them.
-                                </>
-                              ) : (
-                                <>
-                                  The group <strong>{group.name}</strong> ({group.slug}) is deleted and its{' '}
-                                  {memberList.length} member{memberList.length === 1 ? '' : 's'} lose it. The readers
-                                  themselves are kept.
-                                </>
-                              )
+                              blockers.length
+                                ? t(
+                                    blockers.length === 1
+                                      ? 'audience.groups.inUseOne'
+                                      : 'audience.groups.inUseMany',
+                                    {
+                                      name: group.name,
+                                      count: blockers.length,
+                                      paths: blockers.map((rule) => rule.path).join(', '),
+                                    },
+                                  )
+                                : t(
+                                    memberList.length === 1
+                                      ? 'audience.groups.deleteOne'
+                                      : 'audience.groups.deleteMany',
+                                    { name: group.name, slug: group.slug, count: memberList.length },
+                                  )
                             }
-                            confirmLabel="Delete group"
+                            confirmLabel={t('audience.groups.delete')}
                             destructive
                             onConfirm={async () => {
                               await ck.access.deleteGroup(site, group.id)
@@ -422,7 +430,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                                 data-testid={`ck-group-delete-${group.id}`}
                                 onClick={open}
                               >
-                                Delete
+                                {t('audience.groups.delete')}
                               </Button>
                             )}
                           </Confirm>

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { enhanceComposition } from '../../../../assets/composition.js'
+import { useI18n } from '@/lib/i18n-context'
 import { cn } from '@/lib/utils'
 import type { ContentScheme } from './scheme'
 import './content.css'
@@ -26,6 +27,7 @@ export function ContentHtml({
   className?: string
   testId?: string
 }) {
+  const { t } = useI18n()
   const root = useRef<HTMLDivElement>(null)
 
   // The real assets/composition.js — the file the published page runs, called on
@@ -38,7 +40,8 @@ export function ContentHtml({
   useEffect(() => {
     const host = root.current
     if (!host) return
-    const nodes = pendingDiagrams(host)
+    const declined = t('content.diagramDeclined')
+    const nodes = pendingDiagrams(host, declined)
     if (!nodes.length) return
     let cancelled = false
 
@@ -64,14 +67,14 @@ export function ContentHtml({
       } catch {
         // The runtime never arrived. The nodes are hidden until they are drawn,
         // so saying so is the difference between a note and a blank gap.
-        for (const node of nodes) decline(node)
+        for (const node of nodes) decline(node, declined)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [html, scheme])
+  }, [html, scheme, t])
 
   // KaTeX has no runtime here: the server emits the finished markup and only the
   // stylesheet is missing, which content.css supplies.
@@ -98,12 +101,10 @@ export function ContentHtml({
 // diagram types is the documented answer, loosening the header is not.
 const RUNNABLE = /^(?:flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|erDiagram|classDiagram)\b/i
 
-const DECLINED = 'This diagram is not drawn in the console. The published page draws it.'
-
-function decline(node: HTMLElement) {
+function decline(node: HTMLElement, message: string) {
   node.setAttribute('data-processed', 'declined')
   node.classList.add('ck-diagram-declined')
-  node.textContent = DECLINED
+  node.textContent = message
 }
 
 /**
@@ -112,7 +113,7 @@ function decline(node: HTMLElement) {
  * two effect passes — which is what React does in development — would both pick
  * up the same nodes and render each diagram twice.
  */
-function pendingDiagrams(host: HTMLElement) {
+function pendingDiagrams(host: HTMLElement, declined: string) {
   const runnable: HTMLElement[] = []
   for (const node of host.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed]):not([data-ck-enhanced])')) {
     node.setAttribute('data-ck-enhanced', '')
@@ -124,7 +125,7 @@ function pendingDiagrams(host: HTMLElement) {
       runnable.push(node)
       continue
     }
-    decline(node)
+    decline(node, declined)
   }
   return runnable
 }

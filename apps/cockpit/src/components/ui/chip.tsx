@@ -1,6 +1,7 @@
 import { XIcon } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { Badge } from './badge'
 
 /**
@@ -28,6 +29,7 @@ export function Chip({
   invalid?: boolean
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   return (
     <Badge
       variant={invalid ? 'destructive' : 'secondary'}
@@ -43,7 +45,7 @@ export function Chip({
           // The chip's own testid lands on the badge; the remove control is a
           // separate target and derives its own so a test can click it.
           data-testid={testId ? `${testId}-remove` : undefined}
-          aria-label={removeLabel ?? 'Remove'}
+          aria-label={removeLabel ?? t('common.remove')}
           onClick={onRemove}
           className="-mr-0.5 shrink-0 rounded opacity-70 hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >

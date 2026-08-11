@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ck } from '@/api/ck'
 import { Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { TabCountBadge } from '@/components/tab-count'
 import { TabPanel, Tabs } from '@/components/ui/tabs'
 import { ApiKeysCard } from '@/forms/platform/api-keys'
@@ -27,6 +28,7 @@ import { useTabCount } from '@/lib/tab-counts'
 type CredentialTab = 'keys' | 'grants'
 
 export function CredentialsPage() {
+  const { t } = useI18n()
   const can = useCan()
   const [tab, setTab] = useState<CredentialTab>('keys')
   const grants = can('identity:admin')
@@ -61,7 +63,7 @@ export function CredentialsPage() {
   const grantsBadge = <TabCountBadge count={grantCount} data-testid="ck-credentials-count-grants" />
 
   return (
-    <Page title="Credentials" description="API keys and the OAuth identity grants that bound what a token may ever do.">
+    <Page title={t('page.credentials.title')} description={t('page.credentials.description')}>
       {grants ? (
         <>
           <Tabs
@@ -70,8 +72,8 @@ export function CredentialsPage() {
             onValueChange={setTab}
             className="mb-4 overflow-x-auto"
             tabs={[
-              { id: 'keys', label: 'API keys', badge: keysBadge },
-              { id: 'grants', label: 'Identity grants', badge: grantsBadge },
+              { id: 'keys', label: t('apiKey.keys'), badge: keysBadge },
+              { id: 'grants', label: t('identity.grants'), badge: grantsBadge },
             ]}
           />
           <TabPanel active={tab === 'keys'} data-testid="ck-credentials-tab-keys">

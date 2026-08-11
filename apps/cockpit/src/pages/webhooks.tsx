@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ck } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { TabCountBadge } from '@/components/tab-count'
 import { TabPanel, Tabs } from '@/components/ui/tabs'
 import { WebhookDeliveriesCard, WebhookEndpointsCard } from '@/forms/platform/webhooks'
@@ -37,6 +38,7 @@ type WebhookTab = 'endpoints' | 'deliveries'
 const FAILED = { status: 'failed', limit: 200 } as const
 
 export function WebhooksPage() {
+  const { t } = useI18n()
   const { site, siteId } = useSite()
   const [tab, setTab] = useState<WebhookTab>('endpoints')
 
@@ -82,13 +84,13 @@ export function WebhooksPage() {
 
   if (!site)
     return (
-      <Page title="Webhooks">
+      <Page title={t('page.webhooks.title')}>
         <NoSite />
       </Page>
     )
 
   return (
-    <Page title="Webhooks" description="Outbound content events, their endpoints and delivery history.">
+    <Page title={t('page.webhooks.title')} description={t('page.webhooks.description')}>
       <Tabs
         data-testid="ck-webhook-tabs"
         value={tab}
@@ -97,8 +99,8 @@ export function WebhooksPage() {
         // scroll sideways and nothing else.
         className="mb-4 overflow-x-auto"
         tabs={[
-          { id: 'endpoints', label: 'Endpoints', badge: endpointsBadge },
-          { id: 'deliveries', label: 'Deliveries', badge: deliveriesBadge },
+          { id: 'endpoints', label: t('webhook.endpoints'), badge: endpointsBadge },
+          { id: 'deliveries', label: t('webhook.deliveries'), badge: deliveriesBadge },
         ]}
       />
 

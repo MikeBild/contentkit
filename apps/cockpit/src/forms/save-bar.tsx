@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { StatusBadge } from './status-badge'
 import type { SectionStatus, SectionTone } from './use-form'
 
@@ -37,27 +38,28 @@ export function SaveBar({
   className?: string
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   return (
     <div data-testid={testId} className={cn('flex items-center gap-3', className)}>
       {extra}
       <span data-testid={`${testId}-state`} className="text-xs text-muted-foreground">
         {errorCount > 0
-          ? `${errorCount} ${errorCount === 1 ? 'problem' : 'problems'} to fix`
+          ? t(errorCount === 1 ? 'save.problem' : 'save.problemsMany', { count: errorCount })
           : isSaving
-            ? 'Saving…'
+            ? t('save.saving')
             : dirty
-              ? 'Unsaved changes'
-              : 'All changes saved'}
+              ? t('save.unsavedChanges')
+              : t('save.allSaved')}
       </span>
       <Button variant="outline" size="sm" data-testid={`${testId}-reset`} disabled={!dirty || isSaving} onClick={onReset}>
-        Discard
+        {t('save.discard')}
       </Button>
       {/* `Button` has no `isPending`: the spinner is composed, `data-icon` earns
           it the leading padding, and `disabled` is what actually stops a second
           submit. */}
       <Button size="sm" data-testid={`${testId}-save`} disabled={!canSave} onClick={onSave}>
         {isSaving ? <Spinner data-icon="inline-start" /> : null}
-        Save
+        {t('save.save')}
       </Button>
     </div>
   )
@@ -73,12 +75,13 @@ export function UnsavedPill({
   className?: string
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   if (!dirty) return null
   // `StatusBadge` already draws the warning icon for this tone, so nothing here
   // names a colour or a size.
   return (
     <StatusBadge tone="warning" data-testid={testId} className={className}>
-      Unsaved
+      {t('save.unsaved')}
     </StatusBadge>
   )
 }
@@ -166,10 +169,11 @@ export function SectionNav<T extends string>({
 
 /** The inline "saved" acknowledgement, for the moment after a successful write. */
 export function SavedNote({ className }: { className?: string }) {
+  const { t } = useI18n()
   return (
     <StatusBadge tone="success" className={className}>
       <Check data-icon="inline-start" />
-      Saved
+      {t('save.saved')}
     </StatusBadge>
   )
 }

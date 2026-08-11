@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSession } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 import { CONTENT_KIND, PRESENTATION_PRESET, THEME_TOKENS, WEBHOOK_EVENT_TYPES } from './contracts/enums.generated'
 import {
   CarriedKeys,
@@ -55,12 +56,13 @@ interface DocVersion extends Record<string, unknown> {
  * Dev build only; `SystemPage` gates it on `import.meta.env.DEV`.
  */
 export function FieldGallery() {
+  const { t } = useI18n()
   const session = useSession()
   const [state, setState] = useState({
     text: 'ContentKit',
     slug: '',
     username: 'mike',
-    body: 'Two paragraphs of body text.',
+    body: '.example { color: var(--accent); }',
     kind: 'post' as (typeof CONTENT_KIND)[number] | '',
     preset: 'portfolio' as (typeof PRESENTATION_PRESET)[number],
     density: 'balanced' as 'compact' | 'balanced' | 'spacious',
@@ -80,7 +82,7 @@ export function FieldGallery() {
     events: [] as readonly (typeof WEBHOOK_EVENT_TYPES)[number][],
     groups: [] as readonly string[],
     path: '/docs/getting-started',
-    versions: [{ id: 'v2', label: 'Version 2', current: true }] as DocVersion[],
+    versions: [{ id: 'v2', label: t('gallery.versionSample'), current: true }] as DocVersion[],
     reports: undefined as { title: string } | undefined,
     map: { author: 'Mike' } as Record<string, string>,
     tokens: { primary: '#0f172a' } as Record<string, unknown>,
@@ -95,35 +97,35 @@ export function FieldGallery() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2" data-testid="ck-field-gallery">
-      <Section title="Text">
-        <TextField data-testid="ck-gallery-text" label="Title" maxLength={60} value={state.text} onChange={set('text')} />
+      <Section title={t('gallery.section.text')}>
+        <TextField data-testid="ck-gallery-text" label={t('gallery.title')} maxLength={60} value={state.text} onChange={set('text')} />
         <SlugField
           data-testid="ck-gallery-slug"
-          label="Slug"
-          help="Derived from the title until you change it."
+          label={t('gallery.slug')}
+          help={t('gallery.slugHelp')}
           derivedFrom={state.text}
           siblings={['contentkit']}
           value={state.slug}
           onChange={set('slug')}
         />
-        <UsernameField data-testid="ck-gallery-username" label="Username" value={state.username} onChange={set('username')} />
+        <UsernameField data-testid="ck-gallery-username" label={t('gallery.username')} value={state.username} onChange={set('username')} />
         <TextAreaField
           data-testid="ck-gallery-textarea"
-          label="Custom CSS"
+          label={t('gallery.customCss')}
           maxBytes={8192}
           forbid={/<\/style/i}
-          forbidMessage="“</style” would break out of the style element"
+          forbidMessage={t('gallery.styleForbidden')}
           monospace
           value={state.body}
           onChange={set('body')}
         />
-        <PathField data-testid="ck-gallery-path" label="Path" value={state.path} onChange={set('path')} />
+        <PathField data-testid="ck-gallery-path" label={t('gallery.path')} value={state.path} onChange={set('path')} />
       </Section>
 
-      <Section title="Choice">
+      <Section title={t('gallery.section.choice')}>
         <EnumSelect
           data-testid="ck-gallery-enum"
-          label="Kind"
+          label={t('gallery.kind')}
           allowEmpty
           options={choices(CONTENT_KIND)}
           value={state.kind}
@@ -131,136 +133,136 @@ export function FieldGallery() {
         />
         <SegmentedField
           data-testid="ck-gallery-segmented"
-          label="Density"
+          label={t('gallery.density')}
           options={choices(['compact', 'balanced', 'spacious'] as const)}
           value={state.density}
           onChange={set('density')}
         />
         <ChoiceCards
           data-testid="ck-gallery-cards"
-          label="Presentation preset"
+          label={t('gallery.presentationPreset')}
           options={PRESENTATION_PRESET.map((preset) => ({
             value: preset,
             label: preset,
-            description: `Renders the site as a ${preset.replace('-', ' ')}.`,
+            description: t('gallery.presetDescription', { preset: preset.replace('-', ' ') }),
           }))}
           value={state.preset}
           onChange={set('preset')}
         />
         <TriToggle
           data-testid="ck-gallery-tri"
-          label="Show extra fields"
-          defaultLabel="whatever the preset says"
+          label={t('gallery.showExtra')}
+          defaultLabel={t('gallery.presetDefault')}
           value={state.tri}
           onChange={set('tri')}
         />
-        <SwitchField data-testid="ck-gallery-switch" label="Feedback widget" value={state.toggle} onChange={set('toggle')} />
+        <SwitchField data-testid="ck-gallery-switch" label={t('gallery.feedbackWidget')} value={state.toggle} onChange={set('toggle')} />
       </Section>
 
-      <Section title="Numbers and time">
+      <Section title={t('gallery.section.numbers')}>
         <NumberField
           data-testid="ck-gallery-number"
-          label="Retention"
-          unit="days"
+          label={t('gallery.retention')}
+          unit={t('gallery.days')}
           min={1}
           integer
           allowUnset
           value={state.number}
           onChange={set('number')}
         />
-        <DimensionField data-testid="ck-gallery-dimension" label="Radius" value={state.dimension} onChange={set('dimension')} />
-        <DateTimeField data-testid="ck-gallery-datetime" label="Expires" value={state.when} onChange={set('when')} />
+        <DimensionField data-testid="ck-gallery-dimension" label={t('gallery.radius')} value={state.dimension} onChange={set('dimension')} />
+        <DateTimeField data-testid="ck-gallery-datetime" label={t('gallery.expires')} value={state.when} onChange={set('when')} />
       </Section>
 
-      <Section title="Addresses">
-        <UrlField data-testid="ck-gallery-url" label="Base URL" value={state.url} onChange={set('url')} />
+      <Section title={t('gallery.section.addresses')}>
+        <UrlField data-testid="ck-gallery-url" label={t('gallery.baseUrl')} value={state.url} onChange={set('url')} />
         <UrlField
           data-testid="ck-gallery-asset"
-          label="Logo"
+          label={t('gallery.logo')}
           mode="asset"
           base={state.url}
-          fallback="Empty falls back to the site name."
+          fallback={t('gallery.logoFallback')}
           value={state.asset}
           onChange={set('asset')}
         />
         <UrlTemplateField
           data-testid="ck-gallery-template"
-          label="Feed URL"
-          placeholders={[{ token: 'slug', description: 'The content item’s slug' }]}
+          label={t('gallery.feedUrl')}
+          placeholders={[{ token: 'slug', description: t('gallery.slugPlaceholder') }]}
           sample={{ slug: 'hello-world' }}
           value={state.template}
           onChange={set('template')}
         />
       </Section>
 
-      <Section title="Appearance">
-        <ColorField data-testid="ck-gallery-color" label="Accent" value={state.color} onChange={set('color')} />
+      <Section title={t('gallery.section.appearance')}>
+        <ColorField data-testid="ck-gallery-color" label={t('gallery.accent')} value={state.color} onChange={set('color')} />
         <SchemeColorField
           data-testid="ck-gallery-scheme-color"
-          label="Background"
+          label={t('gallery.background')}
           value={state.scheme}
           onChange={set('scheme')}
         />
-        <FontFamilyField data-testid="ck-gallery-font" label="Font family" value={state.font} onChange={set('font')} />
+        <FontFamilyField data-testid="ck-gallery-font" label={t('gallery.fontFamily')} value={state.font} onChange={set('font')} />
       </Section>
 
-      <Section title="Sets">
+      <Section title={t('gallery.section.sets')}>
         <LocaleField
           data-testid="ck-gallery-locale"
-          label="Locale"
+          label={t('gallery.locale')}
           locales={['de', 'en']}
           value={state.locale}
           onChange={set('locale')}
         />
-        <TagListField data-testid="ck-gallery-tags" label="Tags" max={8} value={state.tags} onChange={set('tags')} />
+        <TagListField data-testid="ck-gallery-tags" label={t('gallery.tags')} max={8} value={state.tags} onChange={set('tags')} />
         <EnumMultiSelect
           data-testid="ck-gallery-events"
-          label="Events"
+          label={t('gallery.events')}
           options={choices(WEBHOOK_EVENT_TYPES)}
-          allEmptyMeans={{ allLabel: 'Every event', someLabel: 'Only the events I choose' }}
+          allEmptyMeans={{ allLabel: t('gallery.everyEvent'), someLabel: t('gallery.selectedEvents') }}
           value={state.events}
           onChange={set('events')}
         />
         <EntityMultiSelect
           data-testid="ck-gallery-groups"
-          label="Access groups"
+          label={t('gallery.accessGroups')}
           options={[
-            { value: 'members', label: 'Members' },
-            { value: 'staff', label: 'Staff' },
+            { value: 'members', label: t('gallery.members') },
+            { value: 'staff', label: t('gallery.staff') },
           ]}
           value={state.groups}
           onChange={set('groups')}
         />
         <ScopePicker
           data-testid="ck-gallery-scopes"
-          label="Scopes"
+          label={t('gallery.scopes')}
           ceiling={session.product_scopes}
           value={state.scopes}
           onChange={set('scopes')}
         />
       </Section>
 
-      <Section title="Structures">
+      <Section title={t('gallery.section.structures')}>
         <ObjectListField
           data-testid="ck-gallery-versions"
-          label="Documentation versions"
+          label={t('gallery.documentationVersions')}
           uniqueBy={(version) => version.id}
-          exclusiveFlag={{ key: 'current', label: 'Current' }}
+          exclusiveFlag={{ key: 'current', label: t('gallery.current') }}
           create={() => ({ id: '', label: '', current: false })}
-          itemLabel={(version) => version.label || 'Untitled'}
+          itemLabel={(version) => version.label || t('gallery.untitled')}
           value={state.versions}
           onChange={set('versions')}
           renderItem={(version, api) => (
             <div className="grid gap-2 sm:grid-cols-2">
               <TextField
                 data-testid={`ck-gallery-version-id-${api.index}`}
-                label="Id"
+                label={t('gallery.id')}
                 value={version.id}
                 onChange={(id) => api.update({ id })}
               />
               <TextField
                 data-testid={`ck-gallery-version-label-${api.index}`}
-                label="Label"
+                label={t('gallery.label')}
                 value={version.label}
                 onChange={(label) => api.update({ label })}
               />
@@ -269,25 +271,25 @@ export function FieldGallery() {
         />
         <OptionalSubtree
           data-testid="ck-gallery-reports"
-          label="Reports"
-          description="Absent unless this site publishes a report series."
-          create={() => ({ title: 'Weekly report' })}
+          label={t('gallery.reports')}
+          description={t('gallery.reportsDescription')}
+          create={() => ({ title: t('gallery.weeklyReport') })}
           value={state.reports}
           onChange={set('reports')}
         >
           {(reports) => (
             <TextField
               data-testid="ck-gallery-reports-title"
-              label="Title"
+              label={t('gallery.title')}
               value={reports.title}
               onChange={(title) => set('reports')({ ...reports, title })}
             />
           )}
         </OptionalSubtree>
-        <KeyValueField data-testid="ck-gallery-map" label="Metadata" value={state.map} onChange={set('map')} />
+        <KeyValueField data-testid="ck-gallery-map" label={t('gallery.metadata')} value={state.map} onChange={set('map')} />
         <TokenMapField
           data-testid="ck-gallery-tokens"
-          label="Theme tokens"
+          label={t('gallery.themeTokens')}
           tokens={THEME_TOKENS.map((token) => ({ key: token, label: token.replaceAll('_', ' ') }))}
           value={state.tokens}
           onChange={set('tokens')}
@@ -302,7 +304,7 @@ export function FieldGallery() {
         />
         <ExtraFieldsField
           data-testid="ck-gallery-extra"
-          label="Extra fields"
+          label={t('gallery.extraFields')}
           maxBytes={4096}
           value={state.extra}
           onChange={set('extra')}
@@ -317,18 +319,18 @@ export function FieldGallery() {
         />
       </Section>
 
-      <Section title="Secrets">
+      <Section title={t('gallery.section.secrets')}>
         <SecretField
           data-testid="ck-gallery-secret"
-          label="Webhook secret"
+          label={t('gallery.webhookSecret')}
           generate={() => crypto.randomUUID().replaceAll('-', '')}
           value={state.secret}
           onChange={set('secret')}
         />
         <RevealOnce
           data-testid="ck-gallery-reveal"
-          title="Your new API key"
-          description="This is the only time it is readable."
+          title={t('gallery.newApiKey')}
+          description={t('gallery.secretOnce')}
           value="ck_live_example_key_shown_once"
           onDismiss={() => undefined}
         />

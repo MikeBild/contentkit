@@ -6,9 +6,11 @@ import { ApiError, setCsrfToken } from '@/api/client'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { SessionContext } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 
 /** Blocks the whole console until the session is known: no half-authenticated UI. */
 export function SessionGate({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
   const query = useQuery({
     queryKey: ['session'],
     queryFn: async () => {
@@ -25,7 +27,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
   })
 
   if (query.isPending) {
-    return <Splash>Signing in…</Splash>
+    return <Splash>{t('session.loading')}</Splash>
   }
 
   if (query.error instanceof ApiError && query.error.isUnauthenticated) {
@@ -35,9 +37,9 @@ export function SessionGate({ children }: { children: ReactNode }) {
     // says the one thing that is true either way.
     return (
       <Splash>
-        <p className="text-muted-foreground">Sign in to continue.</p>
+        <p className="text-muted-foreground">{t('session.continue')}</p>
         <Button data-testid="sign-in" onClick={() => window.location.assign(ck.identity.loginUrl(returnTo))}>
-          Sign in
+          {t('session.signIn')}
         </Button>
       </Splash>
     )
@@ -53,13 +55,13 @@ export function SessionGate({ children }: { children: ReactNode }) {
         <Alert variant="destructive" data-testid="session-error" className="max-w-md">
           {/* Direct child, before the title: the CVA re-grids on `has-[>svg]`. */}
           <TriangleAlert />
-          <AlertTitle>Sign-in failed</AlertTitle>
+          <AlertTitle>{t('session.failed')}</AlertTitle>
           <AlertDescription data-testid="session-error-message">
-            {query.error instanceof Error ? query.error.message : 'The console could not reach the session endpoint.'}
+            {query.error instanceof Error ? query.error.message : t('session.unreachable')}
           </AlertDescription>
         </Alert>
         <Button data-testid="session-retry" variant="outline" onClick={() => query.refetch()}>
-          Try again
+          {t('common.retry')}
         </Button>
       </Splash>
     )

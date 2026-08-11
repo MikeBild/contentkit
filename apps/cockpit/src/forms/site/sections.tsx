@@ -11,7 +11,9 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StatusBadge } from '@/forms/status-badge'
 import { keys } from '@/lib/query'
+import { visibleLabel } from '@/lib/opaque'
 import { useSite } from '@/lib/site'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { THEME_TOKENS, PRESENTATION_PRESET, REPORT_CADENCE } from '../contracts/enums.generated'
 import {
   CarriedKeys,
@@ -65,6 +67,7 @@ const grid = 'grid gap-4 sm:grid-cols-2'
  * instead of counted.
  */
 function SectionAlert({ form, paths }: { form: SiteForm; paths: readonly string[] }) {
+  const { t } = useI18n()
   const messages = paths.map((path) => form.fieldError(path)).filter(Boolean)
   if (messages.length === 0) return null
   return (
@@ -72,7 +75,7 @@ function SectionAlert({ form, paths }: { form: SiteForm; paths: readonly string[
       {/* Direct child of Alert and before the title: the CVA switches to a
           two-column grid on `has-[>svg]`, and a wrapped icon breaks it. */}
       <AlertTriangle />
-      <AlertTitle>This section was refused</AlertTitle>
+      <AlertTitle>{t('siteForm.sectionRefused')}</AlertTitle>
       <AlertDescription>
         <div className="flex flex-col gap-1">
           {messages.map((message) => (
@@ -93,28 +96,29 @@ function SectionAlert({ form, paths }: { form: SiteForm; paths: readonly string[
  */
 
 function Identity({ form, locales, disabled }: SectionProps) {
+  const { t } = useI18n()
   const { identity } = form.values
   return (
     <div className="flex flex-col gap-4">
       <SectionAlert form={form} paths={['identity']} />
       <div className={grid}>
         <TextField
-          label="Name"
+          label={t('siteForm.name')}
           required
           disabled={disabled}
           data-testid="ck-site-name"
-          help="Used wherever a branding field is unset — the header, the feed titles, the blogcast channel."
+          help={t('siteForm.nameHelp')}
           value={identity.name}
           error={form.fieldError('identity.name')}
           onChange={(value) => form.set('identity.name', value)}
         />
         <LocaleField
-          label="Default locale"
+          label={t('siteForm.defaultLocale')}
           required
           disabled={disabled}
           data-testid="ck-site-default-locale"
-          help="Where “/” redirects to, and the locale the 404 page is served in."
-          about="It must be one of the locales this site builds."
+          help={t('siteForm.defaultLocaleHelp')}
+          about={t('siteForm.defaultLocaleAbout')}
           locales={locales}
           value={identity.default_locale}
           error={form.fieldError('identity.default_locale')}
@@ -122,32 +126,29 @@ function Identity({ form, locales, disabled }: SectionProps) {
         />
       </div>
       <UrlField
-        label="Base URL"
+        label={t('siteForm.baseUrl')}
         required
         disabled={disabled}
         data-testid="ck-site-base-url"
-        help="Every canonical link, feed URL and share target is built from this."
+        help={t('siteForm.baseUrlHelp')}
         value={identity.base_url}
         error={form.fieldError('identity.base_url')}
         onChange={(value) => form.set('identity.base_url', value)}
       />
       <TextAreaField
-        label="Description"
+        label={t('siteForm.description')}
         rows={3}
         disabled={disabled}
         data-testid="ck-site-description"
-        help="The site's own description, used in the footer and as the feed description."
+        help={t('siteForm.descriptionHelp')}
         value={identity.description}
         error={form.fieldError('identity.description')}
         onChange={(value) => form.set('identity.description', value)}
       />
       <Alert data-testid="ck-site-domains-note">
         <InfoIcon />
-        <AlertTitle>Hostname mappings are not part of this form</AlertTitle>
-        <AlertDescription>
-          The site read does not return them, and `domains` is a whole-list write where an empty list removes every
-          mapping — so the console never sends the key and the mappings stay as they are.
-        </AlertDescription>
+        <AlertTitle>{t('siteForm.domainsTitle')}</AlertTitle>
+        <AlertDescription>{t('siteForm.domainsDescription')}</AlertDescription>
       </Alert>
     </div>
   )
@@ -177,6 +178,7 @@ function Identity({ form, locales, disabled }: SectionProps) {
  *    `rebuild_required` in each answer means.
  */
 function Languages({ disabled }: SectionProps) {
+  const { t } = useI18n()
   const { site } = useSite()
   const client = useQueryClient()
   const [adding, setAdding] = useState('')
@@ -236,18 +238,14 @@ function Languages({ disabled }: SectionProps) {
               variant="ghost"
               size="icon-xs"
               data-testid="ck-site-locales-about"
-              aria-label="What adding or removing a locale row does"
+              aria-label={t('siteForm.localesAboutLabel')}
             >
               <InfoIcon />
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" data-testid="ck-site-locales-about-content">
-            <PopoverTitle>Rows change nothing until the next release</PopoverTitle>
-            <PopoverDescription>
-              Adding or removing a row changes nothing a reader sees until the next release is built. Removing one is
-              refused while it is the default locale, and while it still carries published or scheduled content; the
-              refusal names the counts. Content is never deleted by it.
-            </PopoverDescription>
+            <PopoverTitle>{t('siteForm.localesAboutTitle')}</PopoverTitle>
+            <PopoverDescription>{t('siteForm.localesAboutDescription')}</PopoverDescription>
           </PopoverContent>
         </Popover>
       </div>
@@ -255,7 +253,7 @@ function Languages({ disabled }: SectionProps) {
         // The rows are a list, and the wait is the shape of that list. A one-line
         // sentence here settled the section at one line and then jolted it to
         // five, which is the defect UI-UX.md's "four states" section names.
-        <SkeletonGroup label="Loading the locale rows…" data-testid="ck-site-locales-skeleton">
+        <SkeletonGroup label={t('siteForm.localesLoading')} data-testid="ck-site-locales-skeleton">
           {Array.from({ length: 3 }, (_unused, row) => (
             <Skeleton key={row} className="h-9 w-full" />
           ))}
@@ -263,13 +261,13 @@ function Languages({ disabled }: SectionProps) {
       ) : rows.error ? (
         <Alert variant="destructive">
           <AlertTriangle />
-          <AlertTitle>The locale rows could not be read</AlertTitle>
+          <AlertTitle>{t('siteForm.localesLoadErrorTitle')}</AlertTitle>
           <AlertDescription data-testid="ck-site-locales-load-error">
-            {rows.error instanceof Error ? rows.error.message : 'Could not read the locale rows'}
+            {rows.error instanceof Error ? rows.error.message : t('siteForm.localesLoadError')}
           </AlertDescription>
           <AlertAction>
             <Button variant="ghost" size="sm" data-testid="ck-site-locales-retry" onClick={() => void rows.refetch()}>
-              Try again
+              {t('common.retry')}
             </Button>
           </AlertAction>
         </Alert>
@@ -293,11 +291,11 @@ function Languages({ disabled }: SectionProps) {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span tabIndex={0} data-testid={`ck-site-locale-default-${row.locale}`}>
-                            <StatusBadge tone="info">default locale</StatusBadge>
+                            <StatusBadge tone="info">{t('siteForm.defaultLocaleBadge')}</StatusBadge>
                           </span>
                         </TooltipTrigger>
                         <TooltipContent>
-                          “/” redirects here and the 404 page is built from it, so it cannot be removed.
+                          {t('siteForm.defaultLocaleTooltip')}
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -306,7 +304,7 @@ function Languages({ disabled }: SectionProps) {
                 {isDefault ? null : removing === row.locale ? (
                   <span className="flex items-center gap-2">
                     <span className="text-muted-foreground">
-                      Stop building /{row.locale}/? Its content is kept and nothing is deleted.
+                      {t('siteForm.localeRemoveQuestion', { locale: row.locale })}
                     </span>
                     <Button
                       variant="outline"
@@ -316,7 +314,7 @@ function Languages({ disabled }: SectionProps) {
                       onClick={() => remove.mutate(row.locale)}
                     >
                       {remove.isPending ? <Spinner data-icon="inline-start" /> : null}
-                      Remove
+                      {t('common.remove')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -324,7 +322,7 @@ function Languages({ disabled }: SectionProps) {
                       data-testid={`ck-site-locale-remove-cancel-${row.locale}`}
                       onClick={() => setRemoving(null)}
                     >
-                      Keep
+                      {t('siteForm.localeKeep')}
                     </Button>
                   </span>
                 ) : (
@@ -338,7 +336,7 @@ function Languages({ disabled }: SectionProps) {
                       setRemoving(row.locale)
                     }}
                   >
-                    Remove
+                    {t('common.remove')}
                   </Button>
                 )}
               </li>
@@ -351,10 +349,9 @@ function Languages({ disabled }: SectionProps) {
                   <EmptyMedia variant="icon">
                     <LanguagesIcon />
                   </EmptyMedia>
-                  <EmptyTitle>No locale rows are stored</EmptyTitle>
+                  <EmptyTitle>{t('siteForm.noLocaleRows')}</EmptyTitle>
                   <EmptyDescription>
-                    The next release still builds <span className="font-mono">{builds.join(', ') || defaultLocale}</span>{' '}
-                    — the documented fallback to default_locale — so the build matrix is untracked rather than empty.
+                    {t('siteForm.noLocaleRowsDescription', { locales: builds.join(', ') || defaultLocale })}
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
@@ -366,11 +363,11 @@ function Languages({ disabled }: SectionProps) {
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-[12rem] flex-1">
           <LocaleField
-            label="Add a language"
+            label={t('siteForm.addLanguage')}
             disabled={busy || full}
             data-testid="ck-site-locales-add"
-            help="One page tree is built per row."
-            about="The tag is case-folded server-side; a locale the site already has is refused with 409, and content can only be ingested into a locale this list contains."
+            help={t('siteForm.addLanguageHelp')}
+            about={t('siteForm.addLanguageAbout')}
             // Filtered against the stored ROWS, not against what the site builds.
             // The two differ on exactly the site this editor exists to repair: a
             // site with no rows still builds its default locale through the
@@ -393,16 +390,16 @@ function Languages({ disabled }: SectionProps) {
           onClick={() => add.mutate(adding)}
         >
           {add.isPending ? <Spinner data-icon="inline-start" /> : null}
-          Add locale
+          {t('siteForm.addLocale')}
         </Button>
       </div>
 
       {add.error ? (
         <Alert variant="destructive" data-testid="ck-site-locales-add-error">
           <AlertTriangle />
-          <AlertTitle>The locale was not added</AlertTitle>
+          <AlertTitle>{t('siteForm.localeAddErrorTitle')}</AlertTitle>
           <AlertDescription>
-            {add.error instanceof Error ? add.error.message : 'The locale could not be added'}
+            {add.error instanceof Error ? add.error.message : t('siteForm.localeAddError')}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -412,21 +409,20 @@ function Languages({ disabled }: SectionProps) {
         // counts that make it actionable.
         <Alert variant="destructive" data-testid="ck-site-locales-remove-error">
           <AlertTriangle />
-          <AlertTitle>The locale was not removed</AlertTitle>
+          <AlertTitle>{t('siteForm.localeRemoveErrorTitle')}</AlertTitle>
           <AlertDescription>
-            {remove.error instanceof Error ? remove.error.message : 'The locale could not be removed'}
+            {remove.error instanceof Error ? remove.error.message : t('siteForm.localeRemoveError')}
           </AlertDescription>
         </Alert>
       ) : null}
       {removed ? (
         <Alert data-testid="ck-site-locales-removed">
           <AlertTriangle />
-          <AlertTitle>
-            <span className="font-mono">{removed.locale}</span> is no longer built
-          </AlertTitle>
+          <AlertTitle>{t('siteForm.localeRemovedTitle', { locale: removed.locale })}</AlertTitle>
           <AlertDescription>
-            {removed.draft_items} content {removed.draft_items === 1 ? 'item stays' : 'items stay'} in it, unpublished
-            and undeleted — nothing is served from that locale until it is added back and a release is built.
+            {t(removed.draft_items === 1 ? 'siteForm.localeRemovedOne' : 'siteForm.localeRemovedMany', {
+              count: removed.draft_items,
+            })}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -434,10 +430,7 @@ function Languages({ disabled }: SectionProps) {
       {full ? (
         <Alert data-testid="ck-site-locales-full">
           <AlertTriangle />
-          <AlertDescription>
-            {max} locale rows is the cap: every row adds a full page tree — home, listings, tags, feeds and a 404 — to
-            every release.
-          </AlertDescription>
+          <AlertDescription>{t('siteForm.localeCap', { count: max })}</AlertDescription>
         </Alert>
       ) : null}
     </div>
@@ -445,6 +438,7 @@ function Languages({ disabled }: SectionProps) {
 }
 
 function Presentation({ form, disabled }: SectionProps) {
+  const { t } = useI18n()
   const presentation = form.values.settings.presentation
   return (
     <div className="flex flex-col gap-4">
@@ -453,30 +447,30 @@ function Presentation({ form, disabled }: SectionProps) {
         paths={['settings.presentation', 'settings.presentation.docs.versions', 'settings.presentation.report_series']}
       />
       <EnumSelect
-        label="Preset"
+        label={t('siteForm.preset')}
         disabled={disabled}
         data-testid="ck-site-preset"
-        definition="Decides the navigation model and the default layout a document without an explicit one gets."
-        fallback="Unset behaves as portfolio."
+        definition={t('siteForm.presetDefinition')}
+        fallback={t('siteForm.presetFallback')}
         options={PRESENTATION_PRESET.map((value) => ({ value, label: value }))}
         allowEmpty
-        placeholder="portfolio (default)"
+        placeholder={t('siteForm.presetPlaceholder')}
         value={presentation.preset}
         error={form.fieldError('settings.presentation.preset')}
         onChange={(value) => form.set('settings.presentation.preset', value)}
       />
 
       <ObjectListField
-        label="Documentation versions"
+        label={t('siteForm.docsVersions')}
         disabled={disabled}
         data-testid="ck-site-docs-versions"
-        help="Exactly one version is the current one; the rest are archived and stay reachable under their own id."
+        help={t('siteForm.docsVersionsHelp')}
         max={32}
-        emptyMessage="No versions — the product-docs preset needs at least one."
-        addLabel="Add version"
+        emptyMessage={t('siteForm.docsVersionsEmpty')}
+        addLabel={t('siteForm.addVersion')}
         uniqueBy={(entry) => entry.id}
-        exclusiveFlag={{ key: 'current', label: 'Current' }}
-        itemLabel={(entry) => entry.label || entry.id || 'New version'}
+        exclusiveFlag={{ key: 'current', label: t('siteForm.current') }}
+        itemLabel={(entry) => visibleLabel(entry.label, entry.id) ?? t('siteForm.newVersion')}
         create={() => ({ id: '', label: '', current: false })}
         value={presentation.docs.versions}
         error={form.fieldError('settings.presentation.docs.versions')}
@@ -484,17 +478,17 @@ function Presentation({ form, disabled }: SectionProps) {
         renderItem={(entry, api) => (
           <div className={grid}>
             <TextField
-              label="ID"
+              label={t('siteForm.id')}
               required
               disabled={disabled}
               data-testid={`ck-site-docs-version-id-${api.index}`}
-              help="Appears in the URL and in a document's docsVersion."
+              help={t('siteForm.versionIdHelp')}
               value={entry.id}
               error={form.fieldError(`settings.presentation.docs.versions.${api.index}.id`)}
               onChange={(value) => api.update({ id: value })}
             />
             <TextField
-              label="Label"
+              label={t('siteForm.label')}
               required
               maxLength={120}
               disabled={disabled}
@@ -508,16 +502,16 @@ function Presentation({ form, disabled }: SectionProps) {
       />
 
       <ObjectListField
-        label="Report series"
+        label={t('siteForm.reportSeries')}
         disabled={disabled}
         data-testid="ck-site-report-series"
-        help="A document selects one with reportSeries."
-        about="Removing a series that documents still reference does not fail this save — it fails the next release."
+        help={t('siteForm.reportSeriesHelp')}
+        about={t('siteForm.reportSeriesAbout')}
         max={32}
-        emptyMessage="No series configured."
-        addLabel="Add series"
+        emptyMessage={t('siteForm.reportSeriesEmpty')}
+        addLabel={t('siteForm.addSeries')}
         uniqueBy={(entry) => entry.id}
-        itemLabel={(entry) => entry.label || entry.id || 'New series'}
+        itemLabel={(entry) => visibleLabel(entry.label, entry.id) ?? t('siteForm.newSeries')}
         create={() => ({ id: '', label: '', nav_order: 0, lead_cadence: 'monthly' as const })}
         value={presentation.report_series}
         error={form.fieldError('settings.presentation.report_series')}
@@ -525,7 +519,7 @@ function Presentation({ form, disabled }: SectionProps) {
         renderItem={(entry, api) => (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <TextField
-              label="ID"
+              label={t('siteForm.id')}
               required
               disabled={disabled}
               data-testid={`ck-site-series-id-${api.index}`}
@@ -534,7 +528,7 @@ function Presentation({ form, disabled }: SectionProps) {
               onChange={(value) => api.update({ id: value })}
             />
             <TextField
-              label="Label"
+              label={t('siteForm.label')}
               required
               maxLength={120}
               disabled={disabled}
@@ -544,7 +538,7 @@ function Presentation({ form, disabled }: SectionProps) {
               onChange={(value) => api.update({ label: value })}
             />
             <NumberField
-              label="Navigation order"
+              label={t('siteForm.navigationOrder')}
               integer
               disabled={disabled}
               data-testid={`ck-site-series-order-${api.index}`}
@@ -553,7 +547,7 @@ function Presentation({ form, disabled }: SectionProps) {
               onChange={(value) => api.update({ nav_order: value ?? 0 })}
             />
             <EnumSelect
-              label="Lead cadence"
+              label={t('siteForm.leadCadence')}
               disabled={disabled}
               data-testid={`ck-site-series-cadence-${api.index}`}
               options={REPORT_CADENCE.map((value) => ({ value, label: value }))}
@@ -569,37 +563,37 @@ function Presentation({ form, disabled }: SectionProps) {
 
 // The allowlist, with what each token actually paints. An unknown key fails the
 // whole PATCH, so the menu is the allowlist and there is no text box for a key.
-const TOKEN_LABELS: Record<string, string> = {
-  background: 'Page background',
-  foreground: 'Body text',
-  muted: 'Muted surface',
-  muted_foreground: 'Muted text',
-  border: 'Borders',
-  primary: 'Primary',
-  primary_foreground: 'Text on primary',
-  chart_1: 'Chart series 1',
-  chart_2: 'Chart series 2',
-  chart_3: 'Chart series 3',
-  chart_4: 'Chart series 4',
-  chart_5: 'Chart series 5',
-  radius: 'Corner radius',
-  font_family: 'Font stack',
+const TOKEN_LABEL_KEYS: Record<string, TranslationKey> = {
+  background: 'siteForm.token.background',
+  foreground: 'siteForm.token.foreground',
+  muted: 'siteForm.token.muted',
+  muted_foreground: 'siteForm.token.mutedForeground',
+  border: 'siteForm.token.border',
+  primary: 'siteForm.token.primary',
+  primary_foreground: 'siteForm.token.primaryForeground',
+  chart_1: 'siteForm.token.chart1',
+  chart_2: 'siteForm.token.chart2',
+  chart_3: 'siteForm.token.chart3',
+  chart_4: 'siteForm.token.chart4',
+  chart_5: 'siteForm.token.chart5',
+  radius: 'siteForm.token.radius',
+  font_family: 'siteForm.token.fontFamily',
 }
 
-const TOKENS: TokenDefinition[] = THEME_TOKENS.map((key) => ({ key, label: TOKEN_LABELS[key] ?? key }))
-
 function Theme({ form, disabled }: SectionProps) {
+  const { t } = useI18n()
   const theme = form.values.settings.theme
+  const tokens: TokenDefinition[] = THEME_TOKENS.map((key) => ({ key, label: t(TOKEN_LABEL_KEYS[key]!) }))
   return (
     <div className="flex flex-col gap-4">
       <SectionAlert form={form} paths={['settings.theme', 'settings.theme.tokens', 'settings.theme.custom_css']} />
       <TokenMapField
-        label="Theme tokens"
+        label={t('siteForm.themeTokens')}
         disabled={disabled}
         data-testid="ck-site-theme-tokens"
-        help="Each token applies to the page and to server-rendered report charts alike."
-        about="A token left unset keeps the stock value."
-        tokens={TOKENS}
+        help={t('siteForm.themeTokensHelp')}
+        about={t('siteForm.themeTokensAbout')}
+        tokens={tokens}
         value={theme.tokens}
         error={form.fieldError('settings.theme.tokens')}
         onChange={(value) => form.set('settings.theme.tokens', value)}
@@ -644,19 +638,19 @@ function Theme({ form, disabled }: SectionProps) {
 
       <div className={grid}>
         <ColorField
-          label="Accent"
+          label={t('siteForm.accent')}
           disabled={disabled}
           data-testid="ck-site-accent"
-          help="Colours the mask icon; unrelated to the primary token."
+          help={t('siteForm.accentHelp')}
           value={form.values.settings.accent}
           error={form.fieldError('settings.accent')}
           onChange={(value) => form.set('settings.accent', value)}
         />
         <ColorField
-          label="Browser theme colour"
+          label={t('siteForm.browserThemeColor')}
           disabled={disabled}
           data-testid="ck-site-theme-color"
-          help="The colour a mobile browser paints its chrome with."
+          help={t('siteForm.browserThemeColorHelp')}
           value={form.values.settings.theme_color}
           error={form.fieldError('settings.theme_color')}
           onChange={(value) => form.set('settings.theme_color', value)}
@@ -664,16 +658,16 @@ function Theme({ form, disabled }: SectionProps) {
       </div>
 
       <TextAreaField
-        label="Custom CSS"
+        label={t('siteForm.customCss')}
         rows={10}
         monospace
         maxBytes={8192}
         forbid={/<\/style/i}
-        forbidMessage="“</style” would break out of the style element"
+        forbidMessage={t('siteForm.customCssForbidden')}
         disabled={disabled}
         data-testid="ck-site-custom-css"
-        help="Inlined verbatim into every page, after the tokens."
-        about="The escape hatch for whatever the tokens do not cover."
+        help={t('siteForm.customCssHelp')}
+        about={t('siteForm.customCssAbout')}
         value={theme.custom_css}
         error={form.fieldError('settings.theme.custom_css')}
         onChange={(value) => form.set('settings.theme.custom_css', value)}
@@ -683,6 +677,7 @@ function Theme({ form, disabled }: SectionProps) {
 }
 
 function Branding({ form, base, disabled }: SectionProps) {
+  const { t } = useI18n()
   const settings = form.values.settings
   const asset = (
     label: string,
@@ -707,101 +702,102 @@ function Branding({ form, base, disabled }: SectionProps) {
       <SectionAlert form={form} paths={['settings.hero_title', 'settings.hero_text']} />
       <div className={grid}>
         <TextField
-          label="Eyebrow"
+          label={t('siteForm.eyebrow')}
           disabled={disabled}
           data-testid="ck-site-eyebrow"
-          definition="The small line above the hero title."
-          fallback="Unset means no eyebrow."
+          definition={t('siteForm.eyebrowDefinition')}
+          fallback={t('siteForm.eyebrowFallback')}
           value={settings.eyebrow}
           error={form.fieldError('settings.eyebrow')}
           onChange={(value) => form.set('settings.eyebrow', value)}
         />
         <TextField
-          label="Hero title"
+          label={t('siteForm.heroTitle')}
           disabled={disabled}
           data-testid="ck-site-hero-title"
-          fallback="Unset falls back to the site name."
+          fallback={t('siteForm.siteNameFallback')}
           value={settings.hero_title}
           error={form.fieldError('settings.hero_title')}
           onChange={(value) => form.set('settings.hero_title', value)}
         />
       </div>
       <TextAreaField
-        label="Hero text"
+        label={t('siteForm.heroText')}
         rows={3}
         disabled={disabled}
         data-testid="ck-site-hero-text"
-        fallback="Unset falls back to the site description."
+        fallback={t('siteForm.siteDescriptionFallback')}
         value={settings.hero_text}
         error={form.fieldError('settings.hero_text')}
         onChange={(value) => form.set('settings.hero_text', value)}
       />
       <div className={grid}>
-        {asset('Profile image', 'profile_image', 'Shown on the landing page. A path is resolved against the base URL.')}
+        {asset(t('siteForm.profileImage'), 'profile_image', t('siteForm.profileImageHelp'))}
         <TextField
-          label="Profile image alt text"
+          label={t('siteForm.profileImageAlt')}
           disabled={disabled}
           data-testid="ck-site-profile-image-alt"
-          help="Describes the image for anyone who cannot see it."
+          help={t('siteForm.imageAltHelp')}
           warning={
-            settings.profile_image && !settings.profile_image_alt ? 'The image has no alternative text' : undefined
+            settings.profile_image && !settings.profile_image_alt ? t('siteForm.imageAltWarning') : undefined
           }
           value={settings.profile_image_alt}
           error={form.fieldError('settings.profile_image_alt')}
           onChange={(value) => form.set('settings.profile_image_alt', value)}
         />
-        {asset('Favicon', 'favicon', 'A .svg or .png; the type is derived from the extension.')}
-        {asset('Apple touch icon', 'apple_touch_icon', 'The icon iOS uses for a page saved to the home screen.')}
-        {asset('Mask icon', 'mask_icon', 'A monochrome SVG; it is tinted with the accent colour.')}
+        {asset(t('siteForm.favicon'), 'favicon', t('siteForm.faviconHelp'))}
+        {asset(t('siteForm.appleTouchIcon'), 'apple_touch_icon', t('siteForm.appleTouchIconHelp'))}
+        {asset(t('siteForm.maskIcon'), 'mask_icon', t('siteForm.maskIconHelp'))}
       </div>
     </div>
   )
 }
 
 function Seo({ form, base, disabled }: SectionProps) {
+  const { t } = useI18n()
   const settings = form.values.settings
   return (
     <div className="flex flex-col gap-4">
       <SectionAlert form={form} paths={['settings.socials']} />
       <div className={grid}>
         <UrlField
-          label="Share image"
+          label={t('siteForm.shareImage')}
           mode="asset"
           base={base}
           disabled={disabled}
           data-testid="ck-site-og-image"
-          help="The Open Graph image used when a page carries none of its own."
+          help={t('siteForm.shareImageHelp')}
           value={settings.og_image}
           error={form.fieldError('settings.og_image')}
           onChange={(value) => form.set('settings.og_image', value)}
         />
         <TextField
-          label="Share image alt text"
+          label={t('siteForm.shareImageAlt')}
           disabled={disabled}
           data-testid="ck-site-og-image-alt"
-          warning={settings.og_image && !settings.og_image_alt ? 'The image has no alternative text' : undefined}
+          warning={settings.og_image && !settings.og_image_alt ? t('siteForm.imageAltWarning') : undefined}
           value={settings.og_image_alt}
           error={form.fieldError('settings.og_image_alt')}
           onChange={(value) => form.set('settings.og_image_alt', value)}
         />
       </div>
       <TextField
-        label="Twitter handle"
+        label={t('siteForm.twitterHandle')}
         disabled={disabled}
         data-testid="ck-site-twitter-handle"
-        help="With or without the leading @; it is emitted as the twitter:site card attribution."
+        help={t('siteForm.twitterHandleHelp')}
         value={settings.twitter_handle}
         error={form.fieldError('settings.twitter_handle')}
         onChange={(value) => form.set('settings.twitter_handle', value)}
       />
       <KeyValueField
-        label="Social links"
+        label={t('siteForm.socialLinks')}
         disabled={disabled}
         data-testid="ck-site-socials"
-        help="Rendered in the footer with rel=me and published as schema.org sameAs."
-        about="The key is the visible name."
-        keyLabel="Network"
-        valueLabel="URL"
+        help={t('siteForm.socialLinksHelp')}
+        about={t('siteForm.socialLinksAbout')}
+        keyLabel={t('siteForm.network')}
+        valueLabel={t('siteForm.url')}
         value={settings.socials}
         error={form.fieldError('settings.socials')}
         onChange={(value) => form.set('settings.socials', value)}
@@ -811,25 +807,26 @@ function Seo({ form, base, disabled }: SectionProps) {
 }
 
 function Analytics({ form, disabled }: SectionProps) {
+  const { t } = useI18n()
   const analytics = form.values.settings.analytics
   return (
     <div className="flex flex-col gap-4">
       <SectionAlert form={form} paths={['settings.analytics']} />
       <EnumSelect
-        label="Provider"
+        label={t('siteForm.provider')}
         disabled={disabled}
         data-testid="ck-site-analytics-provider"
-        about="Plausible is cookieless and loads one script. GA4 is withheld until the visitor consents and adds a consent control to the footer."
-        fallback="Unset means no analytics at all."
+        about={t('siteForm.analyticsAbout')}
+        fallback={t('siteForm.analyticsFallback')}
         allowEmpty
-        placeholder="No analytics"
+        placeholder={t('siteForm.noAnalytics')}
         options={ANALYTICS_PROVIDERS.map((value) => ({
           value,
           label: value === 'ga4' ? 'Google Analytics 4' : 'Plausible',
           description:
             value === 'ga4'
-              ? 'Needs a measurement id and ships the consent gate.'
-              : 'Needs the measured domain. No consent banner.',
+              ? t('siteForm.ga4Description')
+              : t('siteForm.plausibleDescription'),
         }))}
         value={analytics.provider}
         error={form.fieldError('settings.analytics.provider')}
@@ -838,21 +835,21 @@ function Analytics({ form, disabled }: SectionProps) {
       {analytics.provider === 'plausible' ? (
         <div className={grid}>
           <TextField
-            label="Measured domain"
+            label={t('siteForm.measuredDomain')}
             required
             disabled={disabled}
             data-testid="ck-site-analytics-domain"
-            help="The data-domain the script is loaded with."
-            about="Without it nothing is emitted at all."
+            help={t('siteForm.measuredDomainHelp')}
+            about={t('siteForm.measuredDomainAbout')}
             value={analytics.domain}
             error={form.fieldError('settings.analytics.domain')}
             onChange={(value) => form.set('settings.analytics.domain', value)}
           />
           <UrlField
-            label="Script URL"
+            label={t('siteForm.scriptUrl')}
             disabled={disabled}
             data-testid="ck-site-analytics-src"
-            fallback="Unset uses plausible.io's own script."
+            fallback={t('siteForm.scriptUrlFallback')}
             value={analytics.src}
             error={form.fieldError('settings.analytics.src')}
             onChange={(value) => form.set('settings.analytics.src', value)}
@@ -861,12 +858,12 @@ function Analytics({ form, disabled }: SectionProps) {
       ) : null}
       {analytics.provider === 'ga4' ? (
         <TextField
-          label="Measurement id"
+          label={t('siteForm.measurementId')}
           required
           disabled={disabled}
           data-testid="ck-site-analytics-id"
-          help="The G- id."
-          about="Everything but letters, digits and hyphens is stripped before it reaches the page."
+          help={t('siteForm.measurementIdHelp')}
+          about={t('siteForm.measurementIdAbout')}
           value={analytics.id}
           error={form.fieldError('settings.analytics.id')}
           onChange={(value) => form.set('settings.analytics.id', value)}
@@ -875,12 +872,6 @@ function Analytics({ form, disabled }: SectionProps) {
     </div>
   )
 }
-
-const FEED_PLACEHOLDERS = [
-  { token: 'feed', description: 'The absolute feed URL.' },
-  { token: 'feed_encoded', description: 'The absolute feed URL, URL-encoded.' },
-  { token: 'feed_no_scheme', description: 'The feed URL without https://, the form podcast:// expects.' },
-]
 
 const FEED_SAMPLE = {
   feed: 'https://example.com/en/blogcast.xml',
@@ -917,6 +908,7 @@ function TargetList({
   protocols?: string[]
   emptyMessage: string
 }) {
+  const { t } = useI18n()
   return (
     <ObjectListField
       label={label}
@@ -924,9 +916,9 @@ function TargetList({
       disabled={disabled}
       data-testid={testId}
       emptyMessage={emptyMessage}
-      addLabel="Add target"
+      addLabel={t('siteForm.addTarget')}
       uniqueBy={(entry) => entry.label}
-      itemLabel={(entry) => entry.label || 'New target'}
+      itemLabel={(entry) => entry.label || t('siteForm.newTarget')}
       create={() => ({ label: '', url_template: '' })}
       value={value}
       error={form.fieldError(path)}
@@ -934,7 +926,7 @@ function TargetList({
       renderItem={(entry, api) => (
         <div className="flex flex-col gap-4">
           <TextField
-            label="Label"
+            label={t('siteForm.label')}
             required
             disabled={disabled}
             data-testid={`${testId}-label-${api.index}`}
@@ -942,7 +934,7 @@ function TargetList({
             onChange={(next) => api.update({ label: next })}
           />
           <UrlTemplateField
-            label="URL template"
+            label={t('siteForm.urlTemplate')}
             required
             disabled={disabled}
             data-testid={`${testId}-url-${api.index}`}
@@ -959,17 +951,23 @@ function TargetList({
 }
 
 function Audio({ form, base, disabled }: SectionProps) {
+  const { t } = useI18n()
   const audio = form.values.settings.audio
   const on = audio.enabled === true
+  const feedPlaceholders = [
+    { token: 'feed', description: t('siteForm.feedPlaceholder') },
+    { token: 'feed_encoded', description: t('siteForm.feedEncodedPlaceholder') },
+    { token: 'feed_no_scheme', description: t('siteForm.feedNoSchemePlaceholder') },
+  ]
   return (
     <div className="flex flex-col gap-4">
       <SectionAlert form={form} paths={['settings.audio']} />
       <TriToggle
-        label="Read-aloud"
+        label={t('siteForm.readAloud')}
         data-testid="ck-site-audio-enabled"
         disabled={disabled}
-        defaultLabel="off"
-        help="Narration is only produced for published posts, and only when this is explicitly on."
+        defaultLabel={t('common.off')}
+        help={t('siteForm.readAloudHelp')}
         value={audio.enabled}
         error={form.fieldError('settings.audio.enabled')}
         onChange={(value) => form.set('settings.audio.enabled', value)}
@@ -978,34 +976,34 @@ function Audio({ form, base, disabled }: SectionProps) {
         <Alert data-testid="ck-site-audio-off-note">
           <InfoIcon />
           <AlertDescription>
-            The rest of this section is stored but has no effect until read-aloud is on.
+            {t('siteForm.readAloudOff')}
           </AlertDescription>
         </Alert>
       ) : null}
 
       <div className={grid}>
         <EnumSelect
-          label="Voice provider"
+          label={t('siteForm.voiceProvider')}
           disabled={disabled}
           data-testid="ck-site-audio-provider"
-          fallback="Unset uses google."
+          fallback={t('siteForm.googleFallback')}
           allowEmpty
-          placeholder="google (default)"
+          placeholder={t('siteForm.googleDefault')}
           options={AUDIO_PROVIDERS.map((value) => ({
             value,
-            label: value === 'google' ? 'Google Chirp 3 HD' : 'Fake (synthesises nothing)',
-            description: value === 'fake' ? 'Deterministic placeholder audio. Meant for testing, not for a live site.' : undefined,
+            label: value === 'google' ? 'Google Chirp 3 HD' : t('siteForm.fakeProvider'),
+            description: value === 'fake' ? t('siteForm.fakeProviderDescription') : undefined,
           }))}
           value={audio.provider}
           error={form.fieldError('settings.audio.provider')}
           onChange={(value) => form.set('settings.audio.provider', value)}
         />
         <TextField
-          label="Voice"
+          label={t('siteForm.voice')}
           disabled={disabled}
           data-testid="ck-site-audio-voice"
-          about="The provider's voice name, for example de-DE-Chirp3-HD-Charon. Its language prefix decides the spoken language."
-          fallback="Unset uses the provider's default voice."
+          about={t('siteForm.voiceAbout')}
+          fallback={t('siteForm.voiceFallback')}
           value={audio.voice}
           error={form.fieldError('settings.audio.voice')}
           onChange={(value) => form.set('settings.audio.voice', value)}
@@ -1014,30 +1012,30 @@ function Audio({ form, base, disabled }: SectionProps) {
 
       <div className={grid}>
         <TextField
-          label="Channel title"
+          label={t('siteForm.channelTitle')}
           disabled={disabled}
           data-testid="ck-site-audio-title"
-          fallback="Unset falls back to the site name."
+          fallback={t('siteForm.siteNameFallback')}
           value={audio.title}
           error={form.fieldError('settings.audio.title')}
           onChange={(value) => form.set('settings.audio.title', value)}
         />
         <TextField
-          label="Channel author"
+          label={t('siteForm.channelAuthor')}
           disabled={disabled}
           data-testid="ck-site-audio-author"
-          fallback="Unset falls back to the site name."
+          fallback={t('siteForm.siteNameFallback')}
           value={audio.author}
           error={form.fieldError('settings.audio.author')}
           onChange={(value) => form.set('settings.audio.author', value)}
         />
       </div>
       <TextAreaField
-        label="Channel description"
+        label={t('siteForm.channelDescription')}
         rows={3}
         disabled={disabled}
         data-testid="ck-site-audio-description"
-        fallback="Unset falls back to the site description."
+        fallback={t('siteForm.siteDescriptionFallback')}
         value={audio.description}
         error={form.fieldError('settings.audio.description')}
         onChange={(value) => form.set('settings.audio.description', value)}
@@ -1045,26 +1043,26 @@ function Audio({ form, base, disabled }: SectionProps) {
 
       <div className={grid}>
         <NumberField
-          label="Monthly character budget"
+          label={t('siteForm.monthlyBudget')}
           integer
           min={0}
-          unit="characters"
+          unit={t('siteForm.characters')}
           allowUnset
-          unsetLabel="No budget"
+          unsetLabel={t('siteForm.noBudget')}
           disabled={disabled}
           data-testid="ck-site-audio-budget"
-          help="Narration stops for the month once the budget is spent."
-          about="Unset is not zero — it means no ceiling at all."
+          help={t('siteForm.monthlyBudgetHelp')}
+          about={t('siteForm.monthlyBudgetAbout')}
           value={audio.monthly_char_budget}
           error={form.fieldError('settings.audio.monthly_char_budget')}
           onChange={(value) => form.set('settings.audio.monthly_char_budget', value)}
         />
         <TriToggle
-          label="Re-narrate on republish"
+          label={t('siteForm.renarrate')}
           data-testid="ck-site-audio-auto-rebuild"
           disabled={disabled}
-          defaultLabel="on"
-          help="Off keeps the existing audio when a post is edited, which also keeps the budget."
+          defaultLabel={t('common.on')}
+          help={t('siteForm.renarrateHelp')}
           value={audio.auto_rebuild}
           error={form.fieldError('settings.audio.auto_rebuild')}
           onChange={(value) => form.set('settings.audio.auto_rebuild', value)}
@@ -1072,11 +1070,11 @@ function Audio({ form, base, disabled }: SectionProps) {
       </div>
 
       <TriToggle
-        label="Link the blogcast in the footer"
+        label={t('siteForm.blogcastFooter')}
         data-testid="ck-site-audio-blogcast-link"
         disabled={disabled}
-        defaultLabel="off"
-        help="The blogcast page exists as soon as a narrated post does; this decides whether it is listed."
+        defaultLabel={t('common.off')}
+        help={t('siteForm.blogcastFooterHelp')}
         value={audio.blogcast_link}
         error={form.fieldError('settings.audio.blogcast_link')}
         onChange={(value) => form.set('settings.audio.blogcast_link', value)}
@@ -1084,21 +1082,21 @@ function Audio({ form, base, disabled }: SectionProps) {
 
       <div className={grid}>
         <UrlField
-          label="Cover art"
+          label={t('siteForm.coverArt')}
           mode="asset"
           base={base}
           disabled={disabled}
           data-testid="ck-site-audio-blogcast-image"
-          help="Podcast directories want a square image of at least 1400 px."
+          help={t('siteForm.coverArtHelp')}
           value={audio.blogcast_image}
           error={form.fieldError('settings.audio.blogcast_image')}
           onChange={(value) => form.set('settings.audio.blogcast_image', value)}
         />
         <TextField
-          label="iTunes category"
+          label={t('siteForm.itunesCategory')}
           disabled={disabled}
           data-testid="ck-site-audio-blogcast-category"
-          help="Emitted verbatim as the itunes:category text."
+          help={t('siteForm.itunesCategoryHelp')}
           value={audio.blogcast_category}
           error={form.fieldError('settings.audio.blogcast_category')}
           onChange={(value) => form.set('settings.audio.blogcast_category', value)}
@@ -1106,12 +1104,12 @@ function Audio({ form, base, disabled }: SectionProps) {
       </div>
 
       <TargetList
-        label="Subscribe targets"
-        help="The “open in …” buttons beside the blogcast feed."
+        label={t('siteForm.subscribeTargets')}
+        help={t('siteForm.blogcastTargetsHelp')}
         path="settings.audio.subscribe_targets"
         testId="ck-site-audio-targets"
-        emptyMessage="None — the built-in podcast clients are offered instead."
-        placeholders={FEED_PLACEHOLDERS}
+        emptyMessage={t('siteForm.podcastTargetsEmpty')}
+        placeholders={feedPlaceholders}
         sample={FEED_SAMPLE}
         protocols={FEED_PROTOCOLS}
         value={audio.subscribe_targets}
@@ -1122,46 +1120,52 @@ function Audio({ form, base, disabled }: SectionProps) {
   )
 }
 
-const SHARE_PLACEHOLDERS = [{ token: 'q', description: 'The URL-encoded, localised prompt naming the page.' }]
 const SHARE_SAMPLE = { q: 'Read%20https%3A%2F%2Fexample.com%2Fen%2Fposts%2Fhello%2F' }
 
 function Reader({ form, disabled }: SectionProps) {
+  const { t } = useI18n()
   const settings = form.values.settings
+  const feedPlaceholders = [
+    { token: 'feed', description: t('siteForm.feedPlaceholder') },
+    { token: 'feed_encoded', description: t('siteForm.feedEncodedPlaceholder') },
+    { token: 'feed_no_scheme', description: t('siteForm.feedNoSchemePlaceholder') },
+  ]
+  const sharePlaceholders = [{ token: 'q', description: t('siteForm.sharePlaceholder') }]
   return (
     <div className="flex flex-col gap-4">
       <SectionAlert form={form} paths={['settings.comments', 'settings.feedback', 'settings.search', 'settings.content']} />
       <div className={grid}>
         <TriToggle
-          label="Comments"
+          label={t('siteForm.comments')}
           data-testid="ck-site-comments-enabled"
           disabled={disabled}
-          defaultLabel="on"
-          help="Off makes the public comment endpoint answer 404 as well, not just the form."
+          defaultLabel={t('common.on')}
+          help={t('siteForm.commentsHelp')}
           value={settings.comments.enabled}
           error={form.fieldError('settings.comments.enabled')}
           onChange={(value) => form.set('settings.comments.enabled', value)}
         />
         <TriToggle
-          label="Feedback"
+          label={t('siteForm.feedback')}
           data-testid="ck-site-feedback-enabled"
           disabled={disabled}
-          defaultLabel="off"
-          help="The thumbs-up/down widget under a post."
-          about="It has to be switched on explicitly."
+          defaultLabel={t('common.off')}
+          help={t('siteForm.feedbackHelp')}
+          about={t('siteForm.feedbackAbout')}
           value={settings.feedback.enabled}
           error={form.fieldError('settings.feedback.enabled')}
           onChange={(value) => form.set('settings.feedback.enabled', value)}
         />
       </div>
       <TextField
-        label="Turnstile site key"
+        label={t('siteForm.turnstileKey')}
         disabled={disabled}
         data-testid="ck-site-turnstile"
-        help="The public half of the Cloudflare Turnstile pair, used by the comment and contact forms."
-        about="The secret half is server configuration, not a setting."
+        help={t('siteForm.turnstileKeyHelp')}
+        about={t('siteForm.turnstileKeyAbout')}
         warning={
           settings.comments.enabled !== false && !settings.turnstile_site_key
-            ? 'Comments accept submissions with no challenge in front of them'
+            ? t('siteForm.turnstileWarning')
             : undefined
         }
         value={settings.turnstile_site_key}
@@ -1170,22 +1174,22 @@ function Reader({ form, disabled }: SectionProps) {
       />
       <div className={grid}>
         <TriToggle
-          label="Index the body text"
+          label={t('siteForm.indexBody')}
           data-testid="ck-site-search-index-body"
           disabled={disabled}
-          defaultLabel="off"
-          help="On makes the search index carry the whole article rather than title, summary and tags."
-          about="It grows every release."
+          defaultLabel={t('common.off')}
+          help={t('siteForm.indexBodyHelp')}
+          about={t('siteForm.indexBodyAbout')}
           value={settings.search.index_body}
           error={form.fieldError('settings.search.index_body')}
           onChange={(value) => form.set('settings.search.index_body', value)}
         />
         <TriToggle
-          label="Show authored extra fields"
+          label={t('siteForm.showExtra')}
           data-testid="ck-site-content-show-extra"
           disabled={disabled}
-          defaultLabel="off"
-          help="Renders a document's own extra: map on the page and in its Markdown twin."
+          defaultLabel={t('common.off')}
+          help={t('siteForm.showExtraHelp')}
           value={settings.content.show_extra}
           error={form.fieldError('settings.content.show_extra')}
           onChange={(value) => form.set('settings.content.show_extra', value)}
@@ -1193,21 +1197,21 @@ function Reader({ form, disabled }: SectionProps) {
       </div>
 
       <TriToggle
-        label="Subscribe row under the blog feed"
+        label={t('siteForm.blogSubscribeRow')}
         data-testid="ck-site-blog-subscribe-row"
         disabled={disabled}
-        defaultLabel="on"
+        defaultLabel={t('common.on')}
         value={settings.blog.subscribe_row}
         error={form.fieldError('settings.blog.subscribe_row')}
         onChange={(value) => form.set('settings.blog.subscribe_row', value)}
       />
       <TargetList
-        label="Feed reader targets"
-        help="The “open in …” buttons beside the blog feed."
+        label={t('siteForm.feedReaderTargets')}
+        help={t('siteForm.feedReaderTargetsHelp')}
         path="settings.blog.subscribe_targets"
         testId="ck-site-blog-targets"
-        emptyMessage="None — the built-in feed readers are offered instead."
-        placeholders={FEED_PLACEHOLDERS}
+        emptyMessage={t('siteForm.feedReaderTargetsEmpty')}
+        placeholders={feedPlaceholders}
         sample={{ ...FEED_SAMPLE, feed: 'https://example.com/en/feed.xml' }}
         protocols={FEED_PROTOCOLS}
         value={settings.blog.subscribe_targets}
@@ -1216,23 +1220,23 @@ function Reader({ form, disabled }: SectionProps) {
       />
 
       <TriToggle
-        label="AI share row"
+        label={t('siteForm.aiShareRow')}
         data-testid="ck-site-ai-share-buttons"
         disabled={disabled}
-        defaultLabel="on"
-        help="A link to the page's Markdown twin, a copy button and “open in …” deep links."
-        about="Nothing here talks to any provider; the reader does, from their own account."
+        defaultLabel={t('common.on')}
+        help={t('siteForm.aiShareRowHelp')}
+        about={t('siteForm.aiShareRowAbout')}
         value={settings.ai.share_buttons}
         error={form.fieldError('settings.ai.share_buttons')}
         onChange={(value) => form.set('settings.ai.share_buttons', value)}
       />
       <TargetList
-        label="Assistant targets"
-        help="Replaces the built-in list entirely."
+        label={t('siteForm.assistantTargets')}
+        help={t('siteForm.assistantTargetsHelp')}
         path="settings.ai.share_targets"
         testId="ck-site-ai-targets"
-        emptyMessage="None — the built-in assistants are offered instead."
-        placeholders={SHARE_PLACEHOLDERS}
+        emptyMessage={t('siteForm.assistantTargetsEmpty')}
+        placeholders={sharePlaceholders}
         sample={SHARE_SAMPLE}
         value={settings.ai.share_targets}
         form={form}
@@ -1243,6 +1247,7 @@ function Reader({ form, disabled }: SectionProps) {
 }
 
 function Unmanaged({ form, disabled }: SectionProps) {
+  const { t } = useI18n()
   const leaves = carriedLeaves(form.values.carried)
   const display = Object.fromEntries(leaves.map((leaf) => [leaf.path, leaf.value]))
 
@@ -1253,11 +1258,8 @@ function Unmanaged({ form, disabled }: SectionProps) {
           <EmptyMedia variant="icon">
             <InfoIcon />
           </EmptyMedia>
-          <EmptyTitle>Nothing here</EmptyTitle>
-          <EmptyDescription>
-            Every key this site stores is rendered by one of the other sections — and anything a future version or a
-            script writes will appear here instead of being dropped by a save.
-          </EmptyDescription>
+          <EmptyTitle>{t('siteForm.unmanagedEmpty')}</EmptyTitle>
+          <EmptyDescription>{t('siteForm.unmanagedEmptyDescription')}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     )
@@ -1267,11 +1269,8 @@ function Unmanaged({ form, disabled }: SectionProps) {
     <div className="flex flex-col gap-4">
       <Alert data-testid="ck-site-carried-note">
         <InfoIcon />
-        <AlertTitle>These keys are not editable here</AlertTitle>
-        <AlertDescription>
-          A form that could edit an unknown shape would be a JSON box again. They are preserved on every save, and
-          removing one is the one change this section can make.
-        </AlertDescription>
+        <AlertTitle>{t('siteForm.unmanagedTitle')}</AlertTitle>
+        <AlertDescription>{t('siteForm.unmanagedDescription')}</AlertDescription>
       </Alert>
       <CarriedKeys
         data-testid="ck-site-carried"

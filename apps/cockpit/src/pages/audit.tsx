@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Fragment, useState } from 'react'
-import { ck } from '@/api/ck'
+import { Fragment, useMemo, useState } from 'react'
+import { ck, type AuditEvent } from '@/api/ck'
 import { Page } from '@/app/shell'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { DataTable, firstPage, useTableView, type DataColumn } from '@/components/ui/data-table'
 import {
   Select,
   SelectContent,
@@ -12,12 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/forms/status-badge'
-import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
+import { visibleMetadata } from '@/lib/opaque'
+import { compareText, compareTime } from '@/lib/table-view'
 
 /**
  * The actions worth filtering by, as a fixed list.
@@ -46,6 +46,20 @@ const AUDIT_ACTIONS = [
 
 const LIMITS = [50, 100, 200]
 
+const AUDIT_ACTOR_KEYS = {
+  api_key: 'audit.actor.api_key',
+  oauth: 'audit.actor.oauth',
+  operator: 'audit.actor.operator',
+  system: 'audit.actor.system',
+} as const satisfies Record<string, TranslationKey>
+
+const AUDIT_RESULT_KEYS = {
+  success: 'audit.result.success',
+  denied: 'audit.result.denied',
+  failed: 'audit.result.failed',
+  cancelled: 'audit.result.cancelled',
+} as const satisfies Record<string, TranslationKey>
+
 /**
  * "No filter", as a value Radix will accept.
  *
@@ -65,15 +79,10 @@ const ANY = '__any'
  * container of its own: three filters and the table. The table's own `Card` is
  * the frame every list in this console wears, not a section around the page.
  *
- * It is the one list in this group that is still `Card` + `Table` + `TableState`
- * rather than `DataTable` (UI-UX.md §6), and the reason is the expanded row: a
- * `ck-audit-row` opens a second `<tr>` beneath itself carrying the actor id, the
- * resource id, the site and every metadata key the server recorded, and
- * `DataTable` renders exactly one row per record with no slot for that. Moving
- * this list would mean either dropping the evidence or turning
- * `ck-audit-detail-{id}` into a dialog, which is a different affordance from the
- * one scripts/verify-cockpit-prod.md drives. The row-detail slot belongs in
- * components/ui/data-table.tsx, and that is where this moves when it exists.
+ * The shared `DataTable` owns the window, responsive card rows and expanded
+ * evidence. The detail stays directly below its event on both layouts, while
+ * UUID-shaped actor/resource metadata is deliberately omitted from the visible
+ * account surface.
  *
  * `useState(site)` is deliberate and is what shell.tsx declares (`selection:
  * 'seeds'`): the trail is one append-only log for the whole installation, so the
@@ -97,11 +106,16 @@ const ANY = '__any'
  * caption is dimmed for the same reason.
  */
 export function AuditPage() {
+  // The site filter is seeded from the switcher when this page opens. On a cold
+  // load nothing is selected yet, so it starts on every site.
+  // moving the switcher does not change this list after that.
+  const { t, dateTime } = useI18n()
   const { site, sites } = useSite()
   const [action, setAction] = useState('')
   const [scope, setScope] = useState(site)
   const [limit, setLimit] = useState(50)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [page, setPage] = useState(firstPage)
 
   // All three go to the server. Filtering a page the server already truncated
   // to fifty rows answers a different question than the one being asked.
@@ -110,11 +124,101 @@ export function AuditPage() {
   const rows = events.data ?? []
   const selected = sites.find((entry) => entry.slug === site)
   const diverged = Boolean(site) && scope !== site
+  const columns = useMemo<DataColumn<AuditEvent>[]>(
+    () => [
+      {
+        id: 'when',
+        label: t('audit.when'),
+        required: true,
+        compare: (left, right) => compareTime(left.created_at, right.created_at),
+        descFirst: true,
+        className: 'whitespace-nowrap text-muted-foreground',
+        cell: (event) => dateTime(event.created_at),
+      },
+      {
+        id: 'actor',
+        label: t('audit.actor'),
+        compare: (left, right) => compareText(left.actor_label, right.actor_label),
+        className: 'text-muted-foreground',
+        cell: (event) => event.actor_label || t(AUDIT_ACTOR_KEYS[event.actor_type as keyof typeof AUDIT_ACTOR_KEYS] ?? 'audit.unknownActor'),
+      },
+      {
+        id: 'action',
+        label: t('audit.action'),
+        compare: (left, right) => compareText(left.action, right.action),
+        className: 'font-mono text-xs',
+        cell: (event) => event.action,
+      },
+      {
+        id: 'resource',
+        label: t('audit.resource'),
+        compare: (left, right) => compareText(left.resource_label, right.resource_label),
+        className: 'text-muted-foreground',
+        cell: (event) => event.resource_label || event.resource_type || t('audit.unknownResource'),
+      },
+      {
+        id: 'result',
+        label: t('audit.result'),
+        compare: (left, right) => compareText(left.result, right.result),
+        cell: (event) => (
+          <StatusBadge tone={event.result === 'success' ? 'success' : 'danger'}>
+            {t(AUDIT_RESULT_KEYS[event.result as keyof typeof AUDIT_RESULT_KEYS] ?? 'audit.result.failed')}
+          </StatusBadge>
+        ),
+      },
+      {
+        id: 'transport',
+        label: t('audit.transport'),
+        hiddenByDefault: true,
+        compare: (left, right) => compareText(left.transport, right.transport),
+        className: 'text-muted-foreground',
+        cell: (event) => event.transport ?? '—',
+      },
+      {
+        id: 'actions',
+        label: t('common.actions'),
+        required: true,
+        headerHidden: true,
+        cell: (event) => {
+          const open = expanded === event.id
+          return (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-expanded={open}
+              data-testid="ck-audit-expand"
+              onClick={() => setExpanded(open ? null : event.id)}
+            >
+              {t(open ? 'common.hide' : 'common.details')}
+            </Button>
+          )
+        },
+      },
+    ],
+    [dateTime, expanded, t],
+  )
+  const { view, setView } = useTableView('audit', columns)
+
+  const detail = (event: AuditEvent) => (
+    <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
+      <dt className="text-muted-foreground">{t('audit.site')}</dt>
+      <dd>{event.site_label || sites.find((entry) => entry.id === event.site_id)?.name || '—'}</dd>
+      {Object.entries(event.metadata ?? {}).map(([key, value]) => {
+        const visible = visibleMetadata(value)
+        return visible ? (
+          <Fragment key={key}>
+            <dt className="font-mono text-muted-foreground">{key}</dt>
+            <dd className="break-words font-mono">{visible}</dd>
+          </Fragment>
+        ) : null
+      })}
+    </dl>
+  )
 
   return (
     <Page
-      title="Audit"
-      description="Append-only, redacted record of every privileged action, across the whole installation. The site filter is seeded from the switcher as this page opens — on a cold load nothing is selected yet, so it starts on every site — and then stays where you put it: moving the switcher does not change this list."
+      title={t('audit.title')}
+      description={t('audit.description')}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/*
@@ -131,15 +235,15 @@ export function AuditPage() {
           <SelectTrigger
             className="w-44"
             data-testid="ck-audit-site-filter"
-            aria-label="Filter the audit trail by site"
+            aria-label={t('audit.filter.site')}
           >
-            <SelectValue placeholder="Every site" />
+            <SelectValue placeholder={t('site.every')} />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {/* Radix refuses an empty item value — it is how it spells "no
                   selection" — so "every" is a sentinel the state layer undoes. */}
-              <SelectItem value={ANY}>Every site</SelectItem>
+              <SelectItem value={ANY}>{t('site.every')}</SelectItem>
               {sites.map((entry) => (
                 <SelectItem key={entry.id} value={entry.slug}>
                   {entry.name}
@@ -152,13 +256,13 @@ export function AuditPage() {
           <SelectTrigger
             className="w-52"
             data-testid="ck-audit-action-filter"
-            aria-label="Filter the audit trail by action"
+            aria-label={t('audit.filter.action')}
           >
-            <SelectValue placeholder="All actions" />
+            <SelectValue placeholder={t('audit.allActions')} />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value={ANY}>All actions</SelectItem>
+              <SelectItem value={ANY}>{t('audit.allActions')}</SelectItem>
               {AUDIT_ACTIONS.map((value) => (
                 <SelectItem key={value} value={value}>
                   {value}
@@ -171,7 +275,7 @@ export function AuditPage() {
           <SelectTrigger
             className="w-32"
             data-testid="ck-audit-limit-filter"
-            aria-label="Number of audit events to load"
+            aria-label={t('audit.filter.limit')}
           >
             <SelectValue />
           </SelectTrigger>
@@ -179,7 +283,7 @@ export function AuditPage() {
             <SelectGroup>
               {LIMITS.map((value) => (
                 <SelectItem key={value} value={String(value)}>
-                  Last {value}
+                  {t('audit.last', { count: value })}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -195,96 +299,72 @@ export function AuditPage() {
             data-testid="ck-audit-follow-site"
             onClick={() => setScope(site)}
           >
-            {scope ? `Showing ${scope}` : 'Showing every site'} — switch to {selected?.name ?? site}
+            {t(scope ? 'audit.followSite' : 'audit.followEvery', {
+              scope,
+              site: selected?.name ?? site,
+            })}
           </Button>
         ) : null}
       </div>
 
-      <Card className="py-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>When</TableHead>
-              <TableHead>Actor</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Result</TableHead>
-              <TableHead>Transport</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableState
-              columns={7}
-              isLoading={events.isPending}
-              error={events.error}
-              isEmpty={rows.length === 0}
-              onRetry={() => events.refetch()}
-              emptyTitle={action || scope ? 'No events match these filters' : 'Nothing recorded yet'}
-              emptyMessage={
-                action || scope
-                  ? 'Widen the site, the action or the window above.'
-                  : 'Every privileged action lands here as it happens.'
-              }
-            >
-              {rows.map((event) => {
-                const open = expanded === event.id
-                return (
-                  <Fragment key={event.id}>
-                    <TableRow data-testid="ck-audit-row" data-event={event.id}>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDate(event.created_at)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{event.actor_type}</TableCell>
-                      <TableCell className="font-mono text-xs">{event.action}</TableCell>
-                      <TableCell className="text-muted-foreground">{event.resource_type ?? '—'}</TableCell>
-                      <TableCell>
-                        <StatusBadge tone={event.result === 'success' ? 'success' : 'danger'}>
-                          {event.result}
-                        </StatusBadge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{event.transport ?? '—'}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-expanded={open}
-                          data-testid={`ck-audit-expand-${event.id}`}
-                          onClick={() => setExpanded(open ? null : event.id)}
-                        >
-                          {open ? 'Hide' : 'Details'}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                    {open ? (
-                      <TableRow data-testid={`ck-audit-detail-${event.id}`}>
-                        <TableCell colSpan={7} className="bg-muted/40">
-                          <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
-                            <dt className="text-muted-foreground">Actor id</dt>
-                            <dd className="font-mono">{event.actor_id ?? '—'}</dd>
-                            <dt className="text-muted-foreground">Resource id</dt>
-                            <dd className="font-mono">{event.resource_id ?? '—'}</dd>
-                            <dt className="text-muted-foreground">Site</dt>
-                            <dd className="font-mono">
-                              {sites.find((entry) => entry.id === event.site_id)?.slug ?? event.site_id ?? '—'}
-                            </dd>
-                            {Object.entries(event.metadata ?? {}).map(([key, value]) => (
-                              <Fragment key={key}>
-                                <dt className="font-mono text-muted-foreground">{key}</dt>
-                                <dd className="break-words font-mono">{String(value)}</dd>
-                              </Fragment>
-                            ))}
-                          </dl>
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </Fragment>
-                )
-              })}
-            </TableState>
-          </TableBody>
-        </Table>
-      </Card>
+      <DataTable
+        testId="ck-audit"
+        columns={columns}
+        rows={rows}
+        rowKey={(event) => event.id}
+        rowTestId="ck-audit-row"
+        expandedRowTestId="ck-audit-detail"
+        rowAttributes={(event) => ({ 'data-event': event.id })}
+        isLoading={events.isPending}
+        error={events.error}
+        onRetry={() => events.refetch()}
+        emptyMessage={
+          action || scope
+            ? t('audit.empty.filteredDescription')
+            : t('audit.empty.description')
+        }
+        view={view}
+        onViewChange={setView}
+        page={page}
+        onPageChange={setPage}
+        pageSize={limit}
+        unit={t('common.events')}
+        renderMobileRow={(event) => {
+          const open = expanded === event.id
+          return (
+            <div className="grid gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-medium">{event.action}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {event.actor_label || t(AUDIT_ACTOR_KEYS[event.actor_type as keyof typeof AUDIT_ACTOR_KEYS] ?? 'audit.unknownActor')}
+                    {' · '}
+                    {dateTime(event.created_at)}
+                  </p>
+                </div>
+                <StatusBadge tone={event.result === 'success' ? 'success' : 'danger'}>
+                  {t(AUDIT_RESULT_KEYS[event.result as keyof typeof AUDIT_RESULT_KEYS] ?? 'audit.result.failed')}
+                </StatusBadge>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-xs text-muted-foreground">
+                  {event.resource_label || event.resource_type || t('audit.unknownResource')}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-expanded={open}
+                  data-testid="ck-audit-expand-mobile"
+                  onClick={() => setExpanded(open ? null : event.id)}
+                >
+                  {t(open ? 'common.hide' : 'common.details')}
+                </Button>
+              </div>
+            </div>
+          )
+        }}
+        renderExpandedRow={(event) => expanded === event.id ? detail(event) : null}
+      />
     </Page>
   )
 }

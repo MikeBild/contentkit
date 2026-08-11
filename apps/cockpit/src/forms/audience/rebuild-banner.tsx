@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 
 const STORAGE_PREFIX = 'ck-cockpit-rebuild-required:'
 
@@ -40,11 +41,12 @@ export function useRebuildRequired(site: string) {
 }
 
 export function RebuildBanner({ site, onBuilt }: { site: string; onBuilt: () => void }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
 
   const build = useMutation({
-    mutationFn: () => ck.releases.create(site, { reason: 'Access rules changed' }),
+    mutationFn: () => ck.releases.create(site, { reason: t('audience.rebuild.reason') }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: keys.releases(site) })
       onBuilt()
@@ -57,37 +59,31 @@ export function RebuildBanner({ site, onBuilt }: { site: string; onBuilt: () => 
     // `AlertAction` is where the buttons belong. Nothing here names a colour.
     <Alert data-testid="ck-rebuild-banner" className="mb-4">
       <TriangleAlert />
-      <AlertTitle>The live site is still serving the previous rules</AlertTitle>
+      <AlertTitle>{t('audience.rebuild.title')}</AlertTitle>
       <AlertDescription>
-        Access rules are snapshotted into a release. Everything changed here is a draft until <strong>{site}</strong>{' '}
-        is built again.
+        {t('audience.rebuild.description', { site })}
         {build.error ? (
           <span data-testid="ck-rebuild-error" className="block">
-            {build.error instanceof Error ? build.error.message : 'The build failed'}
+            {build.error instanceof Error ? build.error.message : t('audience.rebuild.error')}
           </span>
         ) : null}
       </AlertDescription>
       <AlertAction>
         <div className="flex shrink-0 gap-2">
           <Button variant="ghost" size="sm" data-testid="ck-rebuild-dismiss" onClick={onBuilt}>
-            Dismiss
+            {t('audience.rebuild.dismiss')}
           </Button>
           {can('release:write') ? (
             <Confirm
-              title="Build and activate a release?"
-              description={
-                <>
-                  This builds every published revision of <strong>{site}</strong> with the current access rules and
-                  activates the result. The live site changes as soon as the build succeeds.
-                </>
-              }
-              confirmLabel="Build and activate"
+              title={t('audience.rebuild.confirmTitle')}
+              description={t('audience.rebuild.confirmDescription', { site })}
+              confirmLabel={t('audience.rebuild.confirm')}
               onConfirm={() => build.mutateAsync()}
             >
               {(open) => (
                 <Button size="sm" data-testid="ck-rebuild-build" disabled={build.isPending} onClick={open}>
                   {build.isPending ? <Spinner data-icon="inline-start" /> : null}
-                  Build release
+                  {t('audience.rebuild.build')}
                 </Button>
               )}
             </Confirm>

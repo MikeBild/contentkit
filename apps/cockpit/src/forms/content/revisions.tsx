@@ -14,7 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
-import { cn, formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * The revision list, and the two things it is for.
@@ -37,6 +38,7 @@ export function Revisions({
   onOpen: (revision: Revision) => void
   'data-testid'?: string
 }) {
+  const { t, dateTime } = useI18n()
   const [compared, setCompared] = useState<{ newer: Revision; older: Revision | null } | null>(null)
   const query = useQuery({ queryKey: keys.content.revisions(item), queryFn: () => ck.content.revisions(item) })
   const rows = query.data ?? []
@@ -46,11 +48,11 @@ export function Revisions({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Status</TableHead>
-            <TableHead>Slug</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead>Published</TableHead>
-            <TableHead>Source hash</TableHead>
+            <TableHead>{t('content.revisions.status')}</TableHead>
+            <TableHead>{t('content.revisions.slug')}</TableHead>
+            <TableHead>{t('content.revisions.created')}</TableHead>
+            <TableHead>{t('content.revisions.published')}</TableHead>
+            <TableHead>{t('content.revisions.sourceHash')}</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -61,16 +63,24 @@ export function Revisions({
             error={query.error}
             isEmpty={rows.length === 0}
             onRetry={() => query.refetch()}
-            emptyMessage="No revisions yet."
+            emptyMessage={t('content.revisions.empty')}
           >
             {rows.map((revision, index) => (
               <TableRow key={revision.id} data-testid={`${testId}-row`} data-revision={revision.id}>
                 <TableCell>
-                  <StatusBadge tone={revision.status === 'published' ? 'success' : 'neutral'}>{revision.status}</StatusBadge>
+                  <StatusBadge tone={revision.status === 'published' ? 'success' : 'neutral'}>
+                    {t(
+                      revision.status === 'published'
+                        ? 'content.revisions.publishedStatus'
+                        : 'content.revisions.draftStatus',
+                    )}
+                  </StatusBadge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{revision.slug}</TableCell>
-                <TableCell className="text-muted-foreground">{formatDate(revision.created_at)}</TableCell>
-                <TableCell className="text-muted-foreground">{formatDate(revision.published_at)}</TableCell>
+                <TableCell className="text-muted-foreground">{dateTime(revision.created_at)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {revision.published_at ? dateTime(revision.published_at) : '—'}
+                </TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{revision.source_sha256?.slice(0, 12)}</TableCell>
                 <TableCell className="flex gap-2">
                   <Button
@@ -80,7 +90,7 @@ export function Revisions({
                     disabled={!revision.markdown}
                     onClick={() => setCompared({ newer: revision, older: rows[index + 1] ?? null })}
                   >
-                    Diff
+                    {t('content.revisions.diff')}
                   </Button>
                   <Button
                     size="sm"
@@ -89,7 +99,7 @@ export function Revisions({
                     disabled={!canWrite || !revision.markdown}
                     onClick={() => onOpen(revision)}
                   >
-                    {index === 0 ? 'Open' : 'Restore into the editor'}
+                    {index === 0 ? t('content.revisions.open') : t('content.revisions.restore')}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -110,11 +120,11 @@ export function Revisions({
               backdrop and the X all close it. */}
           <DialogContent data-testid={`${testId}-diff`} className="sm:max-w-4xl">
             <DialogHeader>
-              <DialogTitle>What changed</DialogTitle>
+              <DialogTitle>{t('content.revisions.changedTitle')}</DialogTitle>
               <DialogDescription>
                 {compared.older
-                  ? `Against the revision from ${formatDate(compared.older.created_at)}.`
-                  : 'This is the first revision, so everything in it is new.'}
+                  ? t('content.revisions.against', { date: dateTime(compared.older.created_at) })
+                  : t('content.revisions.first')}
               </DialogDescription>
             </DialogHeader>
             <div className="scrollbar-thin overflow-y-auto">
@@ -127,7 +137,7 @@ export function Revisions({
                 data-testid={`${testId}-diff-close`}
                 onClick={() => setCompared(null)}
               >
-                Close
+                {t('content.revisions.close')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -146,9 +156,10 @@ export function Revisions({
  * two lines that happen to look alike.
  */
 export function DiffList({ before, after }: { before: string; after: string }) {
+  const { t } = useI18n()
   const rows = lineDiff(before, after)
   if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">The source is byte-identical.</p>
+    return <p className="text-sm text-muted-foreground">{t('content.revisions.identical')}</p>
   }
   return (
     <ul data-testid="ck-diff-list" className="flex flex-col font-mono text-xs">

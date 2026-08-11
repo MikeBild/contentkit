@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -29,13 +30,14 @@ export function SecretField({
     minLength?: number
     /** Produces a strong value. The result is shown once through `RevealOnce`. */
     generate?: () => string
-  }) {
+}) {
+  const { t } = useI18n()
   const [revealed, setRevealed] = useState(false)
-  const error = shell.error ?? (value && value.length < minLength ? `At least ${minLength} characters` : undefined)
+  const error = shell.error ?? (value && value.length < minLength ? t('validation.minimumCharacters', { count: minLength }) : undefined)
   const strength = Math.min(1, value.length / (minLength * 2))
 
   return (
-    <FieldShell {...shell} error={error} hint={shell.hint ?? (value ? `${value.length} characters` : undefined)}>
+    <FieldShell {...shell} error={error} hint={shell.hint ?? (value ? t('secret.characters', { count: value.length }) : undefined)}>
       {(control) => (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
@@ -52,7 +54,7 @@ export function SecretField({
               type="button"
               variant="outline"
               size="icon-sm"
-              aria-label={revealed ? 'Hide' : 'Reveal'}
+              aria-label={t(revealed ? 'secret.hide' : 'secret.reveal')}
               data-testid={`${control['data-testid']}-reveal`}
               disabled={control.disabled}
               onClick={() => setRevealed((state) => !state)}
@@ -68,7 +70,7 @@ export function SecretField({
                 disabled={control.disabled}
                 onClick={() => onChange(generate())}
               >
-                Generate
+                {t('secret.generate')}
               </Button>
             ) : null}
           </div>
@@ -108,6 +110,7 @@ export function RevealOnce({
   className?: string
   'data-testid': string
 }) {
+  const { t } = useI18n()
   const [acknowledged, setAcknowledged] = useState(false)
 
   return (
@@ -126,7 +129,7 @@ export function RevealOnce({
         {value}
       </code>
       <div className="mt-3 flex items-center gap-2">
-        <CopyButton value={value} data-testid={`${testId}-copy`} label="Copy" />
+        <CopyButton value={value} data-testid={`${testId}-copy`} label={t('common.copy')} />
         <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -134,7 +137,7 @@ export function RevealOnce({
             checked={acknowledged}
             onChange={(event) => setAcknowledged(event.target.checked)}
           />
-          I have stored it
+          {t('secret.stored')}
         </label>
         <Button
           type="button"
@@ -144,7 +147,7 @@ export function RevealOnce({
           disabled={!acknowledged}
           onClick={onDismiss}
         >
-          Dismiss for good
+          {t('secret.dismiss')}
         </Button>
       </div>
     </div>

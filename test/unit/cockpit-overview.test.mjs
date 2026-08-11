@@ -136,20 +136,20 @@ describe('the Overview says "nothing measured" once, and still says which nothin
     assert.ok(grid > statistics, 'and the tiles are reference material, under their own heading')
     assert.match(
       body,
-      /<h2[^>]*>\s*Statistics/,
+      /<h2[^>]*>\{t\('overview\.statistics'\)\}<\/h2>/,
       'the reference half needs a heading to be a half rather than more tiles',
     )
   })
 
   test('the page description says what the page is for, not how the numbers are computed', () => {
-    const description = /description=\{`([^`]+)`\}/.exec(overview)
+    const description = /description=\{t\('page\.overview\.description',\s*\{ site \}\)\}/.exec(overview)
     assert.ok(description, 'the page must carry a description')
     assert.doesNotMatch(
-      description[1],
+      description[0],
       /bucket|aggregate|UTC/i,
       'the window is a fact about the numbers and belongs beside them, not in the page’s purpose',
     )
     // Moved, not deleted: the window is still stated where the numbers are.
-    assert.match(overview, /Daily UTC aggregates, last 30 buckets\./)
+    assert.match(overview, /t\('overview\.statisticsWindow'\)/)
   })
 })

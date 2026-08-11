@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { type AccessRule } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { GroupsCard } from '@/forms/audience/groups'
 import { ReadersCard } from '@/forms/audience/readers'
 import { RebuildBanner, useRebuildRequired } from '@/forms/audience/rebuild-banner'
@@ -28,6 +29,7 @@ import { useSite } from '@/lib/site'
  * honest one.
  */
 export function AccessPage() {
+  const { t } = useI18n()
   const { site } = useSite()
   const rebuild = useRebuildRequired(site)
   // Lifted out of the rules card so the groups card can open the very rule that
@@ -36,15 +38,15 @@ export function AccessPage() {
 
   if (!site)
     return (
-      <Page title="Reader access">
+      <Page title={t('page.access.title')}>
         <NoSite />
       </Page>
     )
 
   return (
     <Page
-      title="Reader access"
-      description="Who may read the published site. Rules are snapshotted into each release, so changes take effect on the next build."
+      title={t('page.access.title')}
+      description={t('page.access.description')}
     >
       {rebuild.required ? <RebuildBanner site={site} onBuilt={rebuild.clear} /> : null}
 

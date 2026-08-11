@@ -618,7 +618,7 @@ describe('the data table is the shared Table, with three things added', () => {
   test('a total is printed only where the endpoint supplied every row', () => {
     assert.match(
       dataTable,
-      /unit=\{paging === 'whole' \? `of \$\{ordered\.length\} \$\{unit\}` : unit\}/,
+      /paging === 'whole'[\s\S]*?t\('pagination\.totalUnit', \{ total: ordered\.length, unit: unitLabel \}\)[\s\S]*?: unitLabel/,
       'a cursor-paged list has no total, so it is not given one',
     )
   })
@@ -728,7 +728,11 @@ describe('the content list claims only what the API can do', () => {
     // a pointer and nobody else, and it contradicted the console-wide rule in
     // cockpit-forms-density.test.mjs that no DOM element carries a native title.
     // A Tooltip keeps the instant reachable by hover, focus and tap alike.
-    assert.match(relative, /const exact = formatExact\(value\)/, 'the exact instant is still computed')
+    assert.match(
+      relative,
+      /const exact = formatExact\(value,\s*LOCALE_TAGS\[locale\]\)/,
+      'the exact instant is still computed in the selected locale',
+    )
     assert.match(relative, /<TooltipContent[^>]*>\{exact\}<\/TooltipContent>/, 'and shown in a disclosure')
     assert.doesNotMatch(relative, /\btitle=/, 'never in a native tooltip — a pointer is not everyone')
   })
@@ -828,7 +832,7 @@ describe('a value nobody sent is not drawn as zero', () => {
     )
     assert.match(
       dataTableCode.slice(dataTableCode.indexOf('-order-note')),
-      /across all \$\{ordered\.length\} \$\{unit\}/,
+      /count:\s*ordered\.length,\s*unit/,
       'the count is the rows the response supplied — the same array the pager takes its total from',
     )
   })
@@ -844,12 +848,6 @@ describe('a value nobody sent is not drawn as zero', () => {
   // ── The audio summary, above the jobs list ─────────────────────────────────
 
   const reportedCount = functionOf(authoringCode, 'reportedCount')
-  const usedSentence = (usedChars) => evaluate(rightHandSide(authoringCode, 'usedThisMonth'), { usedChars })
-  const unmeasured = (usedChars, budgetChars) =>
-    evaluate(renderedText(authoringCode, 'data-testid="audio-budget-unmeasured"'), {
-      usedThisMonth: usedSentence(usedChars),
-      budgetChars,
-    })
 
   test('a count the response did not carry is null, and a zero it did carry is zero', () => {
     assert.equal(typeof reportedCount, 'function', 'reportedCount is a plain function of one value')
@@ -883,41 +881,33 @@ describe('a value nobody sent is not drawn as zero', () => {
   })
 
   test('the unmeasured line prints the count it was sent, and says so when it was sent none', () => {
-    assert.equal(
-      unmeasured(null, null),
-      'Characters used this month: not reported · no budget configured',
-      'no numerator and no budget: two absences, and not a digit between them',
+    const used = rightHandSide(authoringCode, 'usedThisMonth')
+    assert.match(used, /usedChars === null/)
+    assert.match(used, /t\('audio\.usedNotReported'\)/, 'an absent numerator is named, not printed as zero')
+    assert.match(
+      used,
+      /t\('audio\.usedThisMonth', \{ count: number\(usedChars\) \}\)/,
+      'a reported numerator is locale-formatted before translation',
     )
-    assert.equal(
-      unmeasured(0, null),
-      `${(0).toLocaleString()} characters used this month · no budget configured`,
-      'a month that really did render nothing says zero',
-    )
-    assert.notEqual(
-      unmeasured(null, null),
-      unmeasured(0, null),
-      'so the two readings cannot be confused — which `?? 0` is precisely the loss of',
-    )
-    assert.equal(
-      unmeasured(12_000, null),
-      `${(12_000).toLocaleString()} characters used this month · no budget configured`,
-      'and a count that was sent is printed as sent, grouped, not as any other number',
-    )
-    assert.equal(
-      unmeasured(null, 1000),
-      `Characters used this month: not reported · budget ${(1000).toLocaleString()} characters`,
-      'audioBudget answers null for an absent numerator too, so this branch may hold a configured budget',
-    )
+    const lineStart = authoringCode.indexOf('data-testid="audio-budget-unmeasured"')
+    assert.ok(lineStart > 0, 'the unmeasured audio budget line exists')
+    const line = authoringCode.slice(lineStart, authoringCode.indexOf('</span>', lineStart))
+    assert.match(line, /\{usedThisMonth\}/)
+    assert.match(line, /budgetChars === null[\s\S]*t\('audio\.noBudget'\)/)
+    assert.match(line, /t\('audio\.budgetConfigured', \{ count: number\(budgetChars\) \}\)/)
+    assert.doesNotMatch(line, /(?:\?\?|\|\|)\s*0/, 'neither missing value is defaulted to a measured zero')
   })
 
   test('a per-status counter the response omitted is an em dash rather than a status with no jobs', () => {
     const counter = renderedText(authoringCode, 'data-testid={`audio-count-')
     assert.ok(counter, 'the counter renders one expression per status')
-    const printed = (summary) => evaluate(counter, { name: 'failed', summary, reportedCount })
-    assert.equal(printed({ failed: 7 }), `failed: ${(7).toLocaleString()}`)
-    assert.equal(printed({ failed: 0 }), `failed: ${(0).toLocaleString()}`, 'src/audio.mjs zero-fills what it knows')
-    assert.equal(printed({}), 'failed: —', 'and a status it does not know is not a status with nothing in it')
-    assert.equal(printed({ failed: null }), 'failed: —')
+    assert.match(counter, /t\(STATUS_KEYS\[name\]\)/, 'the status name comes from the shared catalogue')
+    assert.match(counter, /reportedCount\(summary\[name\]\) === null \? '—'/)
+    assert.match(
+      counter,
+      /number\(reportedCount\(summary\[name\]\)!\)/,
+      'a reported zero or count is locale-formatted without changing its value',
+    )
   })
 
   // ── The readiness tiles, which are counts with no list under them ──────────
@@ -933,8 +923,14 @@ describe('a value nobody sent is not drawn as zero', () => {
     const opens = authoringCode.indexOf('testId="system-decks"')
     const tile = authoringCode.slice(opens, authoringCode.indexOf('/>', opens))
     const attribute = (name) => braceGroup(tile, tile.indexOf(`${name}=`))
-    assert.ok(tile.includes('label="Deck renders"'), 'the tile was found whole')
-    const scope = { deckInflight: null, deckQueued: null }
+    assert.ok(tile.includes("label={t('system.deckRenders')}"), 'the translated tile was found whole')
+    const t = (key, values = {}) => {
+      if (key === 'system.running') return `${values.count} running`
+      if (key === 'system.queued') return `${values.count} queued`
+      return key
+    }
+    const number = (value) => String(value)
+    const scope = { deckInflight: null, deckQueued: null, t, number }
     assert.equal(evaluate(attribute('value'), scope), '— running', 'no reading, no number')
     assert.equal(evaluate(attribute('detail'), scope), '— queued')
     assert.equal(
@@ -942,9 +938,13 @@ describe('a value nobody sent is not drawn as zero', () => {
       'warning',
       'green is a claim as well: a queue nobody reported is not a queue known to be empty',
     )
-    assert.equal(evaluate(attribute('tone'), { deckInflight: 0, deckQueued: 0 }), 'success', 'a reported zero is fine')
-    assert.equal(evaluate(attribute('tone'), { deckInflight: 2, deckQueued: 3 }), 'warning')
-    assert.equal(evaluate(attribute('value'), { deckInflight: 2, deckQueued: 3 }), '2 running')
+    assert.equal(
+      evaluate(attribute('tone'), { deckInflight: 0, deckQueued: 0, t, number }),
+      'success',
+      'a reported zero is fine',
+    )
+    assert.equal(evaluate(attribute('tone'), { deckInflight: 2, deckQueued: 3, t, number }), 'warning')
+    assert.equal(evaluate(attribute('value'), { deckInflight: 2, deckQueued: 3, t, number }), '2 running')
   })
 })
 

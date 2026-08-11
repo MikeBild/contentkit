@@ -498,43 +498,48 @@ export function analyse(src) {
  */
 const FLOOR = {
   'aside.tsx': 0,
-  'audience/groups.tsx': 19,
-  'audience/moderation.tsx': 23,
-  'audience/readers.tsx': 24,
-  'audience/rebuild-banner.tsx': 11,
-  'audience/rules.tsx': 15,
-  'content/body.tsx': 2,
-  'content/editor.tsx': 12,
-  'content/fields.tsx': 79,
-  'content/preview.tsx': 5,
-  'content/revisions.tsx': 3,
+  'audience/groups.tsx': 1,
+  'audience/moderation.tsx': 0,
+  'audience/readers.tsx': 0,
+  'audience/rebuild-banner.tsx': 0,
+  'audience/rules.tsx': 2,
+  'content/body.tsx': 0,
+  'content/editor.tsx': 1,
+  'content/fields.tsx': 2,
+  'content/preview.tsx': 2,
+  'content/revisions.tsx': 0,
   'fields/choice.tsx': 1,
   'fields/color.tsx': 5,
   'fields/date.tsx': 0,
-  'fields/field.tsx': 1,
-  'fields/list.tsx': 5,
-  'fields/map.tsx': 11,
-  'fields/number.tsx': 4,
+  // User-facing prose in these shared primitives now lives in the typed DE/EN
+  // catalog. Keep floors only for literal prose that intentionally remains in
+  // the component rather than treating `t(...)` as deleted copy.
+  'fields/field.tsx': 0,
+  'fields/list.tsx': 2,
+  'fields/map.tsx': 0,
+  'fields/number.tsx': 0,
   'fields/object-list.tsx': 0,
-  'fields/scopes.tsx': 4,
-  'fields/secret.tsx': 3,
+  'fields/scopes.tsx': 1,
+  'fields/secret.tsx': 0,
   'fields/subtree.tsx': 1,
-  'fields/text.tsx': 2,
+  'fields/text.tsx': 1,
   'fields/url.tsx': 4,
-  'gallery.tsx': 16,
-  'platform/api-keys.tsx': 19,
-  'platform/identity.tsx': 33,
-  'platform/previews.tsx': 18,
-  'platform/webhooks.tsx': 33,
+  'gallery.tsx': 0,
+  'platform/api-keys.tsx': 0,
+  'platform/identity.tsx': 1,
+  'platform/previews.tsx': 0,
+  'platform/webhooks.tsx': 0,
   'save-bar.tsx': 0,
-  'site/conflict.tsx': 3,
-  'site/sections.tsx': 129,
-  'site/wizard.tsx': 55,
+  'site/conflict.tsx': 0,
+  'site/sections.tsx': 8,
+  'site/wizard.tsx': 0,
   // Two modules the forms migration added. `status-badge.tsx` is a mapping and
   // renders no prose of its own; `table-state.tsx` carries the two sentences the
   // empty and failed states say, which used to live in ui/primitives.tsx.
   'status-badge.tsx': 0,
-  'table-state.tsx': 2,
+  // The two sentences moved to the typed DE/EN catalogs; this component now
+  // renders their keys, so its own inline-prose floor is deliberately zero.
+  'table-state.tsx': 0,
   /**
    * Four became two, and no sentence left the screen.
    *
@@ -553,7 +558,7 @@ const FLOOR = {
    * is a literal rather than a function of a pending flag — a label that ceased
    * to exist would not be one.
    */
-  'use-unsaved-guard.tsx': 2,
+  'use-unsaved-guard.tsx': 0,
   /**
    * The DOM test that renders the shell, co-located with it — a `.tsx` under
    * `forms/`, so the walk finds it, and it has to be declared or the first test

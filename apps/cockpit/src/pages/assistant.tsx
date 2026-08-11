@@ -4,6 +4,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BotMessageSquare, ExternalLink, ShieldQuestionMark, TriangleAlert } from 'lucide-react'
 import { Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { ModelAttribution } from '@/components/ai/model-attribution'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -37,6 +38,7 @@ interface Elicitation {
 }
 
 export function AssistantPage() {
+  const { t } = useI18n()
   const { site } = useSite()
   const [input, setInput] = useState('')
   const [enabled, setEnabled] = useState<boolean | null>(null)
@@ -89,7 +91,7 @@ export function AssistantPage() {
 
   if (enabled === false) {
     return (
-      <Page title="Assistant">
+      <Page title={t('page.assistant.title')}>
         {/* Not a failure and not a blank list: the feature exists and this
             deployment has not switched it on, which is what Empty says. */}
         <Empty className="border" data-testid="assistant-disabled">
@@ -97,10 +99,9 @@ export function AssistantPage() {
             <EmptyMedia variant="icon">
               <BotMessageSquare />
             </EmptyMedia>
-            <EmptyTitle>The authoring assistant is not enabled</EmptyTitle>
+            <EmptyTitle>{t('assistant.disabledTitle')}</EmptyTitle>
             <EmptyDescription>
-              Set <code className="rounded bg-muted px-1">CONTENTKIT_ANTHROPIC_API_KEY</code> on this deployment to turn
-              it on.
+              {t('assistant.disabledDescription')}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -110,8 +111,8 @@ export function AssistantPage() {
 
   return (
     <Page
-      title="Assistant"
-      description="Describe what you want to publish. The assistant drafts revisions; publishing still needs your explicit approval."
+      title={t('page.assistant.title')}
+      description={t('assistant.description')}
       actions={
         <div className="flex items-center gap-3">
           {/* Which model is answering, beside the words it produces — CUI-AI-2.
@@ -119,17 +120,17 @@ export function AssistantPage() {
               somebody decides whether to act on what they just read. */}
           <ModelAttribution model={model} />
           {messages.length > 0 ? (
-          <Button
-            variant="outline"
-            data-testid="assistant-new"
-            onClick={() => {
-              setMessages([])
-              void saveConversation([])
-              void clearRenders()
-            }}
-          >
-            New conversation
-          </Button>
+            <Button
+              variant="outline"
+              data-testid="assistant-new"
+              onClick={() => {
+                setMessages([])
+                void saveConversation([])
+                void clearRenders()
+              }}
+            >
+              {t('assistant.newConversation')}
+            </Button>
           ) : null}
         </div>
       }
@@ -142,10 +143,8 @@ export function AssistantPage() {
                 <EmptyMedia variant="icon">
                   <BotMessageSquare />
                 </EmptyMedia>
-                <EmptyTitle>Nothing said yet</EmptyTitle>
-                <EmptyDescription>
-                  Try: “Draft a post about our release process, then show me the composition diagnostics.”
-                </EmptyDescription>
+                <EmptyTitle>{t('assistant.emptyTitle')}</EmptyTitle>
+                <EmptyDescription>{t('assistant.emptyDescription')}</EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : null}
@@ -164,7 +163,7 @@ export function AssistantPage() {
           {error ? (
             <Alert variant="destructive" data-testid="assistant-error">
               <TriangleAlert />
-              <AlertTitle>The conversation stopped</AlertTitle>
+              <AlertTitle>{t('assistant.stopped')}</AlertTitle>
               <AlertDescription>{error.message}</AlertDescription>
             </Alert>
           ) : null}
@@ -183,7 +182,7 @@ export function AssistantPage() {
           <Textarea
             data-testid="assistant-input"
             className="h-20 flex-1 resize-none"
-            placeholder={site ? `Working on ${site}…` : 'Choose a site in the sidebar first'}
+            placeholder={site ? t('assistant.workingOn', { site }) : t('assistant.chooseSite')}
             value={input}
             disabled={!site}
             onChange={(event) => setInput(event.target.value)}
@@ -199,11 +198,11 @@ export function AssistantPage() {
           />
           {status === 'streaming' || status === 'submitted' ? (
             <Button data-testid="assistant-stop" type="button" variant="outline" onClick={() => stop()}>
-              Stop
+              {t('assistant.stop')}
             </Button>
           ) : (
             <Button data-testid="assistant-send" type="submit" disabled={!site || !input.trim()}>
-              Send
+              {t('assistant.send')}
             </Button>
           )}
         </form>
@@ -302,6 +301,7 @@ function AssistantText({ id, text, streaming }: { id: string; text: string; stre
  * would not publish.
  */
 function RenderProblem({ error }: { error: unknown }) {
+  const { t } = useI18n()
   const rejected = error instanceof ApiError && error.status === 422
   return (
     <Alert
@@ -313,18 +313,21 @@ function RenderProblem({ error }: { error: unknown }) {
       {/* Direct child of Alert and before the title: the CVA switches to a
           two-column grid on `has-[>svg]`, and an icon in a wrapper breaks it. */}
       <TriangleAlert />
-      <AlertTitle>{rejected ? 'Not renderable as published' : 'Rendering failed'}</AlertTitle>
+      <AlertTitle>{rejected ? t('assistant.notRenderable') : t('assistant.renderFailed')}</AlertTitle>
       <AlertDescription>{error instanceof Error ? error.message : String(error)}</AlertDescription>
     </Alert>
   )
 }
 
 function ToolCall({ part }: { part: { type: string; state?: string; toolName?: string } }) {
+  const { t } = useI18n()
   const name = part.toolName ?? part.type.replace(/^tool-/, '')
   const done = part.state === 'output-available'
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 text-xs">
-      <StatusBadge tone={done ? 'success' : 'info'}>{done ? 'done' : 'running'}</StatusBadge>
+      <StatusBadge tone={done ? 'success' : 'info'}>
+        {done ? t('assistant.toolDone') : t('assistant.toolRunning')}
+      </StatusBadge>
       <span className="font-mono text-muted-foreground">{name}</span>
     </div>
   )
@@ -336,6 +339,7 @@ function ToolCall({ part }: { part: { type: string; state?: string; toolName?: s
  * gets to infer a confirmation.
  */
 function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
+  const { t } = useI18n()
   const [resolved, setResolved] = useState<'accept' | 'decline' | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
 
@@ -352,10 +356,10 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
         },
         body: JSON.stringify(action === 'accept' ? { action, content: { confirmed: true } } : { action }),
       })
-      if (!response.ok) throw new Error(`The decision could not be recorded (${response.status})`)
+      if (!response.ok) throw new Error(t('assistant.decisionWithStatus', { status: response.status }))
       setResolved(action)
     } catch (error) {
-      setFailed(error instanceof Error ? error.message : 'The decision could not be recorded')
+      setFailed(error instanceof Error ? error.message : t('assistant.decisionFallback'))
     }
   }
 
@@ -367,7 +371,7 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
         <ExternalLink />
         <AlertTitle>{elicitation.message}</AlertTitle>
         <AlertDescription>
-          The secret is shown on a ContentKit page and never passes through the conversation.
+          {t('assistant.secureDescription')}
         </AlertDescription>
         <div className="col-start-2 mt-2">
           {/*
@@ -390,7 +394,7 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
                 target="_blank"
                 rel="noreferrer noopener"
               >
-                Open secure page
+                {t('assistant.openSecurePage')}
               </a>
             </Button>
           ) : null}
@@ -401,7 +405,7 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
   return (
     <Alert data-testid="elicitation-card" className="text-left">
       <ShieldQuestionMark />
-      <AlertTitle>Your confirmation is required</AlertTitle>
+      <AlertTitle>{t('assistant.confirmationRequired')}</AlertTitle>
       <AlertDescription>{elicitation.message}</AlertDescription>
       {failed ? (
         // The refusal keeps its own frame rather than being a tinted line inside
@@ -409,13 +413,13 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
         // the decision being asked for.
         <Alert variant="destructive" className="col-start-2 mt-2" data-testid="elicitation-failed">
           <TriangleAlert />
-          <AlertTitle>The decision was not recorded</AlertTitle>
+          <AlertTitle>{t('assistant.decisionFailed')}</AlertTitle>
           <AlertDescription>{failed}</AlertDescription>
         </Alert>
       ) : null}
       {resolved ? (
         <p className="col-start-2 mt-2 text-xs text-muted-foreground">
-          {resolved === 'accept' ? 'Approved.' : 'Declined — nothing was changed.'}
+          {resolved === 'accept' ? t('assistant.approved') : t('assistant.declined')}
         </p>
       ) : (
         <div className="col-start-2 mt-3 flex gap-2">
@@ -428,10 +432,10 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
             Decline is quieter still; neither pretends to be the page's purpose.
           */}
           <Button data-testid="elicitation-approve" size="sm" variant="outline" onClick={() => respond('accept')}>
-            Approve
+            {t('assistant.approve')}
           </Button>
           <Button data-testid="elicitation-decline" size="sm" variant="ghost" onClick={() => respond('decline')}>
-            Decline
+            {t('assistant.decline')}
           </Button>
         </div>
       )}

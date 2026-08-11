@@ -67,6 +67,38 @@ const cockpitPackage = JSON.parse(readFileSync(join(root, 'apps', 'cockpit', 'pa
 
 const specPaths = Object.keys(spec.paths)
 
+describe('Cockpit account menu: one home for personal settings', () => {
+  test('profile, locale, theme and sign-out share the signed-in user menu', () => {
+    for (const id of [
+      'account-menu-trigger',
+      'account-menu',
+      'account-language-menu',
+      'account-theme-menu',
+      'account-sign-out',
+    ]) {
+      assert.ok(shell.includes(`data-testid="${id}"`) || shell.includes(`data-testid={\`${id}`), `${id} is missing`)
+    }
+    assert.match(shell, /data-testid=\{`account-language-\$\{option\.value\}`\}/)
+    assert.match(shell, /data-testid=\{`account-theme-\$\{value\}`\}/)
+    for (const locale of ['auto', 'en', 'de']) assert.match(shell, new RegExp(`value: '${locale}'`))
+    for (const theme of ['system', 'light', 'dark']) assert.match(shell, new RegExp(`value: '${theme}'`))
+    assert.match(shell, /to="\/profile"/, 'the account menu must reach the profile')
+    assert.doesNotMatch(
+      shell,
+      /function (?:ThemeMenu|OperatorMenu)\b/,
+      'personal settings must not split into sibling menus',
+    )
+  })
+
+  test('the account surface never falls back to an opaque session subject', () => {
+    const start = shell.indexOf('function AccountMenu(')
+    assert.notEqual(start, -1, 'the unified account menu exists')
+    const body = shell.slice(start, shell.indexOf('\n}', start) + 2)
+    assert.match(body, /visibleLabel\(session\.display_name, session\.email\)/)
+    assert.doesNotMatch(body, /session\.subject/, 'a UUID-shaped subject answers no user-facing identity question')
+  })
+})
+
 /**
  * A path is the selected site's when the site is a parameter of the path.
  *
@@ -1246,7 +1278,7 @@ describe('Cockpit navigation: site context versus installation context', withNav
     const menu = shell.slice(shell.indexOf('const menu = ('))
     assert.match(
       menu.slice(0, menu.indexOf('</SidebarMenu>')),
-      /<SidebarMenuButton[^>]*tooltip=\{label\}/,
+      /<SidebarMenuButton[^>]*tooltip=\{translated\}/,
       'each nav entry carries its own label as its tooltip, because in the rail that is where the label went',
     )
     const switcher = shell.slice(shell.indexOf('function SiteSwitcher('))
@@ -1385,8 +1417,12 @@ describe('Cockpit navigation: site context versus installation context', withNav
     const start = shell.indexOf('function useCrumbs(')
     assert.notEqual(start, -1, 'the page header must still derive its trail from the open entry')
     const crumbs = shell.slice(start, shell.indexOf('\n}', start))
-    assert.match(crumbs, /'Installation'/, "an installation route must read 'Installation · <page>'")
-    assert.match(crumbs, /'Site'/, "a site route must read 'Site · <site name> · <page>'")
+    assert.match(
+      crumbs,
+      /t\('site\.installation'\)/,
+      "an installation route must read the translated 'Installation · <page>'",
+    )
+    assert.match(crumbs, /t\('site\.context'\)/, "a site route must read the translated 'Site · <site name> · <page>'")
     assert.match(
       crumbs,
       /open\.context === 'installation'/,

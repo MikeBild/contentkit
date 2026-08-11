@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import type { Choice } from './choice'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
@@ -22,7 +23,8 @@ export function LocaleField({
   locales,
   ...shell
 }: FieldShellProps & ValueProps<string> & { locales: readonly string[] }) {
-  const error = shell.error ?? (value && !BCP47.test(value) ? 'A language tag like “de” or “de-at”' : undefined)
+  const { t } = useI18n()
+  const error = shell.error ?? (value && !BCP47.test(value) ? t('validation.locale') : undefined)
   return (
     <FieldShell {...shell} error={error}>
       {(control) => (
@@ -36,7 +38,7 @@ export function LocaleField({
           value={value}
           onChange={(next) => onChange(next.toLowerCase())}
           options={locales.map((locale) => ({ value: locale, label: locale }))}
-          emptyMessage="Not configured yet — type it to add it"
+          emptyMessage={t('locale.notConfigured')}
         />
       )}
     </FieldShell>
@@ -54,7 +56,7 @@ export function TagListField({
   value,
   onChange,
   validate,
-  placeholder = 'Add and press Enter',
+  placeholder,
   max,
   ...shell
 }: FieldShellProps &
@@ -64,15 +66,17 @@ export function TagListField({
     placeholder?: string
     max?: number
   }) {
+  const { t } = useI18n()
+  const inputPlaceholder = placeholder ?? t('tag.add')
   const [draft, setDraft] = useState('')
   const problems = new Map(
     value.map((entry, index) => [
       index,
-      value.indexOf(entry) !== index ? 'Duplicate' : validate?.(entry),
+      value.indexOf(entry) !== index ? t('validation.duplicate') : validate?.(entry),
     ]),
   )
   const firstProblem = [...problems.values()].find(Boolean)
-  const error = shell.error ?? (max !== undefined && value.length > max ? `At most ${max}` : firstProblem)
+  const error = shell.error ?? (max !== undefined && value.length > max ? t('validation.maximum', { count: max }) : firstProblem)
 
   function commit(entry: string) {
     const trimmed = entry.trim()
@@ -100,7 +104,7 @@ export function TagListField({
                 key={`${entry}-${index}`}
                 data-testid={`${control['data-testid']}-chip-${index}`}
                 invalid={Boolean(problem)}
-                removeLabel={`Remove ${entry}`}
+                removeLabel={t('tag.remove', { value: entry })}
                 onRemove={control.disabled ? undefined : () => onChange(value.filter((_, at) => at !== index))}
               >
                 {entry}
@@ -133,7 +137,7 @@ export function TagListField({
           <Input
             {...control}
             value={draft}
-            placeholder={placeholder}
+            placeholder={inputPlaceholder}
             className="h-7 min-w-24 flex-1 border-0 bg-transparent px-1 focus-visible:ring-0"
             onChange={(event) => {
               if (event.target.value.includes(',')) {
@@ -255,10 +259,11 @@ export function EntityMultiSelect({
     onCreate?: (term: string) => void
     createLabel?: (term: string) => string
   }) {
+  const { t } = useI18n()
   const stale =
     isLoading || optionsError ? [] : value.filter((entry) => !options.some((option) => option.value === entry))
   const fieldError =
-    shell.error ?? (stale.length ? `No longer exists: ${stale.join(', ')} — remove it before saving` : undefined)
+    shell.error ?? (stale.length ? t('validation.staleEntity', { value: stale.join(', ') }) : undefined)
 
   return (
     <FieldShell {...shell} error={fieldError}>

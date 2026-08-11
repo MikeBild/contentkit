@@ -18,6 +18,7 @@ import { Steps, type StepDescriptor } from '@/components/ui/steps'
 import { useToast } from '@/components/ui/toast'
 import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
+import { useI18n, type I18nValue, type TranslationKey } from '@/lib/i18n-context'
 import { PRESENTATION_PRESET, type PresentationPreset } from '../contracts/enums.generated'
 import {
   ChoiceCards,
@@ -74,11 +75,11 @@ import {
  * needs, and step 4 shows the whole body before it is sent.
  */
 
-const STEP_LABELS: Record<StepId, string> = {
-  purpose: 'What should this site be?',
-  home: 'Where does it live?',
-  languages: 'In which languages?',
-  ready: 'Ready',
+const STEP_LABEL_KEYS: Record<StepId, TranslationKey> = {
+  purpose: 'wizard.step.purpose',
+  home: 'wizard.step.home',
+  languages: 'wizard.step.languages',
+  ready: 'wizard.step.ready',
 }
 
 export type { SiteDraft }
@@ -92,23 +93,17 @@ export type { SiteDraft }
  * someone writes down what it does, which is the only way this list cannot
  * drift into names the server does not accept.
  */
-const PRESET_EFFECT: Record<PresentationPreset, string> = {
-  portfolio: 'Pages stay at /{locale}/{slug}/. The home page lists posts and projects; the nav offers blog and projects.',
-  'product-docs':
-    'Pages become documentation at /{locale}/docs/{version}/…, each one needs docKey and docsVersion, and the nav gains a Docs hub.',
-  wiki: 'Pages become a wiki tree at /{locale}/wiki/…, ordered by their own nesting, behind one Wiki hub.',
-  'knowledge-base': 'Pages become help articles at /{locale}/help/…, behind one Help hub in the nav.',
-  product: 'Pages use the landing layout and the home page is the hero rather than a list. No content hub in the nav.',
-  changelog: 'Pages become dated entries at /{locale}/changelog/{slug}/, behind one Changelog hub in the nav.',
+const PRESET_EFFECT_KEYS: Record<PresentationPreset, TranslationKey> = {
+  portfolio: 'wizard.preset.portfolio',
+  'product-docs': 'wizard.preset.docs',
+  wiki: 'wizard.preset.wiki',
+  'knowledge-base': 'wizard.preset.knowledge',
+  product: 'wizard.preset.product',
+  changelog: 'wizard.preset.changelog',
 }
 
-const PRESET_CARDS: readonly Choice<PresentationPreset>[] = PRESENTATION_PRESET.map((value) => ({
-  value,
-  label: value === 'portfolio' ? 'portfolio — the default' : value,
-  description: PRESET_EFFECT[value],
-}))
-
 export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => void }) {
+  const { t } = useI18n()
   const [isOpen, setOpen] = useState(false)
   const [step, setStep] = useState<StepId>('purpose')
   const [draft, setDraft] = useState<SiteDraft>(EMPTY_DRAFT)
@@ -143,8 +138,8 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
       onCreated(site.slug)
       toast({
         tone: 'success',
-        title: `${site.name} was created`,
-        detail: 'Nothing is public yet: add content, build a release, then activate it.',
+        title: t('wizard.created', { site: site.name }),
+        detail: t('wizard.createdDetail'),
       })
       close()
     },
@@ -162,16 +157,16 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
 
   const stepList: StepDescriptor<StepId>[] = STEP_ORDER.map((id) => ({
     id,
-    label: STEP_LABELS[id],
+    label: t(STEP_LABEL_KEYS[id]),
     summary:
       id === 'purpose'
         ? draft.preset
         : id === 'home'
-          ? slug || 'no slug yet'
+          ? slug || t('wizard.noSlug')
           : id === 'languages'
             ? locales.join(', ')
-            : `${locales.length === 1 ? '1 locale' : `${locales.length} locales`} · 1 request`,
-    problem: problems[id],
+            : `${t(locales.length === 1 ? 'wizard.localeOne' : 'wizard.localeMany', { count: locales.length })} · ${t('wizard.requestOne')}`,
+    problem: localizeWizardProblem(problems[id], t),
   }))
 
   const at = STEP_ORDER.indexOf(step)
@@ -179,7 +174,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
   return (
     <>
       <Button data-testid="site-new" variant="outline" onClick={() => setOpen(true)}>
-        New site
+        {t('wizard.newSite')}
       </Button>
       {isOpen ? (
         <Dialog
@@ -204,10 +199,8 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
             }}
           >
             <DialogHeader>
-              <DialogTitle>New site</DialogTitle>
-              <DialogDescription>
-                Four decisions, one request. The first two are the ones that are expensive to change afterwards.
-              </DialogDescription>
+              <DialogTitle>{t('wizard.newSite')}</DialogTitle>
+              <DialogDescription>{t('wizard.description')}</DialogDescription>
             </DialogHeader>
             <div className="scrollbar-thin flex flex-col gap-5 overflow-y-auto">
               <Steps data-testid="ck-site-wizard-steps" steps={stepList} value={step} onChange={setStep} />
@@ -224,10 +217,9 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
               {create.error ? (
                 <Alert variant="destructive" data-testid="ck-site-wizard-error">
                   <TriangleAlert />
-                  <AlertTitle>The site was not created</AlertTitle>
+                  <AlertTitle>{t('wizard.createErrorTitle')}</AlertTitle>
                   <AlertDescription>
-                    {create.error instanceof Error ? create.error.message : 'Could not create the site'} — nothing was
-                    created. Correct the value it names and send it again.
+                    {create.error instanceof Error ? create.error.message : t('wizard.createError')} — {t('wizard.createErrorSuffix')}
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -243,7 +235,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                 disabled={at === 0 || create.isPending}
                 onClick={() => setStep(STEP_ORDER[at - 1] ?? 'purpose')}
               >
-                Back
+                {t('wizard.back')}
               </Button>
               <div className="flex gap-2">
                 <Button
@@ -253,7 +245,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                   disabled={create.isPending}
                   onClick={close}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 {step === 'ready' ? (
                   <Button
@@ -266,7 +258,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                     onClick={() => create.mutate()}
                   >
                     {create.isPending ? <Spinner data-icon="inline-start" /> : null}
-                    {writesPreset ? 'Create site with this preset' : 'Create site'}
+                    {t(writesPreset ? 'wizard.createPreset' : 'wizard.create')}
                   </Button>
                 ) : (
                   <Button
@@ -275,7 +267,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                     disabled={Boolean(problems[step])}
                     onClick={() => setStep(STEP_ORDER[at + 1] ?? 'ready')}
                   >
-                    Next
+                    {t('wizard.next')}
                   </Button>
                 )}
               </div>
@@ -287,41 +279,80 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
   )
 }
 
+function localizeWizardProblem(problem: string | undefined, t: I18nValue['t']): string | undefined {
+  if (!problem) return undefined
+  const exact: Partial<Record<string, TranslationKey>> = {
+    'product-docs needs a first version id: lower-case letters, digits and hyphens': 'wizard.problem.docsId',
+    'product-docs needs a label for its first version': 'wizard.problem.docsLabel',
+    'A name is required': 'wizard.problem.name',
+    'A base URL is required — every canonical link is built from it': 'wizard.problem.baseUrl',
+    'No slug can be derived from this name — type one': 'wizard.problem.slugMissing',
+    'A default locale is required — a site with no locale row builds no pages': 'wizard.problem.defaultLocaleMissing',
+    'The default locale must be a language tag like de or en-us': 'wizard.problem.defaultLocaleInvalid',
+    'Not a URL — include the scheme, for example https://': 'validation.url',
+    'Remove the username and password from the URL': 'validation.urlCredentials',
+    'Plain http — the value travels unencrypted': 'validation.urlHttp',
+  }
+  const key = exact[problem]
+  if (key) return t(key)
+  let match = /^(.*?) is not a usable slug — type one of at most (\d+) characters$/.exec(problem)
+  if (match) return t('wizard.problem.slugInvalid', { slug: match[1]!, count: match[2]! })
+  match = /^The slug (.*?) is already taken by another site$/.exec(problem)
+  if (match) return t('wizard.problem.slugTaken', { slug: match[1]! })
+  match = /^“(.*?)” is not a language tag like de or en-us$/.exec(problem)
+  if (match) return t('wizard.problem.localeInvalid', { locale: match[1]! })
+  match = /^(.*?) is already the default locale — remove it from the additional languages$/.exec(problem)
+  if (match) return t('wizard.problem.localeDefault', { locale: match[1]! })
+  match = /^(.*?) is listed twice$/.exec(problem)
+  if (match) return t('wizard.problem.localeTwice', { locale: match[1]! })
+  match = /^A site builds at most (\d+) locales — this asks for (\d+)$/.exec(problem)
+  if (match) return t('wizard.problem.localeMax', { max: match[1]!, count: match[2]! })
+  match = /^Only (.+) are allowed here$/.exec(problem)
+  if (match) return t('validation.urlProtocols', { protocols: match[1]! })
+  return problem
+}
+
 interface StepProps {
   draft: SiteDraft
   onChange: (draft: SiteDraft) => void
 }
 
 function PurposeStep({ draft, onChange }: StepProps) {
+  const { t } = useI18n()
+  const presetCards: readonly Choice<PresentationPreset>[] = PRESENTATION_PRESET.map((value) => ({
+    value,
+    label: value === 'portfolio' ? t('wizard.portfolioDefault') : value,
+    description: t(PRESET_EFFECT_KEYS[value]),
+  }))
   return (
     <div className="flex flex-col gap-4">
       <ChoiceCards
-        label="Presentation preset"
+        label={t('wizard.presentationPreset')}
         required
         data-testid="ck-site-wizard-preset"
-        help="It decides the layout a page gets when it names none, and the URL that page is published under."
-        about="Changing it later moves every one of those URLs, so it is asked first."
-        options={PRESET_CARDS}
+        help={t('wizard.presentationHelp')}
+        about={t('wizard.presentationAbout')}
+        options={presetCards}
         value={draft.preset}
         onChange={(preset) => onChange({ ...draft, preset })}
       />
       {draft.preset === 'product-docs' ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="First documentation version"
+            label={t('wizard.docsVersion')}
             required
             data-testid="ck-site-wizard-docs-version-id"
-            help="Appears in the URL and in each page's docsVersion."
-            about="The server refuses the product-docs preset without one."
+            help={t('wizard.docsVersionHelp')}
+            about={t('wizard.docsVersionAbout')}
             value={draft.docsVersion.id}
             onChange={(id) => onChange({ ...draft, docsVersion: { ...draft.docsVersion, id } })}
           />
           <TextField
-            label="Version label"
+            label={t('wizard.versionLabel')}
             required
             maxLength={120}
             data-testid="ck-site-wizard-docs-version-label"
-            help="What readers see in the version switcher."
+            help={t('wizard.versionLabelHelp')}
             value={draft.docsVersion.label}
             onChange={(label) => onChange({ ...draft, docsVersion: { ...draft.docsVersion, label } })}
           />
@@ -329,8 +360,8 @@ function PurposeStep({ draft, onChange }: StepProps) {
       ) : null}
       <p className="text-xs text-muted-foreground">
         {draft.preset === 'portfolio'
-          ? 'portfolio is what an unset preset behaves as, so nothing is written for it — the site is created and settings.presentation stays absent.'
-          : 'Carried by the same POST /v1/sites as settings.presentation, which the server validates exactly as it validates a PATCH.'}
+          ? t('wizard.portfolioStorage')
+          : t('wizard.presetStorage')}
       </p>
     </div>
   )
@@ -342,77 +373,72 @@ function HomeStep({
   slug,
   takenSlugs,
 }: StepProps & { slug: string; takenSlugs: readonly string[] }) {
+  const { t } = useI18n()
   const base = draft.base_url.trim()
   return (
     <div className="flex flex-col gap-4">
       <TextField
-        label="Name"
+        label={t('siteForm.name')}
         required
         data-testid="ck-site-wizard-name"
-        help="Used wherever a branding field is unset — the header, the feed titles, the blogcast channel."
+        help={t('siteForm.nameHelp')}
         value={draft.name}
         onChange={(name) => onChange({ ...draft, name })}
       />
       <UrlField
-        label="Base URL"
+        label={t('siteForm.baseUrl')}
         required
         data-testid="ck-site-wizard-base-url"
-        help="Every canonical link, feed URL, sitemap entry and share target this site serves is built from it."
-        about="Two sites pointing at the same base URL would claim the same canonical links, and a hostname can only be mapped to one site — so keep it to this site alone."
+        help={t('wizard.baseUrlHelp')}
+        about={t('wizard.baseUrlAbout')}
         value={draft.base_url}
         onChange={(base_url) => onChange({ ...draft, base_url })}
       />
       <SlugField
-        label="Slug"
+        label={t('wizard.slug')}
         required
         data-testid="ck-site-wizard-slug"
-        help="The site's identifier in every API path and in ?site= in this console."
-        about="It is unique across the installation, cut to 96 characters by the server, and cannot be changed afterwards."
+        help={t('wizard.slugHelp')}
+        about={t('wizard.slugAbout')}
         derivedFrom={draft.name}
         siblings={takenSlugs}
         value={draft.slug}
         onChange={(next) => onChange({ ...draft, slug: next })}
       />
       <p className="text-xs text-muted-foreground">
-        Stored as <span className="font-mono">{slug || '—'}</span> — the slug the server derives, cut to 96 characters
-        {base ? (
-          <>
-            {' '}
-            — and base URL <span className="font-mono">{base.replace(/\/$/, '')}</span>, which is how the server
-            stores it: a trailing slash is removed.
-          </>
-        ) : null}
-        .
+        {t('wizard.storedAs', { slug: slug || '—' })}
+        {base ? ` ${t('wizard.storedWithBase', { base: base.replace(/\/$/, '') })}` : ''}
       </p>
     </div>
   )
 }
 
 function LanguagesStep({ draft, onChange }: StepProps) {
+  const { t } = useI18n()
   const extra = additionalLocales(draft)
   return (
     <div className="flex flex-col gap-4">
       <LocaleField
-        label="Default locale"
+        label={t('siteForm.defaultLocale')}
         required
         data-testid="ck-site-wizard-default-locale"
-        help="Where “/” redirects to, the locale the 404 page is served in, and the one locale row that always exists."
-        about="A tag content cannot carry — “EN”, “german” — is refused here rather than by the server."
+        help={t('wizard.defaultLocaleHelp')}
+        about={t('wizard.defaultLocaleAbout')}
         locales={SUGGESTED_LOCALES}
         value={draft.default_locale}
         onChange={(default_locale) => onChange({ ...draft, default_locale })}
       />
       <TagListField
-        label="Additional languages"
+        label={t('wizard.additionalLanguages')}
         data-testid="ck-site-wizard-extra-locales"
-        about={`One page tree is built per locale, and all of them are part of the same POST /v1/sites. At most ${SITE_LOCALE_MAX} in total, the default included.`}
-        fallback="Empty means one locale — the default."
-        placeholder="de, fr — Enter to add"
+        about={t('wizard.additionalLanguagesAbout', { count: SITE_LOCALE_MAX })}
+        fallback={t('wizard.additionalLanguagesFallback')}
+        placeholder={t('wizard.additionalLanguagesPlaceholder')}
         validate={(entry) =>
           !BCP47.test(entry.trim().toLowerCase())
-            ? 'A language tag like “de” or “de-at”'
+            ? t('validation.locale')
             : entry.trim().toLowerCase() === storedDefaultLocale(draft)
-              ? 'Already the default locale'
+              ? t('wizard.alreadyDefault')
               : undefined
         }
         value={draft.locales}
@@ -428,25 +454,19 @@ function LanguagesStep({ draft, onChange }: StepProps) {
               variant="ghost"
               size="icon-xs"
               data-testid="ck-site-wizard-languages-about"
-              aria-label="What can be changed about languages later"
+              aria-label={t('wizard.languagesAboutLabel')}
             >
               <InfoIcon />
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" data-testid="ck-site-wizard-languages-about-content">
-            <PopoverTitle>Adding a language later</PopoverTitle>
-            <PopoverDescription>
-              Languages can be added later, in the Languages section of this site's settings: it lists the locale
-              rows, adds one and removes one.
-              Removing is refused while the locale is the default locale or while it still carries
-              published or scheduled content, and no content is ever deleted by it.
-              Nothing is served under a new locale until the next release is built.
-            </PopoverDescription>
+            <PopoverTitle>{t('wizard.languagesAboutTitle')}</PopoverTitle>
+            <PopoverDescription>{t('wizard.languagesAboutDescription')}</PopoverDescription>
           </PopoverContent>
         </Popover>
         {extra.length ? (
           <span className="text-xs text-muted-foreground" data-testid="ck-site-wizard-extra-locale-count">
-            These {extra.length === 1 ? 'one' : extra.length} are created with the site.
+            {t(extra.length === 1 ? 'wizard.extraLocaleOne' : 'wizard.extraLocaleMany', { count: extra.length })}
           </span>
         ) : null}
       </div>
@@ -455,25 +475,30 @@ function LanguagesStep({ draft, onChange }: StepProps) {
 }
 
 function ReadyStep({ draft, slug, extra }: { draft: SiteDraft; slug: string; extra: readonly string[] }) {
+  const { t } = useI18n()
   const locales = plannedLocales(draft)
   const rows: { key: string; label: string; value: string }[] = [
-    { key: 'name', label: 'Name', value: draft.name.trim() },
-    { key: 'slug', label: 'Slug', value: slug },
-    { key: 'base-url', label: 'Base URL', value: draft.base_url.trim().replace(/\/$/, '') },
-    { key: 'default-locale', label: 'Default locale', value: storedDefaultLocale(draft) },
+    { key: 'name', label: t('siteForm.name'), value: draft.name.trim() },
+    { key: 'slug', label: t('wizard.slug'), value: slug },
+    { key: 'base-url', label: t('siteForm.baseUrl'), value: draft.base_url.trim().replace(/\/$/, '') },
+    { key: 'default-locale', label: t('siteForm.defaultLocale'), value: storedDefaultLocale(draft) },
     {
       key: 'locales',
-      label: 'Locale rows',
+      label: t('wizard.localeRows'),
       value: locales.join(', '),
     },
     {
       key: 'preset',
-      label: 'Preset',
+      label: t('wizard.preset'),
       value:
         draft.preset === 'portfolio'
-          ? 'left unset — the builder reads that as portfolio'
+          ? t('wizard.presetUnset')
           : draft.preset === 'product-docs'
-            ? `${draft.preset}, version ${draft.docsVersion.id} (${draft.docsVersion.label.trim()}) as the current one`
+            ? t('wizard.docsPresetSummary', {
+                preset: draft.preset,
+                version: draft.docsVersion.id,
+                label: draft.docsVersion.label.trim(),
+              })
             : draft.preset,
     },
   ]
@@ -493,13 +518,16 @@ function ReadyStep({ draft, slug, extra }: { draft: SiteDraft; slug: string; ext
 
       <Alert data-testid="ck-site-wizard-requests">
         <InfoIcon />
-        <AlertTitle>One request</AlertTitle>
+        <AlertTitle>{t('wizard.oneRequest')}</AlertTitle>
         <AlertDescription>
           <span className="block font-mono">POST /v1/sites — {slug || '—'}</span>
-          It carries the row, {locales.length === 1 ? 'its locale row' : `all ${locales.length} locale rows`}
-          {extra.length ? ` (${extra.join(', ')} beside the default)` : ''}
-          {draft.preset === 'portfolio' ? ' and no settings' : ` and settings.presentation.preset = ${draft.preset}`}.
-          Either everything is written or nothing is.
+          {t(locales.length === 1 ? 'wizard.requestLocaleOne' : 'wizard.requestLocaleMany', {
+            count: locales.length,
+            extra: extra.length ? t('wizard.extraBesideDefault', { locales: extra.join(', ') }) : '',
+            settings: draft.preset === 'portfolio'
+              ? t('wizard.noSettings')
+              : t('wizard.withPreset', { preset: draft.preset }),
+          })}
         </AlertDescription>
       </Alert>
 
@@ -512,15 +540,12 @@ function ReadyStep({ draft, slug, extra }: { draft: SiteDraft; slug: string; ext
       */}
       <Alert data-testid="ck-site-wizard-after">
         <InfoIcon />
-        <AlertTitle>A new site serves nothing yet</AlertTitle>
+        <AlertTitle>{t('wizard.notLiveTitle')}</AlertTitle>
         <AlertDescription>
           <ol data-testid="ck-site-wizard-next-steps" className="flex list-inside list-decimal flex-col gap-1">
-            <li>
-              Add content — pages, posts and decks. Nothing about them reaches a reader yet, whatever their revision
-              says.
-            </li>
-            <li>Build a release. It renders every locale tree from what is published at that moment.</li>
-            <li>Activate that release. This is the step that changes what the site serves.</li>
+            <li>{t('wizard.after.content')}</li>
+            <li>{t('wizard.after.release')}</li>
+            <li>{t('wizard.after.activate')}</li>
           </ol>
         </AlertDescription>
       </Alert>

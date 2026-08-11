@@ -3,6 +3,7 @@ import { AlertTriangle, TriangleAlert } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { ck, type Site } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n, type I18nValue, type TranslationKey } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -11,6 +12,7 @@ import { SkeletonFields } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { ConflictDialog, type SettingsConflict } from '@/forms/site/conflict'
 import {
+  carriedLeaves,
   SITE_SECTIONS,
   siteSettingsContract,
   type SiteSectionId,
@@ -21,7 +23,7 @@ import { SITE_SECTION_BODIES } from '@/forms/site/sections'
 import { sameValue } from '@/forms/path'
 import { SaveBar, UnsavedPill } from '@/forms/save-bar'
 import { StatusBadge } from '@/forms/status-badge'
-import { useForm, type SectionStatus } from '@/forms/use-form'
+import { useForm, type SectionSpec, type SectionStatus } from '@/forms/use-form'
 import { useUnsavedGuard } from '@/forms/use-unsaved-guard'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
@@ -40,6 +42,7 @@ import { useSite } from '@/lib/site'
  * registry acts (list, create, delete) moved to /sites where they belong.
  */
 export function SiteSettingsPage() {
+  const { t } = useI18n()
   const { site } = useSite()
   const can = useCan()
 
@@ -51,8 +54,8 @@ export function SiteSettingsPage() {
 
   return (
     <Page
-      title="Site settings"
-      description="Everything the builder reads: identity, presentation, theme, branding and the reader-facing features."
+      title={t('page.settings.title')}
+      description={t('siteSettings.description')}
     >
       {!site ? (
         <NoSite />
@@ -60,13 +63,13 @@ export function SiteSettingsPage() {
         // A form of forty fields is about to appear here, so the wait keeps its
         // shape rather than collapsing to one line and shoving every control the
         // operator was already reaching for out from under the pointer.
-        <SkeletonFields fields={6} label="Loading the site settings…" data-testid="ck-site-settings-skeleton" />
+        <SkeletonFields fields={6} label={t('siteSettings.loading')} data-testid="ck-site-settings-skeleton" />
       ) : detail.error ? (
         <Alert variant="destructive" data-testid="ck-site-settings-error">
           <TriangleAlert />
-          <AlertTitle>This site could not be read</AlertTitle>
+          <AlertTitle>{t('siteSettings.loadErrorTitle')}</AlertTitle>
           <AlertDescription>
-            {detail.error instanceof Error ? detail.error.message : 'Could not load the site'}
+            {detail.error instanceof Error ? detail.error.message : t('siteSettings.loadError')}
           </AlertDescription>
         </Alert>
       ) : (
@@ -86,6 +89,108 @@ const pickWire = (site: Site): SiteWire => ({
   settings: site.settings,
 })
 
+const SECTION_LABEL_KEYS: Record<SiteSectionId, TranslationKey> = {
+  identity: 'siteSection.identity',
+  languages: 'siteSection.languages',
+  presentation: 'siteSection.presentation',
+  theme: 'siteSection.theme',
+  branding: 'siteSection.branding',
+  seo: 'siteSection.seo',
+  analytics: 'siteSection.analytics',
+  audio: 'siteSection.audio',
+  reader: 'siteSection.reader',
+  unmanaged: 'siteSection.unmanaged',
+}
+
+function localizedSiteSections(t: I18nValue['t']): readonly SectionSpec<SiteSettingsUI>[] {
+  return SITE_SECTIONS.map((section) => {
+    const id = section.id as SiteSectionId
+    return {
+      ...section,
+      label: t(SECTION_LABEL_KEYS[id]),
+      summary: (ui: SiteSettingsUI) => localizedSectionSummary(id, ui, t),
+      warning: localizedSectionWarning(id, t),
+    }
+  })
+}
+
+function localizedSectionSummary(id: SiteSectionId, ui: SiteSettingsUI, t: I18nValue['t']): string {
+  if (id === 'identity') {
+    let host = ui.identity.base_url
+    try { host = new URL(ui.identity.base_url).host } catch { /* show the typed value */ }
+    return `${ui.identity.default_locale || t('siteSection.noLocale')} · ${host}`
+  }
+  if (id === 'languages') {
+    return t('siteSection.languagesSummary', { locale: ui.identity.default_locale || t('common.default') })
+  }
+  if (id === 'presentation') {
+    const parts = [ui.settings.presentation.preset || t('siteSection.presetDefault')]
+    const versions = ui.settings.presentation.docs.versions.length
+    const series = ui.settings.presentation.report_series.length
+    if (versions) parts.push(t(versions === 1 ? 'siteSection.version' : 'siteSection.versions', { count: versions }))
+    if (series) parts.push(t('siteSection.series', { count: series }))
+    return parts.join(' · ')
+  }
+  if (id === 'theme') {
+    const count = Object.keys(ui.settings.theme.tokens).length
+    return [
+      count
+        ? t(count === 1 ? 'siteSection.tokenOverridden' : 'siteSection.tokensOverridden', { count })
+        : t('siteSection.stockTheme'),
+      ui.settings.theme.custom_css ? t('siteSection.customCss') : '',
+    ].filter(Boolean).join(' · ')
+  }
+  if (id === 'branding') return ui.settings.hero_title || t('siteSection.usesSiteName')
+  if (id === 'seo') {
+    const count = Object.keys(ui.settings.socials).length
+    return count
+      ? t(count === 1 ? 'siteSection.socialLink' : 'siteSection.socialLinks', { count })
+      : t('siteSection.noSocialLinks')
+  }
+  if (id === 'analytics') return ui.settings.analytics.provider || t('common.off')
+  if (id === 'audio') {
+    if (ui.settings.audio.enabled !== true) return t('common.off')
+    const count = ui.settings.audio.subscribe_targets.length
+    return [
+      t('common.on'),
+      count ? t(count === 1 ? 'siteSection.target' : 'siteSection.targets', { count }) : '',
+    ].filter(Boolean).join(' · ')
+  }
+  if (id === 'reader') {
+    return t('siteSection.readerSummary', {
+      comments: t(ui.settings.comments.enabled === false ? 'common.off' : 'common.on'),
+      feedback: t(ui.settings.feedback.enabled === true ? 'common.on' : 'common.off'),
+    })
+  }
+  const count = carriedLeaves(ui.carried).length
+  return count
+    ? t(count === 1 ? 'siteSection.keyPassed' : 'siteSection.keysPassed', { count })
+    : t('siteSection.nothingUnmanaged')
+}
+
+function localizedSectionWarning(
+  id: SiteSectionId,
+  t: I18nValue['t'],
+): ((ui: SiteSettingsUI) => string | undefined) | undefined {
+  if (id === 'identity') return (ui) => (ui.identity.base_url ? undefined : t('siteSection.warning.baseUrl'))
+  if (id === 'branding') {
+    return (ui) => ui.settings.profile_image && !ui.settings.profile_image_alt
+      ? t('siteSection.warning.profileAlt')
+      : undefined
+  }
+  if (id === 'seo') {
+    return (ui) => ui.settings.og_image && !ui.settings.og_image_alt
+      ? t('siteSection.warning.shareAlt')
+      : undefined
+  }
+  if (id === 'reader') {
+    return (ui) => ui.settings.comments.enabled !== false && !ui.settings.turnstile_site_key
+      ? t('siteSection.warning.turnstile')
+      : undefined
+  }
+  return undefined
+}
+
 /**
  * The settings editor, and the whole reason the raw JSON box could go.
  *
@@ -95,6 +200,7 @@ const pickWire = (site: Site): SiteWire => ({
  * meantime" from silent data loss into a question.
  */
 function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site; readOnly: boolean }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const { toast } = useToast()
   // A list, not a single id: the save is one all-or-nothing PATCH, so a 422 can
@@ -119,6 +225,7 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
   const carrier = useRef<SiteWire>(wire)
 
   const context = useMemo(() => ({ baseUrl: wire.base_url }), [wire.base_url])
+  const sections = useMemo(() => localizedSiteSections(t), [t])
 
   const onSave = useCallback(
     async (values: SiteSettingsUI) => {
@@ -142,7 +249,7 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
     validate: siteSettingsContract.validate,
     canonical: siteSettingsContract.canonical,
     context,
-    sections: SITE_SECTIONS,
+    sections,
     onSave,
   })
 
@@ -155,7 +262,7 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
       } catch (failure) {
         toast({
           tone: 'danger',
-          title: 'The site could not be re-read before saving',
+          title: t('siteSettings.rereadError'),
           detail: failure instanceof Error ? failure.message : undefined,
         })
         return false
@@ -168,10 +275,10 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
       carrier.current = pickWire(fresh)
       setConflict(null)
       const saved = await form.save()
-      if (saved) toast({ tone: 'success', title: 'Site settings saved' })
+      if (saved) toast({ tone: 'success', title: t('siteSettings.saved') })
       return saved
     },
-    [form, slug, toast],
+    [form, slug, t, toast],
   )
 
   // A 422 that no section claimed still has to be read: it is the only evidence
@@ -227,14 +334,9 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
           unassigned Alert below when nothing claims it.
         */}
         <Confirm
-          title="Change the site's identity?"
-          description={
-            <>
-              The base URL and the default locale of <strong>{loaded.name}</strong> decide every canonical link, feed
-              URL and redirect this site serves. Changing them moves URLs that other people have already linked to.
-            </>
-          }
-          confirmLabel="Save identity"
+          title={t('siteSettings.identityConfirmTitle')}
+          description={t('siteSettings.identityConfirmDescription', { site: loaded.name })}
+          confirmLabel={t('siteSettings.saveIdentity')}
           // The names scripts/verify-cockpit-prod.md drives this by; see `ConfirmIds`.
           ids={{
             dialog: 'ck-site-identity-confirm',
@@ -264,8 +366,8 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
 
       {readOnly ? (
         <Alert data-testid="ck-site-read-only">
-          <AlertTitle>Read-only</AlertTitle>
-          <AlertDescription>Saving settings needs the site:admin scope.</AlertDescription>
+          <AlertTitle>{t('siteSettings.readOnly')}</AlertTitle>
+          <AlertDescription>{t('siteSettings.readOnlyDescription')}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -274,17 +376,17 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
         // room for — rather than a button competing with the sentence for width.
         <Alert variant="destructive" data-testid="ck-site-unassigned-error">
           <TriangleAlert />
-          <AlertTitle>The whole request was rejected and nothing was written</AlertTitle>
+          <AlertTitle>{t('siteSettings.rejectedTitle')}</AlertTitle>
           <AlertDescription>{unassigned}</AlertDescription>
           <AlertAction>
             <Button variant="ghost" size="sm" data-testid="ck-site-unassigned-dismiss" onClick={form.clearUnassigned}>
-              Dismiss
+              {t('siteSettings.dismiss')}
             </Button>
           </AlertAction>
         </Alert>
       ) : null}
 
-      <SectionWarnings values={form.values} onOpen={openSection} />
+      <SectionWarnings values={form.values} sections={sections} onOpen={openSection} />
 
       {/*
         Nine sections, and the container ladder in UI-UX.md answers that number
@@ -309,7 +411,7 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
         data-testid="ck-site-sections"
         className="rounded-xl border border-border bg-surface px-4"
       >
-        {SITE_SECTIONS.map((entry) => {
+        {sections.map((entry) => {
           const id = entry.id as SiteSectionId
           const status = form.sectionStatus(id)
           const Body = SITE_SECTION_BODIES[id]
@@ -345,10 +447,7 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
         })}
       </Accordion>
 
-      <p className="text-xs text-muted-foreground">
-        Presentation, theme and branding changes reach the live site with the next release; reader features that gate an
-        endpoint take effect immediately.
-      </p>
+      <p className="text-xs text-muted-foreground">{t('siteSettings.releaseNote')}</p>
 
       {conflict ? (
         <ConflictDialog
@@ -382,10 +481,13 @@ function SettingsEditor({ slug, loaded, readOnly }: { slug: string; loaded: Site
  * `StatusBadge` already draws an icon for. Neither is a chart colour.
  */
 function SectionNote({ status }: { status: SectionStatus }) {
+  const { t } = useI18n()
   if (status.tone === 'error') {
     return (
       <span className="flex min-w-0 items-center gap-2">
-        <StatusBadge tone="danger">{status.errors === 1 ? '1 problem' : `${status.errors} problems`}</StatusBadge>
+        <StatusBadge tone="danger">
+          {status.errors === 1 ? t('siteSettings.problem') : t('siteSettings.problems', { count: status.errors })}
+        </StatusBadge>
         <span className="min-w-0 text-xs font-normal text-destructive">{status.text}</span>
       </span>
     )
@@ -414,12 +516,15 @@ function SectionNote({ status }: { status: SectionStatus }) {
  */
 function SectionWarnings({
   values,
+  sections,
   onOpen,
 }: {
   values: SiteSettingsUI
+  sections: readonly SectionSpec<SiteSettingsUI>[]
   onOpen: (id: SiteSectionId) => void
 }) {
-  const active = SITE_SECTIONS.map((section) => ({
+  const { t } = useI18n()
+  const active = sections.map((section) => ({
     id: section.id as SiteSectionId,
     label: section.label,
     warning: section.warning?.(values),
@@ -437,8 +542,8 @@ function SectionWarnings({
       <AlertTriangle />
       <AlertTitle>
         {active.length === 1
-          ? 'One thing is accepted but questionable'
-          : `${active.length} things are accepted but questionable`}
+          ? t('siteSettings.warningOne')
+          : t('siteSettings.warningMany', { count: active.length })}
       </AlertTitle>
       <AlertDescription className="flex flex-col items-start gap-1">
         {/*
@@ -464,4 +569,3 @@ function SectionWarnings({
     </Alert>
   )
 }
-

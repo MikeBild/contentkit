@@ -18,6 +18,7 @@
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
+import { useI18n } from '@/lib/i18n-context'
 
 const SAFE_HREF = /^https?:\/\//i
 const SAFE_IMAGE = /^(?:https?:\/\/|data:image\/(?:png|jpeg|gif|webp|svg\+xml);)/i
@@ -39,7 +40,7 @@ const components: Components = {
       <img data-testid="draft-image" className="max-w-full rounded-lg" src={src} alt={alt || ''} />
     ) : (
       <span data-testid="draft-image-inert" className="text-muted-foreground">
-        {alt || 'image'}
+        {alt || ''}
       </span>
     ),
 }
@@ -59,6 +60,7 @@ export function Draft({
    */
   unrendered?: boolean
 }) {
+  const { t } = useI18n()
   // A column with a gap rather than a stacking utility that hangs a margin on
   // every child but the first: the segments here are a mix of rendered markdown
   // and placeholder paragraphs, and how many there are changes as the message
@@ -80,12 +82,12 @@ export function Draft({
           <p
             key={index}
             data-testid="draft-placeholder"
-            data-label={segment.label}
+            data-label={segment.kindName}
             className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground"
           >
             {unrendered
-              ? `${segment.label} — not shown: this message could not be rendered as published.`
-              : `${segment.label} — rendered when the message is finished.`}
+              ? t('draft.placeholderUnrendered', { kind: t(PLACEHOLDER_KEYS[segment.kindName]) })
+              : t('draft.placeholderPending', { kind: t(PLACEHOLDER_KEYS[segment.kindName]) })}
           </p>
         ),
       )}
@@ -93,7 +95,8 @@ export function Draft({
   )
 }
 
-type Segment = { kind: 'markdown'; text: string } | { kind: 'placeholder'; label: string }
+type PlaceholderKind = 'diagram' | 'chart' | 'code' | 'block' | 'formula'
+type Segment = { kind: 'markdown'; text: string } | { kind: 'placeholder'; kindName: PlaceholderKind }
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*(\S*)/
 const CONTAINER_OPEN = /^ {0,3}:{3,}\s*\S/
@@ -103,7 +106,14 @@ const MATH = /^ {0,3}\$\$\s*$/
 // The names of blocks this file refuses to draw. Knowing that a fence called
 // "mermaid" exists is not knowing what a Mermaid diagram means; nothing here
 // reads inside one.
-const UNDRAWABLE: Record<string, string> = { mermaid: 'Diagram', chart: 'Chart' }
+const UNDRAWABLE: Record<string, PlaceholderKind> = { mermaid: 'diagram', chart: 'chart' }
+const PLACEHOLDER_KEYS = {
+  diagram: 'draft.kind.diagram',
+  chart: 'draft.kind.chart',
+  code: 'draft.kind.code',
+  block: 'draft.kind.block',
+  formula: 'draft.kind.formula',
+} as const
 
 /**
  * Splits the source into what CommonMark can draw and what it cannot. A block
@@ -120,9 +130,9 @@ function segments(markdown: string): Segment[] {
     if (buffer.join('').trim()) out.push({ kind: 'markdown', text: buffer.join('\n') })
     buffer = []
   }
-  const placeholder = (label: string) => {
+  const placeholder = (kindName: PlaceholderKind) => {
     flush()
-    out.push({ kind: 'placeholder', label })
+    out.push({ kind: 'placeholder', kindName })
   }
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -149,21 +159,21 @@ function segments(markdown: string): Segment[] {
       else if (closed) buffer.push(...body)
       // An unterminated ordinary fence is still code, but drawing it now would
       // re-flow on every token; it becomes a placeholder until it closes.
-      else placeholder('Code')
+      else placeholder('code')
       continue
     }
 
     if (CONTAINER_OPEN.test(line)) {
       while (index + 1 < lines.length && !CONTAINER_CLOSE.test(lines[index + 1] as string)) index += 1
       if (index + 1 < lines.length) index += 1
-      placeholder('Block')
+      placeholder('block')
       continue
     }
 
     if (MATH.test(line)) {
       while (index + 1 < lines.length && !MATH.test(lines[index + 1] as string)) index += 1
       if (index + 1 < lines.length) index += 1
-      placeholder('Formula')
+      placeholder('formula')
       continue
     }
 

@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { TableCell, TableRow } from './table'
 
 /**
@@ -30,7 +31,7 @@ export function Skeleton({ className, ...props }: ComponentProps<'div'>) {
  * placeholder cannot end up being a silent one.
  */
 export function SkeletonGroup({
-  label = 'Loading…',
+  label,
   className,
   children,
   'data-testid': testId = 'ck-skeleton',
@@ -40,9 +41,10 @@ export function SkeletonGroup({
   children: ReactNode
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   return (
     <div role="status" aria-busy="true" data-testid={testId} className={cn('flex flex-col gap-2', className)}>
-      <span className="sr-only">{label}</span>
+      <span className="sr-only">{label ?? t('common.loading')}</span>
       {children}
     </div>
   )
@@ -81,7 +83,7 @@ export function SkeletonText({
 export function SkeletonFields({
   fields = 4,
   className,
-  label = 'Loading the form…',
+  label,
   'data-testid': testId = 'ck-skeleton-fields',
 }: {
   fields?: number
@@ -89,8 +91,9 @@ export function SkeletonFields({
   label?: string
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   return (
-    <SkeletonGroup label={label} className={cn('gap-4', className)} data-testid={testId}>
+    <SkeletonGroup label={label ?? t('skeleton.form')} className={cn('gap-4', className)} data-testid={testId}>
       {Array.from({ length: Math.max(1, fields) }, (_unused, field) => (
         <div key={field} className="flex flex-col gap-1.5">
           <Skeleton className="h-3 w-24" />
@@ -123,6 +126,7 @@ export function SkeletonRows({
   columns: number
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   return (
     <>
       {Array.from({ length: Math.max(1, rows) }, (_unused, row) => (
@@ -130,7 +134,7 @@ export function SkeletonRows({
           {Array.from({ length: Math.max(1, columns) }, (_column, column) => (
             <TableCell key={column}>
               {/* One announcement for the whole block, on its first cell. */}
-              {row === 0 && column === 0 ? <span className="sr-only">Loading…</span> : null}
+              {row === 0 && column === 0 ? <span className="sr-only">{t('common.loading')}</span> : null}
               <Skeleton className={cn('h-4', column === 0 ? 'w-40' : 'w-16')} />
             </TableCell>
           ))}

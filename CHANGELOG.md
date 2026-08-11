@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.19.0 — 2026-08-11
+
+### Added
+
+- Localize the complete ContentKit Cockpit in English and German, selecting the
+  browser language automatically by default and persisting an explicit language
+  choice from the operator account menu. Dates, numbers and relative times now
+  follow the active locale as well.
+- Add compact, reusable context help to dense forms and tables so field meaning,
+  write semantics and operational consequences stay available without crowding
+  the primary task.
+- Enrich audit events with safe human-readable actor, resource and site labels.
+  The Cockpit uses those labels and deliberately keeps opaque identifiers and
+  email-shaped values out of routine list and detail views.
+
+### Changed
+
+- Consolidate profile, language, theme and sign-out controls in one operator
+  menu with a stable avatar and explicit in-progress sign-out state.
+- Rework Cockpit tables, filters, pagination, empty states and responsive form
+  layouts around the shared localized primitives, including a denser audit log
+  and clearer site/release workflows.
+
 ## 4.18.3 — 2026-08-07
 
 ### Fixed

@@ -25,15 +25,19 @@ import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan, useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
+import { visibleLabel } from '@/lib/opaque'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
+
+const grantLabel = (grant: IdentityGrant | undefined, fallback: string) =>
+  visibleLabel(grant?.display_name, grant?.email) ?? fallback
 
 // Providers are configuration, not data: they change when the deployment does.
 const PROVIDERS_KEY = ['identity-providers'] as const
 
-const ROLE_CONSEQUENCE: Record<OperatorRole, string> = {
-  reader: 'Published reads and bounded statistics.',
-  author: 'Drafts, revisions, compositions, decks and previews.',
-  admin: 'Every product scope, including issuing credentials and granting access.',
+const ROLE_CONSEQUENCE_KEYS: Record<OperatorRole, TranslationKey> = {
+  reader: 'identity.role.reader',
+  author: 'identity.role.author',
+  admin: 'identity.role.admin',
 }
 
 /**
@@ -70,6 +74,7 @@ function GrantDialog({
   onConflict: (conflict: IdentityGrantConflict) => void
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const session = useSession()
   const { sites } = useSite()
@@ -155,50 +160,49 @@ function GrantDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {editing ? `Edit grant for ${grant?.email || grant?.subject}` : 'New identity grant'}
+            {editing
+              ? t('identity.editGrant', { identity: grantLabel(grant, t('identity.grant')) })
+              : t('identity.newGrant')}
           </DialogTitle>
-          <DialogDescription>
-            A grant binds one provider subject to a product-scope ceiling. The ceiling is the only stored truth;
-            shrinking it takes effect on the very next request.
-          </DialogDescription>
+          <DialogDescription>{t('identity.grantDescription')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           {restoring ? (
             <Alert data-testid="ck-grant-restore-note">
               <TriangleAlert />
-              <AlertTitle>This grant is revoked</AlertTitle>
-              <AlertDescription>
-                Saving restores it — the only way to bring a revoked grant back. The holder can sign in again from the
-                next request; the sessions and tokens revoked with it are not restored.
-              </AlertDescription>
+              <AlertTitle>{t('identity.revokedTitle')}</AlertTitle>
+              <AlertDescription>{t('identity.revokedDescription')}</AlertDescription>
             </Alert>
           ) : null}
 
           {editing ? (
             <TextField
               data-testid="ck-grant-subject"
-              label="Subject"
-              value={`${grant?.provider_id ?? ''} · ${grant?.subject ?? ''}`}
+              label={t('identity.identity')}
+              value={grantLabel(grant, t('identity.grant'))}
               disabled
-              help="The provider's immutable identifier for this person."
-              about="It is what the grant is keyed on and cannot be changed."
+              help={t('identity.identityHelp')}
+              about={t('identity.identityAbout')}
               onChange={() => {}}
             />
           ) : (
             <>
               <EnumSelect
                 data-testid="ck-grant-provider"
-                label="Provider"
+                label={t('identity.provider')}
                 required
-                help="Only configured OIDC providers can back a grant."
+                help={t('identity.providerHelp')}
                 value={draft.provider_id}
-                placeholder={providers.isPending ? 'Loading…' : 'Choose a provider'}
-                options={options.map((provider) => ({ value: provider.id, label: `${provider.label} · ${provider.id}` }))}
+                placeholder={providers.isPending ? t('common.loading') : t('identity.chooseProvider')}
+                options={options.map((provider) => ({
+                  value: provider.id,
+                  label: visibleLabel(provider.label) ?? t('common.unknown'),
+                }))}
                 error={
                   providers.error
-                    ? 'Could not load the providers'
+                    ? t('identity.providerLoadError')
                     : !providers.isPending && options.length === 0
-                      ? 'This deployment has no OIDC provider configured, so no grant can be created'
+                      ? t('identity.noProvider')
                       : undefined
                 }
                 onChange={(provider_id) => setDraft({ ...draft, provider_id })}
@@ -206,19 +210,19 @@ function GrantDialog({
 
               <TextField
                 data-testid="ck-grant-issuer"
-                label="Issuer"
+                label={t('identity.issuer')}
                 value={issuer}
                 disabled
-                help="Filled from the provider."
-                about="The server rejects a grant whose issuer does not match it exactly."
+                help={t('identity.issuerHelp')}
+                about={t('identity.issuerAbout')}
                 onChange={() => {}}
               />
 
               <TextField
                 data-testid="ck-grant-subject"
-                label="Subject"
+                label={t('identity.subject')}
                 required
-                help="The provider's stable identifier for this person — the `sub` claim, not their email."
+                help={t('identity.subjectHelp')}
                 value={draft.subject}
                 onChange={(subject) => setDraft({ ...draft, subject })}
               />
@@ -227,35 +231,35 @@ function GrantDialog({
 
           <TextField
             data-testid="ck-grant-email"
-            label="Email"
+            label={t('identity.email')}
             value={draft.email}
-            fallback="Only a label."
-            about="Access is decided by the subject."
+            fallback={t('identity.emailFallback')}
+            about={t('identity.emailAbout')}
             onChange={(email) => setDraft({ ...draft, email })}
           />
 
           <TextField
             data-testid="ck-grant-display-name"
-            label="Display name"
+            label={t('identity.displayName')}
             value={draft.display_name}
             onChange={(display_name) => setDraft({ ...draft, display_name })}
           />
 
           <ChoiceCards
             data-testid="ck-grant-authority"
-            label="Authority"
-            help="The server accepts exactly one of the two."
+            label={t('identity.authority')}
+            help={t('identity.authorityHelp')}
             value={draft.authority}
             options={[
               {
                 value: 'scopes',
-                label: 'Explicit scopes',
-                description: 'Pick each scope. What is stored is what you chose, unchanged by later role definitions.',
+                label: t('identity.explicitScopes'),
+                description: t('identity.explicitScopesDescription'),
               },
               {
                 value: 'role',
-                label: 'Named role',
-                description: 'A shorthand the server expands into a scope set once, at save time.',
+                label: t('identity.namedRole'),
+                description: t('identity.namedRoleDescription'),
               },
             ]}
             onChange={(authority) => setDraft({ ...draft, authority })}
@@ -264,18 +268,22 @@ function GrantDialog({
           {draft.authority === 'role' ? (
             <ChoiceCards
               data-testid="ck-grant-role"
-              label="Role"
+              label={t('identity.role')}
               value={draft.role}
-              options={OPERATOR_ROLE.map((role) => ({ value: role, label: role, description: ROLE_CONSEQUENCE[role] }))}
+              options={OPERATOR_ROLE.map((role) => ({
+                value: role,
+                label: role,
+                description: t(ROLE_CONSEQUENCE_KEYS[role]),
+              }))}
               onChange={(role) => setDraft({ ...draft, role })}
             />
           ) : (
             <ScopePicker
               data-testid="ck-grant-scopes"
-              label="Product scopes"
+              label={t('identity.productScopes')}
               required
-              help="The ceiling."
-              about="Nothing this identity does can exceed it, whatever token it holds."
+              help={t('identity.ceilingHelp')}
+              about={t('identity.ceilingAbout')}
               value={draft.product_scopes}
               ceiling={session.product_scopes}
               onChange={(product_scopes) => setDraft({ ...draft, product_scopes })}
@@ -284,43 +292,43 @@ function GrantDialog({
 
           <EntityMultiSelect
             data-testid="ck-grant-sites"
-            label="Sites"
-            definition="Which sites this identity may reach."
-            fallback="Empty means every site."
+            label={t('identity.sites')}
+            definition={t('identity.sitesDefinition')}
+            fallback={t('identity.sitesFallback')}
             value={draft.site_ids}
             options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
-            emptyMessage="No sites"
+            emptyMessage={t('identity.noSites')}
             onChange={(site_ids) => setDraft({ ...draft, site_ids: [...site_ids] })}
           />
 
           {conflict ? (
             <Alert data-testid="ck-grant-conflict">
               <TriangleAlert />
-              <AlertTitle>A grant for this subject already exists</AlertTitle>
+              <AlertTitle>{t('identity.conflictTitle')}</AlertTitle>
               <AlertDescription>
                 {/* The server's own sentence: it already says whether the existing
                     grant needs editing or restoring, and paraphrasing it would only
                     add a second version to keep in step. */}
-                {conflict.hint ?? 'A grant for this subject already exists.'}
+                {conflict.hint ?? t('identity.conflictFallback')}
               </AlertDescription>
             </Alert>
           ) : save.error ? (
             <Alert variant="destructive" data-testid="ck-grant-error">
               <TriangleAlert />
-              <AlertTitle>The grant was not saved</AlertTitle>
+              <AlertTitle>{t('identity.saveErrorTitle')}</AlertTitle>
               <AlertDescription>
-                {save.error instanceof Error ? save.error.message : 'Could not save the grant'}
+                {save.error instanceof Error ? save.error.message : t('identity.saveError')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-grant-cancel" disabled={save.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button data-testid="ck-grant-submit" disabled={!canSave} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {restoring ? 'Restore grant' : editing ? 'Save grant' : 'Create grant'}
+            {t(restoring ? 'identity.restoreGrant' : editing ? 'identity.saveGrant' : 'identity.createGrant')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -329,6 +337,7 @@ function GrantDialog({
 }
 
 export function IdentityGrantsCard() {
+  const { t, dateTime } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { sites } = useSite()
@@ -348,42 +357,40 @@ export function IdentityGrantsCard() {
       <CardHeader className="flex-row items-center justify-between">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1">
-            <CardTitle>Identity grants</CardTitle>
+            <CardTitle>{t('identity.grants')}</CardTitle>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-xs"
                   data-testid="ck-grants-about"
-                  aria-label="When a change to the ceiling takes effect"
+                  aria-label={t('identity.ceilingTimingLabel')}
                 >
                   <InfoIcon />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" data-testid="ck-grants-about-content">
-                <PopoverTitle>Shrinking a ceiling is immediate</PopoverTitle>
-                <PopoverDescription>
-                  It takes effect on the very next request, without reissuing anything.
-                </PopoverDescription>
+                <PopoverTitle>{t('identity.ceilingTimingTitle')}</PopoverTitle>
+                <PopoverDescription>{t('identity.ceilingTimingDescription')}</PopoverDescription>
               </PopoverContent>
             </Popover>
           </div>
-          <CardDescription>The stored product-scope ceiling is the only truth.</CardDescription>
+          <CardDescription>{t('identity.ceilingTruth')}</CardDescription>
         </div>
         <Button size="sm" variant="outline" data-testid="ck-grant-new" onClick={() => setEditing({})}>
-          New grant
+          {t('identity.newGrantShort')}
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Subject</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Ceiling</TableHead>
-              <TableHead>Sites</TableHead>
-              <TableHead>Created</TableHead>
+              <TableHead>{t('identity.subject')}</TableHead>
+              <TableHead>{t('identity.provider')}</TableHead>
+              <TableHead>{t('identity.role')}</TableHead>
+              <TableHead>{t('identity.ceiling')}</TableHead>
+              <TableHead>{t('identity.sites')}</TableHead>
+              <TableHead>{t('webhook.created')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -394,38 +401,42 @@ export function IdentityGrantsCard() {
               error={grants.error}
               isEmpty={rows.length === 0}
               onRetry={() => grants.refetch()}
-              emptyMessage="No identity grants."
+              emptyMessage={t('identity.empty')}
             >
               {rows.map((grant) => (
                 <TableRow key={grant.id} data-testid="ck-grant-row" data-grant={grant.id}>
                   <TableCell>
-                    <span className="font-medium">{grant.email || grant.subject}</span>
-                    {grant.display_name ? (
-                      <span className="block text-xs text-muted-foreground">{grant.display_name}</span>
+                    <span className="font-medium">{grantLabel(grant, t('identity.grant'))}</span>
+                    {grant.display_name && grant.email ? (
+                      <span className="block text-xs text-muted-foreground">{grant.email}</span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{grant.provider_id}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {visibleLabel(grant.provider_id) ?? t('common.unknown')}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge tone={grant.role === 'admin' ? 'warning' : 'info'}>{grant.role ?? '—'}</StatusBadge>
                   </TableCell>
                   <TableCell className="max-w-[18rem] text-xs text-muted-foreground">{grant.product_scopes?.join(', ')}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {grant.site_ids?.length
-                      ? grant.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? id.slice(0, 8)).join(', ')
-                      : 'every site'}
+                      ? grant.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite')).join(', ')
+                      : t('identity.everySite')}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(grant.created_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {grant.created_at ? dateTime(grant.created_at) : '—'}
+                  </TableCell>
                   <TableCell className="flex gap-2">
                     {grant.revoked_at ? (
                       <>
-                        <StatusBadge tone="danger">revoked</StatusBadge>
+                        <StatusBadge tone="danger">{t('identity.revoked')}</StatusBadge>
                         <Button
                           size="sm"
                           variant="outline"
                           data-testid={`ck-grant-restore-${grant.id}`}
                           onClick={() => setEditing({ grant })}
                         >
-                          Restore
+                          {t('identity.restore')}
                         </Button>
                       </>
                     ) : (
@@ -436,18 +447,14 @@ export function IdentityGrantsCard() {
                           data-testid={`ck-grant-edit-${grant.id}`}
                           onClick={() => setEditing({ grant })}
                         >
-                          Edit
+                          {t('webhook.edit')}
                         </Button>
                         <Confirm
-                          title="Revoke this grant?"
-                          description={
-                            <>
-                              <strong>{grant.email || grant.subject}</strong> loses access at once. Revoking cascades:
-                              every operator session, every OAuth access token and every refresh token issued from this
-                              grant is revoked with it. The grant row is kept and can be restored later.
-                            </>
-                          }
-                          confirmLabel="Revoke grant"
+                          title={t('identity.revokeTitle')}
+                          description={t('identity.revokeDescription', {
+                            identity: grantLabel(grant, t('identity.grant')),
+                          })}
+                          confirmLabel={t('identity.revokeGrant')}
                           destructive
                           onConfirm={async () => {
                             await ck.credentials.revokeGrant(grant.id)
@@ -456,7 +463,7 @@ export function IdentityGrantsCard() {
                         >
                           {(open) => (
                             <Button size="sm" variant="destructive" data-testid={`ck-grant-revoke-${grant.id}`} onClick={open}>
-                              Revoke
+                              {t('identity.revoke')}
                             </Button>
                           )}
                         </Confirm>

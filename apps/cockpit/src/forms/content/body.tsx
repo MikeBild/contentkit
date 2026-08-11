@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * ContentKit's semantic directive vocabulary, exactly as
@@ -61,6 +62,7 @@ export function MarkdownBody({
   rows?: number
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   const area = useRef<HTMLTextAreaElement>(null)
   const bytes = encoder.encode(value).length
   const over = bytes > MAX_BYTES
@@ -85,7 +87,7 @@ export function MarkdownBody({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-muted-foreground">Markdown</span>
+        <span className="text-xs font-medium text-muted-foreground">{t('content.body.label')}</span>
         <span
           data-testid={`${testId}-budget`}
           className={cn('text-xs tabular-nums', over ? 'text-destructive' : 'text-muted-foreground')}
@@ -99,7 +101,7 @@ export function MarkdownBody({
         spellCheck={false}
         disabled={disabled}
         data-testid={testId}
-        aria-label="Markdown body"
+        aria-label={t('content.body.ariaLabel')}
         aria-invalid={over || undefined}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -110,11 +112,13 @@ export function MarkdownBody({
       />
       {over ? (
         <p data-testid={`${testId}-error`} className="text-xs text-destructive">
-          Over 256 KiB — the render endpoint and the release both refuse this.
+          {t('content.body.tooLarge')}
         </p>
       ) : null}
       <details data-testid={`${testId}-palette`} className="rounded-lg border border-border">
-        <summary className="cursor-pointer p-2 text-xs text-muted-foreground">Insert a semantic directive</summary>
+        <summary data-testid={`${testId}-palette-toggle`} className="cursor-pointer p-2 text-xs text-muted-foreground">
+          {t('content.body.insertDirective')}
+        </summary>
         <div className="flex flex-wrap gap-1 border-t border-border p-2">
           {SEMANTIC_DIRECTIVES.map((directive) => (
             <Button

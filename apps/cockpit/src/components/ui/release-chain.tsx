@@ -5,6 +5,7 @@ import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ChainStep, ChainStepId, ChainTone, ReleaseChain as ReleaseChainState } from '@/lib/release-chain'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * The release chain as a state, not as a sentence.
@@ -64,10 +65,11 @@ export function ReleaseChain({
   className,
   'data-testid': testId = 'ck-release-chain',
 }: ReleaseChainProps) {
+  const { t } = useI18n()
   if (isLoading) {
     return (
       <SkeletonGroup
-        label="Loading the release chain…"
+        label={t('releaseChain.loading')}
         data-testid={`${testId}-loading`}
         className={cn(variant === 'compact' ? 'gap-1' : 'rounded-xl border border-border bg-surface p-4', className)}
       >
@@ -115,6 +117,7 @@ export function ReleaseChain({
                     <TooltipTrigger asChild>
                       <span
                         tabIndex={0}
+                        data-testid={`${testId}-detail-trigger-${step.id}`}
                         className="rounded whitespace-nowrap focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                       >
                         {step.label}
@@ -157,7 +160,7 @@ export function ReleaseChain({
       className={cn('rounded-xl border border-border bg-surface p-4', className)}
     >
       <header className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">Release chain</h2>
+        <h2 className="text-sm font-semibold tracking-tight">{t('releaseChain.title')}</h2>
         <p
           data-testid={`${testId}-headline`}
           className={cn('flex items-center gap-1.5 text-right text-xs', TEXT[chain.tone])}

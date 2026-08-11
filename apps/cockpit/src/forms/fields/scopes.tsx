@@ -1,6 +1,7 @@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { PRODUCT_SCOPES, type ProductScope } from '../contracts/enums.generated'
 import { FieldShell, type FieldShellProps } from './field'
 
@@ -9,20 +10,20 @@ import { FieldShell, type FieldShellProps } from './field'
  * the names; a name alone ("access:admin") is not a decision anyone can make
  * responsibly, so the sentence lives next to the box.
  */
-export const SCOPE_DESCRIPTIONS: Record<ProductScope, string> = {
-  'content:read': 'Read drafts, revisions and published documents.',
-  'content:write': 'Create and change content, including deleting revisions.',
-  'deck:render': 'Render slide decks.',
-  'release:preview': 'Build previews that are never activated.',
-  'release:write': 'Build and activate releases — this is what changes the live site.',
-  'site:admin': 'Change site settings, domains and locales, and delete the site.',
-  'access:admin': 'Manage readers, groups and access rules.',
-  'webhook:admin': 'Manage webhook endpoints and read their deliveries.',
-  'api-key:admin': 'Create and revoke API keys.',
-  'identity:admin': 'Grant and revoke operator access.',
-  'moderation:write': 'Approve, reject and delete comments, contact submissions and feedback.',
-  'audit:read': 'Read the audit trail.',
-  'stats:read': 'Read usage and product statistics.',
+export const SCOPE_DESCRIPTION_KEYS: Record<ProductScope, TranslationKey> = {
+  'content:read': 'scope.contentRead',
+  'content:write': 'scope.contentWrite',
+  'deck:render': 'scope.deckRender',
+  'release:preview': 'scope.releasePreview',
+  'release:write': 'scope.releaseWrite',
+  'site:admin': 'scope.siteAdmin',
+  'access:admin': 'scope.accessAdmin',
+  'webhook:admin': 'scope.webhookAdmin',
+  'api-key:admin': 'scope.apiKeyAdmin',
+  'identity:admin': 'scope.identityAdmin',
+  'moderation:write': 'scope.moderationWrite',
+  'audit:read': 'scope.auditRead',
+  'stats:read': 'scope.statsRead',
 }
 
 /**
@@ -44,8 +45,9 @@ export function ScopePicker({
   /** The granting operator's own scopes. Everything outside is unavailable. */
   ceiling: readonly string[]
 }) {
+  const { t } = useI18n()
   const unlimited = ceiling.includes('*')
-  const error = shell.error ?? (value.length === 0 ? 'Choose at least one scope' : undefined)
+  const error = shell.error ?? (value.length === 0 ? t('validation.chooseScope') : undefined)
 
   return (
     <FieldShell {...shell} error={error} hint={shell.hint ?? `${value.length}/${PRODUCT_SCOPES.length}`}>
@@ -90,7 +92,7 @@ export function ScopePicker({
                 </span>
                 <span>
                   <span className="font-mono text-xs">{scope}</span>
-                  <span className="block text-xs text-muted-foreground">{SCOPE_DESCRIPTIONS[scope]}</span>
+                  <span className="block text-xs text-muted-foreground">{t(SCOPE_DESCRIPTION_KEYS[scope])}</span>
                 </span>
               </label>
             )
@@ -110,7 +112,7 @@ export function ScopePicker({
                       {row}
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent>You do not hold this scope yourself</TooltipContent>
+                  <TooltipContent>{t('scope.locked')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )

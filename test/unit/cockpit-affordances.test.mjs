@@ -285,7 +285,9 @@ describe('cockpit affordances — one grammar for actions', () => {
    * label pair Details/Hide is the state, not a rewrite.
    */
   test('an in-place disclosure is ghost and says which state it is in', () => {
-    const disclosures = buttons.filter(({ element }) => /'Hide'\s*:\s*'Details'/.test(element.body))
+    const disclosures = buttons.filter(({ element }) =>
+      /'Hide'\s*:\s*'Details'|open\s*\?\s*'common\.hide'\s*:\s*'common\.details'/.test(element.body),
+    )
     assert.ok(disclosures.length >= 3, `only ${disclosures.length} Details/Hide controls found`)
     const wrong = []
     for (const { file, element } of disclosures) {

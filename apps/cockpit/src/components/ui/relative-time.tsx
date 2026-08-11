@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { formatExact, formatRelative, isoInstant, refreshAfter, relativeParts, type TimeInput } from '@/lib/relative-time'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
+import { LOCALE_TAGS } from '@/lib/i18n'
 
 /**
  * "vor 2 Stunden", with the exact instant still in reach.
@@ -34,6 +36,7 @@ export function RelativeTime({
   className?: string
   'data-testid'?: string
 }) {
+  const { locale } = useI18n()
   const iso = isoInstant(value)
   const [now, setNow] = useState(() => Date.now())
 
@@ -55,10 +58,10 @@ export function RelativeTime({
       </span>
     )
 
-  const exact = formatExact(value)
+  const exact = formatExact(value, LOCALE_TAGS[locale])
   const label = (
     <time dateTime={iso} data-testid={testId} className={cn('whitespace-nowrap', className)}>
-      {formatRelative(value, now)}
+      {formatRelative(value, now, LOCALE_TAGS[locale])}
     </time>
   )
 
@@ -74,7 +77,11 @@ export function RelativeTime({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span tabIndex={0} className="rounded focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+          <span
+            tabIndex={0}
+            data-testid={`${testId}-trigger`}
+            className="rounded focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
             {label}
           </span>
         </TooltipTrigger>

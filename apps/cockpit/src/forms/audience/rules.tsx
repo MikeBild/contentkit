@@ -22,15 +22,13 @@ import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
+import { useI18n } from '@/lib/i18n-context'
 
-const MATCH_OPTIONS = [
-  { value: 'prefix' as const, label: 'Prefix' },
-  { value: 'exact' as const, label: 'Exact' },
-] satisfies readonly { value: AccessRuleMatch; label: string }[]
+const MATCH_VALUES = ['prefix', 'exact'] as const satisfies readonly AccessRuleMatch[]
 
 // The generated set is the contract; this only orders it. If the server ever
 // grows a third match mode the mismatch has to be loud rather than silent.
-if (MATCH_OPTIONS.length !== ACCESS_RULE_MATCH.length) {
+if (MATCH_VALUES.length !== ACCESS_RULE_MATCH.length) {
   throw new Error('access rule match options are out of step with the generated contract')
 }
 
@@ -53,6 +51,7 @@ function RuleDialog({
   onSaved: () => void
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const [match, setMatch] = useState<AccessRuleMatch>((rule?.match as AccessRuleMatch) ?? 'prefix')
   const [path, setPath] = useState(rule?.path ?? '/')
@@ -76,6 +75,10 @@ function RuleDialog({
 
   const audienceEmpty = groupSlugs.length === 0 && userIds.length === 0
   const editing = Boolean(rule)
+  const matchOptions = MATCH_VALUES.map((value) => ({
+    value,
+    label: t(value === 'prefix' ? 'audience.rules.prefix' : 'audience.rules.exact'),
+  }))
 
   return (
     <Dialog
@@ -99,53 +102,53 @@ function RuleDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit rule for ${rule?.path}` : 'New path rule'}</DialogTitle>
-          <DialogDescription>
-            Rules are snapshotted into each release. Saving one changes nothing live until the next build.
-          </DialogDescription>
+          <DialogTitle>
+            {editing ? t('audience.rules.editTitle', { path: rule?.path ?? '' }) : t('audience.rules.newTitle')}
+          </DialogTitle>
+          <DialogDescription>{t('audience.rules.description')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           <SegmentedField
             data-testid="ck-rule-match"
-            label="Match"
+            label={t('audience.rules.match')}
             value={match}
-            options={MATCH_OPTIONS}
+            options={matchOptions}
             help={
               match === 'prefix'
-                ? 'Covers the path and everything below it.'
-                : 'Covers exactly this path and nothing below it.'
+                ? t('audience.rules.prefixHelp')
+                : t('audience.rules.exactHelp')
             }
             onChange={setMatch}
           />
 
           <PathField
             data-testid="ck-rule-path"
-            label="Path"
+            label={t('audience.rules.path')}
             required
-            help="A published path on this site, for example /de/internal."
+            help={t('audience.rules.pathHelp')}
             value={path}
             onChange={setPath}
           />
 
           <EntityMultiSelect
             data-testid="ck-rule-groups"
-            label="Groups"
+            label={t('audience.readers.groups')}
             value={groupSlugs}
             isLoading={groupsQuery.isPending}
             optionsError={groupsQuery.error}
-            emptyMessage="No groups on this site yet"
+            emptyMessage={t('audience.readers.noGroups')}
             options={groups.map((group) => ({ value: group.slug, label: group.name, hint: group.slug }))}
             onChange={(next) => setGroupSlugs([...next])}
           />
 
           <EntityMultiSelect
             data-testid="ck-rule-users"
-            label="Readers"
-            help="Named directly, independent of any group."
+            label={t('audience.readers.title')}
+            help={t('audience.rules.directReadersHelp')}
             value={userIds}
             isLoading={readersQuery.isPending}
             optionsError={readersQuery.error}
-            emptyMessage="No readers on this site yet"
+            emptyMessage={t('audience.groups.noReaders')}
             options={readers.map((reader) => ({
               value: reader.id,
               label: reader.display_name || reader.username,
@@ -155,25 +158,26 @@ function RuleDialog({
           />
 
           {audienceEmpty ? (
-            <p data-testid="ck-rule-audience-error" className="text-sm text-destructive">
-              A rule needs at least one group or one reader — the server rejects an empty audience, and a rule nobody
-              matches would lock the path away from everyone.
-            </p>
+            <Alert variant="destructive" data-testid="ck-rule-audience-error">
+              <TriangleAlert />
+              <AlertTitle>{t('audience.rules.emptyAudienceTitle')}</AlertTitle>
+              <AlertDescription>{t('audience.rules.emptyAudienceDescription')}</AlertDescription>
+            </Alert>
           ) : null}
 
           {save.error ? (
             <Alert variant="destructive" data-testid="ck-rule-error">
               <TriangleAlert />
-              <AlertTitle>The rule was not saved</AlertTitle>
+              <AlertTitle>{t('audience.rules.saveError')}</AlertTitle>
               <AlertDescription>
-                {save.error instanceof Error ? save.error.message : 'Could not save the rule'}
+                {save.error instanceof Error ? save.error.message : t('audience.rules.saveErrorFallback')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-rule-cancel" disabled={save.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             data-testid="ck-rule-submit"
@@ -181,7 +185,7 @@ function RuleDialog({
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Spinner data-icon="inline-start" /> : null}
-            {editing ? 'Save rule' : 'Create rule'}
+            {editing ? t('audience.rules.save') : t('audience.rules.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -201,6 +205,7 @@ export function RulesCard({
   onEditingChange: (editing: { rule?: AccessRule } | null) => void
   onRebuildRequired: () => void
 }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
 
@@ -236,10 +241,10 @@ export function RulesCard({
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Path rules</CardTitle>
+        <CardTitle>{t('audience.rules.title')}</CardTitle>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-rule-new" onClick={() => onEditingChange({})}>
-            New rule
+            {t('audience.rules.new')}
           </Button>
         ) : null}
       </CardHeader>
@@ -247,10 +252,10 @@ export function RulesCard({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Match</TableHead>
-              <TableHead>Path</TableHead>
-              <TableHead>Groups</TableHead>
-              <TableHead>Readers</TableHead>
+              <TableHead>{t('audience.rules.match')}</TableHead>
+              <TableHead>{t('audience.rules.path')}</TableHead>
+              <TableHead>{t('audience.readers.groups')}</TableHead>
+              <TableHead>{t('audience.readers.title')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -261,19 +266,25 @@ export function RulesCard({
               error={rules.error}
               isEmpty={rows.length === 0}
               onRetry={() => rules.refetch()}
-              emptyMessage="No rules — everything published is public."
+              emptyMessage={t('audience.rules.empty')}
             >
               {rows.map((rule) => (
                 <TableRow key={rule.id} data-testid="ck-rule-row" data-rule={rule.id}>
                   <TableCell>
-                    <StatusBadge tone="info">{rule.match}</StatusBadge>
+                    <StatusBadge tone="info">
+                      {t(rule.match === 'prefix' ? 'audience.rules.prefix' : 'audience.rules.exact')}
+                    </StatusBadge>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{rule.path}</TableCell>
                   <TableCell className="text-muted-foreground">{rule.group_slugs?.join(', ') || '—'}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {rule.user_ids?.length
                       ? rule.user_ids
-                          .map((id) => readerRows.find((reader) => reader.id === id)?.username ?? id.slice(0, 8))
+                          .map(
+                            (id) =>
+                              readerRows.find((reader) => reader.id === id)?.username ??
+                              t('audience.rules.unknownReader'),
+                          )
                           .join(', ')
                       : '—'}
                   </TableCell>
@@ -286,18 +297,15 @@ export function RulesCard({
                           data-testid={`ck-rule-edit-${rule.id}`}
                           onClick={() => onEditingChange({ rule })}
                         >
-                          Edit
+                          {t('audience.rules.edit')}
                         </Button>
                         <Confirm
-                          title="Delete this rule?"
-                          description={
-                            <>
-                              The {rule.match} rule on <strong>{rule.path}</strong> is deleted. That path becomes public
-                              unless another rule still covers it — and only at the next release, because rules take
-                              effect when they are built into one.
-                            </>
-                          }
-                          confirmLabel="Delete rule"
+                          title={t('audience.rules.deleteTitle')}
+                          description={t('audience.rules.deleteDescription', {
+                            match: t(rule.match === 'prefix' ? 'audience.rules.prefix' : 'audience.rules.exact'),
+                            path: rule.path,
+                          })}
+                          confirmLabel={t('audience.rules.delete')}
                           destructive
                           onConfirm={async () => {
                             await ck.access.deleteRule(site, rule.id)
@@ -307,7 +315,7 @@ export function RulesCard({
                         >
                           {(open) => (
                             <Button size="sm" variant="destructive" data-testid={`ck-rule-delete-${rule.id}`} onClick={open}>
-                              Delete
+                              {t('audience.rules.delete')}
                             </Button>
                           )}
                         </Confirm>

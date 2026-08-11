@@ -110,7 +110,7 @@ which requests fire, not only about what is on screen.
 3. Click `site-switcher` and pick a site.
    **Expect** the URL gains/updates `?site=<slug>`, and the page's data reloads for that site.
    **Fail if** the selection resets on navigation, or `no-site` shows while a site is selected.
-4. Click `theme-toggle`.
+4. Click `account-menu-trigger`, then `account-theme-menu`.
    **Expect** the console flips light/dark. Remember this control — §21.7 uses it.
 
 ---
@@ -1042,7 +1042,7 @@ $t('assistant-rendered').querySelectorAll('pre.mermaid foreignObject').length  /
 
 ### 21.7 The theme assertion
 
-1. Click `theme-toggle`.
+1. Click `account-menu-trigger`, then `account-theme-menu`.
    **Expect** exactly **one additional** `POST …/render` for that message, with the other `scheme`.
    This is by design: report charts are rasterised server-side and no stylesheet can recolour an SVG
    that is already drawn.
@@ -1298,8 +1298,8 @@ console defect.
    **Fail if** the parameters are missing from the request — filtering client-side over a truncated
    page silently hides events.
 3. **Expect** the `api_key.create` from §16.1 and the `api_key.revoke` from §16.4 are both listed.
-4. `ck-audit-expand-{id}` → **Expect** `ck-audit-detail-{id}` shows `metadata`, `actor_id` and
-   `resource_id` as a definition list.
+4. Within the matching `ck-audit-row`, click `ck-audit-expand` → **Expect** `ck-audit-detail` shows
+   safe metadata and human-readable actor, resource and site labels as a definition list.
    **Fail if** it is a `JSON.stringify` dump.
 5. **Create / edit / delete:** the audit log is append-only and has none.
    **Fail if** the console offers any mutation here — blocker.
@@ -1331,7 +1331,7 @@ Do these in order.
 indexedDB.deleteDatabase('contentkit-cockpit')
 ```
 
-4. Sign out with `sign-out`. **Expect** you land back on `sign-in`.
+4. Open `account-menu-trigger` and sign out with `account-sign-out`. **Expect** you land back on `sign-in`.
 
 ---
 

@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Where model output says it is model output — CUI-AI-1 and CUI-AI-2.
@@ -36,6 +37,7 @@ export function ModelAttribution({
   generatedAt?: string | null
   className?: string
 }) {
+  const { dateTime } = useI18n()
   // No model means no attribution, not an empty badge. A surface that shows an
   // attribution chip for output no model produced has invented a provenance.
   if (!model) return null
@@ -46,7 +48,7 @@ export function ModelAttribution({
         {model}
       </Badge>
       {generatedAt ? (
-        <span className="text-xs text-muted-foreground">{new Date(generatedAt).toLocaleString()}</span>
+        <span className="text-xs text-muted-foreground">{dateTime(generatedAt)}</span>
       ) : null}
     </span>
   )
@@ -76,6 +78,7 @@ export function Confidence({
   of?: number
   selfReported?: boolean
 }) {
+  const { t, number } = useI18n()
   // A confidence nobody reported is `—`, never 0. Zero confidence is a
   // measurement; absence is not, and the two must not read alike.
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -87,11 +90,11 @@ export function Confidence({
     <span className="text-xs text-muted-foreground" data-testid="confidence">
       {of === undefined ? (
         <>
-          {percent}%{selfReported ? ' — the model’s own estimate, not a measurement' : ''}
+          {number(percent)}%{selfReported ? ` — ${t('ai.selfEstimate')}` : ''}
         </>
       ) : (
         <>
-          {percent}% of {of} samples
+          {t('ai.samples', { percent: number(percent), count: number(of) })}
         </>
       )}
     </span>

@@ -196,7 +196,7 @@ describe('Sites — deleting one, and where that leaves the operator', () => {
     // to tell the two apart.
     expect(screen.queryByTestId('ck-site-delete-confirm')).not.toBeInTheDocument()
     const purge = screen.getByTestId('ck-site-delete-purge')
-    expect(purge).toHaveTextContent('Delete the site and all of it')
+    expect(purge).toHaveTextContent('Delete the site and all its data')
 
     await user.click(purge)
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())

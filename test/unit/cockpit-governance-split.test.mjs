@@ -71,8 +71,8 @@ const OWNED_TESTIDS = {
     'ck-audit-limit-filter',
     'ck-audit-follow-site',
     'ck-audit-row',
-    'ck-audit-expand-${event.id}',
-    'ck-audit-detail-${event.id}',
+    'ck-audit-expand',
+    'ck-audit-detail',
   ],
 }
 
@@ -210,27 +210,19 @@ describe('the two pages that did not get tabs say why', () => {
     )
   })
 
-  test('the audit trail is one list, and names the reason it is not a DataTable yet', () => {
+  test('the audit trail is one responsive DataTable with inline evidence', () => {
     const source = read('pages', 'audit.tsx')
     assert.doesNotMatch(code(source), /<Tabs\b/, 'one list is one list: the ladder’s first step is nothing')
-    // UI-UX.md §6: a list is a DataTable, and an existing one moves when it is
-    // next touched. This one was touched by the split and did not move, so the
-    // exemption is written down rather than left as an omission — and it is
-    // pinned to the thing that blocks it, so it cannot outlive it silently.
+    assert.match(code(source), /<DataTable\b/, 'the audit trail uses the shared list primitive')
     assert.match(
-      source,
-      /DataTable/,
-      'the one hand-rolled Card + Table + TableState left in this group must name the rule it is an exception to',
-    )
-    assert.match(
-      source,
-      /data-table\.tsx/,
-      'and where the fix belongs: a row-detail slot in components/ui/data-table.tsx',
+      code(source),
+      /renderMobileRow=/,
+      'the same evidence is readable without horizontally scrolling a phone-sized viewport',
     )
     assert.match(
       code(source),
-      /data-testid=\{`ck-audit-detail-\$\{event\.id\}`\}/,
-      'the expanded row is what DataTable has no slot for, so it has to still be here',
+      /expandedRowTestId="ck-audit-detail"/,
+      'the expanded evidence row remains addressable without embedding an opaque id in its test name',
     )
   })
 })

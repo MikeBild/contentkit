@@ -108,6 +108,73 @@ export function routeName(path) {
   )
 }
 
+const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function humanAuditLabel(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const label = value.trim()
+    if (label && !UUID_VALUE.test(label) && !label.includes('@')) return label.slice(0, 200)
+  }
+  return null
+}
+
+async function auditDisplayLabels(db, rows) {
+  const ids = (values) => [...new Set(values.filter((value) => UUID_VALUE.test(String(value || ''))))]
+  const actorId = (row) => String(row.actor_id || '').replace(/^(?:operator|oauth):/, '')
+  const actorKeys = ids(rows.filter((row) => row.actor_type === 'api_key').map(actorId))
+  const actorGrants = ids(
+    rows.filter((row) => row.actor_type === 'operator' || row.actor_type === 'oauth').map(actorId),
+  )
+  const resourceKeys = ids(rows.filter((row) => row.resource_type === 'api_key').map((row) => row.resource_id))
+  const resourceGrants = ids(rows.filter((row) => row.resource_type === 'identity_grant').map((row) => row.resource_id))
+  const siteIds = ids([
+    ...rows.map((row) => row.site_id),
+    ...rows.filter((row) => row.resource_type === 'site').map((row) => row.resource_id),
+  ])
+  const releaseIds = ids(rows.filter((row) => row.resource_type === 'release').map((row) => row.resource_id))
+
+  const select = async (table, values) =>
+    values.length ? db.select(table, { id: `in.(${values.join(',')})`, limit: String(values.length) }) : []
+  const [keys, grants, sites, releases] = await Promise.all([
+    select('ck_api_keys', ids([...actorKeys, ...resourceKeys])),
+    select('ck_oauth_identity_grants', ids([...actorGrants, ...resourceGrants])),
+    select('ck_sites', siteIds),
+    select('ck_releases', releaseIds),
+  ])
+  const byId = (values) => new Map(values.map((value) => [String(value.id), value]))
+  const keyById = byId(keys)
+  const grantById = byId(grants)
+  const siteById = byId(sites)
+  const releaseById = byId(releases)
+
+  return rows.map((row) => {
+    const actor =
+      row.actor_type === 'api_key'
+        ? keyById.get(actorId(row))
+        : row.actor_type === 'operator' || row.actor_type === 'oauth'
+          ? grantById.get(actorId(row))
+          : null
+    const resource =
+      row.resource_type === 'api_key'
+        ? keyById.get(String(row.resource_id))
+        : row.resource_type === 'identity_grant'
+          ? grantById.get(String(row.resource_id))
+          : row.resource_type === 'site'
+            ? siteById.get(String(row.resource_id))
+            : row.resource_type === 'release'
+              ? releaseById.get(String(row.resource_id))
+              : null
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+    return {
+      ...row,
+      actor_label: humanAuditLabel(actor?.display_name, actor?.name),
+      resource_label: humanAuditLabel(resource?.name, resource?.slug, resource?.reason, metadata.name, metadata.slug),
+      site_label: humanAuditLabel(siteById.get(String(row.site_id))?.name, siteById.get(String(row.site_id))?.slug),
+    }
+  })
+}
+
 // Content types for gateway-served release objects. Order matters: `feed.xml`
 // must be tested before the generic `.xml` suffix, because every
 // `<link rel="alternate" type="application/rss+xml">` the builder emits
@@ -2020,7 +2087,7 @@ export function createRequestHandler(ctx) {
         Array.isArray(principal.site_ids) && principal.site_ids.length
           ? rows.filter((row) => row.site_id && principal.site_ids.includes(row.site_id))
           : rows
-      return sendJson(res, 200, { events: visible })
+      return sendJson(res, 200, { events: await auditDisplayLabels(db, visible) })
     }
     // Credential and identity administration is one domain behind two doors.
     // Every rule — role XOR product_scopes, the site ceiling, the duplicate

@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { ck, type ContentItem, type Release } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StatusBadge, type StatusTone } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { RelativeTime } from '@/components/ui/relative-time'
@@ -17,7 +19,6 @@ import { PreviewsCard } from '@/forms/platform/previews'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
 
 const TONE: Record<Release['status'], StatusTone> = {
   active: 'success',
@@ -27,6 +28,14 @@ const TONE: Record<Release['status'], StatusTone> = {
   superseded: 'neutral',
   failed: 'danger',
 }
+const STATUS_KEYS = {
+  active: 'releases.status.active',
+  ready: 'releases.status.ready',
+  building: 'releases.status.building',
+  preview: 'releases.status.preview',
+  superseded: 'releases.status.superseded',
+  failed: 'releases.status.failed',
+} as const
 
 /**
  * A preview is a build behind an invitation, not a candidate for the live site;
@@ -54,17 +63,17 @@ function isDeletable(release: Release) {
  * for that reason, and the Overview and this page must not disagree about one
  * release: an absent count reads as absent in both.
  */
-function fileCount(count: number | null | undefined) {
-  if (count === null || count === undefined) return 'no file count reported'
-  return `${count} ${count === 1 ? 'file' : 'files'}`
-}
-
 export function ReleasesPage() {
+  const { t, dateTime } = useI18n()
   const { site } = useSite()
   const can = useCan()
   const client = useQueryClient()
   const [reason, setReason] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const fileCount = (count: number | null | undefined) => {
+    if (count === null || count === undefined) return t('releases.fileCountUnknown')
+    return count === 1 ? t('releases.fileCountOne') : t('releases.fileCountMany', { count })
+  }
 
   const invalidate = () => client.invalidateQueries({ queryKey: keys.releases(site) })
   const build = useMutation({ mutationFn: () => ck.releases.create(site, { reason }), onSuccess: invalidate })
@@ -84,6 +93,7 @@ export function ReleasesPage() {
     refetchInterval: (query) =>
       (query.state.data ?? []).some((release) => release.status === 'building') || build.isPending ? 3000 : false,
   })
+  const refreshing = releases.isFetching
 
   // Releases carry revision ids and nothing else; the authoring list is where
   // the titles live. One query resolves them for every expanded row.
@@ -97,7 +107,7 @@ export function ReleasesPage() {
 
   if (!site)
     return (
-      <Page title="Releases">
+      <Page title={t('page.releases.title')}>
         <NoSite />
       </Page>
     )
@@ -132,33 +142,28 @@ export function ReleasesPage() {
 
   return (
     <Page
-      title="Releases"
-      description="A release is a complete, immutable build. Activation is a single atomic pointer swap, so rolling back is just activating an older one."
+      title={t('page.releases.title')}
+      description={t('releases.description')}
       actions={
         can('release:write') ? (
           <>
             <Input
               className="w-56"
               data-testid="release-reason"
-              placeholder="Reason (optional)"
+              placeholder={t('releases.reasonPlaceholder')}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />
             <Confirm
-              title="Build and activate a release?"
-              description={
-                <>
-                  This builds every published revision of <strong>{site}</strong> and activates the result. The live
-                  site changes as soon as the build succeeds.
-                </>
-              }
-              confirmLabel="Build and activate"
+              title={t('releases.buildTitle')}
+              description={t('releases.buildDescription', { site })}
+              confirmLabel={t('releases.buildActivate')}
               onConfirm={() => build.mutateAsync()}
             >
               {(open) => (
                 <Button data-testid="release-build" onClick={open} disabled={build.isPending} aria-busy={build.isPending}>
                   {build.isPending ? <Spinner data-icon="inline-start" /> : null}
-                  New release
+                  {t('releases.new')}
                 </Button>
               )}
             </Confirm>
@@ -168,7 +173,7 @@ export function ReleasesPage() {
     >
       {active ? (
         <p data-testid="release-active-summary" className="mb-3 text-sm text-muted-foreground">
-          Live since{' '}
+          {t('releases.liveSince')}{' '}
           <RelativeTime value={active.activated_at} data-testid="release-active-since" className="inline" /> ·{' '}
           <span data-testid="release-active-files">{fileCount(active.file_count)}</span>
         </p>
@@ -179,7 +184,9 @@ export function ReleasesPage() {
           <CardContent>
             <Progress
               data-testid="release-build-progress"
-              label={inFlight === 1 ? 'Building' : `Building ${inFlight} at once`}
+              label={
+                inFlight === 1 ? t('releases.buildingOne') : t('releases.buildingMany', { count: inFlight })
+              }
               since={startedAt}
               // Spelled out for the test id alone: `release-build-since` is the
               // name a browser test already knows the elapsed time by, and
@@ -188,8 +195,7 @@ export function ReleasesPage() {
               valueLabel={<RelativeTime value={startedAt} data-testid="release-build-since" />}
             />
             <p className="mt-1.5 text-xs text-muted-foreground">
-              Elapsed time, not a percentage — a build reports none until it finishes, and one over a hundred seconds is
-              normal. This list refreshes itself.
+              {t('releases.elapsedDescription')}
             </p>
           </CardContent>
         </Card>
@@ -201,21 +207,30 @@ export function ReleasesPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Status</TableHead>
-              <TableHead>Kind</TableHead>
-              <TableHead>Reason</TableHead>
-              <TableHead>Revisions</TableHead>
-              <TableHead>Files</TableHead>
-              <TableHead>Completed</TableHead>
+              <TableHead>{t('releases.status')}</TableHead>
+              <TableHead>{t('releases.kind')}</TableHead>
+              <TableHead>{t('releases.reason')}</TableHead>
+              <TableHead>{t('releases.revisions')}</TableHead>
+              <TableHead>{t('releases.files')}</TableHead>
+              <TableHead>{t('releases.completed')}</TableHead>
               <TableHead>
-                <button
-                  data-testid="release-refresh"
-                  aria-label="Reload releases"
-                  className="inline-flex items-center gap-1 hover:text-foreground"
-                  onClick={() => releases.refetch()}
-                >
-                  <RefreshCw className={releases.isFetching ? 'h-3 w-3 animate-spin' : 'h-3 w-3'} />
-                </button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        data-testid="release-refresh"
+                        aria-label={t('releases.reload')}
+                        disabled={refreshing}
+                        onClick={() => releases.refetch()}
+                      >
+                        <RefreshCw data-icon="inline-start" data-spinning={refreshing} className="data-[spinning=true]:animate-spin" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('releases.reload')}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -226,8 +241,8 @@ export function ReleasesPage() {
               error={releases.error}
               isEmpty={rows.length === 0}
               onRetry={() => releases.refetch()}
-              emptyTitle="No releases yet"
-              emptyMessage="Build one to publish this site."
+              emptyTitle={t('releases.empty')}
+              emptyMessage={t('releases.emptyDescription')}
             >
               {rows.map((release) => {
                 const open = expanded === release.id
@@ -235,9 +250,11 @@ export function ReleasesPage() {
                   <Fragment key={release.id}>
                     <TableRow data-testid="release-row" data-release={release.id}>
                       <TableCell>
-                        <StatusBadge tone={TONE[release.status]}>{release.status}</StatusBadge>
+                        <StatusBadge tone={TONE[release.status]}>{t(STATUS_KEYS[release.status])}</StatusBadge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{release.kind}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {t(release.kind === 'preview' ? 'releases.kind.preview' : 'releases.kind.release')}
+                      </TableCell>
                       <TableCell className="max-w-[18rem] truncate">{release.reason || '—'}</TableCell>
                       {/*
                         0 is a claim of its own here — "this build is exactly the
@@ -250,7 +267,7 @@ export function ReleasesPage() {
                       </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">{release.file_count ?? '—'}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDate(release.completed_at)}
+                        {release.completed_at ? dateTime(release.completed_at) : '—'}
                       </TableCell>
                       {/*
                         Three acts, three grammars — the row this rule was
@@ -270,18 +287,13 @@ export function ReleasesPage() {
                           data-testid={`release-expand-${release.id}`}
                           onClick={() => setExpanded(open ? null : release.id)}
                         >
-                          {open ? 'Hide' : 'Details'}
+                          {open ? t('common.hide') : t('common.details')}
                         </Button>
                         {can('release:write') && isActivatable(release) ? (
                           <Confirm
-                            title="Activate this release?"
-                            description={
-                              <>
-                                The live site for <strong>{site}</strong> switches to this build immediately. The
-                                release currently active becomes superseded.
-                              </>
-                            }
-                            confirmLabel="Activate"
+                            title={t('releases.activateTitle')}
+                            description={t('releases.activateDescription', { site })}
+                            confirmLabel={t('releases.activate')}
                             onConfirm={() => activate.mutateAsync(release.id)}
                           >
                             {(openDialog) => (
@@ -291,30 +303,27 @@ export function ReleasesPage() {
                                 variant="outline"
                                 onClick={openDialog}
                               >
-                                Activate
+                                {t('releases.activate')}
                               </Button>
                             )}
                           </Confirm>
                         ) : null}
                         {can('release:write') && isDeletable(release) ? (
                           <Confirm
-                            title={release.kind === 'preview' ? 'Delete this preview?' : 'Delete this release?'}
-                            description={
-                              release.kind === 'preview' ? (
-                                <>
-                                  The preview build for <strong>{site}</strong> and its storage objects are deleted, and
-                                  its invitation and preview links stop working immediately. The content itself is
-                                  untouched.
-                                </>
-                              ) : (
-                                <>
-                                  This {release.status} release of <strong>{site}</strong> and its storage objects are
-                                  deleted, and with them the option of rolling back to it. The published content is
-                                  untouched — a release is a rendered snapshot, not the source.
-                                </>
-                              )
+                            title={
+                              release.kind === 'preview'
+                                ? t('releases.deletePreviewTitle')
+                                : t('releases.deleteReleaseTitle')
                             }
-                            confirmLabel="Delete"
+                            description={
+                              release.kind === 'preview'
+                                ? t('releases.deletePreviewDescription', { site })
+                                : t('releases.deleteReleaseDescription', {
+                                    site,
+                                    status: t(STATUS_KEYS[release.status]),
+                                  })
+                            }
+                            confirmLabel={t('releases.delete')}
                             destructive
                             onConfirm={async () => {
                               await ck.releases.remove(site, release.id)
@@ -328,7 +337,7 @@ export function ReleasesPage() {
                                 variant="destructive"
                                 onClick={openDialog}
                               >
-                                Delete
+                                {t('releases.delete')}
                               </Button>
                             )}
                           </Confirm>
@@ -339,13 +348,11 @@ export function ReleasesPage() {
                       <TableRow data-testid={`release-detail-${release.id}`}>
                         <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
-                            <dt className="text-muted-foreground">Release id</dt>
-                            <dd className="font-mono">{release.id}</dd>
-                            <dt className="text-muted-foreground">Created</dt>
-                            <dd>{formatDate(release.created_at)}</dd>
-                            <dt className="text-muted-foreground">Activated</dt>
-                            <dd>{release.activated_at ? formatDate(release.activated_at) : '—'}</dd>
-                            <dt className="text-muted-foreground">Files</dt>
+                            <dt className="text-muted-foreground">{t('releases.created')}</dt>
+                            <dd>{dateTime(release.created_at)}</dd>
+                            <dt className="text-muted-foreground">{t('releases.activated')}</dt>
+                            <dd>{release.activated_at ? dateTime(release.activated_at) : '—'}</dd>
+                            <dt className="text-muted-foreground">{t('releases.files')}</dt>
                             <dd className="tabular-nums">{release.file_count ?? '—'}</dd>
                             {/*
                               Drawn when a reason arrives and never faked when one
@@ -358,11 +365,11 @@ export function ReleasesPage() {
                             */}
                             {release.error ? (
                               <>
-                                <dt className="text-muted-foreground">Error</dt>
+                                <dt className="text-muted-foreground">{t('releases.error')}</dt>
                                 <dd className="whitespace-pre-wrap break-words text-destructive">{release.error}</dd>
                               </>
                             ) : null}
-                            <dt className="text-muted-foreground">Overlaid revisions</dt>
+                            <dt className="text-muted-foreground">{t('releases.overlaidRevisions')}</dt>
                             <dd>
                               {release.revision_ids?.length ? (
                                 <ul className="flex flex-col gap-0.5">
@@ -376,14 +383,12 @@ export function ReleasesPage() {
                                         wrong title would be worse.
                                       */}
                                       {items.find((item) => item.published_revision_id === revisionId)?.title ??
-                                        revisionId}
+                                        t('common.unavailableDocument')}
                                     </li>
                                   ))}
                                 </ul>
                               ) : (
-                                <span className="text-muted-foreground">
-                                  None — this build is exactly the published set.
-                                </span>
+                                <span className="text-muted-foreground">{t('releases.noRevisions')}</span>
                               )}
                             </dd>
                           </dl>

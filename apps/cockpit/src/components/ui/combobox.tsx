@@ -1,6 +1,7 @@
 import { Check, ChevronDown, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 import { Chip } from './chip'
 
 export interface ComboboxOption {
@@ -81,11 +82,12 @@ function Listbox({
   term: string
   testId: string
 } & Pick<Shared, 'isLoading' | 'error' | 'emptyMessage' | 'onCreate' | 'createLabel'>) {
-  if (isLoading) return <div className="px-3 py-2 text-xs text-muted-foreground">Loading…</div>
+  const { t } = useI18n()
+  if (isLoading) return <div className="px-3 py-2 text-xs text-muted-foreground">{t('common.loading')}</div>
   if (error)
     return (
       <div className="px-3 py-2 text-xs text-destructive">
-        {error instanceof Error ? error.message : 'Options could not be loaded'}
+        {error instanceof Error ? error.message : t('combobox.optionsFailed')}
       </div>
     )
   if (visible.length === 0)
@@ -99,10 +101,10 @@ function Listbox({
             onClick={() => onCreate(term.trim())}
           >
             <Plus className="h-3 w-3" />
-            {(createLabel ?? ((value: string) => `Create “${value}”`))(term.trim())}
+            {(createLabel ?? ((value: string) => t('combobox.create', { value })))(term.trim())}
           </button>
         ) : (
-          (emptyMessage ?? 'No matches')
+          (emptyMessage ?? t('combobox.noMatches'))
         )}
       </div>
     )
@@ -153,7 +155,7 @@ export function Combobox({
   value,
   onChange,
   options,
-  placeholder = 'Select…',
+  placeholder,
   allowCustom,
   disabled,
   className,
@@ -165,6 +167,7 @@ export function Combobox({
   'data-testid': testId = 'ck-combobox',
   ...aria
 }: Shared & { value: string; onChange: (value: string) => void; allowCustom?: boolean }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [term, setTerm] = useState('')
   const [active, setActive] = useState(0)
@@ -190,7 +193,7 @@ export function Combobox({
           disabled={disabled}
           data-testid={`${testId}-input`}
           className="h-8 min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-          placeholder={value ? label : placeholder}
+          placeholder={value ? label : (placeholder ?? t('combobox.select'))}
           value={open ? term : value ? label : ''}
           onFocus={() => setOpen(true)}
           onChange={(event) => {
@@ -254,7 +257,7 @@ export function MultiCombobox({
   value,
   onChange,
   options,
-  placeholder = 'Add…',
+  placeholder,
   disabled,
   className,
   isLoading,
@@ -265,6 +268,7 @@ export function MultiCombobox({
   'data-testid': testId = 'ck-multicombobox',
   ...aria
 }: Shared & { value: readonly string[]; onChange: (value: string[]) => void }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [term, setTerm] = useState('')
   const [active, setActive] = useState(0)
@@ -284,7 +288,7 @@ export function MultiCombobox({
           <Chip
             key={entry}
             data-testid={`${testId}-chip-${entry}`}
-            removeLabel={`Remove ${entry}`}
+            removeLabel={t('tag.remove', { value: entry })}
             onRemove={disabled ? undefined : () => toggle(entry)}
           >
             {options.find((option) => option.value === entry)?.label ?? entry}
@@ -299,7 +303,7 @@ export function MultiCombobox({
           disabled={disabled}
           data-testid={`${testId}-input`}
           className="h-7 min-w-24 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('combobox.add')}
           value={term}
           onFocus={() => setOpen(true)}
           onChange={(event) => {

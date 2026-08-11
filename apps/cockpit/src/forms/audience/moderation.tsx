@@ -7,13 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { COMMENT_STATUS, CONTACT_STATUS, type CommentStatus, type ContactStatus } from '@/forms/contracts/enums.generated'
 import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
-import { formatDate } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * "No filter" as a value a Select can hold.
@@ -23,7 +22,14 @@ import { formatDate } from '@/lib/utils'
  * both edges — the query still sees `''` — and no request or URL ever carries it.
  */
 const ANY = '__ck_any__'
-
+const STATUS_KEYS = {
+  approved: 'audience.status.approved',
+  rejected: 'audience.status.rejected',
+  pending: 'audience.status.pending',
+  new: 'audience.status.new',
+  read: 'audience.status.read',
+  closed: 'audience.status.closed',
+} as const
 
 /**
  * Every moderation list stores a `content_item_id` and nothing else, so on its
@@ -42,26 +48,20 @@ function useContentTitles(site: string) {
 }
 
 function ContentTitle({ id, item }: { id: string; item: ContentItem | undefined }) {
+  const { t } = useI18n()
   // The uuid is what the row is really keyed by, and the link shows a title
   // instead. `AppLink` spreads its props onto an anchor, so the `title` this used
   // to carry was a native tooltip wearing a component's capital letter: reachable
   // by hover and by nothing else. The link is already a focus target, so it is
   // the trigger and no tab stop is added.
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <AppLink
-            to="/content"
-            data-testid={`ck-moderation-item-${id}`}
-            className="underline decoration-dotted underline-offset-2 hover:text-foreground"
-          >
-            {item?.title || item?.slug || `${id.slice(0, 12)}…`}
-          </AppLink>
-        </TooltipTrigger>
-        <TooltipContent>{id}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <AppLink
+      to="/content"
+      data-testid={`ck-moderation-item-${id}`}
+      className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+    >
+      {item?.title || item?.slug || t('common.unavailableDocument')}
+    </AppLink>
   )
 }
 
@@ -74,6 +74,7 @@ const COMMENT_TONE: Record<CommentStatus, 'success' | 'danger' | 'warning'> = {
 }
 
 export function CommentsCard({ site, siteId }: { site: string; siteId: string }) {
+  const { t, dateTime } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [status, setStatus] = useState<CommentStatus | ''>('')
@@ -93,14 +94,14 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Comments</CardTitle>
+        <CardTitle>{t('moderation.comments.title')}</CardTitle>
         <Select
           value={status || ANY}
           onValueChange={(next) => setStatus(next === ANY ? '' : (next as CommentStatus))}
         >
           <SelectTrigger
             data-testid="ck-comment-status-filter"
-            aria-label="Filter comments by status"
+            aria-label={t('moderation.comments.filter')}
             className="w-44"
           >
             <SelectValue />
@@ -108,11 +109,11 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
           <SelectContent>
             <SelectGroup>
               <SelectItem value={ANY} data-testid="ck-comment-status-filter-any">
-                All statuses
+                {t('moderation.comments.allStatuses')}
               </SelectItem>
               {COMMENT_STATUS.map((value) => (
                 <SelectItem key={value} value={value} data-testid={`ck-comment-status-filter-${value}`}>
-                  {value}
+                  {t(STATUS_KEYS[value])}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -123,11 +124,11 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Author</TableHead>
-              <TableHead>Post</TableHead>
-              <TableHead>Comment</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Received</TableHead>
+              <TableHead>{t('moderation.comments.author')}</TableHead>
+              <TableHead>{t('moderation.comments.post')}</TableHead>
+              <TableHead>{t('moderation.comments.comment')}</TableHead>
+              <TableHead>{t('moderation.comments.status')}</TableHead>
+              <TableHead>{t('moderation.comments.received')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -138,19 +139,23 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
               error={comments.error}
               isEmpty={rows.length === 0}
               onRetry={() => comments.refetch()}
-              emptyMessage={status ? `No ${status} comments.` : 'Nothing waiting for moderation.'}
+              emptyMessage={
+                status
+                  ? t('moderation.comments.emptyFiltered', { status: t(STATUS_KEYS[status]) })
+                  : t('moderation.comments.empty')
+              }
             >
               {rows.map((comment) => (
                 <TableRow key={comment.id} data-testid="ck-comment-row" data-comment={comment.id}>
-                  <TableCell>{comment.author_name || 'anonymous'}</TableCell>
+                  <TableCell>{comment.author_name || t('moderation.anonymous')}</TableCell>
                   <TableCell className="text-muted-foreground">
                     <ContentTitle id={comment.content_item_id} item={titleFor(comment.content_item_id)} />
                   </TableCell>
                   <TableCell className="max-w-[28rem] whitespace-pre-wrap break-words">{comment.body}</TableCell>
                   <TableCell>
-                    <StatusBadge tone={COMMENT_TONE[comment.status]}>{comment.status}</StatusBadge>
+                    <StatusBadge tone={COMMENT_TONE[comment.status]}>{t(STATUS_KEYS[comment.status])}</StatusBadge>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(comment.created_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(comment.created_at)}</TableCell>
                   <TableCell className="flex gap-2">
                     {writable ? (
                       <>
@@ -159,21 +164,22 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                           .map((next) => (
                             <Confirm
                               key={next}
-                              title={next === 'approved' ? 'Publish this comment?' : 'Reject this comment?'}
-                              description={
-                                next === 'approved' ? (
-                                  <>
-                                    The comment by <strong>{comment.author_name || 'anonymous'}</strong> becomes visible
-                                    on the published post at the next release.
-                                  </>
-                                ) : (
-                                  <>
-                                    The comment by <strong>{comment.author_name || 'anonymous'}</strong> stays hidden
-                                    and is kept for the record. The author is not notified.
-                                  </>
-                                )
+                              title={
+                                next === 'approved'
+                                  ? t('moderation.comments.approveTitle')
+                                  : t('moderation.comments.rejectTitle')
                               }
-                              confirmLabel={next === 'approved' ? 'Approve' : 'Reject'}
+                              description={t(
+                                next === 'approved'
+                                  ? 'moderation.comments.approveDescription'
+                                  : 'moderation.comments.rejectDescription',
+                                { author: comment.author_name || t('moderation.anonymous') },
+                              )}
+                              confirmLabel={
+                                next === 'approved'
+                                  ? t('moderation.comments.approve')
+                                  : t('moderation.comments.reject')
+                              }
                               destructive={next === 'rejected'}
                               onConfirm={async () => {
                                 await ck.moderation.moderate(comment.id, next)
@@ -187,24 +193,22 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                                   data-testid={`ck-comment-${next}-${comment.id}`}
                                   onClick={open}
                                 >
-                                  {next === 'approved' ? 'Approve' : 'Reject'}
+                                  {next === 'approved'
+                                    ? t('moderation.comments.approve')
+                                    : t('moderation.comments.reject')}
                                 </Button>
                               )}
                             </Confirm>
                           ))}
                         <Confirm
-                          title="Delete this comment for good?"
-                          description={
-                            <>
-                              The comment by <strong>{comment.author_name || 'anonymous'}</strong> is erased — the row,
-                              the text and the author's email.
-                              {comment.status === 'approved'
-                                ? ' It is on the live site, so this also builds and activates a release without it.'
-                                : ' Rejecting instead would keep it for the record.'}{' '}
-                              This cannot be undone.
-                            </>
-                          }
-                          confirmLabel="Delete comment"
+                          title={t('moderation.comments.deleteTitle')}
+                          description={t(
+                            comment.status === 'approved'
+                              ? 'moderation.comments.deleteApproved'
+                              : 'moderation.comments.deleteOther',
+                            { author: comment.author_name || t('moderation.anonymous') },
+                          )}
+                          confirmLabel={t('moderation.comments.delete')}
                           destructive
                           onConfirm={async () => {
                             await ck.moderation.deleteComment(comment.id, comment.status === 'approved')
@@ -218,7 +222,7 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                               data-testid={`ck-comment-delete-${comment.id}`}
                               onClick={open}
                             >
-                              Delete
+                              {t('moderation.comments.delete')}
                             </Button>
                           )}
                         </Confirm>
@@ -244,6 +248,7 @@ const CONTACT_TONE: Record<ContactStatus, 'info' | 'neutral' | 'warning'> = {
 }
 
 export function ContactCard({ siteId }: { siteId: string }) {
+  const { t, dateTime } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -261,16 +266,16 @@ export function ContactCard({ siteId }: { siteId: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Contact submissions</CardTitle>
+        <CardTitle>{t('moderation.contact.title')}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>From</TableHead>
-              <TableHead>Message</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Received</TableHead>
+              <TableHead>{t('moderation.contact.from')}</TableHead>
+              <TableHead>{t('moderation.contact.message')}</TableHead>
+              <TableHead>{t('moderation.comments.status')}</TableHead>
+              <TableHead>{t('moderation.comments.received')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -281,7 +286,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
               error={contact.error}
               isEmpty={rows.length === 0}
               onRetry={() => contact.refetch()}
-              emptyMessage="No contact submissions."
+              emptyMessage={t('moderation.contact.empty')}
             >
               {rows.map((submission) => {
                 const open = expanded === submission.id
@@ -289,7 +294,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                   <Fragment key={submission.id}>
                     <TableRow data-testid="ck-contact-row" data-submission={submission.id}>
                       <TableCell>
-                        <span className="font-medium">{submission.name || 'anonymous'}</span>
+                        <span className="font-medium">{submission.name || t('moderation.anonymous')}</span>
                         {submission.email ? (
                           <span className="block text-xs text-muted-foreground">{submission.email}</span>
                         ) : null}
@@ -312,9 +317,13 @@ export function ContactCard({ siteId }: { siteId: string }) {
                         </button>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge tone={CONTACT_TONE[submission.status]}>{submission.status}</StatusBadge>
+                        <StatusBadge tone={CONTACT_TONE[submission.status]}>
+                          {t(STATUS_KEYS[submission.status])}
+                        </StatusBadge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(submission.created_at)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {dateTime(submission.created_at)}
+                      </TableCell>
                       <TableCell className="flex flex-wrap gap-2">
                         {writable ? (
                           <>
@@ -329,18 +338,17 @@ export function ContactCard({ siteId }: { siteId: string }) {
                                   await invalidate()
                                 }}
                               >
-                                {next === 'new' ? 'Reopen' : next === 'read' ? 'Mark read' : 'Close'}
+                                {next === 'new'
+                                  ? t('moderation.contact.reopen')
+                                  : next === 'read'
+                                    ? t('moderation.contact.markRead')
+                                    : t('moderation.contact.close')}
                               </Button>
                             ))}
                             <Confirm
-                              title="Delete this submission?"
-                              description={
-                                <>
-                                  The sender's name, email address and message are erased. Closing it instead keeps the
-                                  record. This cannot be undone.
-                                </>
-                              }
-                              confirmLabel="Delete submission"
+                              title={t('moderation.contact.deleteTitle')}
+                              description={t('moderation.contact.deleteDescription')}
+                              confirmLabel={t('moderation.contact.delete')}
                               destructive
                               onConfirm={async () => {
                                 await ck.moderation.deleteContact(submission.id)
@@ -354,7 +362,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                                   data-testid={`ck-contact-delete-${submission.id}`}
                                   onClick={openDialog}
                                 >
-                                  Delete
+                                  {t('moderation.contact.delete')}
                                 </Button>
                               )}
                             </Confirm>
@@ -383,6 +391,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
 // ── Post feedback ────────────────────────────────────────────────────────────
 
 export function FeedbackCard({ site, siteId }: { site: string; siteId: string }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const [post, setPost] = useState('')
@@ -401,15 +410,19 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Post feedback</CardTitle>
+        <CardTitle>{t('moderation.feedback.title')}</CardTitle>
         <Select value={post || ANY} onValueChange={(next) => setPost(next === ANY ? '' : next)}>
-          <SelectTrigger data-testid="ck-feedback-post-filter" aria-label="Filter feedback by post" className="w-56">
+          <SelectTrigger
+            data-testid="ck-feedback-post-filter"
+            aria-label={t('moderation.feedback.filter')}
+            className="w-56"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               <SelectItem value={ANY} data-testid="ck-feedback-post-filter-any">
-                All posts
+                {t('moderation.feedback.allPosts')}
               </SelectItem>
               {(feedback.data ?? []).map((row) => (
                 <SelectItem
@@ -417,7 +430,7 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                   value={row.content_item_id}
                   data-testid={`ck-feedback-post-filter-${row.content_item_id}`}
                 >
-                  {titleFor(row.content_item_id)?.title || row.content_item_id.slice(0, 12)}
+                  {titleFor(row.content_item_id)?.title || titleFor(row.content_item_id)?.slug || t('common.unavailableDocument')}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -428,9 +441,9 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Post</TableHead>
-              <TableHead>Up</TableHead>
-              <TableHead>Down</TableHead>
+              <TableHead>{t('moderation.comments.post')}</TableHead>
+              <TableHead>{t('moderation.feedback.up')}</TableHead>
+              <TableHead>{t('moderation.feedback.down')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -441,7 +454,7 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
               error={feedback.error}
               isEmpty={rows.length === 0}
               onRetry={() => feedback.refetch()}
-              emptyMessage="No votes yet."
+              emptyMessage={t('moderation.feedback.empty')}
             >
               {rows.map((row) => (
                 <TableRow key={row.content_item_id} data-testid="ck-feedback-row" data-post={row.content_item_id}>
@@ -453,16 +466,15 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                   <TableCell>
                     {writable ? (
                       <Confirm
-                        title="Reset this counter?"
-                        description={
-                          <>
-                            All {row.up + row.down} anonymous votes on{' '}
-                            <strong>{titleFor(row.content_item_id)?.title || row.content_item_id}</strong> are deleted
-                            and the counter starts at zero. There is nothing else stored about them, so this cannot be
-                            undone.
-                          </>
-                        }
-                        confirmLabel="Reset counter"
+                        title={t('moderation.feedback.resetTitle')}
+                        description={t('moderation.feedback.resetDescription', {
+                          count: row.up + row.down,
+                          post:
+                            titleFor(row.content_item_id)?.title ||
+                            titleFor(row.content_item_id)?.slug ||
+                            t('common.unavailableDocument'),
+                        })}
+                        confirmLabel={t('moderation.feedback.resetCounter')}
                         destructive
                         onConfirm={async () => {
                           await ck.moderation.resetFeedback(row.content_item_id)
@@ -476,7 +488,7 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                             data-testid={`ck-feedback-reset-${row.content_item_id}`}
                             onClick={open}
                           >
-                            Reset
+                            {t('moderation.feedback.reset')}
                           </Button>
                         )}
                       </Confirm>

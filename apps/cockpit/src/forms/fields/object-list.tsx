@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { useI18n } from '@/lib/i18n-context'
 import { cn } from '@/lib/utils'
 import { FieldShell, type FieldShellProps } from './field'
 
@@ -34,8 +35,8 @@ export function ObjectListField<T extends Record<string, unknown>>({
   itemLabel,
   uniqueBy,
   exclusiveFlag,
-  addLabel = 'Add',
-  emptyMessage = 'None yet.',
+  addLabel,
+  emptyMessage,
   max,
   ...shell
 }: FieldShellProps & {
@@ -52,12 +53,13 @@ export function ObjectListField<T extends Record<string, unknown>>({
   emptyMessage?: string
   max?: number
 }) {
+  const { t } = useI18n()
   const keys = uniqueBy ? value.map(uniqueBy) : []
   const duplicates = new Set(keys.filter((key, index) => key && keys.indexOf(key) !== index))
   const error =
     shell.error ??
-    (duplicates.size ? `Duplicate: ${[...duplicates].join(', ')}` : undefined) ??
-    (max !== undefined && value.length > max ? `At most ${max}` : undefined)
+    (duplicates.size ? t('list.duplicate', { values: [...duplicates].join(', ') }) : undefined) ??
+    (max !== undefined && value.length > max ? t('list.maximum', { count: max }) : undefined)
 
   function replace(index: number, next: T) {
     onChange(value.map((item, at) => (at === index ? next : item)))
@@ -78,7 +80,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
           {value.length === 0 ? (
             <Empty className="border" data-testid={`${control['data-testid']}-empty`}>
               <EmptyHeader>
-                <EmptyTitle>{emptyMessage}</EmptyTitle>
+                <EmptyTitle>{emptyMessage ?? t('list.empty')}</EmptyTitle>
               </EmptyHeader>
             </Empty>
           ) : null}
@@ -120,7 +122,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      aria-label="Move up"
+                      aria-label={t('common.moveUp')}
                       data-testid={`${control['data-testid']}-up-${index}`}
                       disabled={control.disabled || index === 0}
                       onClick={() => move(index, -1)}
@@ -131,7 +133,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      aria-label="Move down"
+                      aria-label={t('common.moveDown')}
                       data-testid={`${control['data-testid']}-down-${index}`}
                       disabled={control.disabled || index === value.length - 1}
                       onClick={() => move(index, 1)}
@@ -142,7 +144,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
                       type="button"
                       variant="destructive"
                       size="icon-sm"
-                      aria-label="Remove"
+                      aria-label={t('common.remove')}
                       data-testid={`${control['data-testid']}-remove-${index}`}
                       disabled={control.disabled}
                       onClick={() => onChange(value.filter((_, at) => at !== index))}
@@ -175,7 +177,7 @@ export function ObjectListField<T extends Record<string, unknown>>({
             }}
           >
             <Plus data-icon="inline-start" />
-            {addLabel}
+            {addLabel ?? t('common.add')}
           </Button>
         </div>
       )}

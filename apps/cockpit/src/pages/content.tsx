@@ -3,6 +3,7 @@ import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ck, type ContentItem, type ContentKind, type Revision } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +36,12 @@ import { useSite } from '@/lib/site'
 import { compareText, compareTime, encodeSort } from '@/lib/table-view'
 
 const KINDS: ContentKind[] = ['page', 'post', 'project', 'deck']
+const KIND_KEYS = {
+  page: 'content.kind.page',
+  post: 'content.kind.post',
+  project: 'content.kind.project',
+  deck: 'content.kind.deck',
+} as const
 
 /**
  * "Every kind", as a value Radix will accept.
@@ -91,6 +98,7 @@ function name(item: ContentItem): string {
  * least expressible, and the operator can look at it without a second request.
  */
 export function ContentPage() {
+  const { t } = useI18n()
   const { site } = useSite()
   const can = useCan()
   const client = useQueryClient()
@@ -109,7 +117,7 @@ export function ContentPage() {
     () => [
       {
         id: 'title',
-        label: 'Title',
+        label: t('content.title'),
         // The only field that says which document a row is, and the row's
         // heading for a screen reader. It cannot be put away.
         required: true,
@@ -119,28 +127,28 @@ export function ContentPage() {
       },
       {
         id: 'kind',
-        label: 'Kind',
+        label: t('content.kind'),
         compare: (left, right) => compareText(left.kind, right.kind),
         className: 'text-muted-foreground',
-        cell: (item) => item.kind,
+        cell: (item) => t(KIND_KEYS[item.kind]),
       },
       {
         id: 'locale',
-        label: 'Locale',
+        label: t('content.locale'),
         compare: (left, right) => compareText(left.locale, right.locale),
         className: 'text-muted-foreground',
         cell: (item) => item.locale,
       },
       {
         id: 'slug',
-        label: 'Slug',
+        label: t('content.list.slug'),
         compare: (left, right) => compareText(left.slug, right.slug),
         className: 'text-muted-foreground',
         cell: (item) => item.slug || '—',
       },
       {
         id: 'live',
-        label: 'Live',
+        label: t('content.list.live'),
         // Deliberately not comparable. The cell is two independent facts —
         // whether the item is published, and whether newer work is waiting — and
         // an invented rank over the pair would order the list by something no
@@ -153,22 +161,22 @@ export function ContentPage() {
         cell: (item) => (
           <>
             {item.published_revision_id ? (
-              <StatusBadge tone="success">published</StatusBadge>
+              <StatusBadge tone="success">{t('content.list.published')}</StatusBadge>
             ) : (
-              <StatusBadge>draft only</StatusBadge>
+              <StatusBadge>{t('content.list.draftOnly')}</StatusBadge>
             )}
             {/* A published item whose newest revision is still a draft
                 has unreleased work — the single most useful thing to
                 see in an authoring list. */}
             {item.published_revision_id && item.latest_revision_status === 'draft' ? (
-              <StatusBadge tone="warning">newer draft</StatusBadge>
+              <StatusBadge tone="warning">{t('content.list.newerDraft')}</StatusBadge>
             ) : null}
           </>
         ),
       },
       {
         id: 'updated',
-        label: 'Updated',
+        label: t('content.list.updated'),
         compare: (left, right) => compareTime(left.updated_at, right.updated_at),
         descFirst: true,
         className: 'text-muted-foreground',
@@ -179,7 +187,7 @@ export function ContentPage() {
       },
       {
         id: 'created',
-        label: 'Created',
+        label: t('content.list.created'),
         compare: (left, right) => compareTime(left.created_at, right.created_at),
         descFirst: true,
         // The endpoint's own order. Off by default because it is the same for
@@ -191,7 +199,7 @@ export function ContentPage() {
       },
       {
         id: 'actions',
-        label: 'Row actions',
+        label: t('content.list.rowActions'),
         required: true,
         headerHidden: true,
         className: 'flex gap-2',
@@ -203,18 +211,13 @@ export function ContentPage() {
               variant="outline"
               onClick={() => setOpen({ itemId: item.id })}
             >
-              {can('content:write') ? 'Edit' : 'Inspect'}
+              {can('content:write') ? t('content.list.edit') : t('content.list.inspect')}
             </Button>
             {can('content:write') && !item.published_revision_id ? (
               <Confirm
-                title="Discard this draft?"
-                description={
-                  <>
-                    <strong>{name(item)}</strong> and every one of its revisions are removed. It was never published,
-                    so nothing on the live site changes. This cannot be undone.
-                  </>
-                }
-                confirmLabel="Discard draft"
+                title={t('content.list.discardTitle')}
+                description={t('content.list.discardDescription', { name: name(item) })}
+                confirmLabel={t('content.list.discardDraft')}
                 destructive
                 onConfirm={async () => {
                   await ck.content.deleteDraft(item.id)
@@ -223,20 +226,16 @@ export function ContentPage() {
               >
                 {(openConfirm) => (
                   <Button data-testid="content-discard" size="sm" variant="destructive" onClick={openConfirm}>
-                    Discard
+                    {t('content.list.discard')}
                   </Button>
                 )}
               </Confirm>
             ) : null}
             {can('release:write') && item.published_revision_id ? (
               <Confirm
-                title="Remove from the live site?"
-                description={
-                  <>
-                    <strong>{name(item)}</strong> stops being served after the next release. Its revisions are kept.
-                  </>
-                }
-                confirmLabel="Unpublish"
+                title={t('content.list.unpublishTitle')}
+                description={t('content.list.unpublishDescription', { name: name(item) })}
+                confirmLabel={t('content.list.unpublish')}
                 destructive
                 onConfirm={async () => {
                   await ck.content.unpublish(item.id)
@@ -245,7 +244,7 @@ export function ContentPage() {
               >
                 {(openConfirm) => (
                   <Button data-testid="content-unpublish" size="sm" variant="destructive" onClick={openConfirm}>
-                    Unpublish
+                    {t('content.list.unpublish')}
                   </Button>
                 )}
               </Confirm>
@@ -257,7 +256,7 @@ export function ContentPage() {
     // `query` is rebuilt every render; the two filters it is made of are the
     // dependency that actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [can, client, site, kind, locale],
+    [can, client, site, kind, locale, t],
   )
 
   const { view, setView } = useTableView('content', columns)
@@ -280,7 +279,7 @@ export function ContentPage() {
 
   if (!site)
     return (
-      <Page title="Content">
+      <Page title={t('page.content.title')}>
         <NoSite />
       </Page>
     )
@@ -308,12 +307,12 @@ export function ContentPage() {
 
   return (
     <Page
-      title="Content"
-      description="Revisions are immutable. Creating or editing writes a new draft revision; nothing reaches the live site until a release is built and activated."
+      title={t('page.content.title')}
+      description={t('content.list.description')}
       actions={
         can('content:write') ? (
           <Button data-testid="content-new" onClick={() => setOpen({ itemId: null })}>
-            New content
+            {t('content.list.new')}
           </Button>
         ) : null
       }
@@ -328,7 +327,7 @@ export function ContentPage() {
         isLoading={items.isPending}
         error={items.error}
         onRetry={() => items.refetch()}
-        emptyMessage="No content items match this filter."
+        emptyMessage={t('content.list.empty')}
         view={view}
         onViewChange={setView}
         page={page}
@@ -344,15 +343,19 @@ export function ContentPage() {
               value={kind || ANY_KIND}
               onValueChange={(next) => setKind(next === ANY_KIND ? '' : (next as ContentKind))}
             >
-              <SelectTrigger className="w-40" data-testid="content-kind-filter" aria-label="Filter content by kind">
-                <SelectValue placeholder="All kinds" />
+              <SelectTrigger
+                className="w-40"
+                data-testid="content-kind-filter"
+                aria-label={t('content.list.filterKind')}
+              >
+                <SelectValue placeholder={t('content.list.allKinds')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value={ANY_KIND}>All kinds</SelectItem>
+                  <SelectItem value={ANY_KIND}>{t('content.list.allKinds')}</SelectItem>
                   {KINDS.map((value) => (
                     <SelectItem key={value} value={value}>
-                      {value}
+                      {t(KIND_KEYS[value])}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -361,7 +364,7 @@ export function ContentPage() {
             <Input
               className="w-40"
               data-testid="content-locale-filter"
-              placeholder="locale"
+              placeholder={t('content.list.localeFilter')}
               value={locale}
               onChange={(event) => setLocale(event.target.value.trim())}
             />
@@ -396,6 +399,7 @@ function ContentDetail({
   onClose: () => void
   onCreated: (itemId: string) => void
 }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { current } = useSite()
@@ -456,16 +460,23 @@ function ContentDetail({
     [allItems, current],
   )
 
-  const title = item.data?.title || item.data?.translation_key || (itemId ? 'Content' : 'New content')
+  const title =
+    item.data?.title ||
+    item.data?.translation_key ||
+    (itemId ? t('content.detail.fallbackTitle') : t('content.list.new'))
 
   return (
     <Page
       title={title}
-      description={item.data ? `${item.data.kind} · ${item.data.locale}` : 'A new draft. Nothing exists until it is saved.'}
+      description={
+        item.data
+          ? `${t(KIND_KEYS[item.data.kind])} · ${item.data.locale}`
+          : t('content.detail.newDescription')
+      }
       actions={
         <Button variant="outline" data-testid="content-back" onClick={onClose}>
-          <ArrowLeft className="h-4 w-4" />
-          Back to the list
+          <ArrowLeft data-icon="inline-start" />
+          {t('content.detail.back')}
         </Button>
       }
     >
@@ -474,10 +485,15 @@ function ContentDetail({
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { id: 'editor', label: 'Editor' },
-          { id: 'revisions', label: 'Revisions', badge: revisions.data ? <Badge>{revisions.data.length}</Badge> : undefined, disabled: !itemId },
-          { id: 'audio', label: 'Audio', disabled: !itemId },
-          { id: 'live', label: 'Live', disabled: !item.data?.published_revision_id },
+          { id: 'editor', label: t('content.detail.editor') },
+          {
+            id: 'revisions',
+            label: t('content.detail.revisions'),
+            badge: revisions.data ? <Badge>{revisions.data.length}</Badge> : undefined,
+            disabled: !itemId,
+          },
+          { id: 'audio', label: t('content.detail.audio'), disabled: !itemId },
+          { id: 'live', label: t('content.detail.live'), disabled: !item.data?.published_revision_id },
         ]}
         className="mb-4"
       />
@@ -487,12 +503,14 @@ function ContentDetail({
           // The word "Loading…" was one line high where a form of forty fields
           // was about to appear, so every control the operator was already
           // reaching for moved out from under the pointer the moment it landed.
-          <SkeletonFields fields={6} label="Loading the document…" data-testid="content-editor-skeleton" />
+          <SkeletonFields fields={6} label={t('content.detail.loading')} data-testid="content-editor-skeleton" />
         ) : failure ? (
           <Alert variant="destructive" data-testid="content-editor-error">
             <TriangleAlert />
-            <AlertTitle>This document could not be read</AlertTitle>
-            <AlertDescription>{failure instanceof Error ? failure.message : 'Could not load'}</AlertDescription>
+            <AlertTitle>{t('content.detail.error')}</AlertTitle>
+            <AlertDescription>
+              {failure instanceof Error ? failure.message : t('content.detail.errorFallback')}
+            </AlertDescription>
           </Alert>
         ) : (
           <ContentEditor
@@ -552,6 +570,7 @@ function ContentDetail({
  * by whether they succeeded, never by a response shape guessed from the code.
  */
 function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
+  const { t } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { toast } = useToast()
@@ -562,12 +581,15 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
     try {
       if (action === 'create') await ck.content.audio.create(item.id, { force: true })
       else await ck.content.audio.remove(item.id)
-      toast({ tone: 'success', title: action === 'create' ? 'Narration queued' : 'Narration removed' })
+      toast({
+        tone: 'success',
+        title: action === 'create' ? t('content.audio.queued') : t('content.audio.removed'),
+      })
       await client.invalidateQueries({ queryKey: keys.audio.jobs(site) })
     } catch (failure) {
       toast({
         tone: 'danger',
-        title: action === 'create' ? 'Narration could not be queued' : 'Narration could not be removed',
+        title: action === 'create' ? t('content.audio.queueError') : t('content.audio.removeError'),
         detail: failure instanceof Error ? failure.message : undefined,
       })
     }
@@ -576,11 +598,8 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Narration</CardTitle>
-        <CardDescription>
-          Narration is produced for published posts only, and only while the site has read-aloud switched on. It spends
-          the monthly character budget.
-        </CardDescription>
+        <CardTitle>{t('content.audio.title')}</CardTitle>
+        <CardDescription>{t('content.audio.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex gap-2">
@@ -597,12 +616,12 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
             disabled={!can('content:write') || !item.published_revision_id}
             onClick={() => void run('create')}
           >
-            Narrate this document
+            {t('content.audio.create')}
           </Button>
           <Confirm
-            title="Remove the narration?"
-            description="The audio file and its job are deleted. The next release serves the page without a player."
-            confirmLabel="Remove narration"
+            title={t('content.audio.removeTitle')}
+            description={t('content.audio.removeDescription')}
+            confirmLabel={t('content.audio.remove')}
             destructive
             onConfirm={() => run('remove')}
           >
@@ -614,7 +633,7 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
                 disabled={!can('content:write')}
                 onClick={open}
               >
-                Remove narration
+                {t('content.audio.remove')}
               </Button>
             )}
           </Confirm>
@@ -622,11 +641,11 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Status</TableHead>
-              <TableHead>Attempts</TableHead>
-              <TableHead>Characters</TableHead>
-              <TableHead>Error</TableHead>
-              <TableHead>Updated</TableHead>
+              <TableHead>{t('content.audio.status')}</TableHead>
+              <TableHead>{t('content.audio.attempts')}</TableHead>
+              <TableHead>{t('content.audio.characters')}</TableHead>
+              <TableHead>{t('content.audio.error')}</TableHead>
+              <TableHead>{t('content.audio.updated')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -636,8 +655,8 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
               error={jobs.error}
               isEmpty={mine.length === 0}
               onRetry={() => jobs.refetch()}
-              emptyTitle="No narration job for this document"
-              emptyMessage="Queue one with the button above, once the document is published."
+              emptyTitle={t('content.audio.empty')}
+              emptyMessage={t('content.audio.emptyDescription')}
             >
               {mine.map((job) => (
                 <TableRow key={job.id} data-testid="content-audio-job" data-job={job.id}>
@@ -666,6 +685,7 @@ function AudioPanel({ site, item }: { site: string; item: ContentItem }) {
 
 /** What the live site actually serves, straight from the published read API. */
 function LivePanel({ site, item }: { site: string; item: ContentItem }) {
+  const { t } = useI18n()
   const scheme = useContentScheme()
   const published = useQuery({
     queryKey: keys.published.detail(site, item.kind, item.locale, item.slug ?? ''),
@@ -677,7 +697,7 @@ function LivePanel({ site, item }: { site: string; item: ContentItem }) {
     return (
       <Card>
         <CardContent>
-          <SkeletonText lines={8} label="Loading the published document…" data-testid="content-live-skeleton" />
+          <SkeletonText lines={8} label={t('content.live.loading')} data-testid="content-live-skeleton" />
         </CardContent>
       </Card>
     )
@@ -685,9 +705,9 @@ function LivePanel({ site, item }: { site: string; item: ContentItem }) {
     return (
       <Alert variant="destructive" data-testid="content-live-error">
         <TriangleAlert />
-        <AlertTitle>The published document could not be read</AlertTitle>
+        <AlertTitle>{t('content.live.error')}</AlertTitle>
         <AlertDescription>
-          {published.error instanceof Error ? published.error.message : 'Could not load the published document'}
+          {published.error instanceof Error ? published.error.message : t('content.live.errorFallback')}
         </AlertDescription>
       </Alert>
     )
@@ -695,10 +715,8 @@ function LivePanel({ site, item }: { site: string; item: ContentItem }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Live output</CardTitle>
-        <CardDescription>
-          The active release's own output. It changes only when a release is built and activated.
-        </CardDescription>
+        <CardTitle>{t('content.live.title')}</CardTitle>
+        <CardDescription>{t('content.live.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         <ContentHtml html={published.data.html} scheme={scheme} testId="content-live-html" />

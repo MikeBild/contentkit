@@ -3,6 +3,7 @@ import { ChartNoAxesColumn, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { ck, statsKinds, usageStatsKinds, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -141,12 +142,14 @@ function readTile(kind: StatsKind, result?: StatsResult): Tile {
  * in it is ordinarily a site that never switched it on — a different sentence
  * from a product statistic that recorded nothing.
  */
-const QUIET_WORD = { 'measured-all-zero': 'measured zero', 'nothing-came-back': 'not recorded' }
-const QUIET_WORD_USAGE = { 'measured-all-zero': 'measured zero', 'nothing-came-back': 'not opted in' }
-
-const quietWord = (tile: Tile) => (tile.usage ? QUIET_WORD_USAGE : QUIET_WORD)[tile.emptiness]
+const QUIET_WORD = { 'measured-all-zero': 'overview.measuredZero', 'nothing-came-back': 'overview.notRecorded' } as const
+const QUIET_WORD_USAGE = {
+  'measured-all-zero': 'overview.measuredZero',
+  'nothing-came-back': 'overview.notOptedIn',
+} as const
 
 export function OverviewPage() {
+  const { t } = useI18n()
   const { site, current } = useSite()
   const can = useCan()
   // Both lists are content:read; this page's own scope is stats:read, so an
@@ -204,7 +207,7 @@ export function OverviewPage() {
 
   if (!site) {
     return (
-      <Page title="Overview">
+      <Page title={t('page.overview.title')}>
         <NoSite />
       </Page>
     )
@@ -213,7 +216,7 @@ export function OverviewPage() {
   return (
     // The description says what the page is for. What the numbers underneath it
     // are measured over is a fact about the numbers, so it sits with them.
-    <Page title="Overview" description={`What ${site} has waiting, and what it measured.`}>
+    <Page title={t('page.overview.title')} description={t('page.overview.description', { site })}>
       <div className="flex flex-col gap-6">
         {/*
           First, and alone: the chain is the only thing on this page an operator
@@ -230,8 +233,8 @@ export function OverviewPage() {
         */}
         <section className="flex flex-col gap-3" data-testid="ck-overview-statistics">
           <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 className="text-sm font-semibold tracking-tight">Statistics</h2>
-            <p className="text-xs text-muted-foreground">Daily UTC aggregates, last 30 buckets.</p>
+            <h2 className="text-sm font-semibold tracking-tight">{t('overview.statistics')}</h2>
+            <p className="text-xs text-muted-foreground">{t('overview.statisticsWindow')}</p>
           </header>
 
           {/*
@@ -271,9 +274,10 @@ export function OverviewPage() {
  * paraphrased.
  */
 function UnreadableStats({ tiles }: { tiles: Tile[] }) {
+  const { t } = useI18n()
   const grouped = new Map<string, StatsKind[]>()
   for (const tile of tiles) {
-    const message = tile.result?.error instanceof Error ? tile.result.error.message : 'Unavailable'
+    const message = tile.result?.error instanceof Error ? tile.result.error.message : t('overview.unavailable')
     grouped.set(message, [...(grouped.get(message) ?? []), tile.kind])
   }
 
@@ -281,7 +285,9 @@ function UnreadableStats({ tiles }: { tiles: Tile[] }) {
     <Alert variant="destructive" data-testid="ck-overview-unreadable" data-count={tiles.length}>
       <TriangleAlert />
       <AlertTitle>
-        {tiles.length === 1 ? 'One statistic could not be read' : `${tiles.length} statistics could not be read`}
+        {tiles.length === 1
+          ? t('overview.unreadableOne')
+          : t('overview.unreadableMany', { count: tiles.length })}
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-1.5">
         {[...grouped].map(([message, kinds]) => (
@@ -309,6 +315,7 @@ function UnreadableStats({ tiles }: { tiles: Tile[] }) {
  * keeps the same distinction addressable to a browser test.
  */
 function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
+  const { t } = useI18n()
   return (
     <Empty className="border" data-testid="ck-overview-quiet" data-count={tiles.length}>
       <EmptyHeader>
@@ -316,10 +323,10 @@ function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
           <ChartNoAxesColumn />
         </EmptyMedia>
         <EmptyTitle>
-          {tiles.length} of {total} statistics have nothing to plot
+          {t('overview.quietTitle', { quiet: tiles.length, total })}
         </EmptyTitle>
         <EmptyDescription>
-          A measured zero and a value nobody recorded are different answers, so each name says which it is.
+          {t('overview.quietDescription')}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent className="max-w-none">
@@ -333,7 +340,9 @@ function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
                 className="gap-1"
               >
                 <span className="capitalize">{tile.kind}</span>
-                <span className="text-muted-foreground">· {quietWord(tile)}</span>
+                <span className="text-muted-foreground">
+                  · {t((tile.usage ? QUIET_WORD_USAGE : QUIET_WORD)[tile.emptiness])}
+                </span>
               </Badge>
             </li>
           ))}
@@ -352,6 +361,7 @@ function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
  * tile with rows in it, or for one that is still loading them.
  */
 function StatCard({ tile }: { tile: Tile }) {
+  const { t, number } = useI18n()
   const { kind, usage, result, shown, lead } = tile
 
   return (
@@ -363,7 +373,7 @@ function StatCard({ tile }: { tile: Tile }) {
             action slot — CardHeader re-grids itself once one is present. */}
         {usage ? (
           <CardAction>
-            <Badge variant="outline">usage · opt-in</Badge>
+            <Badge variant="outline">{t('overview.usageOptIn')}</Badge>
           </CardAction>
         ) : null}
       </CardHeader>
@@ -372,7 +382,7 @@ function StatCard({ tile }: { tile: Tile }) {
           // The tile's own shape: a sparkline band and four metric rows. Twelve of
           // these load at once, so a one-line "Loading…" made the grid settle at
           // twelve short cards and then jolt to full height a moment later.
-          <SkeletonGroup label="Loading the statistics…" data-testid="stat-card-skeleton">
+          <SkeletonGroup label={t('overview.loading')} data-testid="stat-card-skeleton">
             <Skeleton className="h-10 w-full" />
             <div className="mt-3 flex flex-col gap-2">
               {Array.from({ length: 4 }, (_, row) => (
@@ -410,7 +420,7 @@ function StatCard({ tile }: { tile: Tile }) {
                       <TooltipContent>{metric.name}</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <dd className="shrink-0 text-sm font-semibold tabular-nums">{format(metric)}</dd>
+                  <dd className="shrink-0 text-sm font-semibold tabular-nums">{format(metric, number)}</dd>
                 </div>
               ))}
             </dl>
@@ -421,12 +431,12 @@ function StatCard({ tile }: { tile: Tile }) {
   )
 }
 
-function format(metric: Metric) {
+function format(metric: Metric, number: (value: number) => string) {
   if (metric.total === null) return '—'
-  if (metric.kind === 'duration') return `${Math.round(metric.total)} ms`
-  if (metric.kind === 'ratio' || metric.kind === 'percentage') return `${(metric.total * 100).toFixed(1)} %`
-  if (metric.kind === 'data-size') return `${(metric.total / 1024).toFixed(1)} kB`
-  return metric.total.toLocaleString()
+  if (metric.kind === 'duration') return `${number(Math.round(metric.total))} ms`
+  if (metric.kind === 'ratio' || metric.kind === 'percentage') return `${number(metric.total * 100)} %`
+  if (metric.kind === 'data-size') return `${number(metric.total / 1024)} kB`
+  return number(metric.total)
 }
 
 /**

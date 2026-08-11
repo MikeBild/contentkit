@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useI18n } from '@/lib/i18n-context'
 
 export interface SettingsConflict {
   /** The object the form was seeded from. */
@@ -42,8 +43,13 @@ export function ConflictDialog({
   onOverwrite: () => void
   onCancel: () => void
 }) {
+  const { t } = useI18n()
   const [showDiff, setShowDiff] = useState(false)
-  const changes = diffPaths(conflict.baseline, conflict.current)
+  const changes = diffPaths(conflict.baseline, conflict.current, {
+    notSet: t('conflict.notSet'),
+    items: (count) => t('conflict.items', { count }),
+    keys: (count) => t('conflict.keysValue', { count }),
+  })
 
   return (
     <Dialog
@@ -67,10 +73,9 @@ export function ConflictDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>The site changed while you were editing</DialogTitle>
+          <DialogTitle>{t('conflict.title')}</DialogTitle>
           <DialogDescription>
-            {changes.length === 1 ? 'One key' : `${changes.length} keys`} were written by someone else since this form
-            was loaded.
+            {t(changes.length === 1 ? 'conflict.oneKey' : 'conflict.keys', { count: changes.length })}
           </DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin overflow-y-auto">
@@ -78,10 +83,8 @@ export function ConflictDialog({
               grey line above the buttons. */}
           <Alert data-testid="ck-site-conflict-consequences">
             <TriangleAlert />
-            <AlertTitle>Both answers lose something</AlertTitle>
-            <AlertDescription>
-              Reloading discards everything unsaved on this page. Overwriting keeps this page and removes their change.
-            </AlertDescription>
+            <AlertTitle>{t('conflict.consequencesTitle')}</AlertTitle>
+            <AlertDescription>{t('conflict.consequences')}</AlertDescription>
           </Alert>
           {showDiff ? (
             <ul data-testid="ck-site-conflict-list" className="mt-4 flex flex-col gap-1">
@@ -96,7 +99,7 @@ export function ConflictDialog({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-mine-${change.path}`}>
-                            <span className="text-muted-foreground">loaded: </span>
+                            <span className="text-muted-foreground">{t('conflict.loaded')} </span>
                             {change.mine}
                           </span>
                         </TooltipTrigger>
@@ -105,7 +108,7 @@ export function ConflictDialog({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span tabIndex={0} className="truncate" data-testid={`ck-site-conflict-theirs-${change.path}`}>
-                            <span className="text-muted-foreground">now: </span>
+                            <span className="text-muted-foreground">{t('conflict.now')} </span>
                             {change.theirs}
                           </span>
                         </TooltipTrigger>
@@ -125,7 +128,7 @@ export function ConflictDialog({
             data-testid="ck-site-conflict-diff"
             onClick={() => setShowDiff((open) => !open)}
           >
-            {showDiff ? 'Hide differences' : 'Show differences'}
+            {t(showDiff ? 'conflict.hide' : 'conflict.show')}
           </Button>
           <Button
             variant="outline"
@@ -134,7 +137,7 @@ export function ConflictDialog({
             disabled={isSaving}
             onClick={onReload}
           >
-            Reload theirs
+            {t('conflict.reload')}
           </Button>
           <Button
             variant="destructive"
@@ -144,7 +147,7 @@ export function ConflictDialog({
             onClick={onOverwrite}
           >
             {isSaving ? <Spinner data-icon="inline-start" /> : null}
-            Overwrite with mine
+            {t('conflict.overwrite')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -160,6 +163,15 @@ export function ConflictDialog({
 export function diffPaths(
   baseline: Record<string, unknown>,
   current: Record<string, unknown>,
+  labels: {
+    notSet: string
+    items: (count: number) => string
+    keys: (count: number) => string
+  } = {
+    notSet: 'not set',
+    items: (count) => `${count} item(s)`,
+    keys: (count) => `${count} key(s)`,
+  },
 ): { path: string; mine: string; theirs: string }[] {
   const changes: { path: string; mine: string; theirs: string }[] = []
   const walk = (a: unknown, b: unknown, path: string) => {
@@ -170,7 +182,7 @@ export function diffPaths(
       }
       return
     }
-    changes.push({ path: path || '(root)', mine: describe(a), theirs: describe(b) })
+    changes.push({ path: path || '(root)', mine: describe(a, labels), theirs: describe(b, labels) })
   }
   walk(baseline, current, '')
   return changes
@@ -180,9 +192,12 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function describe(value: unknown) {
-  if (value === undefined) return 'not set'
-  if (Array.isArray(value)) return `${value.length} item(s)`
-  if (value && typeof value === 'object') return `${Object.keys(value).length} key(s)`
+function describe(
+  value: unknown,
+  labels: { notSet: string; items: (count: number) => string; keys: (count: number) => string },
+) {
+  if (value === undefined) return labels.notSet
+  if (Array.isArray(value)) return labels.items(value.length)
+  if (value && typeof value === 'object') return labels.keys(Object.keys(value).length)
   return String(value)
 }

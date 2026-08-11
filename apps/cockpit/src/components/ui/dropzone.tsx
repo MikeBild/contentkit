@@ -1,6 +1,7 @@
 import { Upload } from 'lucide-react'
 import { useState, type DragEvent, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * Files in, by drag or by picker.
@@ -25,7 +26,7 @@ export function Dropzone({
   accept,
   multiple = false,
   disabled,
-  label = 'Drop a file here, or choose one',
+  label,
   hint,
   error,
   className,
@@ -45,6 +46,7 @@ export function Dropzone({
   children?: ReactNode
   'data-testid'?: string
 }) {
+  const { t } = useI18n()
   const [over, setOver] = useState(false)
   const [refused, setRefused] = useState<string | null>(null)
 
@@ -58,7 +60,12 @@ export function Dropzone({
     // recognises.
     const kept = all.filter((file) => matchesAccept(file, accept))
     const dropped = all.length - kept.length
-    if (dropped > 0) setRefused(`${dropped === all.length ? 'That file is' : `${dropped} files are`} not ${accept}`)
+    if (dropped > 0)
+      setRefused(
+        dropped === all.length
+          ? t('dropzone.fileRefused', { accept: accept ?? '' })
+          : t('dropzone.filesRefused', { count: dropped, accept: accept ?? '' }),
+      )
     if (kept.length === 0) return
     onFiles(multiple ? kept : kept.slice(0, 1))
   }
@@ -114,7 +121,7 @@ export function Dropzone({
           }}
         />
         <Upload className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-        <span>{label}</span>
+        <span>{label ?? t('dropzone.label')}</span>
         {accept ? <span className="text-xs text-muted-foreground">{accept}</span> : null}
       </label>
 

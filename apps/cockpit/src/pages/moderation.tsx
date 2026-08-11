@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ck } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { useI18n } from '@/lib/i18n-context'
 import { TabCountBadge } from '@/components/tab-count'
 import { TabPanel, Tabs } from '@/components/ui/tabs'
 import { CommentsCard, ContactCard, FeedbackCard } from '@/forms/audience/moderation'
@@ -38,6 +39,7 @@ type ModerationTab = 'comments' | 'contact' | 'feedback'
 const PENDING = { status: 'pending' } as const
 
 export function ModerationPage() {
+  const { t } = useI18n()
   const { site, siteId } = useSite()
   const [tab, setTab] = useState<ModerationTab>('comments')
 
@@ -97,22 +99,22 @@ export function ModerationPage() {
 
   if (!siteId)
     return (
-      <Page title="Moderation">
+      <Page title={t('page.moderation.title')}>
         <NoSite />
       </Page>
     )
 
   return (
-    <Page title="Moderation" description="Visitor comments, contact submissions and anonymous post feedback.">
+    <Page title={t('page.moderation.title')} description={t('page.moderation.description')}>
       <Tabs
         data-testid="ck-moderation-tabs"
         value={tab}
         onValueChange={setTab}
         className="mb-4 overflow-x-auto"
         tabs={[
-          { id: 'comments', label: 'Comments', badge: commentsBadge },
-          { id: 'contact', label: 'Contact', badge: contactBadge },
-          { id: 'feedback', label: 'Feedback', badge: feedbackBadge },
+          { id: 'comments', label: t('moderation.comments.title'), badge: commentsBadge },
+          { id: 'contact', label: t('moderation.contact.title'), badge: contactBadge },
+          { id: 'feedback', label: t('moderation.feedback.title'), badge: feedbackBadge },
         ]}
       />
 

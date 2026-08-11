@@ -23,9 +23,10 @@ import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan, useSession } from '@/lib/session'
 import { useSite } from '@/lib/site'
-import { formatDate } from '@/lib/utils'
+import { useI18n, type I18nValue } from '@/lib/i18n-context'
 
 function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => void; onClose: () => void }) {
+  const { t } = useI18n()
   const client = useQueryClient()
   const session = useSession()
   const { sites } = useSite()
@@ -80,29 +81,27 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
         }}
       >
         <DialogHeader>
-          <DialogTitle>New API key</DialogTitle>
-          <DialogDescription>
-            A key cannot be edited afterwards. Its scopes, sites and expiry are fixed at this moment.
-          </DialogDescription>
+          <DialogTitle>{t('apiKey.new')}</DialogTitle>
+          <DialogDescription>{t('apiKey.newDescription')}</DialogDescription>
         </DialogHeader>
         <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
           <TextField
             data-testid="ck-api-key-name"
-            label="Name"
+            label={t('apiKey.name')}
             required
             maxLength={120}
-            help="Who or what holds this key."
-            about="It is the only label the audit trail can show."
+            help={t('apiKey.nameHelp')}
+            about={t('apiKey.nameAbout')}
             value={name}
             onChange={setName}
           />
 
           <ScopePicker
             data-testid="ck-api-key-scopes"
-            label="Scopes"
+            label={t('apiKey.scopes')}
             required
-            help="What this key may do."
-            about="`authorize()` has no hierarchy — every scope has to be granted explicitly."
+            help={t('apiKey.scopesHelp')}
+            about={t('apiKey.scopesAbout')}
             value={scopes}
             ceiling={session.product_scopes}
             onChange={setScopes}
@@ -110,24 +109,24 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
 
           <EntityMultiSelect
             data-testid="ck-api-key-sites"
-            label="Sites"
+            label={t('identity.sites')}
             required={mustScopeToSites}
-            definition="Which sites the key may reach."
+            definition={t('identity.sitesDefinition')}
             fallback={
               mustScopeToSites
-                ? 'Your own access is restricted, so the key has to name at least one of your sites.'
-                : 'Empty means every site — including sites created after this key.'
+                ? t('apiKey.sitesRestricted')
+                : t('apiKey.sitesAll')
             }
             value={siteIds}
             options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
-            emptyMessage="No sites"
+            emptyMessage={t('identity.noSites')}
             onChange={(next) => setSiteIds([...next])}
           />
 
           <DateTimeField
             data-testid="ck-api-key-expires"
-            label="Expires"
-            help="After this instant the key stops working, with no further action."
+            label={t('apiKey.expires')}
+            help={t('apiKey.expiresHelp')}
             value={expiresAt}
             onChange={setExpiresAt}
           />
@@ -135,20 +134,20 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
           {create.error ? (
             <Alert variant="destructive" data-testid="ck-api-key-error">
               <TriangleAlert />
-              <AlertTitle>The key was not created</AlertTitle>
+              <AlertTitle>{t('apiKey.createErrorTitle')}</AlertTitle>
               <AlertDescription>
-                {create.error instanceof Error ? create.error.message : 'Could not create the key'}
+                {create.error instanceof Error ? create.error.message : t('apiKey.createError')}
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" data-testid="ck-api-key-cancel" disabled={create.isPending} onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button data-testid="ck-api-key-submit" disabled={!canCreate} onClick={() => create.mutate()}>
             {create.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Create key
+            {t('apiKey.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -156,13 +155,14 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
   )
 }
 
-function keyState(key: ApiKey): { tone: 'success' | 'danger' | 'warning'; label: string } {
-  if (key.revoked_at) return { tone: 'danger', label: 'revoked' }
-  if (key.expires_at && new Date(key.expires_at).valueOf() < Date.now()) return { tone: 'warning', label: 'expired' }
-  return { tone: 'success', label: 'active' }
+function keyState(key: ApiKey, t: I18nValue['t']): { tone: 'success' | 'danger' | 'warning'; label: string } {
+  if (key.revoked_at) return { tone: 'danger', label: t('apiKey.revoked') }
+  if (key.expires_at && new Date(key.expires_at).valueOf() < Date.now()) return { tone: 'warning', label: t('apiKey.expired') }
+  return { tone: 'success', label: t('apiKey.active') }
 }
 
 export function ApiKeysCard() {
+  const { t, dateTime } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { sites } = useSite()
@@ -178,31 +178,29 @@ export function ApiKeysCard() {
       <CardHeader className="flex-row items-center justify-between">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1">
-            <CardTitle>API keys</CardTitle>
+            <CardTitle>{t('apiKey.keys')}</CardTitle>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-xs"
                   data-testid="ck-api-keys-about"
-                  aria-label="How a key's authority is changed"
+                  aria-label={t('apiKey.authorityLabel')}
                 >
                   <InfoIcon />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" data-testid="ck-api-keys-about-content">
-                <PopoverTitle>Keys are issued, never edited</PopoverTitle>
-                <PopoverDescription>To change one, revoke it and issue a replacement.</PopoverDescription>
+                <PopoverTitle>{t('apiKey.authorityTitle')}</PopoverTitle>
+                <PopoverDescription>{t('apiKey.authorityDescription')}</PopoverDescription>
               </PopoverContent>
             </Popover>
           </div>
-          <CardDescription>
-            There is no update endpoint by design — a key's authority is fixed at issue.
-          </CardDescription>
+          <CardDescription>{t('apiKey.noUpdate')}</CardDescription>
         </div>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-api-key-new" onClick={() => setCreating(true)}>
-            New key
+            {t('apiKey.newShort')}
           </Button>
         ) : null}
       </CardHeader>
@@ -211,8 +209,8 @@ export function ApiKeysCard() {
           <div className="px-5 pt-3">
             <RevealOnce
               data-testid="ck-api-key-issued"
-              title="Copy this key now"
-              description="It is shown once and never again — ContentKit stores only a hash."
+              title={t('apiKey.copyNow')}
+              description={t('apiKey.copyDescription')}
               value={issued}
               onDismiss={() => setIssued(null)}
             />
@@ -221,13 +219,13 @@ export function ApiKeysCard() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Prefix</TableHead>
-              <TableHead>Scopes</TableHead>
-              <TableHead>Sites</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Last used</TableHead>
+              <TableHead>{t('apiKey.name')}</TableHead>
+              <TableHead>{t('apiKey.prefix')}</TableHead>
+              <TableHead>{t('apiKey.scopes')}</TableHead>
+              <TableHead>{t('identity.sites')}</TableHead>
+              <TableHead>{t('apiKey.expires')}</TableHead>
+              <TableHead>{t('webhook.created')}</TableHead>
+              <TableHead>{t('apiKey.lastUsed')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -238,10 +236,10 @@ export function ApiKeysCard() {
               error={apiKeys.error}
               isEmpty={rows.length === 0}
               onRetry={() => apiKeys.refetch()}
-              emptyMessage="No API keys."
+              emptyMessage={t('apiKey.empty')}
             >
               {rows.map((key) => {
-                const state = keyState(key)
+                const state = keyState(key, t)
                 return (
                   <TableRow key={key.id} data-testid="ck-api-key-row" data-key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
@@ -250,29 +248,25 @@ export function ApiKeysCard() {
                     <TableCell className="text-xs text-muted-foreground">
                       {key.site_ids?.length
                         ? key.site_ids
-                            .map((id) => sites.find((site) => site.id === id)?.slug ?? id.slice(0, 8))
+                            .map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite'))
                             .join(', ')
-                        : 'every site'}
+                        : t('identity.everySite')}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {key.expires_at ? formatDate(key.expires_at) : 'never'}
+                      {key.expires_at ? dateTime(key.expires_at) : t('apiKey.never')}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(key.created_at)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(key.last_used_at)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(key.created_at)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {key.last_used_at ? dateTime(key.last_used_at) : '—'}
+                    </TableCell>
                     <TableCell>
                       {key.revoked_at || !writable ? (
                         <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
                       ) : (
                         <Confirm
-                          title="Revoke this key?"
-                          description={
-                            <>
-                              The key <strong>{key.name}</strong> ({key.key_prefix}…) stops working immediately, and
-                              every OAuth token derived from it is invalidated with it. Anything using it starts
-                              answering 401 at once. This cannot be undone.
-                            </>
-                          }
-                          confirmLabel="Revoke key"
+                          title={t('apiKey.revokeTitle')}
+                          description={t('apiKey.revokeDescription', { name: key.name, prefix: key.key_prefix })}
+                          confirmLabel={t('apiKey.revokeKey')}
                           destructive
                           onConfirm={async () => {
                             await ck.credentials.revokeApiKey(key.id)
@@ -281,7 +275,7 @@ export function ApiKeysCard() {
                         >
                           {(open) => (
                             <Button size="sm" variant="destructive" data-testid={`ck-api-key-revoke-${key.id}`} onClick={open}>
-                              Revoke
+                              {t('identity.revoke')}
                             </Button>
                           )}
                         </Confirm>

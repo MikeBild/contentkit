@@ -396,8 +396,10 @@ describe('the wizard’s markup', () => {
     // The cards are mapped from the generated constant, so a preset the server
     // gains cannot be missing from the wizard.
     assert.match(wizard, /PRESENTATION_PRESET\.map\(/, 'the cards must be derived from the generated set')
-    const effects = wizard.match(/const PRESET_EFFECT: Record<PresentationPreset, string> = \{([\s\S]*?)\n\}/)
-    assert.ok(effects, 'each preset needs one line on what it changes, in a total record over the enum')
+    const effects = wizard.match(
+      /const PRESET_EFFECT_KEYS: Record<PresentationPreset, TranslationKey> = \{([\s\S]*?)\n\}/,
+    )
+    assert.ok(effects, 'each preset needs one translated explanation key in a total record over the enum')
     const described = [...effects[1].matchAll(/^ {2}'?([a-z-]+)'?:/gm)].map((match) => match[1])
     assert.deepEqual(
       [...described].sort(),
@@ -443,13 +445,14 @@ describe('the wizard’s markup', () => {
 
   test('the summary shows the one request and the release steps that follow it', async () => {
     const wizard = await read('forms', 'site', 'wizard.tsx')
+    const catalog = await read('lib', 'i18n.ts')
     assert.match(wizard, /data-testid="ck-site-wizard-requests"/)
-    assert.match(wizard, /One request/, 'the summary must name what will be sent')
+    assert.match(wizard, /t\('wizard\.oneRequest'\)/, 'the summary must name what will be sent')
     assert.match(wizard, /data-testid="ck-site-wizard-next-steps"/)
     // Release-oriented: content alone changes nothing a reader can see.
-    assert.match(wizard, /Add content/)
-    assert.match(wizard, /Build a release/)
-    assert.match(wizard, /Activate that release/)
+    assert.match(catalog, /'wizard\.after\.content': 'Add content/)
+    assert.match(catalog, /'wizard\.after\.release': 'Build a release/)
+    assert.match(catalog, /'wizard\.after\.activate': 'Activate that release/)
   })
 })
 
@@ -495,6 +498,7 @@ describe('“languages can be added later” is true of the console, not just of
 
   test('the server’s two refusals are shown as they arrive, and named before they are hit', async () => {
     const sections = await read('forms', 'site', 'sections.tsx')
+    const catalog = await read('lib', 'i18n.ts')
     const body = sections.slice(sections.indexOf('function Languages('), sections.indexOf('function Presentation('))
     // The 409 text carries the counts ("still has 2 published and 1 scheduled
     // content item(s)"). Rendering the error verbatim is what keeps them.
@@ -503,10 +507,18 @@ describe('“languages can be added later” is true of the console, not just of
     // The default locale offers no Remove button at all: that 409 is a permanent
     // property of the row, not an outcome worth trying.
     assert.match(body, /isDefault \? null :/, 'the default locale must not offer a removal that can never succeed')
-    assert.match(body, /cannot be removed/, 'and it must say why')
-    assert.match(body, /published or scheduled content/, 'the other refusal must be named before it is hit')
+    assert.match(catalog, /'siteForm\.defaultLocaleTooltip': '[^']*cannot be removed/, 'and it must say why')
+    assert.match(
+      catalog,
+      /'siteForm\.localesAboutDescription': '[^']*published or scheduled content/,
+      'the other refusal must be named before it is hit',
+    )
     assert.match(body, /draft_items/, 'the removal answer’s count of items left behind must be shown')
-    assert.match(body, /release is built/, 'a locale change is invisible until the next release')
+    assert.match(
+      catalog,
+      /'siteForm\.localesAboutDescription': '[^']*next release is built/,
+      'a locale change is invisible until the next release',
+    )
   })
 
   /**
@@ -534,16 +546,18 @@ describe('“languages can be added later” is true of the console, not just of
 
   test('the wizard points at that editor rather than at a bare endpoint', async () => {
     const wizard = await read('forms', 'site', 'wizard.tsx')
+    const catalog = await read('lib', 'i18n.ts')
     assert.match(
-      wizard,
-      /Languages can be added later, in the Languages section of this site's settings/,
+      catalog,
+      /'wizard\.languagesAboutDescription': 'Languages can be added and removed later in the Languages section of the site settings/,
       'the promise must name the place in the console that keeps it',
     )
     assert.match(
-      wizard,
-      /Removing is refused while the locale is the default locale or while it still carries\s*\n?\s*published or scheduled content/,
+      catalog,
+      /'wizard\.languagesAboutDescription': '[^']*Removing is refused while a locale is the default or still carries published or scheduled content/,
       'the refusal conditions must be named, not just the capability',
     )
+    assert.match(wizard, /t\('wizard\.languagesAboutDescription'\)/)
   })
 
   test('the client method the editor needs is the documented one', async () => {
@@ -652,8 +666,8 @@ describe('the site settings view surfaces its section warnings', () => {
     // without touching this page.
     assert.match(
       page,
-      /SITE_SECTIONS\.map\(\(section\) => \(\{[\s\S]{0,200}?warning: section\.warning\?\.\(values\)/,
-      'the strip must read every section spec’s own warning',
+      /sections\.map\(\(section\) => \(\{[\s\S]{0,200}?warning: section\.warning\?\.\(values\)/,
+      'the strip must read every localized section spec’s own warning',
     )
     // The strip used to sit above a `<SectionNav>` — a horizontally scrolling row
     // of nine cards, which UI-UX.md's container ladder answers with an Accordion

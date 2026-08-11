@@ -7,6 +7,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StatusBadge } from '@/forms/status-badge'
+import { useI18n } from '@/lib/i18n-context'
 import { CONTENT_KIND } from '../contracts/enums.generated'
 import {
   DateField,
@@ -108,6 +109,7 @@ function Group({
   defaultOpen?: boolean
   children: ReactNode
 }) {
+  const { t } = useI18n()
   // A disclosure, drawn by the disclosure component: `Collapsible` owns the open
   // state, `aria-expanded` and the trigger/content pairing that this section used
   // to hand-roll around a `useState`.
@@ -134,7 +136,7 @@ function Group({
                   <StatusBadge tone="info">{configured}</StatusBadge>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>Fields in this section that carry a value.</TooltipContent>
+              <TooltipContent>{t('content.group.configuredTooltip')}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         ) : null}
@@ -170,6 +172,7 @@ function TextListField({
   error?: string
   placeholder?: string
 }) {
+  const { t } = useI18n()
   return (
     <ObjectListField
       label={label}
@@ -179,14 +182,14 @@ function TextListField({
       disabled={disabled}
       error={error}
       max={max}
-      addLabel="Add line"
-      emptyMessage="None yet."
+      addLabel={t('content.addLine')}
+      emptyMessage={t('list.empty')}
       value={value.map((entry) => ({ text: entry }))}
       onChange={(rows) => onChange(rows.map((row) => String(row.text ?? '')))}
       create={() => ({ text: '' })}
       renderItem={(row, api) => (
         <TextField
-          label={`Line ${api.index + 1}`}
+          label={t('content.line', { count: api.index + 1 })}
           data-testid={`${testId}-line-${api.index}`}
           disabled={disabled}
           placeholder={placeholder}
@@ -222,6 +225,7 @@ export function FrontmatterForm({
   accessGroups,
   disabled,
 }: FrontmatterFormProps) {
+  const { t } = useI18n()
   const fm = form.values.fm
   const layout = resolvedLayout(fm)
   const set = (path: string, value: unknown) => form.set(`fm.${path}`, value)
@@ -233,23 +237,23 @@ export function FrontmatterForm({
 
   return (
     <div className="flex flex-col gap-3">
-      <Group id="core" title="Core" defaultOpen>
+      <Group id="core" title={t('content.group.core')} defaultOpen>
         <TextField
-          label="Title"
+          label={t('content.title')}
           required
           disabled={disabled}
           data-testid="ck-fm-title"
-          help="The only field with no fallback anywhere: a document without one is rejected."
+          help={t('content.titleHelp')}
           value={fm.title}
           error={error('title')}
           onChange={(value) => set('title', value)}
         />
         <SlugField
-          label="Slug"
+          label={t('wizard.slug')}
           disabled={disabled}
           data-testid="ck-fm-slug"
-          about="The last segment of the URL. It follows the title until you edit it, and then stops."
-          fallback="Unset is derived from the title on save."
+          about={t('content.slugAbout')}
+          fallback={t('content.slugFallback')}
           derivedFrom={fm.title}
           siblings={siblings}
           value={fm.slug}
@@ -258,13 +262,13 @@ export function FrontmatterForm({
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <EnumSelect
-            label="Kind"
+            label={t('content.kind')}
             disabled={disabled}
             data-testid="ck-fm-kind"
-            definition="Decides the URL prefix and which listings the document appears in."
-            fallback="Unset means page."
+            definition={t('content.kindDefinition')}
+            fallback={t('content.kindFallback')}
             allowEmpty
-            placeholder="page (default)"
+            placeholder={t('content.pageDefault')}
             options={CONTENT_KIND.map((value) => ({ value, label: value }))}
             value={fm.kind}
             error={error('kind')}
@@ -276,7 +280,7 @@ export function FrontmatterForm({
             }}
           />
           <LocaleField
-            label="Locale"
+            label={t('content.locale')}
             required
             disabled={disabled}
             data-testid="ck-fm-locale"
@@ -287,38 +291,38 @@ export function FrontmatterForm({
           />
         </div>
         <TextAreaField
-          label="Summary"
+          label={t('content.summary')}
           rows={3}
           disabled={disabled}
           data-testid="ck-fm-summary"
-          definition="Used in listings, the feed and the share cards."
-          fallback="Unset is excerpted from the first paragraph."
+          definition={t('content.summaryDefinition')}
+          fallback={t('content.summaryFallback')}
           value={fm.summary}
           error={error('summary')}
           onChange={(value) => set('summary', value)}
         />
         <TagListField
-          label="Tags"
+          label={t('content.tags')}
           disabled={disabled}
           data-testid="ck-fm-tags"
-          help="Each tag gets its own listing page."
+          help={t('content.tagsHelp')}
           value={fm.tags}
           error={error('tags')}
           onChange={(value) => set('tags', [...value])}
         />
         <TextField
-          label="Translation key"
+          label={t('content.translationKey')}
           disabled={disabled}
           data-testid="ck-fm-translation-key"
-          definition="What ties the locales of one document together, so a reader can switch language and stay on the page."
-          fallback="Unset falls back to the slug."
+          definition={t('content.translationKeyDefinition')}
+          fallback={t('content.translationKeyFallback')}
           value={fm.translationKey}
           error={error('translationKey')}
           onChange={(value) => set('translationKey', value)}
         />
       </Group>
 
-      <Group id="publication" title="Publication" defaultOpen>
+      <Group id="publication" title={t('content.group.publication')} defaultOpen>
         {/*
           Three dates, two controls, and the difference between them is what the
           value means rather than how it looks.
@@ -347,35 +351,35 @@ export function FrontmatterForm({
           month"), which is why that one keeps the offsets.
         */}
         <DateField
-          label="Publication date"
+          label={t('content.publicationDate')}
           presets
           disabled={disabled}
           data-testid="ck-fm-date"
-          about="What the document is sorted and dated by. A date in the past is ordinary."
-          fallback="Unset uses the moment the release is built."
+          about={t('content.publicationDateAbout')}
+          fallback={t('content.publicationDateFallback')}
           value={fm.date || undefined}
           error={error('date')}
           onChange={(value) => set('date', value ?? '')}
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <DateTimeField
-            label="Scheduled for"
+            label={t('content.scheduledFor')}
             disabled={disabled}
             data-testid="ck-fm-scheduled-at"
-            about="A revision with a future date is published by the scheduler, not by this save. The time of day is part of it."
-            fallback="Unset means it publishes with the next release."
+            about={t('content.scheduledForAbout')}
+            fallback={t('content.scheduledForFallback')}
             // The way back to empty, in this field's own words. The shared control
             // calls it "Never" because it was built for a credential that never
             // expires; here empty means the next release publishes the revision,
             // and "Never" next to that sentence reads as "never publish".
-            unsetLabel="No schedule"
+            unsetLabel={t('content.noSchedule')}
             // The state in words, next to the label: a datetime control that has
             // been cleared looks exactly like one nobody has reached yet.
             hint={
               fm.scheduledAt ? (
                 <RelativeTime value={fm.scheduledAt} data-testid="ck-fm-scheduled-at-when" />
               ) : (
-                <span data-testid="ck-fm-scheduled-at-when">Not set</span>
+                <span data-testid="ck-fm-scheduled-at-when">{t('content.notSet')}</span>
               )
             }
             value={fm.scheduledAt || undefined}
@@ -383,11 +387,11 @@ export function FrontmatterForm({
             onChange={(value) => set('scheduledAt', value ?? '')}
           />
           <DateField
-            label="Last updated"
+            label={t('content.lastUpdated')}
             presets
             disabled={disabled}
             data-testid="ck-fm-updated-at"
-            fallback="Unset shows no update line."
+            fallback={t('content.lastUpdatedFallback')}
             value={fm.updatedAt || undefined}
             error={error('updatedAt')}
             onChange={(value) => set('updatedAt', value ?? '')}
@@ -395,29 +399,29 @@ export function FrontmatterForm({
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <TriToggle
-            label="Hide from search engines"
+            label={t('content.noindex')}
             data-testid="ck-fm-noindex"
             disabled={disabled}
-            defaultLabel="indexed"
+            defaultLabel={t('content.indexed')}
             value={fm.noindex}
             error={error('noindex')}
             onChange={(value) => set('noindex', value)}
           />
           <TriToggle
-            label="Featured"
+            label={t('content.featured')}
             data-testid="ck-fm-featured"
             disabled={disabled}
-            defaultLabel="not featured"
+            defaultLabel={t('content.notFeatured')}
             value={fm.featured}
             error={error('featured')}
             onChange={(value) => set('featured', value)}
           />
           <TriToggle
-            label="Read-aloud"
+            label={t('content.readAloud')}
             data-testid="ck-fm-audio"
             disabled={disabled}
-            defaultLabel="eligible"
-            help="Off opts this document out of narration even when the site has it on."
+            defaultLabel={t('content.eligible')}
+            help={t('content.readAloudHelp')}
             value={fm.audio}
             error={error('audio')}
             onChange={(value) => set('audio', value)}
@@ -425,28 +429,28 @@ export function FrontmatterForm({
         </div>
       </Group>
 
-      <Group id="layout" title="Layout" description={effectiveLayout(fm, preset)} defaultOpen>
+      <Group id="layout" title={t('content.group.layout')} description={effectiveLayout(fm, preset)} defaultOpen>
         <EnumSelect
-          label="Layout"
+          label={t('content.layout')}
           disabled={disabled || fm.kind === 'deck'}
           data-testid="ck-fm-layout"
           about={
             fm.kind === 'deck'
-              ? 'A deck has one layout and the server rejects any other, so this follows the kind.'
-              : 'Decides the page template and, for docs and wiki, the URL shape.'
+              ? t('content.deckLayoutAbout')
+              : t('content.layoutAbout')
           }
           fallback={
             fm.layout
               ? undefined
-              : `Unset resolves to ${effectiveLayout(fm, preset)} for this kind under the ${preset || 'portfolio'} preset.`
+              : t('content.layoutFallback', { layout: effectiveLayout(fm, preset), preset: preset || 'portfolio' })
           }
           allowEmpty
-          placeholder={`${effectiveLayout(fm, preset)} (from the preset)`}
+          placeholder={t('content.layoutPlaceholder', { layout: effectiveLayout(fm, preset) })}
           options={LAYOUTS.map((value) => ({
             value,
-            label: value === 'report' ? 'report (compatibility alias for composition)' : value,
+            label: value === 'report' ? t('content.reportAlias') : value,
             disabled: fm.kind === 'deck' && value !== 'deck',
-            disabledReason: 'kind: deck requires layout: deck',
+            disabledReason: t('content.deckLayoutRequired'),
           }))}
           value={fm.layout}
           error={error('layout')}
@@ -462,23 +466,23 @@ export function FrontmatterForm({
         {effectiveLayout(fm, preset) === 'docs' ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
-              label="Doc key"
+              label={t('content.docKey')}
               required
               disabled={disabled}
               data-testid="ck-fm-doc-key"
-              help="Identifies the same page across documentation versions."
+              help={t('content.docKeyHelp')}
               value={fm.docKey}
               error={error('docKey')}
               onChange={(value) => set('docKey', value)}
             />
             {docsVersions.length ? (
               <EnumSelect
-                label="Documentation version"
+                label={t('content.docsVersion')}
                 required
                 disabled={disabled}
                 data-testid="ck-fm-docs-version"
-                help="One of the versions this site configures."
-                about="A version the site does not know fails the release."
+                help={t('content.docsVersionHelp')}
+                about={t('content.docsVersionAbout')}
                 allowEmpty
                 options={docsVersions.map((entry) => ({ value: entry.id, label: `${entry.label} (${entry.id})` }))}
                 value={fm.docsVersion}
@@ -487,9 +491,9 @@ export function FrontmatterForm({
               />
             ) : (
               <EmptyPicker
-                label="Documentation version"
+                label={t('content.docsVersion')}
                 testId="ck-fm-docs-version-empty"
-                message="No documentation versions are configured for this site."
+                message={t('content.docsVersionEmpty')}
                 to="/sites"
               />
             )}
@@ -499,29 +503,29 @@ export function FrontmatterForm({
         {['docs', 'wiki', 'knowledge'].includes(effectiveLayout(fm, preset)) ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
-              label="Parent"
+              label={t('content.parent')}
               disabled={disabled}
               data-testid="ck-fm-parent"
-              help="The slug of the page above this one."
-              about="It nests the URL as well as the navigation."
+              help={t('content.parentHelp')}
+              about={t('content.parentAbout')}
               value={fm.parent}
               error={error('parent')}
               onChange={(value) => set('parent', value)}
             />
             <TextField
-              label="Navigation title"
+              label={t('content.navTitle')}
               disabled={disabled}
               data-testid="ck-fm-nav-title"
-              fallback="Unset uses the title."
+              fallback={t('content.navTitleFallback')}
               value={fm.navTitle}
               error={error('navTitle')}
               onChange={(value) => set('navTitle', value)}
             />
             <NumberField
-              label="Navigation order"
+              label={t('content.navOrder')}
               integer
               allowUnset
-              unsetLabel="Alphabetical"
+              unsetLabel={t('content.alphabetical')}
               disabled={disabled}
               data-testid="ck-fm-nav-order"
               value={fm.navOrder}
@@ -529,10 +533,10 @@ export function FrontmatterForm({
               onChange={(value) => set('navOrder', value)}
             />
             <TextField
-              label="Category"
+              label={t('content.category')}
               disabled={disabled}
               data-testid="ck-fm-category"
-              help="Groups pages within one navigation level."
+              help={t('content.categoryHelp')}
               value={fm.category}
               error={error('category')}
               onChange={(value) => set('category', value)}
@@ -543,7 +547,7 @@ export function FrontmatterForm({
         {effectiveLayout(fm, preset) === 'changelog' ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
-              label="Release version"
+              label={t('content.releaseVersion')}
               disabled={disabled}
               data-testid="ck-fm-release-version"
               value={fm.releaseVersion}
@@ -551,7 +555,7 @@ export function FrontmatterForm({
               onChange={(value) => set('releaseVersion', value)}
             />
             <EnumMultiSelect
-              label="Change types"
+              label={t('content.changeTypes')}
               disabled={disabled}
               data-testid="ck-fm-change-types"
               options={CHANGE_TYPES.map((value) => ({ value, label: value }))}
@@ -574,74 +578,74 @@ export function FrontmatterForm({
         {fm.kind === 'deck' ? <DeckFields form={form} disabled={disabled} /> : null}
       </Group>
 
-      <Group id="media" title="Media" configured={mediaConfigured ? 'configured' : undefined}>
+      <Group id="media" title={t('content.group.media')} configured={mediaConfigured ? t('content.configured') : undefined}>
         <UrlField
-          label="Cover image"
+          label={t('content.coverImage')}
           mode="asset"
           disabled={disabled}
           data-testid="ck-fm-cover"
-          help="Used as the share card image and at the head of the article."
+          help={t('content.coverImageHelp')}
           value={fm.cover}
           error={error('cover')}
           onChange={(value) => set('cover', value)}
         />
         <TextField
-          label="Cover alt text"
+          label={t('content.coverAlt')}
           disabled={disabled}
           data-testid="ck-fm-cover-alt"
-          warning={fm.cover && !fm.coverAlt ? 'The cover has no alternative text' : undefined}
+          warning={fm.cover && !fm.coverAlt ? t('content.coverAltWarning') : undefined}
           value={fm.coverAlt}
           error={error('coverAlt')}
           onChange={(value) => set('coverAlt', value)}
         />
         <UrlField
-          label="External URL"
+          label={t('content.externalUrl')}
           disabled={disabled}
           data-testid="ck-fm-external-url"
-          help="For a project that lives somewhere else; the card links there instead of to a page here."
+          help={t('content.externalUrlHelp')}
           value={fm.externalUrl}
           error={error('externalUrl')}
           onChange={(value) => set('externalUrl', value)}
         />
         <TagListField
-          label="Technologies"
+          label={t('content.technologies')}
           disabled={disabled}
           data-testid="ck-fm-technologies"
-          help="Shown on a project card."
+          help={t('content.technologiesHelp')}
           value={fm.technologies}
           error={error('technologies')}
           onChange={(value) => set('technologies', [...value])}
         />
       </Group>
 
-      <Group id="aids" title="Reader aids" configured={aidsConfigured ? `${aidsConfigured}` : undefined}>
+      <Group id="aids" title={t('content.group.aids')} configured={aidsConfigured ? `${aidsConfigured}` : undefined}>
         <TextListField
           label="TL;DR"
-          help="Three or four sentences above the article."
-          about="Authored, never generated — they are also what machines read as the abstract."
+          help={t('content.tldrHelp')}
+          about={t('content.tldrAbout')}
           testId="ck-fm-tldr"
           disabled={disabled}
           value={fm.tldr}
           error={error('tldr')}
           onChange={(value) => set('tldr', value)}
-          placeholder="One thing the reader should take away"
+          placeholder={t('content.tldrPlaceholder')}
         />
         <ObjectListField
           label="FAQ"
-          help="Closes the article as collapsed questions and is published as FAQPage structured data."
+          help={t('content.faqHelp')}
           data-testid="ck-fm-faq"
           disabled={disabled}
-          addLabel="Add question"
-          emptyMessage="No questions yet."
+          addLabel={t('content.addQuestion')}
+          emptyMessage={t('content.noQuestions')}
           value={fm.faq}
           error={error('faq')}
           onChange={(value) => set('faq', value)}
           create={() => ({ q: '', a: '' })}
-          itemLabel={(entry) => entry.q || 'New question'}
+          itemLabel={(entry) => entry.q || t('content.newQuestion')}
           renderItem={(entry, api) => (
             <div className="flex flex-col gap-4">
               <TextField
-                label="Question"
+                label={t('content.question')}
                 required
                 disabled={disabled}
                 data-testid={`ck-fm-faq-q-${api.index}`}
@@ -650,7 +654,7 @@ export function FrontmatterForm({
                 onChange={(value) => api.update({ q: value })}
               />
               <TextAreaField
-                label="Answer"
+                label={t('content.answer')}
                 required
                 rows={3}
                 disabled={disabled}
@@ -663,11 +667,11 @@ export function FrontmatterForm({
           )}
         />
         <TagListField
-          label="Related documents"
+          label={t('content.related')}
           disabled={disabled}
           data-testid="ck-fm-related"
-          help="Up to eight slugs in the same locale."
-          about="Whether one resolves is decided at build time, where a broken reference is dropped with a warning."
+          help={t('content.relatedHelp')}
+          about={t('content.relatedAbout')}
           max={8}
           value={fm.related}
           error={error('related')}
@@ -675,12 +679,12 @@ export function FrontmatterForm({
         />
         {accessGroups.length ? (
           <EnumMultiSelect
-            label="Reader groups"
+            label={t('content.readerGroups')}
             disabled={disabled}
             data-testid="ck-fm-access"
-            help="Empty means the document is public."
-            about="Naming a group puts it behind reader sign-in."
-            allEmptyMeans={{ allLabel: 'Public — anyone may read it', someLabel: 'Restricted to the groups below' }}
+            help={t('content.readerGroupsHelp')}
+            about={t('content.readerGroupsAbout')}
+            allEmptyMeans={{ allLabel: t('content.public'), someLabel: t('content.restricted') }}
             options={accessGroups.map((value) => ({ value, label: value }))}
             value={fm.access}
             error={error('access')}
@@ -688,10 +692,10 @@ export function FrontmatterForm({
           />
         ) : (
           <TagListField
-            label="Reader groups"
+            label={t('content.readerGroups')}
             disabled={disabled}
             data-testid="ck-fm-access"
-            help="This site has no access groups yet; a group named here has to exist before a release will serve the document."
+            help={t('content.noAccessGroups')}
             max={32}
             value={fm.access}
             error={error('access')}
@@ -700,13 +704,13 @@ export function FrontmatterForm({
         )}
       </Group>
 
-      <Group id="extra" title="Custom fields" configured={Object.keys(fm.extra).length ? `${Object.keys(fm.extra).length}` : undefined}>
+      <Group id="extra" title={t('content.group.custom')} configured={Object.keys(fm.extra).length ? `${Object.keys(fm.extra).length}` : undefined}>
         <ExtraFieldsField
           label="extra"
           disabled={disabled}
           data-testid="ck-fm-extra"
-          help="Author-owned fields, passed through to the revision's metadata with their types intact."
-          about="Consumers interpret them; ContentKit only bounds them."
+          help={t('content.extraHelp')}
+          about={t('content.extraAbout')}
           maxBytes={16384}
           value={fm.extra}
           error={error('extra')}
@@ -715,7 +719,7 @@ export function FrontmatterForm({
       </Group>
 
       {Object.keys(fm.carried).length ? (
-        <Group id="carried" title="Passed through" configured={`${Object.keys(fm.carried).length}`} defaultOpen>
+        <Group id="carried" title={t('content.group.carried')} configured={`${Object.keys(fm.carried).length}`} defaultOpen>
           <CarriedKeys
             data-testid="ck-fm-carried"
             value={fm.carried}
@@ -732,13 +736,14 @@ export function FrontmatterForm({
 }
 
 function EmptyPicker({ label, testId, message, to }: { label: string; testId: string; message: string; to: string }) {
+  const { t } = useI18n()
   return (
     <div data-testid={testId} className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
         {message}{' '}
         <AppLink to={to} data-testid={`${testId}-link`} className="text-accent underline">
-          Configure it on the site
+          {t('content.configureOnSite')}
         </AppLink>
       </div>
     </div>
@@ -756,6 +761,7 @@ function CompositionFields({
   isReport: boolean
   reportSeries: readonly { id: string; label: string }[]
 }) {
+  const { t } = useI18n()
   const fm = form.values.fm
   const composition = fm.composition
   const set = (key: string, value: unknown) => form.set(`fm.composition.${key}`, value)
@@ -768,10 +774,8 @@ function CompositionFields({
           <EmptyMedia variant="icon">
             <LayoutTemplate />
           </EmptyMedia>
-          <EmptyTitle>This document has no composition block</EmptyTitle>
-          <EmptyDescription>
-            Adding one lets it declare its format, canvas and the narrative the renderer builds around.
-          </EmptyDescription>
+          <EmptyTitle>{t('content.compositionEmpty')}</EmptyTitle>
+          <EmptyDescription>{t('content.compositionEmptyDescription')}</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
           <Button
@@ -786,7 +790,7 @@ function CompositionFields({
             }}
           >
             <Plus data-icon="inline-start" />
-            Add a composition block
+            {t('content.addComposition')}
           </Button>
         </EmptyContent>
       </Empty>
@@ -807,12 +811,12 @@ function CompositionFields({
         {enums.map(([key, value, allowed, fallbackValue]) => (
           <EnumSelect
             key={key}
-            label={key}
+            label={t(`content.composition.${key}` as 'content.composition.format')}
             disabled={disabled}
             data-testid={`ck-fm-composition-${key}`}
             allowEmpty
-            placeholder={`${fallbackValue} (default)`}
-            fallback={value ? undefined : `Unset behaves as ${fallbackValue}.`}
+            placeholder={t('content.valueDefault', { value: fallbackValue })}
+            fallback={value ? undefined : t('content.unsetBehaves', { value: fallbackValue })}
             options={allowed.map((entry) => ({ value: entry, label: entry }))}
             value={value}
             error={error(key)}
@@ -820,10 +824,10 @@ function CompositionFields({
           />
         ))}
         <TextField
-          label="Preferred pattern"
+          label={t('content.preferredPattern')}
           disabled={disabled}
           data-testid="ck-fm-composition-preferred-pattern"
-          help="A request, not an instruction: the renderer falls back and reports a diagnostic when the pattern does not fit."
+          help={t('content.preferredPatternHelp')}
           value={composition.preferredPattern}
           error={error('preferredPattern')}
           onChange={(value) => set('preferredPattern', value)}
@@ -833,10 +837,10 @@ function CompositionFields({
       {isReport ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <EnumSelect
-            label="Report cadence"
+            label={t('content.reportCadence')}
             disabled={disabled}
             data-testid="ck-fm-report-cadence"
-            help="Only a report may carry one; on anything else the write is rejected."
+            help={t('content.reportCadenceHelp')}
             allowEmpty
             options={['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'].map((value) => ({
               value,
@@ -848,11 +852,11 @@ function CompositionFields({
           />
           {reportSeries.length ? (
             <EnumSelect
-              label="Report series"
+              label={t('content.reportSeries')}
               disabled={disabled}
               data-testid="ck-fm-report-series"
-              help="One of the series this site configures."
-              about="A preview or release rejects an id the site does not know."
+              help={t('content.reportSeriesHelp')}
+              about={t('content.reportSeriesAbout')}
               allowEmpty
               options={reportSeries.map((entry) => ({ value: entry.id, label: `${entry.label} (${entry.id})` }))}
               value={fm.reportSeries}
@@ -861,9 +865,9 @@ function CompositionFields({
             />
           ) : (
             <EmptyPicker
-              label="Report series"
+              label={t('content.reportSeries')}
               testId="ck-fm-report-series-empty"
-              message="No report series are configured for this site."
+              message={t('content.reportSeriesEmpty')}
               to="/sites"
             />
           )}
@@ -872,7 +876,7 @@ function CompositionFields({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField
-          label="Audience"
+          label={t('content.audience')}
           maxLength={120}
           disabled={disabled}
           data-testid="ck-fm-composition-audience"
@@ -881,17 +885,17 @@ function CompositionFields({
           onChange={(value) => set('audience', value)}
         />
         <TextField
-          label="Question"
+          label={t('content.question')}
           maxLength={240}
           disabled={disabled}
           data-testid="ck-fm-composition-question"
-          help="The one question this document answers."
+          help={t('content.questionHelp')}
           value={composition.question}
           error={error('question')}
           onChange={(value) => set('question', value)}
         />
         <TextField
-          label="Goal"
+          label={t('content.goal')}
           maxLength={240}
           disabled={disabled}
           data-testid="ck-fm-composition-goal"
@@ -901,7 +905,7 @@ function CompositionFields({
         />
       </div>
       <TextAreaField
-        label="Thesis"
+        label={t('content.thesis')}
         rows={2}
         maxChars={500}
         disabled={disabled}
@@ -911,7 +915,7 @@ function CompositionFields({
         onChange={(value) => set('thesis', value)}
       />
       <TextAreaField
-        label="Conclusion"
+        label={t('content.conclusion')}
         rows={2}
         maxChars={500}
         disabled={disabled}
@@ -921,20 +925,20 @@ function CompositionFields({
         onChange={(value) => set('conclusion', value)}
       />
       <TextAreaField
-        label="Action"
+        label={t('content.action')}
         rows={2}
         maxChars={500}
         disabled={disabled}
         data-testid="ck-fm-composition-action"
-        help="What the reader should do next."
+        help={t('content.actionHelp')}
         value={composition.action}
         error={error('action')}
         onChange={(value) => set('action', value)}
       />
       <TextListField
-        label="Limitations"
-        help="What this document does not claim."
-        about="Up to twelve, 300 characters each — and the one section a truthful composition is not allowed to omit silently."
+        label={t('content.limitations')}
+        help={t('content.limitationsHelp')}
+        about={t('content.limitationsAbout')}
         testId="ck-fm-composition-limitations"
         disabled={disabled}
         max={12}
@@ -947,6 +951,7 @@ function CompositionFields({
 }
 
 function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }) {
+  const { t } = useI18n()
   const fm = form.values.fm
   const set = (key: string, value: unknown) => form.set(`fm.deck.${key}`, value)
   const error = (key: string) => form.fieldError(`fm.deck.${key}`)
@@ -958,10 +963,10 @@ function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }
           <EmptyMedia variant="icon">
             <Presentation />
           </EmptyMedia>
-          <EmptyTitle>This deck uses the renderer's defaults</EmptyTitle>
+          <EmptyTitle>{t('content.deckEmpty')}</EmptyTitle>
           {/* True of `hasDeck` by construction: the block is only emitted while
               this is on, so an unconfigured deck writes no deck key at all. */}
-          <EmptyDescription>Nothing is written to the frontmatter until it is configured.</EmptyDescription>
+          <EmptyDescription>{t('content.deckEmptyDescription')}</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
           <Button
@@ -976,7 +981,7 @@ function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }
             }}
           >
             <Plus data-icon="inline-start" />
-            Configure the deck
+            {t('content.configureDeck')}
           </Button>
         </EmptyContent>
       </Empty>
@@ -987,47 +992,47 @@ function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }
     <div className="flex flex-col gap-4 rounded-lg border border-border p-3">
       <div className="grid gap-4 sm:grid-cols-2">
         <EnumSelect
-          label="Template"
+          label={t('content.template')}
           disabled={disabled}
           data-testid="ck-fm-deck-template"
-          help="A template with narrative slots validates every slide's deckRole before rendering."
+          help={t('content.templateHelp')}
           allowEmpty
-          placeholder="freeform (default)"
+          placeholder={t('content.freeformDefault')}
           options={DECK_TEMPLATES.map((value) => ({ value, label: value }))}
           value={fm.deck.template}
           error={error('template')}
           onChange={(value) => set('template', value)}
         />
         <EnumSelect
-          label="Theme"
+          label={t('content.theme')}
           disabled={disabled}
           data-testid="ck-fm-deck-theme"
           allowEmpty
-          placeholder="neutral (default)"
+          placeholder={t('content.neutralDefault')}
           options={DECK_THEMES.map((value) => ({ value, label: value }))}
           value={fm.deck.theme}
           error={error('theme')}
           onChange={(value) => set('theme', value)}
         />
         <EnumSelect
-          label="Visual scheme"
+          label={t('content.visualScheme')}
           disabled={disabled}
           data-testid="ck-fm-deck-visual-scheme"
-          help="Semantic directives are rasterised at build time, so this decides what the images look like."
+          help={t('content.visualSchemeHelp')}
           allowEmpty
-          placeholder="auto (default)"
+          placeholder={t('content.autoDefault')}
           options={DECK_VISUAL_SCHEMES.map((value) => ({ value, label: value }))}
           value={fm.deck.visualScheme}
           error={error('visualScheme')}
           onChange={(value) => set('visualScheme', value)}
         />
         <NumberField
-          label="Maximum slides"
+          label={t('content.maximumSlides')}
           integer
           min={1}
           max={120}
           allowUnset
-          unsetLabel="Renderer default"
+          unsetLabel={t('content.rendererDefault')}
           disabled={disabled}
           data-testid="ck-fm-deck-max-slides"
           value={fm.deck.maxSlides}
@@ -1036,11 +1041,11 @@ function DeckFields({ form, disabled }: { form: ContentForm; disabled: boolean }
         />
       </div>
       <ExtraFieldsField
-        label="First slide"
+        label={t('content.firstSlide')}
         disabled={disabled}
         data-testid="ck-fm-deck-first-slide"
-        help="Slidev front-slide options, up to 32 fields."
-        about="theme, routerMode and colorSchema are reserved and rejected."
+        help={t('content.firstSlideHelp')}
+        about={t('content.firstSlideAbout')}
         maxBytes={16384}
         value={fm.deck.firstSlide}
         error={error('firstSlide')}
