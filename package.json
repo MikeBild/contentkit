@@ -81,7 +81,8 @@
     "prettier": "^3.9.6"
   },
   "overrides": {
-    "dompurify": "3.4.11"
+    "dompurify": "3.4.13",
+    "pptxgenjs": "1.1.5"
   },
   "author": "Mike Bild <mike@mikebild.com>",
   "repository": {

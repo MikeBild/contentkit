@@ -31,8 +31,9 @@ and this project adheres to
 
 ### Fixed
 
-- Update the Cockpit's transitive DOMPurify and nanoid resolutions so the
-  release dependency audit contains no known vulnerabilities.
+- Update the transitive DOMPurify and nanoid resolutions, and keep Slidev's
+  unused PPTX exporter off the vulnerable image-size dependency chain, so the
+  release's high-severity dependency audit is clear.
 
 ## 4.18.3 — 2026-08-07
 
