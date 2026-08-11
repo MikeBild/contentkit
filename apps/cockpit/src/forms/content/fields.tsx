@@ -620,7 +620,7 @@ export function FrontmatterForm({
 
       <Group id="aids" title={t('content.group.aids')} configured={aidsConfigured ? `${aidsConfigured}` : undefined}>
         <TextListField
-          label="TL;DR"
+          label={t('content.tldrLabel')}
           help={t('content.tldrHelp')}
           about={t('content.tldrAbout')}
           testId="ck-fm-tldr"
@@ -631,7 +631,7 @@ export function FrontmatterForm({
           placeholder={t('content.tldrPlaceholder')}
         />
         <ObjectListField
-          label="FAQ"
+          label={t('content.faqLabel')}
           help={t('content.faqHelp')}
           data-testid="ck-fm-faq"
           disabled={disabled}

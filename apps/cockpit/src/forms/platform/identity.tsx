@@ -166,7 +166,7 @@ function GrantDialog({
           </DialogTitle>
           <DialogDescription>{t('identity.grantDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           {restoring ? (
             <Alert data-testid="ck-grant-restore-note">
               <TriangleAlert />
@@ -413,8 +413,8 @@ export function IdentityGrantsCard() {
               onRetry={() => grants.refetch()}
               emptyMessage={t('identity.empty')}
             >
-              {rows.map((grant) => (
-                <TableRow key={grant.id} data-testid="ck-grant-row" data-grant={grant.id}>
+              {rows.map((grant, grantIndex) => (
+                <TableRow key={grant.id} data-testid={`ck-grant-row-${grantIndex}`} data-grant={grant.id}>
                   <TableCell>
                     <span className="font-medium">{grantLabel(grant, t('identity.grant'))}</span>
                     {grant.display_name && grant.email ? (
@@ -443,7 +443,7 @@ export function IdentityGrantsCard() {
                         <Button
                           size="sm"
                           variant="outline"
-                          data-testid={`ck-grant-restore-${grant.id}`}
+                          data-testid={`ck-grant-${grantIndex}-restore`}
                           onClick={() => setEditing({ grant })}
                         >
                           {t('identity.restore')}
@@ -454,7 +454,7 @@ export function IdentityGrantsCard() {
                         <Button
                           size="sm"
                           variant="outline"
-                          data-testid={`ck-grant-edit-${grant.id}`}
+                          data-testid={`ck-grant-${grantIndex}-edit`}
                           onClick={() => setEditing({ grant })}
                         >
                           {t('webhook.edit')}
@@ -472,7 +472,7 @@ export function IdentityGrantsCard() {
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="destructive" data-testid={`ck-grant-revoke-${grant.id}`} onClick={open}>
+                            <Button size="sm" variant="destructive" data-testid={`ck-grant-${grantIndex}-revoke`} onClick={open}>
                               {t('identity.revoke')}
                             </Button>
                           )}

@@ -1,6 +1,7 @@
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -70,11 +71,11 @@ export function KeyValueField({
                 value={entry}
                 onChange={(event) => onChange({ ...value, [key]: event.target.value })}
               />
-              <Button
+              <IconButton
                 type="button"
                 variant="destructive"
                 size="icon-sm"
-                aria-label={t('map.remove', { key })}
+                label={t('map.remove', { key })}
                 data-testid={`${control['data-testid']}-remove-${key}`}
                 disabled={control.disabled}
                 onClick={() => {
@@ -83,7 +84,7 @@ export function KeyValueField({
                 }}
               >
                 <Trash2 />
-              </Button>
+              </IconButton>
             </div>
           ))}
           <div className="flex items-center gap-2">
@@ -339,11 +340,11 @@ export function ExtraFieldsField({
                   onChange={(next) => onChange({ ...value, [key]: next })}
                 />
               </div>
-              <Button
+              <IconButton
                 type="button"
                 variant="destructive"
                 size="icon-sm"
-                aria-label={t('map.remove', { key })}
+                label={t('map.remove', { key })}
                 data-testid={`${control['data-testid']}-remove-${key}`}
                 disabled={control.disabled}
                 onClick={() => {
@@ -352,7 +353,7 @@ export function ExtraFieldsField({
                 }}
               >
                 <Trash2 />
-              </Button>
+              </IconButton>
             </div>
           ))}
 
@@ -519,16 +520,16 @@ export function CarriedKeys({
           <li key={key} className="flex items-center gap-2 text-xs">
             <span className="font-mono text-muted-foreground">{key}</span>
             <span className="min-w-0 flex-1 truncate font-mono">{describe(entry, t)}</span>
-            <Button
+            <IconButton
               type="button"
               variant="destructive"
               size="icon-sm"
-              aria-label={t('map.remove', { key })}
+              label={t('map.remove', { key })}
               data-testid={`${testId}-remove-${key}`}
               onClick={() => onRemove(key)}
             >
               <Trash2 />
-            </Button>
+            </IconButton>
           </li>
         ))}
       </ul>

@@ -70,7 +70,7 @@ export function CredentialsPage() {
             data-testid="ck-credentials-tabs"
             value={tab}
             onValueChange={setTab}
-            className="mb-4 overflow-x-auto"
+            className="mb-4"
             tabs={[
               { id: 'keys', label: t('apiKey.keys'), badge: keysBadge },
               { id: 'grants', label: t('identity.grants'), badge: grantsBadge },

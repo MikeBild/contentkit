@@ -107,7 +107,7 @@ function RuleDialog({
           </DialogTitle>
           <DialogDescription>{t('audience.rules.description')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           <SegmentedField
             data-testid="ck-rule-match"
             label={t('audience.rules.match')}
@@ -276,8 +276,8 @@ export function RulesCard({
               onRetry={() => rules.refetch()}
               emptyMessage={t('audience.rules.empty')}
             >
-              {rows.map((rule) => (
-                <TableRow key={rule.id} data-testid="ck-rule-row" data-rule={rule.id}>
+              {rows.map((rule, ruleIndex) => (
+                <TableRow key={rule.id} data-testid={`ck-rule-row-${ruleIndex}`} data-rule={rule.id}>
                   <TableCell>
                     <StatusBadge tone="info">
                       {t(rule.match === 'prefix' ? 'audience.rules.prefix' : 'audience.rules.exact')}
@@ -302,7 +302,7 @@ export function RulesCard({
                         <Button
                           size="sm"
                           variant="outline"
-                          data-testid={`ck-rule-edit-${rule.id}`}
+                          data-testid={`ck-rule-${ruleIndex}-edit`}
                           onClick={() => onEditingChange({ rule })}
                         >
                           {t('audience.rules.edit')}
@@ -322,7 +322,7 @@ export function RulesCard({
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="destructive" data-testid={`ck-rule-delete-${rule.id}`} onClick={open}>
+                            <Button size="sm" variant="destructive" data-testid={`ck-rule-${ruleIndex}-delete`} onClick={open}>
                               {t('audience.rules.delete')}
                             </Button>
                           )}

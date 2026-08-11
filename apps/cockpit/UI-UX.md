@@ -251,3 +251,51 @@ this paragraph credited two files with a rule neither of them asserts:
 `test/unit/cockpit-behavioural-floor.test.mjs` names every contract a rendering test
 covers, and — deliberately — what is still graded by reading source, so a runner in
 the repository is never mistaken for coverage.
+
+---
+
+## 9. Product-family grammar
+
+ContentKit shares the Cockpit grammar used by WorkKit, CodeKit, Subkit, WatchKit
+and WikiKit: the same shadcn primitives and semantic tokens, one viewport-bound
+shell, one account menu in the sidebar footer, wrapping tabs, compact cards and
+one accent-filled action per surface. A user moving between products should not
+have to relearn where navigation, personal settings, help or destructive actions
+live.
+
+ContentKit stays recognizable through its work, not through a second button
+palette: the publishing lifecycle, document preview, release chain, composition
+registry and editorial language are its signature surfaces. Shared controls do
+not get product-specific colours or geometry.
+
+The reviewed WikiKit knowledge spaces currently contain no approved Cockpit
+design rule. This document therefore records only conventions verified in the
+local sibling implementations and the shared Cockpit contract; it does not
+attribute invented rules to WikiKit.
+
+## 10. Identity and personal settings
+
+The signed-in user's footer control is the only home for personal settings. Its
+menu contains the readable identity summary, Profile, Language (Automatic,
+English, German), Appearance (System, Light, Dark) and Sign out. Theme and locale
+toggles do not appear as unrelated controls elsewhere in the shell.
+
+Roles are translated display labels. Provider identifiers, session subjects,
+database IDs and UUIDs are transport data, not interface copy. When no readable
+name exists, say that the item is unavailable or show an aggregate count; never
+print an opaque identifier as a fallback.
+
+## 11. Test and language contracts
+
+- Every control has a stable `data-testid`; every repeated row and row action
+  appends its visible position. UUIDs, tokens, hashes, provider subjects and
+  personal data never become selectors. Enforced by
+  `test/unit/cockpit-testids.test.mjs`.
+- English and German catalogs have exactly the same keys and placeholders.
+  Visible product copy, placeholders and accessible labels must come from the
+  catalog; technical syntax is the only explicit exception. Locale preference
+  supports automatic browser detection plus manual English/German selection.
+  Enforced by `apps/cockpit/src/lib/i18n.test.ts`.
+- Icon-only actions use one icon, a localized accessible name and the same short
+  label in a hover/focus Tooltip. Definitions use Tooltip; multi-sentence help
+  uses Popover. One field label gets one help trigger, never stacked help icons.

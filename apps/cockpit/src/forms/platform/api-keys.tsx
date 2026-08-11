@@ -84,7 +84,7 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
           <DialogTitle>{t('apiKey.new')}</DialogTitle>
           <DialogDescription>{t('apiKey.newDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           <TextField
             data-testid="ck-api-key-name"
             label={t('apiKey.name')}
@@ -249,10 +249,10 @@ export function ApiKeysCard() {
               onRetry={() => apiKeys.refetch()}
               emptyMessage={t('apiKey.empty')}
             >
-              {rows.map((key) => {
+              {rows.map((key, keyIndex) => {
                 const state = keyState(key, t)
                 return (
-                  <TableRow key={key.id} data-testid="ck-api-key-row" data-key={key.id}>
+                  <TableRow key={key.id} data-testid={`ck-api-key-row-${keyIndex}`} data-key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{key.key_prefix}</TableCell>
                     <TableCell className="max-w-[18rem] text-xs text-muted-foreground">{key.scopes?.join(', ')}</TableCell>
@@ -285,7 +285,7 @@ export function ApiKeysCard() {
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="destructive" data-testid={`ck-api-key-revoke-${key.id}`} onClick={open}>
+                            <Button size="sm" variant="destructive" data-testid={`ck-api-key-${keyIndex}-revoke`} onClick={open}>
                               {t('identity.revoke')}
                             </Button>
                           )}

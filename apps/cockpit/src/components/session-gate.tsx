@@ -71,9 +71,12 @@ export function SessionGate({ children }: { children: ReactNode }) {
 }
 
 function Splash({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
   return (
     <div data-testid="session-splash" className="flex h-full flex-col items-center justify-center gap-4">
-      <div className="text-sm font-semibold tracking-[0.2em] text-muted-foreground">CONTENTKIT COCKPIT</div>
+      <div className="text-sm font-semibold tracking-[0.2em] text-muted-foreground">
+        {t('app.name')} {t('nav.label')}
+      </div>
       {children}
     </div>
   )

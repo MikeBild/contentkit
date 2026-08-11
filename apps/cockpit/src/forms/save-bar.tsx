@@ -118,7 +118,7 @@ export function SectionNav<T extends string>({
   return (
     <nav
       data-testid={testId}
-      className={cn('scrollbar-thin flex gap-2 overflow-x-auto', className)}
+      className={cn('grid gap-2 sm:grid-cols-2 xl:grid-cols-3', className)}
       onKeyDown={(event) => {
         if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
         const at = sections.findIndex((section) => section.id === value)
@@ -140,7 +140,7 @@ export function SectionNav<T extends string>({
             data-testid={`${testId}-${section.id}`}
             onClick={() => onChange(section.id)}
             className={cn(
-              'flex min-w-40 shrink-0 flex-col gap-1 rounded-lg border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              'flex min-w-0 flex-col gap-1 rounded-lg border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
               active ? 'border-accent bg-accent/10' : 'border-border hover:bg-muted/60',
             )}
           >

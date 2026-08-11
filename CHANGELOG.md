@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.20.0 — 2026-08-11
+
+### Added
+
+- Add stable, positional `data-testid` selectors throughout the Cockpit and
+  enforce that selectors contain neither database identifiers nor personal
+  data. Interactive icon controls now share a translated tooltip primitive.
+- Extend the English and German catalogs across release chains, statistics,
+  pattern registries, webhook delivery states, roles and remaining interface
+  labels, with catalog-parity and visible-copy tests.
+
+### Changed
+
+- Align Cockpit actions on one shadcn button grammar: blue for the single
+  primary action, outline or ghost for secondary actions, and destructive only
+  for irreversible work. Profile, automatic/manual language selection, theme
+  and sign-out now live in the signed-in operator menu.
+- Replace explanatory inline form prose with keyboard-accessible tooltips or
+  popovers while preserving accessible descriptions. Remove duplicate help and
+  theme icons, keep ContentKit's publishing identity, and document the shared
+  product-family layout and selector rules.
+- Render composition registries and every data table as wrapped desktop tables
+  or translated mobile records. Opaque UUIDs are replaced by useful labels.
+
+### Fixed
+
+- Bound every application, sidebar and dialog scroll pane so short desktop and
+  phone viewports keep navigation, content and dialog actions reachable without
+  document or horizontal scrolling.
+- Prevent long translated help text, accordion summaries and hidden field
+  descriptions from widening the Cockpit.
+
 ## 4.19.1 — 2026-08-11
 
 ### Fixed

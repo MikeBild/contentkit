@@ -227,7 +227,9 @@ export function DataTable<Row>({
   /** Every row for `'whole'`, the current page's rows for `'cursor'`. */
   rows: readonly Row[]
   rowKey: (row: Row) => string
+  /** Readable selector base; the visible row position is appended automatically. */
   rowTestId?: string
+  /** Readable selector base; the visible row position is appended automatically. */
   expandedRowTestId?: string
   rowAttributes?: (row: Row) => Record<string, string>
   isLoading: boolean
@@ -326,16 +328,16 @@ export function DataTable<Row>({
       {renderMobileRow && describable ? (
         <Card className="gap-0 py-0 md:hidden" data-testid={`${testId}-mobile`}>
           <div className="divide-y divide-border">
-            {visibleRows.map((row) => {
+            {visibleRows.map((row, rowIndex) => {
               const expanded = renderExpandedRow?.(row)
               return (
                 <Fragment key={rowKey(row)}>
-                  <div data-testid={rowTestId ? `${rowTestId}-mobile` : undefined} {...(rowAttributes?.(row) ?? {})} className="p-4">
+                  <div data-testid={rowTestId ? `${rowTestId}-${rowIndex}-mobile` : undefined} {...(rowAttributes?.(row) ?? {})} className="p-4">
                     {renderMobileRow(row)}
                   </div>
                   {expanded ? (
                     <div
-                      data-testid={expandedRowTestId ? `${expandedRowTestId}-mobile` : undefined}
+                      data-testid={expandedRowTestId ? `${expandedRowTestId}-${rowIndex}-mobile` : undefined}
                       {...(rowAttributes?.(row) ?? {})}
                       className="border-t border-border bg-muted/30 p-4"
                     >
@@ -413,11 +415,11 @@ export function DataTable<Row>({
                 onRetry={onRetry}
                 emptyMessage={emptyMessage}
               >
-                {visibleRows.map((row) => {
+                {visibleRows.map((row, rowIndex) => {
                   const expanded = renderExpandedRow?.(row)
                   return (
                     <Fragment key={rowKey(row)}>
-                      <TableRow data-testid={rowTestId} {...(rowAttributes?.(row) ?? {})}>
+                      <TableRow data-testid={rowTestId ? `${rowTestId}-${rowIndex}` : undefined} {...(rowAttributes?.(row) ?? {})}>
                         {shown.map((column) => (
                           <TableCell key={column.id} className={column.className}>
                             {column.cell(row)}
@@ -426,7 +428,7 @@ export function DataTable<Row>({
                       </TableRow>
                       {expanded ? (
                         <TableRow
-                          data-testid={expandedRowTestId ?? `${testId}-expanded-row`}
+                          data-testid={`${expandedRowTestId ?? `${testId}-expanded-row`}-${rowIndex}`}
                           {...(rowAttributes?.(row) ?? {})}
                         >
                           <TableCell colSpan={shown.length} className="bg-muted/30">

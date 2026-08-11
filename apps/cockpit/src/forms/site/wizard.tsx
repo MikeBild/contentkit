@@ -202,7 +202,7 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
               <DialogTitle>{t('wizard.newSite')}</DialogTitle>
               <DialogDescription>{t('wizard.description')}</DialogDescription>
             </DialogHeader>
-            <div className="scrollbar-thin flex flex-col gap-5 overflow-y-auto">
+            <div className="scrollbar-thin min-h-0 flex flex-col gap-5 overflow-y-auto">
               <Steps data-testid="ck-site-wizard-steps" steps={stepList} value={step} onChange={setStep} />
 
               {step === 'purpose' ? <PurposeStep draft={draft} onChange={setDraft} /> : null}

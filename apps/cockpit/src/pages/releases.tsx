@@ -254,11 +254,11 @@ export function ReleasesPage() {
               emptyTitle={t('releases.empty')}
               emptyMessage={t('releases.emptyDescription')}
             >
-              {rows.map((release) => {
+              {rows.map((release, releaseIndex) => {
                 const open = expanded === release.id
                 return (
                   <Fragment key={release.id}>
-                    <TableRow data-testid="release-row" data-release={release.id}>
+                    <TableRow data-testid={`release-row-${releaseIndex}`} data-release={release.id}>
                       <TableCell>
                         <StatusBadge tone={TONE[release.status]}>{t(STATUS_KEYS[release.status])}</StatusBadge>
                       </TableCell>
@@ -294,7 +294,7 @@ export function ReleasesPage() {
                           size="sm"
                           variant="ghost"
                           aria-expanded={open}
-                          data-testid={`release-expand-${release.id}`}
+                          data-testid={`release-${releaseIndex}-expand`}
                           onClick={() => setExpanded(open ? null : release.id)}
                         >
                           {open ? t('common.hide') : t('common.details')}
@@ -308,7 +308,7 @@ export function ReleasesPage() {
                           >
                             {(openDialog) => (
                               <Button
-                                data-testid={`release-activate-${release.id}`}
+                                data-testid={`release-${releaseIndex}-activate`}
                                 size="sm"
                                 variant="outline"
                                 onClick={openDialog}
@@ -342,7 +342,7 @@ export function ReleasesPage() {
                           >
                             {(openDialog) => (
                               <Button
-                                data-testid={`release-delete-${release.id}`}
+                                data-testid={`release-${releaseIndex}-delete`}
                                 size="sm"
                                 variant="destructive"
                                 onClick={openDialog}
@@ -355,7 +355,7 @@ export function ReleasesPage() {
                       </TableCell>
                     </TableRow>
                     {open ? (
-                      <TableRow data-testid={`release-detail-${release.id}`}>
+                      <TableRow data-testid={`release-${releaseIndex}-detail`}>
                         <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
                             <dt className="text-muted-foreground">{t('releases.created')}</dt>

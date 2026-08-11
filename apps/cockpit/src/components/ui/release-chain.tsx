@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import { AppLink } from '@/components/app-link'
+import { ContextHelp } from '@/components/context-help'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -83,16 +84,18 @@ export function ReleaseChain({
     )
   }
 
+  const shownChain = localizeChain(chain, t)
+
   if (variant === 'compact') {
     return (
       <div
         data-testid={testId}
-        data-tone={chain.tone}
-        data-calm={chain.calm}
+        data-tone={shownChain.tone}
+        data-calm={shownChain.calm}
         className={cn('flex items-center gap-2 text-xs', className)}
       >
         <ol className="flex items-center gap-1.5">
-          {chain.steps.map((step, index) => (
+          {shownChain.steps.map((step, index) => (
             <li key={step.id} className="flex items-center gap-1.5">
               {index > 0 ? <Arrow /> : null}
               <span
@@ -145,9 +148,14 @@ export function ReleaseChain({
             </li>
           ))}
         </ol>
-        <span data-testid={`${testId}-headline`} className={cn('truncate', TEXT[chain.tone])}>
-          {chain.headline}
+        <span data-testid={`${testId}-headline`} className={cn('truncate', TEXT[shownChain.tone])}>
+          {shownChain.headline}
         </span>
+        {shownChain.unverified ? (
+          <ContextHelp label={t('releaseChain.unverifiedLabel')} testId={`${testId}-unverified-help`}>
+            {shownChain.unverified}
+          </ContextHelp>
+        ) : null}
       </div>
     )
   }
@@ -155,23 +163,30 @@ export function ReleaseChain({
   return (
     <section
       data-testid={testId}
-      data-tone={chain.tone}
-      data-calm={chain.calm}
+      data-tone={shownChain.tone}
+      data-calm={shownChain.calm}
       className={cn('rounded-xl border border-border bg-surface p-4', className)}
     >
       <header className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">{t('releaseChain.title')}</h2>
+        <div className="flex items-center gap-1">
+          <h2 className="text-sm font-semibold tracking-tight">{t('releaseChain.title')}</h2>
+          {shownChain.unverified ? (
+            <ContextHelp label={t('releaseChain.unverifiedLabel')} testId={`${testId}-unverified-help`}>
+              {shownChain.unverified}
+            </ContextHelp>
+          ) : null}
+        </div>
         <p
           data-testid={`${testId}-headline`}
-          className={cn('flex items-center gap-1.5 text-right text-xs', TEXT[chain.tone])}
+          className={cn('flex items-center gap-1.5 text-right text-xs', TEXT[shownChain.tone])}
         >
-          {chain.calm ? null : <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />}
-          {chain.headline}
+          {shownChain.calm ? null : <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />}
+          {shownChain.headline}
         </p>
       </header>
 
       <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {chain.steps.map((step, index) => (
+        {shownChain.steps.map((step, index) => (
           <li key={step.id} className="flex items-stretch gap-2">
             {index > 0 ? <Arrow className="hidden self-center xl:block" /> : null}
             <Step step={step} testId={testId} />
@@ -179,13 +194,99 @@ export function ReleaseChain({
         ))}
       </ol>
 
-      {chain.unverified ? (
-        <p data-testid={`${testId}-unverified`} className="mt-3 text-[0.7rem] leading-relaxed text-muted-foreground">
-          {chain.unverified}
-        </p>
-      ) : null}
     </section>
   )
+}
+
+type Translator = ReturnType<typeof useI18n>['t']
+
+function localizeDetail(step: ChainStep, t: Translator): string {
+  if (step.id === 'drafts' && step.state === 'waiting') {
+    const drafts = /^(\d+) drafts? waiting/.exec(step.detail)?.[1]
+    const scheduled = /(?:^| · )(\d+) scheduled/.exec(step.detail)?.[1]
+    return [
+      drafts ? t(Number(drafts) === 1 ? 'releaseChain.detail.draftWaiting' : 'releaseChain.detail.draftsWaiting', { count: drafts }) : null,
+      scheduled ? t('releaseChain.detail.scheduled', { count: scheduled }) : null,
+    ].filter(Boolean).join(' · ')
+  }
+  if (step.id === 'built' && step.state === 'behind') {
+    return t(step.count === 1 ? 'releaseChain.detail.publishedMissing' : 'releaseChain.detail.publishedMissingMany', {
+      count: step.count ?? 0,
+    })
+  }
+  if (step.id === 'live' && step.state === 'served') {
+    const host = / at (.+)$/.exec(step.detail)?.[1]
+    return t(host ? 'releaseChain.detail.filesAt' : 'releaseChain.detail.files', {
+      count: step.count ?? 0,
+      host: host ?? '',
+    })
+  }
+
+  const keys: Record<string, Parameters<Translator>[0]> = {
+    'drafts:unknown': 'releaseChain.detail.notReadable',
+    'drafts:empty': 'releaseChain.detail.noContent',
+    'drafts:clear': 'releaseChain.detail.nothingWaiting',
+    'built:unknown': 'releaseChain.detail.notReadable',
+    'built:none': 'releaseChain.detail.noBuild',
+    'built:building': 'releaseChain.detail.buildingNow',
+    'built:failed': 'releaseChain.detail.lastBuildFailed',
+    'built:ready': 'releaseChain.detail.builtNeverActivated',
+    'built:stale': 'releaseChain.detail.newerNotServed',
+    'built:unordered': 'releaseChain.detail.unordered',
+    'built:current': 'releaseChain.detail.newestLive',
+    'active:unknown': 'releaseChain.detail.notReadable',
+    'active:active': 'releaseChain.detail.activeSince',
+    'live:unknown': 'releaseChain.detail.notReadable',
+    'live:nothing': 'releaseChain.detail.nothingServed',
+    'live:empty': 'releaseChain.detail.noFiles',
+  }
+  if (step.id === 'active' && step.state === 'none') {
+    if (step.detail.includes('content list')) return t('releaseChain.detail.noActiveUnreadable')
+    if (step.detail === 'nothing to activate yet') return t('releaseChain.detail.nothingToActivate')
+    if (step.detail === 'nothing published yet') return t('releaseChain.detail.nothingPublished')
+    return t('releaseChain.detail.noActive')
+  }
+  if (step.id === 'live' && step.state === 'unknown' && step.detail.includes('file count')) {
+    return t('releaseChain.detail.noFileCount')
+  }
+  const key = keys[`${step.id}:${step.state}`]
+  return key ? t(key) : step.detail
+}
+
+function localizeChain(chain: ReleaseChainState, t: Translator): ReleaseChainState {
+  const labels: Record<ChainStepId, Parameters<Translator>[0]> = {
+    drafts: 'releaseChain.step.drafts',
+    built: 'releaseChain.step.built',
+    active: 'releaseChain.step.active',
+    live: 'releaseChain.step.live',
+  }
+  const steps = chain.steps.map((step) => ({ ...step, label: t(labels[step.id]), detail: localizeDetail(step, t) }))
+  const exceptions = steps.filter((step) => step.tone === 'attention' || step.tone === 'blocked')
+  const gap = steps.some((step) => step.tone === 'unknown') ? t('releaseChain.headline.gap') : null
+  let headline: string
+  if (exceptions.length > 0) {
+    const parts = [exceptions.slice(0, 2).map((step) => step.detail).join(' · ')]
+    if (exceptions.length > 2) parts.push(t('releaseChain.headline.more', { count: exceptions.length - 2 }))
+    if (gap) parts.push(gap)
+    headline = parts.join(' · ')
+  } else {
+    const calm: Record<string, Parameters<Translator>[0]> = {
+      'Part of this chain could not be read.': 'releaseChain.headline.gapSentence',
+      'Nothing written, nothing built.': 'releaseChain.headline.nothingWritten',
+      'Nothing is built, so nothing is being served.': 'releaseChain.headline.nothingBuilt',
+      'Everything published is in the build this site serves.': 'releaseChain.headline.allPublished',
+      'The newest build is the one this site serves; whether it holds everything published could not be checked.':
+        'releaseChain.headline.newestUnchecked',
+    }
+    headline = t(calm[chain.headline] ?? 'releaseChain.headline.newestUnchecked')
+  }
+  return {
+    ...chain,
+    steps,
+    exceptions,
+    headline,
+    unverified: chain.unverified ? t('releaseChain.unverified') : null,
+  }
 }
 
 const STEP_ORDER: ChainStepId[] = ['drafts', 'built', 'active', 'live']

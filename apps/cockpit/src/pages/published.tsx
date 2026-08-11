@@ -108,7 +108,6 @@ export function PublishedPage() {
       </div>
 
       <Card className="py-0">
-        <div className="scrollbar-thin overflow-x-auto">
           <Table
             mobileLabels={[
               t('published.title'),
@@ -141,10 +140,10 @@ export function PublishedPage() {
                   searching ? t('published.noMatchesDescription') : t('published.emptyDescription')
                 }
               >
-                {(searching ? hits : entries).map((entry) => (
+                {(searching ? hits : entries).map((entry, entryIndex) => (
                   <TableRow
                     key={`${entry.kind}/${entry.locale}/${entry.slug}`}
-                    data-testid="published-row"
+                    data-testid={`published-row-${entryIndex}`}
                     data-slug={entry.slug}
                   >
                     {/* Bounded and wrapping rather than truncated. §6 says a cut
@@ -187,7 +186,6 @@ export function PublishedPage() {
               </TableState>
             </TableBody>
           </Table>
-        </div>
       </Card>
 
       {selected ? <PublishedDetail site={site} target={selected} onClose={() => setSelected(null)} /> : null}
@@ -264,7 +262,7 @@ function PublishedDetail({
             {t(`content.kind.${target.kind}`)} · {target.locale} · {target.slug}
           </DialogTitle>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-3 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-3 overflow-y-auto">
           {/* Five views of one document, one at a time: a tablist, not five
               buttons. The buttons this replaced were `variant="default"` when
               selected, which is the console's word for "the change this surface
@@ -274,7 +272,6 @@ function PublishedDetail({
             data-testid="published-tab"
             value={tab}
             onValueChange={setTab}
-            className="overflow-x-auto"
             tabs={[
               { id: 'rendered', label: t('published.rendered') },
               { id: 'markdown', label: t('published.markdown') },

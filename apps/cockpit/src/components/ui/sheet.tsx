@@ -6,6 +6,7 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n-context"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { XIcon } from "lucide-react"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -74,20 +75,26 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close data-slot="sheet-close" asChild>
-            <Button
-              variant="ghost"
-              className="absolute top-3 right-3"
-              size="icon-sm"
-              // Same rule as dialog.tsx: the one control every sheet has in
-              // common gets a name derived from the panel's own.
-              data-testid={testId ? `${testId}-close` : "sheet-close"}
-            >
-              <XIcon
-              />
-              <span className="sr-only">{t('dialog.close')}</span>
-            </Button>
-          </SheetPrimitive.Close>
+          <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <SheetPrimitive.Close data-slot="sheet-close" asChild>
+                <Button
+                  variant="ghost"
+                  className="absolute top-3 right-3"
+                  size="icon-sm"
+                  data-testid={testId ? `${testId}-close` : "sheet-close"}
+                  aria-label={t('dialog.close')}
+                >
+                  <XIcon />
+                </Button>
+              </SheetPrimitive.Close>
+            </TooltipTrigger>
+            <TooltipContent data-testid={testId ? `${testId}-close-tooltip` : "sheet-close-tooltip"}>
+              {t('dialog.close')}
+            </TooltipContent>
+          </Tooltip>
+          </TooltipProvider>
         )}
       </SheetPrimitive.Content>
     </SheetPortal>

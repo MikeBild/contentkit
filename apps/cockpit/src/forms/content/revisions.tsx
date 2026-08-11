@@ -95,7 +95,7 @@ export function Revisions({
                   <Button
                     size="sm"
                     variant="outline"
-                    data-testid={`${testId}-diff-${revision.id}`}
+                    data-testid={`${testId}-${index}-diff`}
                     disabled={!revision.markdown}
                     onClick={() => setCompared({ newer: revision, older: rows[index + 1] ?? null })}
                   >
@@ -104,7 +104,7 @@ export function Revisions({
                   <Button
                     size="sm"
                     variant="ghost"
-                    data-testid={`${testId}-open-${revision.id}`}
+                    data-testid={`${testId}-${index}-open`}
                     disabled={!canWrite || !revision.markdown}
                     onClick={() => onOpen(revision)}
                   >
@@ -136,7 +136,7 @@ export function Revisions({
                   : t('content.revisions.first')}
               </DialogDescription>
             </DialogHeader>
-            <div className="scrollbar-thin overflow-y-auto">
+            <div className="scrollbar-thin min-h-0 overflow-y-auto">
               <DiffList before={compared.older?.markdown ?? ''} after={compared.newer.markdown ?? ''} />
             </div>
             <DialogFooter>

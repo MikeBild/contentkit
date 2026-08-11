@@ -3,7 +3,7 @@ import { ChartNoAxesColumn, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { ck, statsKinds, usageStatsKinds, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import { useI18n } from '@/lib/i18n-context'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +25,19 @@ import { useSite } from '@/lib/site'
 import { tileEmptiness, visibleMetrics, type TileEmptiness } from '@/lib/stat-tile'
 
 const WINDOW = { bucket: 'day', tz: 'UTC' } as const
+
+const STAT_KIND_KEYS: Record<StatsKind, TranslationKey> = {
+  releases: 'overview.stat.releases', content: 'overview.stat.content', decks: 'overview.stat.decks',
+  readers: 'overview.stat.readers', webhooks: 'overview.stat.webhooks', audio: 'overview.stat.audio',
+  engagement: 'overview.stat.engagement', http: 'overview.stat.http',
+  compositions: 'overview.stat.compositions', mcp: 'overview.stat.mcp',
+}
+
+const METRIC_KEYS: Record<string, TranslationKey> = {
+  built: 'overview.metric.built',
+  activated: 'overview.metric.activated',
+  failed: 'overview.metric.failed',
+}
 
 interface Point {
   ts: string
@@ -339,7 +352,7 @@ function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
                 data-emptiness={tile.emptiness}
                 className="gap-1"
               >
-                <span className="capitalize">{tile.kind}</span>
+                <span>{t(STAT_KIND_KEYS[tile.kind])}</span>
                 <span className="text-muted-foreground">
                   · {t((tile.usage ? QUIET_WORD_USAGE : QUIET_WORD)[tile.emptiness])}
                 </span>
@@ -367,7 +380,7 @@ function StatCard({ tile }: { tile: Tile }) {
   return (
     <Card data-testid="stat-card" data-kind={kind}>
       <CardHeader>
-        <CardTitle className="capitalize">{kind}</CardTitle>
+        <CardTitle>{t(STAT_KIND_KEYS[kind])}</CardTitle>
         {/* The opt-in note is a status about this tile's data, so it is a Badge
             rather than a differently-sized span, and it sits in the header's own
             action slot — CardHeader re-grids itself once one is present. */}
@@ -414,7 +427,7 @@ function StatCard({ tile }: { tile: Tile }) {
                           data-testid={`ck-overview-metric-${metric.name}`}
                           className="truncate rounded text-xs text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                         >
-                          {metric.name.replace(/_/g, ' ')}
+                          {METRIC_KEYS[metric.name] ? t(METRIC_KEYS[metric.name]!) : metric.name.replace(/_/g, ' ')}
                         </dt>
                       </TooltipTrigger>
                       <TooltipContent>{metric.name}</TooltipContent>

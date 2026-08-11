@@ -82,7 +82,7 @@ function GroupDialog({
           </DialogTitle>
           <DialogDescription>{t('audience.groups.description')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           {editing ? (
             <TextField
               data-testid="ck-group-slug"
@@ -207,7 +207,7 @@ function MembersDialog({
           <DialogTitle>{t('audience.groups.membersTitle', { name: group.name })}</DialogTitle>
           <DialogDescription>{t('audience.groups.membersDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           <EntityMultiSelect
             data-testid="ck-group-members"
             label={t('audience.groups.readers')}
@@ -337,13 +337,13 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
               emptyTitle={t('audience.groups.empty')}
               emptyMessage={t('audience.groups.emptyDescription')}
             >
-              {rows.map((group) => {
+              {rows.map((group, groupIndex) => {
                 // The server refuses to delete a group any rule still names, so
                 // the blockers are shown before the attempt rather than after.
                 const blockers = ruleRows.filter((rule) => rule.group_slugs?.includes(group.slug))
                 const memberList = membersOf(group, readerRows)
                 return (
-                  <TableRow key={group.id} data-testid="ck-group-row" data-group={group.id}>
+                  <TableRow key={group.id} data-testid={`ck-group-row-${groupIndex}`} data-group={group.id}>
                     <TableCell className="font-mono text-xs">{group.slug}</TableCell>
                     <TableCell>{group.name}</TableCell>
                     <TableCell className="text-muted-foreground">
@@ -353,7 +353,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                       {blockers.length ? (
                         <TooltipProvider>
                           <div className="flex flex-wrap gap-1">
-                            {blockers.map((rule) => (
+                            {blockers.map((rule, blockerIndex) => (
                               <Tooltip key={rule.id}>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -361,7 +361,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                                     variant="outline"
                                     size="xs"
                                     className="font-mono"
-                                    data-testid={`ck-group-blocker-${rule.id}`}
+                                    data-testid={`ck-group-${groupIndex}-blocker-${blockerIndex}`}
                                     onClick={() => onEditRule(rule)}
                                   >
                                     {rule.path}
@@ -387,7 +387,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                           <Button
                             size="sm"
                             variant="outline"
-                            data-testid={`ck-group-members-${group.id}`}
+                            data-testid={`ck-group-${groupIndex}-members`}
                             onClick={() => setMembers(group)}
                           >
                             {t('audience.groups.members')}
@@ -395,7 +395,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                           <Button
                             size="sm"
                             variant="ghost"
-                            data-testid={`ck-group-edit-${group.id}`}
+                            data-testid={`ck-group-${groupIndex}-edit`}
                             onClick={() => setEditing({ group })}
                           >
                             {t('audience.groups.edit')}
@@ -435,7 +435,7 @@ export function GroupsCard({ site, onEditRule }: { site: string; onEditRule: (ru
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                data-testid={`ck-group-delete-${group.id}`}
+                                data-testid={`ck-group-${groupIndex}-delete`}
                                 onClick={open}
                               >
                                 {t('audience.groups.delete')}

@@ -78,8 +78,8 @@ export function SitesPage() {
               emptyTitle={t('sites.empty')}
               emptyMessage={t('sites.emptyDescription')}
             >
-              {sites.map((entry) => (
-                <TableRow key={entry.id} data-testid="ck-sites-row" data-site={entry.slug}>
+              {sites.map((entry, siteIndex) => (
+                <TableRow key={entry.id} data-testid={`ck-sites-row-${siteIndex}`} data-site={entry.slug}>
                   <TableCell className="font-medium">{entry.name}</TableCell>
                   <TableCell className="font-mono text-xs">{entry.slug}</TableCell>
                   <TableCell className="text-muted-foreground">{entry.base_url}</TableCell>

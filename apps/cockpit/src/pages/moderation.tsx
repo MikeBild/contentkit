@@ -110,7 +110,7 @@ export function ModerationPage() {
         data-testid="ck-moderation-tabs"
         value={tab}
         onValueChange={setTab}
-        className="mb-4 overflow-x-auto"
+        className="mb-4"
         tabs={[
           { id: 'comments', label: t('moderation.comments.title'), badge: commentsBadge },
           { id: 'contact', label: t('moderation.contact.title'), badge: contactBadge },

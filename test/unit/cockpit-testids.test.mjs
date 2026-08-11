@@ -263,7 +263,7 @@ describe('every interactive element carries a data-testid — UI-UX.md §8', () 
     // element built a few lines above and named there — a Tooltip wrapped around
     // a `ToggleGroupItem` or a `SidebarMenuButton` that already has its name.
     assert.ok(
-      delegated.toExpression.length <= 2,
+      delegated.toExpression.length <= 4,
       `an asChild wrapper whose child is an expression cannot be graded here; there are now\n` +
         `${delegated.toExpression.length}:\n${delegated.toExpression.join('\n')}`,
     )
@@ -297,7 +297,7 @@ describe('every interactive element carries a data-testid — UI-UX.md §8', () 
 
   test('the names are unique, so a check that finds one finds the right one', () => {
     // Only the literal ones: a template name is per-row by construction
-    // (`pattern-open-${id}`), and two rows are the point.
+    // (`pattern-${index}-open`), and two rows are the point.
     const seen = new Map()
     for (const file of FILES) {
       for (const match of file.src.matchAll(/data-testid="([^"]+)"/g)) {
@@ -314,5 +314,39 @@ describe('every interactive element carries a data-testid — UI-UX.md §8', () 
       .filter(([, sites]) => new Set(sites.map((at) => at.split(':')[0])).size > 1)
       .map(([name, sites]) => `${name}: ${sites.join(', ')}`)
     assert.deepEqual(collisions, [], `one name, two controls in two modules:\n${collisions.join('\n')}`)
+  })
+
+  test('selectors describe UI position, never database identity or personal data', () => {
+    const opaque = []
+    const databaseNames =
+      /\$\{[^}]*\b(?:reader|group|rule|comment|submission|release|job|key|grant|endpoint|delivery|revision|content_item)\.(?:id|content_item_id)\b[^}]*\}/
+    const personalNames = /\$\{[^}]*\b(?:email|subject|provider_id|token_hash|credential_hash)\b[^}]*\}/
+
+    for (const file of FILES) {
+      for (const match of file.src.matchAll(/data-testid=\{`([^`]*)`\}/g)) {
+        if (!databaseNames.test(match[1]) && !personalNames.test(match[1])) continue
+        const line = file.src.slice(0, match.index).split('\n').length
+        opaque.push(`${file.id}:${line} ${match[1]}`)
+      }
+    }
+
+    assert.deepEqual(
+      opaque,
+      [],
+      'test selectors are public UI vocabulary: use a semantic role plus visible row position, never a UUID, token, email or provider subject:\n' +
+        opaque.join('\n'),
+    )
+  })
+
+  test('literal selectors use one readable kebab-case vocabulary', () => {
+    const invalid = []
+    for (const file of FILES) {
+      for (const match of file.src.matchAll(/data-testid="([^"]+)"/g)) {
+        if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(match[1])) continue
+        const line = file.src.slice(0, match.index).split('\n').length
+        invalid.push(`${file.id}:${line} ${match[1]}`)
+      }
+    }
+    assert.deepEqual(invalid, [], `use readable lowercase kebab-case test selectors:\n${invalid.join('\n')}`)
   })
 })

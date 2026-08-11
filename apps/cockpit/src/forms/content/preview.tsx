@@ -62,7 +62,7 @@ export function StructurePane({
 
       {fm.tldr.length ? (
         <section data-testid={`${testId}-tldr`} className="rounded-lg border border-border p-3">
-          <h3 className="text-xs font-medium text-muted-foreground">TL;DR</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t('content.tldrLabel')}</h3>
           <ul className="mt-1 list-disc pl-4 text-xs">
             {fm.tldr.map((line, index) => (
               <li key={index}>{line}</li>
@@ -73,7 +73,7 @@ export function StructurePane({
 
       {fm.faq.length ? (
         <section data-testid={`${testId}-faq`} className="rounded-lg border border-border p-3">
-          <h3 className="text-xs font-medium text-muted-foreground">FAQ</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t('content.faqLabel')}</h3>
           <ul className="mt-1 flex flex-col gap-1 text-xs">
             {fm.faq.map((entry, index) => (
               <li key={index} className="truncate">

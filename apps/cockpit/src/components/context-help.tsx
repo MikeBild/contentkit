@@ -19,7 +19,9 @@ export function ContextHelp({ label, children, testId }: { label: string; childr
           <CircleHelp data-icon="inline-start" />
         </Button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-72">{children}</TooltipContent>
+      <TooltipContent className="max-w-72" data-testid={`${testId}-tooltip`}>
+        {children}
+      </TooltipContent>
     </Tooltip>
   )
 }

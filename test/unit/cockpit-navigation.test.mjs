@@ -1475,7 +1475,11 @@ describe('Cockpit navigation: site context versus installation context', withNav
       /data-testid=\{`ck-site-delete-\$\{site\.slug\}`\}/,
       'each row carries its own delete control, addressable by the slug it would delete',
     )
-    assert.match(registrySource, /data-testid="ck-sites-row"/, 'the registry rows have to be addressable')
+    assert.match(
+      registrySource,
+      /data-testid=\{`ck-sites-row-\$\{siteIndex\}`\}/,
+      'the registry rows have to be uniquely addressable',
+    )
     assert.ok(registrySource.includes('<CreateSiteWizard'), 'creating a site belongs to the registry')
   })
 })

@@ -252,7 +252,6 @@ export function AudioPage() {
       </div>
 
       <Card className="py-0">
-        <div className="scrollbar-thin overflow-x-auto">
           <Table
             mobileLabels={[
               t('audio.title'),
@@ -287,8 +286,8 @@ export function AudioPage() {
                     : t('audio.emptyDescription')
                 }
               >
-                {rows.map((job) => (
-                  <TableRow key={job.id} data-testid="audio-job-row" data-job={job.id}>
+                {rows.map((job, jobIndex) => (
+                  <TableRow key={job.id} data-testid={`audio-job-row-${jobIndex}`} data-job={job.id}>
                     {/* Wraps rather than truncates: §6 wants the whole name in a
                         `title` when a column cuts it, §3 forbids a native
                         `title`, and cockpit-forms-density.test.mjs enforces §3
@@ -325,7 +324,7 @@ export function AudioPage() {
                           }}
                         >
                           {(open) => (
-                            <Button size="sm" variant="outline" data-testid={`audio-retry-${job.id}`} onClick={open}>
+                            <Button size="sm" variant="outline" data-testid={`audio-${jobIndex}-retry`} onClick={open}>
                               {t('audio.retry')}
                             </Button>
                           )}
@@ -337,7 +336,6 @@ export function AudioPage() {
               </TableState>
             </TableBody>
           </Table>
-        </div>
       </Card>
     </Page>
   )

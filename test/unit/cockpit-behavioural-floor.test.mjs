@@ -726,6 +726,14 @@ const THEME_CONTRACTS = [
 
 const I18N_CONTRACTS = [
   {
+    id: 'i18n/visible-copy-is-catalogued',
+    promise:
+      'Visible product copy and accessible labels come from the typed catalogs; only explicit technical literals stay raw.',
+    title: /visible product copy and accessible labels/i,
+    asserts: [/isJsxText/, /accessibleAttributes/, /offenders/],
+    min: 1,
+  },
+  {
     id: 'i18n/catalogs-have-one-shape',
     promise: 'English and German expose exactly the same keys and interpolation fields.',
     title: /catalogs structurally identical/i,
@@ -939,7 +947,7 @@ const UNCOVERED = [
   {
     id: 'ui/the-interactive-primitives',
     missing:
-      'Select, checkbox, switch, toggle group, accordion, collapsible, popover, dropdown menu, hover card, tooltip, combobox, segmented control, dropzone and copy button: every one has a keyboard contract and an announcement, and none is rendered by a test. (The tab strip was one of them until `components/ui/tabs.test.tsx`.) The accordion is the newest and the site settings form is its only caller: that ←/→/Home/End move between nine section headers, and that a section refused by the server still announces its count while closed, are both graded by reading the page.',
+      'Select, checkbox, switch, toggle group, accordion, collapsible, popover, dropdown menu, hover card, tooltip, combobox, segmented control, dropzone, icon button and copy button: every one has a keyboard contract and an announcement, and none is rendered by a test. (The tab strip was one of them until `components/ui/tabs.test.tsx`.) The accordion is the newest and the site settings form is its only caller: that ←/→/Home/End move between nine section headers, and that a section refused by the server still announces its count while closed, are both graded by reading the page.',
     where: [
       'components/ui/accordion.tsx',
       'components/ui/select.tsx',
@@ -956,6 +964,7 @@ const UNCOVERED = [
       'components/ui/segmented.tsx',
       'components/ui/dropzone.tsx',
       'components/ui/copy-button.tsx',
+      'components/ui/icon-button.tsx',
       'components/ui/chip.tsx',
       'components/context-help.tsx',
     ],

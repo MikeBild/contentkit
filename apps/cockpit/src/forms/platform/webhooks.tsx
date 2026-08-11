@@ -27,7 +27,7 @@ import { StatusBadge } from '@/forms/status-badge'
 import { TableState } from '@/forms/table-state'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
-import { useI18n } from '@/lib/i18n-context'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 
 /**
  * "No filter" as a value a Select can hold. Radix spells *deselected* as the
@@ -112,7 +112,7 @@ function EndpointDialog({
           <DialogTitle>{t(editing ? 'webhook.editEndpoint' : 'webhook.newEndpoint')}</DialogTitle>
           <DialogDescription>{t('webhook.dialogDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           <UrlField
             data-testid="ck-webhook-url"
             label={t('siteForm.url')}
@@ -241,8 +241,8 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
               emptyTitle={t('webhook.emptyTitle')}
               emptyMessage={t('webhook.emptyMessage')}
             >
-              {rows.map((endpoint) => (
-                <TableRow key={endpoint.id} data-testid="ck-webhook-row" data-endpoint={endpoint.id}>
+              {rows.map((endpoint, endpointIndex) => (
+                <TableRow key={endpoint.id} data-testid={`ck-webhook-row-${endpointIndex}`} data-endpoint={endpoint.id}>
                   <TableCell className="max-w-[22rem] truncate font-mono text-xs">{endpoint.url}</TableCell>
                   <TableCell className="max-w-[16rem] text-xs text-muted-foreground">
                     {endpoint.events?.length ? endpoint.events.join(', ') : t('webhook.allEvents')}
@@ -270,7 +270,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          data-testid={`ck-webhook-edit-${endpoint.id}`}
+                          data-testid={`ck-webhook-${endpointIndex}-edit`}
                           onClick={() => setEditing({ endpoint })}
                         >
                           {t('webhook.edit')}
@@ -289,7 +289,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                             <Button
                               size="sm"
                               variant="destructive"
-                              data-testid={`ck-webhook-rotate-${endpoint.id}`}
+                              data-testid={`ck-webhook-${endpointIndex}-rotate`}
                               onClick={open}
                             >
                               {t('webhook.rotate')}
@@ -310,7 +310,7 @@ export function WebhookEndpointsCard({ site }: { site: string }) {
                             <Button
                               size="sm"
                               variant="destructive"
-                              data-testid={`ck-webhook-delete-${endpoint.id}`}
+                              data-testid={`ck-webhook-${endpointIndex}-delete`}
                               onClick={open}
                             >
                               {t('common.remove')}
@@ -345,6 +345,12 @@ const DELIVERY_TONE: Record<WebhookDeliveryStatus, 'success' | 'danger' | 'warni
   delivered: 'success',
   failed: 'danger',
   pending: 'warning',
+}
+
+const DELIVERY_STATUS_KEYS: Record<WebhookDeliveryStatus, TranslationKey> = {
+  pending: 'webhook.deliveryStatus.pending',
+  delivered: 'webhook.deliveryStatus.delivered',
+  failed: 'webhook.deliveryStatus.failed',
 }
 
 const LIMITS = [25, 50, 100, 200]
@@ -390,8 +396,8 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                 <SelectItem value={ANY} data-testid="ck-delivery-endpoint-filter-any">
                   {t('webhook.allEndpoints')}
                 </SelectItem>
-                {endpointRows.map((row) => (
-                  <SelectItem key={row.id} value={row.id} data-testid={`ck-delivery-endpoint-filter-${row.id}`}>
+                {endpointRows.map((row, rowIndex) => (
+                  <SelectItem key={row.id} value={row.id} data-testid={`ck-delivery-endpoint-filter-${rowIndex}`}>
                     {row.description || row.url}
                   </SelectItem>
                 ))}
@@ -416,7 +422,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                 </SelectItem>
                 {WEBHOOK_DELIVERY_STATUS.map((value) => (
                   <SelectItem key={value} value={value} data-testid={`ck-delivery-status-filter-${value}`}>
-                    {value}
+                    {t(DELIVERY_STATUS_KEYS[value])}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -479,19 +485,21 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                   : t('webhook.deliveriesEmptyMessage')
               }
             >
-              {rows.map((delivery) => {
+              {rows.map((delivery, deliveryIndex) => {
                 const open = expanded === delivery.id
                 const target = endpointRows.find((row) => row.id === delivery.endpoint_id)
                 return (
                   <Fragment key={delivery.id}>
-                    <TableRow data-testid="ck-delivery-row" data-delivery={delivery.id}>
+                    <TableRow data-testid={`ck-delivery-row-${deliveryIndex}`} data-delivery={delivery.id}>
                       <TableCell className="font-mono text-xs">{delivery.type}</TableCell>
                       <TableCell className="max-w-[16rem] truncate text-xs text-muted-foreground">
                         {/* A null endpoint_id is the legacy env-configured target. */}
                         {target?.url ?? t(delivery.endpoint_id ? 'webhook.unavailableEndpoint' : 'webhook.configuredDefault')}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge tone={DELIVERY_TONE[delivery.status]}>{delivery.status}</StatusBadge>
+                        <StatusBadge tone={DELIVERY_TONE[delivery.status]}>
+                          {t(DELIVERY_STATUS_KEYS[delivery.status])}
+                        </StatusBadge>
                       </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">{delivery.attempts}</TableCell>
                       <TableCell className="text-muted-foreground">{delivery.response_status ?? '—'}</TableCell>
@@ -501,7 +509,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                           size="sm"
                           variant="ghost"
                           aria-expanded={open}
-                          data-testid={`ck-delivery-expand-${delivery.id}`}
+                          data-testid={`ck-delivery-${deliveryIndex}-expand`}
                           onClick={() => setExpanded(open ? null : delivery.id)}
                         >
                           {t(open ? 'common.hide' : 'common.details')}
@@ -525,7 +533,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                               <Button
                                 size="sm"
                                 variant="outline"
-                                data-testid={`ck-delivery-retry-${delivery.id}`}
+                                data-testid={`ck-delivery-${deliveryIndex}-retry`}
                                 onClick={openDialog}
                               >
                                 {t('webhook.retry')}
@@ -536,7 +544,7 @@ export function WebhookDeliveriesCard({ site, siteId }: { site: string; siteId: 
                       </TableCell>
                     </TableRow>
                     {open ? (
-                      <TableRow data-testid={`ck-delivery-detail-${delivery.id}`}>
+                      <TableRow data-testid={`ck-delivery-${deliveryIndex}-detail`}>
                         <TableCell colSpan={7} className="bg-muted/40">
                           <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
                             <dt className="text-muted-foreground">{t('webhook.nextAttempt')}</dt>

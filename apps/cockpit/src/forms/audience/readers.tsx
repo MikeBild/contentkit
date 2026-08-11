@@ -147,7 +147,7 @@ function ReaderDialog({
             {editing ? t('audience.readers.editDescription') : t('audience.readers.createDescription')}
           </DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           {issued ? (
             <RevealOnce
               data-testid="ck-reader-password-issued"
@@ -320,8 +320,8 @@ export function ReadersCard({ site }: { site: string }) {
               emptyTitle={t('audience.readers.empty')}
               emptyMessage={t('audience.readers.emptyDescription')}
             >
-              {rows.map((reader) => (
-                <TableRow key={reader.id} data-testid="ck-reader-row" data-user={reader.id}>
+              {rows.map((reader, readerIndex) => (
+                <TableRow key={reader.id} data-testid={`ck-reader-row-${readerIndex}`} data-user={reader.id}>
                   <TableCell className="font-medium">{reader.username}</TableCell>
                   <TableCell className="text-muted-foreground">{reader.display_name}</TableCell>
                   <TableCell>
@@ -338,7 +338,7 @@ export function ReadersCard({ site }: { site: string }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          data-testid={`ck-reader-edit-${reader.id}`}
+                          data-testid={`ck-reader-${readerIndex}-edit`}
                           onClick={() => setEditing({ reader })}
                         >
                           {t('audience.readers.edit')}
@@ -355,7 +355,7 @@ export function ReadersCard({ site }: { site: string }) {
                             <Button
                               size="sm"
                               variant="ghost"
-                              data-testid={`ck-reader-revoke-${reader.id}`}
+                              data-testid={`ck-reader-${readerIndex}-revoke`}
                               onClick={open}
                             >
                               {t('audience.readers.revokeSessions')}
@@ -385,7 +385,7 @@ export function ReadersCard({ site }: { site: string }) {
                             <Button
                               size="sm"
                               variant="destructive"
-                              data-testid={`ck-reader-delete-${reader.id}`}
+                              data-testid={`ck-reader-${readerIndex}-delete`}
                               onClick={open}
                             >
                               {t('audience.readers.delete')}

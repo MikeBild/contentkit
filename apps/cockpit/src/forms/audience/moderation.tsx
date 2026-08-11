@@ -47,7 +47,7 @@ function useContentTitles(site: string) {
   return (id: string) => items.find((item) => item.id === id)
 }
 
-function ContentTitle({ id, item }: { id: string; item: ContentItem | undefined }) {
+function ContentTitle({ testId, item }: { testId: string; item: ContentItem | undefined }) {
   const { t } = useI18n()
   // The uuid is what the row is really keyed by, and the link shows a title
   // instead. `AppLink` spreads its props onto an anchor, so the `title` this used
@@ -57,7 +57,7 @@ function ContentTitle({ id, item }: { id: string; item: ContentItem | undefined 
   return (
     <AppLink
       to="/content"
-      data-testid={`ck-moderation-item-${id}`}
+      data-testid={testId}
       className="underline decoration-dotted underline-offset-2 hover:text-foreground"
     >
       {item?.title || item?.slug || t('common.unavailableDocument')}
@@ -154,11 +154,11 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                   : t('moderation.comments.empty')
               }
             >
-              {rows.map((comment) => (
-                <TableRow key={comment.id} data-testid="ck-comment-row" data-comment={comment.id}>
+              {rows.map((comment, commentIndex) => (
+                <TableRow key={comment.id} data-testid={`ck-comment-row-${commentIndex}`} data-comment={comment.id}>
                   <TableCell>{comment.author_name || t('moderation.anonymous')}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    <ContentTitle id={comment.content_item_id} item={titleFor(comment.content_item_id)} />
+                    <ContentTitle testId={`ck-comment-${commentIndex}-item`} item={titleFor(comment.content_item_id)} />
                   </TableCell>
                   <TableCell className="max-w-[28rem] whitespace-pre-wrap break-words">{comment.body}</TableCell>
                   <TableCell>
@@ -199,7 +199,7 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                                 <Button
                                   size="sm"
                                   variant={next === 'approved' ? 'outline' : 'ghost'}
-                                  data-testid={`ck-comment-${next}-${comment.id}`}
+                                  data-testid={`ck-comment-${commentIndex}-${next}`}
                                   onClick={open}
                                 >
                                   {next === 'approved'
@@ -228,7 +228,7 @@ export function CommentsCard({ site, siteId }: { site: string; siteId: string })
                             <Button
                               size="sm"
                               variant="destructive"
-                              data-testid={`ck-comment-delete-${comment.id}`}
+                              data-testid={`ck-comment-${commentIndex}-delete`}
                               onClick={open}
                             >
                               {t('moderation.comments.delete')}
@@ -305,11 +305,11 @@ export function ContactCard({ siteId }: { siteId: string }) {
               onRetry={() => contact.refetch()}
               emptyMessage={t('moderation.contact.empty')}
             >
-              {rows.map((submission) => {
+              {rows.map((submission, submissionIndex) => {
                 const open = expanded === submission.id
                 return (
                   <Fragment key={submission.id}>
-                    <TableRow data-testid="ck-contact-row" data-submission={submission.id}>
+                    <TableRow data-testid={`ck-contact-row-${submissionIndex}`} data-submission={submission.id}>
                       <TableCell>
                         <span className="font-medium">{submission.name || t('moderation.anonymous')}</span>
                         {submission.email ? (
@@ -325,7 +325,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                         */}
                         <button
                           type="button"
-                          data-testid={`ck-contact-expand-${submission.id}`}
+                          data-testid={`ck-contact-${submissionIndex}-expand`}
                           aria-expanded={open}
                           onClick={() => setExpanded(open ? null : submission.id)}
                           className="w-full truncate text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -349,7 +349,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                                 key={next}
                                 size="sm"
                                 variant="outline"
-                                data-testid={`ck-contact-${next}-${submission.id}`}
+                                data-testid={`ck-contact-${submissionIndex}-${next}`}
                                 onClick={async () => {
                                   await ck.moderation.updateContact(submission.id, next)
                                   await invalidate()
@@ -376,7 +376,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                                 <Button
                                   size="sm"
                                   variant="destructive"
-                                  data-testid={`ck-contact-delete-${submission.id}`}
+                                  data-testid={`ck-contact-${submissionIndex}-delete`}
                                   onClick={openDialog}
                                 >
                                   {t('moderation.contact.delete')}
@@ -388,7 +388,7 @@ export function ContactCard({ siteId }: { siteId: string }) {
                       </TableCell>
                     </TableRow>
                     {open ? (
-                      <TableRow data-testid={`ck-contact-body-${submission.id}`}>
+                      <TableRow data-testid={`ck-contact-${submissionIndex}-body`}>
                         <TableCell colSpan={5} className="bg-muted/40">
                           <p className="whitespace-pre-wrap break-words text-sm">{submission.body}</p>
                         </TableCell>
@@ -441,11 +441,11 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
               <SelectItem value={ANY} data-testid="ck-feedback-post-filter-any">
                 {t('moderation.feedback.allPosts')}
               </SelectItem>
-              {(feedback.data ?? []).map((row) => (
+              {(feedback.data ?? []).map((row, rowIndex) => (
                 <SelectItem
                   key={row.content_item_id}
                   value={row.content_item_id}
-                  data-testid={`ck-feedback-post-filter-${row.content_item_id}`}
+                  data-testid={`ck-feedback-post-filter-${rowIndex}`}
                 >
                   {titleFor(row.content_item_id)?.title || titleFor(row.content_item_id)?.slug || t('common.unavailableDocument')}
                 </SelectItem>
@@ -480,10 +480,10 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
               onRetry={() => feedback.refetch()}
               emptyMessage={t('moderation.feedback.empty')}
             >
-              {rows.map((row) => (
-                <TableRow key={row.content_item_id} data-testid="ck-feedback-row" data-post={row.content_item_id}>
+              {rows.map((row, rowIndex) => (
+                <TableRow key={row.content_item_id} data-testid={`ck-feedback-row-${rowIndex}`} data-post={row.content_item_id}>
                   <TableCell>
-                    <ContentTitle id={row.content_item_id} item={titleFor(row.content_item_id)} />
+                    <ContentTitle testId={`ck-feedback-${rowIndex}-item`} item={titleFor(row.content_item_id)} />
                   </TableCell>
                   <TableCell className="tabular-nums text-chart-2">{row.up}</TableCell>
                   <TableCell className="tabular-nums text-destructive">{row.down}</TableCell>
@@ -509,7 +509,7 @@ export function FeedbackCard({ site, siteId }: { site: string; siteId: string })
                           <Button
                             size="sm"
                             variant="destructive"
-                            data-testid={`ck-feedback-reset-${row.content_item_id}`}
+                            data-testid={`ck-feedback-${rowIndex}-reset`}
                             onClick={open}
                           >
                             {t('moderation.feedback.reset')}

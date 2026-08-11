@@ -113,7 +113,7 @@ describe('Compositions — a refusal the reader is not looking at', () => {
   it('shows one panel at a time, and each tab of this page really has its own', async () => {
     const user = userEvent.setup()
     renderPage()
-    await screen.findByTestId('pattern-row')
+    await screen.findByTestId('pattern-row-0')
 
     for (const [tab, panel] of [
       ['patterns', 'composition-tab-patterns'],

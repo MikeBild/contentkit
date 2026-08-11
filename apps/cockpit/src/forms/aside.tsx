@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { FieldDescription } from '@/components/ui/field'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
+import { useI18n } from '@/lib/i18n-context'
 
 /**
  * One visible line, and the paragraph behind it.
@@ -32,12 +33,19 @@ export function Aside({
   children: ReactNode
   'data-testid': string
 }) {
+  const { t } = useI18n()
   return (
     <div className="flex items-baseline gap-1.5">
       <FieldDescription>{summary}</FieldDescription>
       <Popover>
         <PopoverTrigger asChild>
-          <Button type="button" variant="ghost" size="icon-xs" aria-label={`More about ${title}`} data-testid={testId}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('field.aboutLabel', { label: title })}
+            data-testid={testId}
+          >
             <Info data-icon="inline-start" aria-hidden />
           </Button>
         </PopoverTrigger>

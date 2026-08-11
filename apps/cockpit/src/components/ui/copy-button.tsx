@@ -1,6 +1,7 @@
 import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from './button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip'
 import { useI18n } from '@/lib/i18n-context'
 
 /**
@@ -29,7 +30,7 @@ export function CopyButton({
   const actionLabel = label ?? t('common.copy')
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
-  return (
+  const control = (
     <Button
       type="button"
       variant="outline"
@@ -63,5 +64,15 @@ export function CopyButton({
             ? t('common.copied')
             : actionLabel}
     </Button>
+  )
+
+  if (size !== 'icon-sm') return control
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{control}</TooltipTrigger>
+        <TooltipContent data-testid={`${testId}-tooltip`}>{actionLabel}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

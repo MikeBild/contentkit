@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { useI18n } from '@/lib/i18n-context'
 import { cn } from '@/lib/utils'
@@ -118,39 +119,39 @@ export function ObjectListField<T extends Record<string, unknown>>({
                     {itemLabel ? itemLabel(item, index) : `#${index + 1}`}
                   </span>
                   <div className="ml-auto flex gap-1">
-                    <Button
+                    <IconButton
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={t('common.moveUp')}
+                      label={t('common.moveUp')}
                       data-testid={`${control['data-testid']}-up-${index}`}
                       disabled={control.disabled || index === 0}
                       onClick={() => move(index, -1)}
                     >
                       <ArrowUp />
-                    </Button>
-                    <Button
+                    </IconButton>
+                    <IconButton
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={t('common.moveDown')}
+                      label={t('common.moveDown')}
                       data-testid={`${control['data-testid']}-down-${index}`}
                       disabled={control.disabled || index === value.length - 1}
                       onClick={() => move(index, 1)}
                     >
                       <ArrowDown />
-                    </Button>
-                    <Button
+                    </IconButton>
+                    <IconButton
                       type="button"
                       variant="destructive"
                       size="icon-sm"
-                      aria-label={t('common.remove')}
+                      label={t('common.remove')}
                       data-testid={`${control['data-testid']}-remove-${index}`}
                       disabled={control.disabled}
                       onClick={() => onChange(value.filter((_, at) => at !== index))}
                     >
                       <Trash2 />
-                    </Button>
+                    </IconButton>
                   </div>
                 </div>
                 {renderItem(item, {

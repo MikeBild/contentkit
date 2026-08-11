@@ -7,6 +7,7 @@ import { XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n-context"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * The vendored Radix Dialog. This file used to be the console's own overlay.
@@ -168,7 +169,7 @@ function DialogContent({
         data-slot="dialog-content"
         data-testid={testId}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         /**
@@ -213,18 +214,27 @@ function DialogContent({
       >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <Button
-              variant="ghost"
-              className="absolute top-2 right-2"
-              size="icon-sm"
-              disabled={closeDisabled}
-              data-testid={testId ? `${testId}-close` : "dialog-close"}
-            >
-              <XIcon />
-              <span className="sr-only">{t('dialog.close')}</span>
-            </Button>
-          </DialogPrimitive.Close>
+          <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DialogPrimitive.Close data-slot="dialog-close" asChild>
+                <Button
+                  variant="ghost"
+                  className="absolute top-2 right-2"
+                  size="icon-sm"
+                  disabled={closeDisabled}
+                  data-testid={testId ? `${testId}-close` : "dialog-close"}
+                  aria-label={t('dialog.close')}
+                >
+                  <XIcon />
+                </Button>
+              </DialogPrimitive.Close>
+            </TooltipTrigger>
+            <TooltipContent data-testid={testId ? `${testId}-close-tooltip` : "dialog-close-tooltip"}>
+              {t('dialog.close')}
+            </TooltipContent>
+          </Tooltip>
+          </TooltipProvider>
         )}
       </DialogPrimitive.Content>
     </DialogPortal>

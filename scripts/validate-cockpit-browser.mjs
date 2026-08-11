@@ -62,6 +62,9 @@ const VIEWPORTS = [
   { name: '390×800', width: 390, height: 800, requireOverflow: false, narrow: true },
 ]
 
+/** Both supported catalogs must survive the complete geometry matrix. */
+const UI_LOCALES = ['en', 'de']
+
 /**
  * The horizontal overflow the console has today, measured rather than assumed.
  *
@@ -132,6 +135,12 @@ function note(entry) {
 const measure = () => {
   const documentElement = document.documentElement
   const page = document.querySelector('[data-testid="page"]')
+  const uuid = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
+  const inset = document.querySelector('[data-slot="sidebar-inset"]')
+  const visibleUuid = uuid.exec(inset?.innerText ?? '')?.[0] ?? null
+  const opaqueTestIds = [...document.querySelectorAll('[data-testid]')]
+    .map((element) => element.getAttribute('data-testid'))
+    .filter((value) => value && uuid.test(value))
 
   /** The nearest scrolling ancestor of the page, found by computed style. */
   let pane = page?.parentElement ?? null
@@ -178,6 +187,8 @@ const measure = () => {
     documentScrollWidth: documentElement.scrollWidth,
     documentClientWidth: documentElement.clientWidth,
     spilling: spilling.slice(0, 4),
+    visibleUuid,
+    opaqueTestIds: opaqueTestIds.slice(0, 4),
   }
 }
 
@@ -340,113 +351,142 @@ try {
   // Cases 1, 2 and 3 — one pass per viewport, one measurement per route.
   // ───────────────────────────────────────────────────────────────────────────
   for (const viewport of VIEWPORTS) {
-    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } })
-    const page = await context.newPage()
-    watch(page)
+    for (const locale of UI_LOCALES) {
+      const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } })
+      await context.addInitScript((preference) => {
+        localStorage.setItem('ck-cockpit-locale', preference)
+      }, locale)
+      const page = await context.newPage()
+      watch(page)
 
-    for (const route of ROUTES) {
-      await open(page, route, fixture.origin)
-      const seen = await page.evaluate(measure)
-      const where = `${viewport.name} ${route}`
-      note({ viewport: viewport.name, route, ...seen })
+      for (const route of ROUTES) {
+        await open(page, route, fixture.origin)
+        const seen = await page.evaluate(measure)
+        const where = `${locale} ${viewport.name} ${route}`
+        note({ locale, viewport: viewport.name, route, ...seen })
 
-      if (!expect(seen.hasPage, `${where}: nothing with data-testid="page" rendered.`)) continue
+        if (!expect(seen.hasPage, `${where}: nothing with data-testid="page" rendered.`)) continue
 
-      // ── Case 1. Every route scrolls when its content exceeds the viewport.
-      expect(
-        seen.paneFound,
-        `${where}: the page has no scrolling ancestor at all — nothing below the fold is reachable.`,
-      )
-      expect(
-        seen.paneClientHeight <= viewport.height + 1,
-        `${where} (${seen.title}): the scrolling pane is ${seen.paneClientHeight}px tall inside a ${viewport.height}px viewport, so it is unbounded and can never overflow. This is the 4.8.0 defect: the pane's overflow-y has no bounded parent, and body{overflow:hidden} cuts off everything past ${viewport.height}px with no scrollbar to say so.`,
-      )
-      if (viewport.requireOverflow) {
+        expect(!seen.visibleUuid, `${where}: an opaque UUID is visible to the operator: ${seen.visibleUuid}.`)
         expect(
-          seen.paneScrollHeight > seen.paneClientHeight,
-          `${where} (${seen.title}): content is ${seen.paneScrollHeight}px in a ${seen.paneClientHeight}px pane — it does not exceed even this deliberately short viewport, so either the page rendered nothing or the pane grew with it.`,
+          seen.opaqueTestIds.length === 0,
+          `${where}: test selectors contain opaque UUIDs: ${seen.opaqueTestIds.join(', ')}.`,
         )
-      }
-      if (seen.paneScrollHeight > seen.paneClientHeight) {
-        const moved = await page.evaluate(scrollPaneToEnd)
+
+        // ── Case 1. Every route scrolls when its content exceeds the viewport.
         expect(
-          moved.scrolled > 0,
-          `${where} (${seen.title}): the pane reports ${seen.paneScrollHeight}px of content in ${seen.paneClientHeight}px but scrollTop stayed at 0 — the overflow is not scrollable.`,
+          seen.paneFound,
+          `${where}: the page has no scrolling ancestor at all — nothing below the fold is reachable.`,
         )
         expect(
-          moved.lastReachable,
-          `${where} (${seen.title}): scrolled to the end and the bottom of the page is still below the pane — part of this page cannot be reached.`,
+          seen.paneClientHeight <= viewport.height + 1,
+          `${where} (${seen.title}): the scrolling pane is ${seen.paneClientHeight}px tall inside a ${viewport.height}px viewport, so it is unbounded and can never overflow. This is the 4.8.0 defect: the pane's overflow-y has no bounded parent, and body{overflow:hidden} cuts off everything past ${viewport.height}px with no scrollbar to say so.`,
         )
-      }
+        if (viewport.requireOverflow) {
+          expect(
+            seen.paneScrollHeight > seen.paneClientHeight,
+            `${where} (${seen.title}): content is ${seen.paneScrollHeight}px in a ${seen.paneClientHeight}px pane — it does not exceed even this deliberately short viewport, so either the page rendered nothing or the pane grew with it.`,
+          )
+        }
+        if (seen.paneScrollHeight > seen.paneClientHeight) {
+          const moved = await page.evaluate(scrollPaneToEnd)
+          expect(
+            moved.scrolled > 0,
+            `${where} (${seen.title}): the pane reports ${seen.paneScrollHeight}px of content in ${seen.paneClientHeight}px but scrollTop stayed at 0 — the overflow is not scrollable.`,
+          )
+          expect(
+            moved.lastReachable,
+            `${where} (${seen.title}): scrolled to the end and the bottom of the page is still below the pane — part of this page cannot be reached.`,
+          )
+        }
 
-      // ── Case 2. No page scrolls the document itself.
-      expect(
-        seen.documentScrollHeight <= seen.documentClientHeight + 1,
-        `${where} (${seen.title}): the document is ${seen.documentScrollHeight}px tall in a ${seen.documentClientHeight}px window. body is overflow:hidden by design, so this height is not scrolled — it is clipped.`,
-      )
-      expect(
-        seen.bodyScrollHeight <= seen.bodyClientHeight + 1,
-        `${where} (${seen.title}): body content is ${seen.bodyScrollHeight}px in a ${seen.bodyClientHeight}px body, and body is overflow:hidden — the difference is cut off.`,
-      )
-      const stayed = await page.evaluate(tryScrollDocument)
-      expect(
-        stayed.windowY === 0 && stayed.bodyTop === 0 && stayed.docTop === 0,
-        `${where} (${seen.title}): the document scrolled (window ${stayed.windowY}, body ${stayed.bodyTop}, root ${stayed.docTop}). The shell scrolls its panes; a page that moves the document takes the sidebar with it.`,
-      )
+        // ── Case 2. No page scrolls the document itself.
+        expect(
+          seen.documentScrollHeight <= seen.documentClientHeight + 1,
+          `${where} (${seen.title}): the document is ${seen.documentScrollHeight}px tall in a ${seen.documentClientHeight}px window. body is overflow:hidden by design, so this height is not scrolled — it is clipped.`,
+        )
+        expect(
+          seen.bodyScrollHeight <= seen.bodyClientHeight + 1,
+          `${where} (${seen.title}): body content is ${seen.bodyScrollHeight}px in a ${seen.bodyClientHeight}px body, and body is overflow:hidden — the difference is cut off.`,
+        )
+        const stayed = await page.evaluate(tryScrollDocument)
+        expect(
+          stayed.windowY === 0 && stayed.bodyTop === 0 && stayed.docTop === 0,
+          `${where} (${seen.title}): the document scrolled (window ${stayed.windowY}, body ${stayed.bodyTop}, root ${stayed.docTop}). The shell scrolls its panes; a page that moves the document takes the sidebar with it.`,
+        )
 
-      // ── Case 3. Nothing overflows horizontally, except inside a scroller.
-      const overflow = seen.documentScrollWidth - seen.documentClientWidth
-      const key = `${viewport.name} ${route}`
-      if (KNOWN_HORIZONTAL_OVERFLOW.has(key)) {
-        expect(
-          overflow > 0,
-          `${where}: listed in KNOWN_HORIZONTAL_OVERFLOW and no longer overflows. Delete the '${key}' line from scripts/validate-cockpit-browser.mjs — the ratchet only holds if it tightens.`,
-        )
-        expect(
-          overflow <= SIDEBAR_WIDTH,
-          `${where} (${seen.title}): horizontal overflow is ${overflow}px, worse than the ${SIDEBAR_WIDTH}px this page is recorded as having. Something new overflows on top of the SidebarInset min-width defect.`,
-        )
-      } else {
-        expect(
-          overflow <= 0,
-          `${where} (${seen.title}): the document is ${overflow}px wider than the window and body is overflow:hidden, so that ${overflow}px is unreachable. Nothing may overflow horizontally. Widest offenders: ${
-            seen.spilling
-              .map((item) => `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> "${item.text}"`)
-              .join(', ') || 'none identified'
-          }`,
-        )
-      }
+        // ── Case 3. Nothing overflows horizontally, except inside a scroller.
+        const overflow = seen.documentScrollWidth - seen.documentClientWidth
+        const key = `${viewport.name} ${route}`
+        if (KNOWN_HORIZONTAL_OVERFLOW.has(key)) {
+          expect(
+            overflow > 0,
+            `${where}: listed in KNOWN_HORIZONTAL_OVERFLOW and no longer overflows. Delete the '${key}' line from scripts/validate-cockpit-browser.mjs — the ratchet only holds if it tightens.`,
+          )
+          expect(
+            overflow <= SIDEBAR_WIDTH,
+            `${where} (${seen.title}): horizontal overflow is ${overflow}px, worse than the ${SIDEBAR_WIDTH}px this page is recorded as having. Something new overflows on top of the SidebarInset min-width defect.`,
+          )
+        } else {
+          expect(
+            overflow <= 0,
+            `${where} (${seen.title}): the document is ${overflow}px wider than the window and body is overflow:hidden, so that ${overflow}px is unreachable. Nothing may overflow horizontally. Widest offenders: ${
+              seen.spilling
+                .map((item) => `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> "${item.text}"`)
+                .join(', ') || 'none identified'
+            }`,
+          )
+        }
 
-      // ── Case 8. At a phone width nothing scrolls sideways, and every row's
-      //    controls remain inside the viewport.
-      if (viewport.narrow) {
-        const narrow = await page.evaluate(measureNarrow, viewport.width)
-        note({ viewport: viewport.name, route, ...narrow })
-        expect(
-          narrow.sidewaysCount === 0,
-          `${where} (${seen.title}): ${narrow.sidewaysCount} element(s) scroll sideways. UI-UX.md §7 requires one vertical reading axis, including for tables. Offenders: ${
-            narrow.sideways
-              .map(
-                (item) =>
-                  `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> +${item.by}px "${item.text}"`,
+        // ── Case 8. At a phone width nothing scrolls sideways, and every row's
+        //    controls remain inside the viewport.
+        if (viewport.narrow) {
+          const narrow = await page.evaluate(measureNarrow, viewport.width)
+          note({ viewport: viewport.name, route, ...narrow })
+          expect(
+            narrow.sidewaysCount === 0,
+            `${where} (${seen.title}): ${narrow.sidewaysCount} element(s) scroll sideways. UI-UX.md §7 requires one vertical reading axis, including for tables. Offenders: ${
+              narrow.sideways
+                .map(
+                  (item) =>
+                    `<${item.tag}${item.testId ? ` data-testid="${item.testId}"` : ''}> +${item.by}px "${item.text}"`,
+                )
+                .join(', ') || 'none identified'
+            }`,
+          )
+          expect(
+            narrow.strandedCount === 0,
+            `${where} (${seen.title}): ${narrow.strandedCount} control(s) in table rows sit outside the ${viewport.width}px window. A stacked row keeps every value and action in the viewport. Stranded: ${
+              narrow.stranded.map((item) => `"${item.text}" (${item.testId}) at x=${item.at}`).join(', ') ||
+              'none identified'
+            }`,
+          )
+          expect(
+            narrow.titleBlock !== null && narrow.titleBlock.width >= narrow.titleBlock.available - 1,
+            `${where} (${seen.title}): the page's title and description share their row with the page's actions, so they get ${narrow.titleBlock?.width}px of ${narrow.titleBlock?.available}px. At a phone width the actions take their own row — see the header in apps/cockpit/src/app/shell.tsx.`,
+          )
+        }
+
+        // A hidden tab can conceal interface copy from the route's default-state
+        // measurement. Exercise both registry views: opaque ids and sideways
+        // records used to appear only after opening Patterns.
+        if (route === '/compositions') {
+          for (const tab of ['patterns', 'guides']) {
+            await page.locator(`[data-testid="composition-tabs-${tab}"]`).click()
+            const tabSeen = await page.evaluate(measure)
+            expect(!tabSeen.visibleUuid, `${where} ${tab}: an opaque UUID is visible: ${tabSeen.visibleUuid}.`)
+            if (viewport.narrow) {
+              const tabNarrow = await page.evaluate(measureNarrow, viewport.width)
+              expect(
+                tabNarrow.sidewaysCount === 0 && tabNarrow.strandedCount === 0,
+                `${where} ${tab}: the opened tab adds horizontal scrolling or strands row controls.`,
               )
-              .join(', ') || 'none identified'
-          }`,
-        )
-        expect(
-          narrow.strandedCount === 0,
-          `${where} (${seen.title}): ${narrow.strandedCount} control(s) in table rows sit outside the ${viewport.width}px window. A stacked row keeps every value and action in the viewport. Stranded: ${
-            narrow.stranded.map((item) => `"${item.text}" (${item.testId}) at x=${item.at}`).join(', ') ||
-            'none identified'
-          }`,
-        )
-        expect(
-          narrow.titleBlock !== null && narrow.titleBlock.width >= narrow.titleBlock.available - 1,
-          `${where} (${seen.title}): the page's title and description share their row with the page's actions, so they get ${narrow.titleBlock?.width}px of ${narrow.titleBlock?.available}px. At a phone width the actions take their own row — see the header in apps/cockpit/src/app/shell.tsx.`,
-        )
+            }
+          }
+        }
       }
+      await context.close()
     }
-    await context.close()
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -727,7 +767,7 @@ try {
       await page.locator('[data-testid="ck-moderation-tabs-contact"]').click()
       const panel = page.locator('[data-testid="ck-moderation-tab-contact"]')
       await panel.waitFor({ state: 'visible', timeout: 5000 })
-      const rows = await panel.locator('[data-testid="ck-contact-row"]').count()
+      const rows = await panel.locator('[data-testid^="ck-contact-row-"]').count()
       note({ case: 'tab-count-matches-panel', badge: badgeText, counted, rows })
 
       expect(
@@ -778,8 +818,8 @@ try {
     const DIALOGS = [
       // The three that were measurably broken, worst first.
       ['/credentials', 'ck-api-key-new', 'New key'],
-      ['/access', 'ck-reader-edit', 'Edit reader'],
-      ['/webhooks', 'ck-webhook-edit', 'Edit endpoint'],
+      ['/access', 'ck-reader-0-edit', 'Edit reader'],
+      ['/webhooks', 'ck-webhook-0-edit', 'Edit endpoint'],
       // The rest of the console's form dialogs, so a regression in any of them
       // lands here rather than on an operator.
       ['/sites', 'site-new', 'New site (the wizard)'],
@@ -818,7 +858,9 @@ try {
         return {
           testId: panel.getAttribute('data-testid'),
           bottom: Math.round(box.bottom),
-          panelOverflows: panel.scrollHeight > panel.clientHeight + 1,
+          panelOverflows:
+            !['hidden', 'clip'].includes(getComputedStyle(panel).overflowY) &&
+            panel.scrollHeight > panel.clientHeight + 1,
           footerBottom: footer ? Math.round(footer.getBoundingClientRect().bottom) : null,
           bodyFits: body ? body.scrollHeight <= body.clientHeight + 1 : null,
           // §7 inside a dialog, which is where the wizard's four-step strip
@@ -903,6 +945,7 @@ if (failures.length > 0) {
         valid: true,
         seconds: Number(seconds),
         routes: ROUTES.length,
+        locales: UI_LOCALES,
         viewports: VIEWPORTS.map((entry) => entry.name),
         cases: [
           'every route scrolls its pane and the pane is bounded by the viewport',

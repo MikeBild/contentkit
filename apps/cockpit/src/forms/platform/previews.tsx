@@ -91,7 +91,7 @@ function PreviewDialog({ site, onCreated, onClose }: { site: string; onCreated: 
           <DialogTitle>{t('previews.new')}</DialogTitle>
           <DialogDescription>{t('previews.newDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin flex flex-col gap-4 overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 flex flex-col gap-4 overflow-y-auto">
           <SlugField
             data-testid="ck-preview-slug"
             label={t('previews.name')}

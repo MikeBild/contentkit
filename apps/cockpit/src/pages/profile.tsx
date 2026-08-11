@@ -5,8 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SCOPE_DESCRIPTION_KEYS } from '@/forms/fields/scopes'
 import { PRODUCT_SCOPES, type ProductScope } from '@/forms/contracts/enums.generated'
 import { useSession } from '@/lib/session'
+import { visibleLabel } from '@/lib/opaque'
 import { useNow } from '@/hooks/use-now'
-import { useI18n } from '@/lib/i18n-context'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
+
+function profileRoleKey(role: string | null | undefined): TranslationKey {
+  if (role === 'admin') return 'account.role.admin'
+  if (role === 'author') return 'account.role.author'
+  if (role === 'reader') return 'account.role.reader'
+  return 'account.role.operator'
+}
 
 /**
  * Who you are signed in as, what that lets you do, and how long it lasts.
@@ -58,7 +66,7 @@ function Identity() {
           <dt className="text-sm text-muted-foreground">{t('profile.email')}</dt>
           <dd className="text-sm break-all">{session.email ?? '—'}</dd>
           <dt className="text-sm text-muted-foreground">{t('profile.provider')}</dt>
-          <dd className="text-sm">{session.provider_id ?? t('profile.apiKey')}</dd>
+          <dd className="text-sm">{visibleLabel(session.provider_id) ?? t('profile.apiKey')}</dd>
         </dl>
       </CardContent>
     </Card>
@@ -140,8 +148,8 @@ function Authority() {
       <CardContent className="flex flex-col gap-6">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{t('profile.role')}</span>
-          <Badge variant="secondary" className="font-mono uppercase" data-testid="profile-role">
-            {session.role}
+          <Badge variant="secondary" data-testid="profile-role">
+            {t(profileRoleKey(session.role))}
           </Badge>
         </div>
 

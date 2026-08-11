@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ck } from '@/api/ck'
 import { Page } from '@/app/shell'
-import { useI18n } from '@/lib/i18n-context'
+import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -30,8 +30,20 @@ import { keys } from '@/lib/query'
 import { ANY } from '@/lib/select-any'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
+import { visibleLabel } from '@/lib/opaque'
 
 const CANVAS = ['portrait', 'landscape', 'square', 'flow'] as const
+
+const COMPOSITION_VALUE_KEYS: Record<string, TranslationKey> = {
+  document: 'composition.value.document', node: 'composition.value.node',
+  experimental: 'composition.value.experimental', stable: 'composition.value.stable', deprecated: 'composition.value.deprecated',
+  metrics: 'composition.value.metrics', stats: 'composition.value.stats', process: 'composition.value.process',
+  comparison: 'composition.value.comparison', timeline: 'composition.value.timeline', structure: 'composition.value.structure',
+  data: 'composition.value.data', faq: 'composition.value.faq', code: 'composition.value.code',
+  pricing: 'composition.value.pricing', gallery: 'composition.value.gallery', table: 'composition.value.table',
+  dashboard: 'composition.value.dashboard', application: 'composition.value.application', report: 'composition.value.report',
+  diagram: 'composition.value.diagram',
+}
 
 type PatternQuery = {
   category?: string
@@ -79,8 +91,8 @@ export function CompositionsPage() {
   const can = useCan()
   const [tab, setTab] = useState<CompositionTab>('compile')
   const [filters, setFilters] = useState<PatternQuery>({})
-  const [pattern, setPattern] = useState<string | null>(null)
-  const [guide, setGuide] = useState<string | null>(null)
+  const [pattern, setPattern] = useState<{ id: string; label: string } | null>(null)
+  const [guide, setGuide] = useState<{ id: string; label: string } | null>(null)
   const [source, setSource] = useState('# Title\n\nA paragraph.\n')
 
   const patterns = useQuery({ queryKey: keys.patterns(filters), queryFn: () => ck.compositions.patterns(filters) })
@@ -92,6 +104,10 @@ export function CompositionsPage() {
 
   const rows = patterns.data?.patterns ?? []
   const guideRows = guides.data?.guides ?? []
+  const valueLabel = (value: string) => {
+    const key = COMPOSITION_VALUE_KEYS[value]
+    return key ? t(key) : value.replaceAll('_', ' ')
+  }
   const diagnostics = compile.data?.diagnostics ?? []
   const compiled = compile.data
   const patternFilters = [
@@ -153,10 +169,7 @@ export function CompositionsPage() {
         group={GROUP}
         value={tab}
         onValueChange={setTab}
-        // The strip scrolls rather than widening the page: three tabs and two
-        // badges do not fit at 390px, and §6 lets a table scroll sideways and
-        // nothing else.
-        className="mb-4 overflow-x-auto"
+        className="mb-4"
         tabs={[
           {
             id: 'compile',
@@ -312,7 +325,7 @@ export function CompositionsPage() {
                   </SelectItem>
                   {filter.options.map((option) => (
                     <SelectItem key={option} value={option} data-testid={`pattern-filter-${filter.key}-${option}`}>
-                      {option}
+                      {valueLabel(option)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -357,7 +370,6 @@ export function CompositionsPage() {
         </div>
 
         <Card className="py-0">
-          <div className="scrollbar-thin overflow-x-auto">
             <Table
               mobileLabels={[
                 t('composition.table.pattern'),
@@ -384,8 +396,8 @@ export function CompositionsPage() {
                   emptyTitle={t('composition.patterns.empty')}
                   emptyMessage={t('composition.patterns.emptyDescription')}
                 >
-                  {rows.map((descriptor) => (
-                    <TableRow key={descriptor.id} data-testid="pattern-row" data-pattern={descriptor.id}>
+                  {rows.map((descriptor, descriptorIndex) => (
+                    <TableRow key={descriptor.id} data-testid={`pattern-row-${descriptorIndex}`} data-pattern={descriptor.id}>
                       <TableCell>
                         {/*
                           It opens a dialog on this page; the URL does not move.
@@ -398,17 +410,25 @@ export function CompositionsPage() {
                           variant="outline"
                           size="xs"
                           className="font-mono text-xs"
-                          data-testid={`pattern-open-${descriptor.id}`}
-                          onClick={() => setPattern(descriptor.id)}
+                          data-testid={`pattern-${descriptorIndex}-open`}
+                          onClick={() =>
+                            setPattern({
+                              id: descriptor.id,
+                              label:
+                                visibleLabel(descriptor.id) ??
+                                t('composition.unnamedPattern', { count: descriptorIndex + 1 }),
+                            })
+                          }
                         >
-                          {descriptor.id}
+                          {visibleLabel(descriptor.id) ??
+                            t('composition.unnamedPattern', { count: descriptorIndex + 1 })}
                         </Button>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{descriptor.category}</TableCell>
-                      <TableCell className="text-muted-foreground">{descriptor.scope}</TableCell>
+                      <TableCell className="text-muted-foreground">{valueLabel(descriptor.category)}</TableCell>
+                      <TableCell className="text-muted-foreground">{valueLabel(descriptor.scope)}</TableCell>
                       <TableCell>
                         <StatusBadge tone={descriptor.status === 'stable' ? 'success' : 'warning'}>
-                          {descriptor.status}
+                          {valueLabel(descriptor.status)}
                         </StatusBadge>
                       </TableCell>
                     </TableRow>
@@ -416,7 +436,6 @@ export function CompositionsPage() {
                 </TableState>
               </TableBody>
             </Table>
-          </div>
         </Card>
       </TabPanel>
 
@@ -431,7 +450,6 @@ export function CompositionsPage() {
           {t('composition.guides.hint')}
         </p>
         <Card className="py-0">
-          <div className="scrollbar-thin overflow-x-auto">
             <Table
               mobileLabels={[
                 t('composition.table.guide'),
@@ -458,25 +476,25 @@ export function CompositionsPage() {
                   emptyTitle={t('composition.guides.empty')}
                   emptyMessage={t('composition.guides.emptyDescription')}
                 >
-                  {guideRows.map((entry) => (
-                    <TableRow key={entry.id} data-testid="guide-row" data-guide={entry.id}>
+                  {guideRows.map((entry, guideIndex) => (
+                    <TableRow key={entry.id} data-testid={`guide-row-${guideIndex}`} data-guide={entry.id}>
                       <TableCell>
                         {/* A dialog, not a destination — see the pattern table above. */}
                         <Button
                           variant="outline"
                           size="xs"
                           className="text-left"
-                          data-testid={`guide-open-${entry.id}`}
-                          onClick={() => setGuide(entry.id)}
+                          data-testid={`guide-${guideIndex}-open`}
+                          onClick={() => setGuide({ id: entry.id, label: entry.title })}
                         >
                           {entry.title}
                         </Button>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{entry.kind}</TableCell>
+                      <TableCell className="text-muted-foreground">{valueLabel(entry.kind)}</TableCell>
                       <TableCell className="max-w-[32rem] text-muted-foreground">{entry.summary}</TableCell>
                       <TableCell>
                         <StatusBadge tone={entry.status === 'stable' ? 'success' : 'warning'}>
-                          {entry.status}
+                          {valueLabel(entry.status)}
                         </StatusBadge>
                       </TableCell>
                     </TableRow>
@@ -484,7 +502,6 @@ export function CompositionsPage() {
                 </TableState>
               </TableBody>
             </Table>
-          </div>
         </Card>
       </TabPanel>
 
@@ -508,11 +525,15 @@ function Bullets({ label, items }: { label: string; items: readonly string[] | u
   )
 }
 
-function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => void }) {
+function PatternDetail({ pattern, onClose }: { pattern: { id: string; label: string }; onClose: () => void }) {
   const { t } = useI18n()
+  const valueLabel = (value: string) => {
+    const key = COMPOSITION_VALUE_KEYS[value]
+    return key ? t(key) : value.replaceAll('_', ' ')
+  }
   const descriptor = useQuery({
-    queryKey: [...keys.patterns(), pattern],
-    queryFn: () => ck.compositions.pattern(pattern),
+    queryKey: [...keys.patterns(), pattern.id],
+    queryFn: () => ck.compositions.pattern(pattern.id),
   })
   const data = descriptor.data
 
@@ -530,9 +551,9 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
           would put a sentence on screen that says nothing. */}
       <DialogContent data-testid="pattern-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{pattern}</DialogTitle>
+          <DialogTitle>{pattern.label}</DialogTitle>
         </DialogHeader>
-        <div className="scrollbar-thin overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 overflow-y-auto">
           {descriptor.isPending ? (
             <SkeletonFields fields={5} label={t('composition.loadingPattern')} data-testid="pattern-skeleton" />
           ) : descriptor.error ? (
@@ -547,11 +568,11 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
             <div className="flex flex-col gap-4">
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
                 <dt className="text-muted-foreground">{t('composition.filter.category')}</dt>
-                <dd>{data.category}</dd>
+                <dd>{valueLabel(data.category)}</dd>
                 <dt className="text-muted-foreground">{t('composition.filter.scope')}</dt>
-                <dd>{data.scope}</dd>
+                <dd>{valueLabel(data.scope)}</dd>
                 <dt className="text-muted-foreground">{t('composition.filter.status')}</dt>
-                <dd>{data.status}</dd>
+                <dd>{valueLabel(data.status)}</dd>
                 <dt className="text-muted-foreground">{t('composition.detail.version')}</dt>
                 <dd>{data.version}</dd>
                 <dt className="text-muted-foreground">{t('composition.detail.accepts')}</dt>
@@ -592,9 +613,9 @@ function PatternDetail({ pattern, onClose }: { pattern: string; onClose: () => v
   )
 }
 
-function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void }) {
+function GuideDetail({ guide, onClose }: { guide: { id: string; label: string }; onClose: () => void }) {
   const { t } = useI18n()
-  const detail = useQuery({ queryKey: [...keys.guides, guide], queryFn: () => ck.compositions.guide(guide) })
+  const detail = useQuery({ queryKey: [...keys.guides, guide.id], queryFn: () => ck.compositions.guide(guide.id) })
   const data = detail.data
 
   return (
@@ -608,9 +629,9 @@ function GuideDetail({ guide, onClose }: { guide: string; onClose: () => void })
           the first thing in the body, so there is no separate description. */}
       <DialogContent data-testid="guide-dialog" className="sm:max-w-4xl" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{data?.title ?? guide}</DialogTitle>
+          <DialogTitle>{data?.title ?? guide.label}</DialogTitle>
         </DialogHeader>
-        <div className="scrollbar-thin overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 overflow-y-auto">
           {detail.isPending ? (
             <SkeletonFields fields={5} label={t('composition.loadingGuide')} data-testid="guide-skeleton" />
           ) : detail.error ? (

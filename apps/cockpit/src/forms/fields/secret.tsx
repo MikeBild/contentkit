@@ -1,6 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -50,17 +51,17 @@ export function SecretField({
               className="font-mono"
               onChange={(event) => onChange(event.target.value)}
             />
-            <Button
+            <IconButton
               type="button"
               variant="outline"
               size="icon-sm"
-              aria-label={t(revealed ? 'secret.hide' : 'secret.reveal')}
+              label={t(revealed ? 'secret.hide' : 'secret.reveal')}
               data-testid={`${control['data-testid']}-reveal`}
               disabled={control.disabled}
               onClick={() => setRevealed((state) => !state)}
             >
               {revealed ? <EyeOff /> : <Eye />}
-            </Button>
+            </IconButton>
             {generate ? (
               <Button
                 type="button"

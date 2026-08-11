@@ -13,9 +13,7 @@ import {
   Library,
   LogOut,
   MessagesSquare,
-  Monitor,
   UserRound,
-  Moon,
   Palette,
   Presentation,
   Rocket,
@@ -23,12 +21,11 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  Sun,
   TriangleAlert,
   Volume2,
   Webhook,
 } from 'lucide-react'
-import { Fragment, useEffect, useState, type ComponentType, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { ck } from '@/api/ck'
 import { AppLink } from '@/components/app-link'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -44,6 +41,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -781,11 +779,11 @@ export function Shell() {
           content beside it overflows by exactly that, and CI found it on the first
           run of the browser suite — which is the whole argument for having one.
         */}
-        <SidebarInset className="min-h-0 min-w-0">
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
             <SidebarTrigger data-testid="sidebar-toggle" />
           </header>
-          <div className="scrollbar-thin flex-1 overflow-y-auto">
+          <div data-testid="page-scroll" className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip">
             <Outlet />
           </div>
         </SidebarInset>
@@ -878,10 +876,10 @@ function NavBlock({
  * without a tooltip, which meant the control answering "which site am I about to
  * change?" showed a globe and nothing else.
  */
-const THEMES: { value: Theme; label: string; icon: ComponentType<{ className?: string }> }[] = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'Match system', icon: Monitor },
+const THEMES: readonly { value: Theme }[] = [
+  { value: 'system' },
+  { value: 'light' },
+  { value: 'dark' },
 ]
 
 const THEME_KEYS: Record<Theme, TranslationKey> = {
@@ -895,6 +893,13 @@ const LANGUAGE_OPTIONS: readonly { value: LocalePreference; key: TranslationKey 
   { value: 'en', key: 'account.language.en' },
   { value: 'de', key: 'account.language.de' },
 ]
+
+function accountRoleKey(role: string | null | undefined): TranslationKey {
+  if (role === 'admin') return 'account.role.admin'
+  if (role === 'author') return 'account.role.author'
+  if (role === 'reader') return 'account.role.reader'
+  return 'account.role.operator'
+}
 
 /**
  * Three choices, in a menu rather than a two-way flip.
@@ -955,8 +960,8 @@ function AccountMenu() {
             <span data-testid="operator-name" className="truncate text-sm">
               {name}
             </span>
-            <span data-testid="operator-role" className="truncate text-xs uppercase text-muted-foreground">
-              {session.role}
+            <span data-testid="operator-role" className="truncate text-xs text-muted-foreground">
+              {t(accountRoleKey(session.role))}
             </span>
           </span>
           <ChevronsUpDown data-icon="inline-end" className="ml-auto shrink-0" />
@@ -971,68 +976,71 @@ function AccountMenu() {
             <DropdownMenuSeparator />
           </>
         ) : null}
-        <DropdownMenuItem asChild data-testid="profile-link">
-          <AppLink to="/profile" data-testid="nav-profile">
-            <UserRound data-icon="inline-start" />
-            {t('account.profile')}
-          </AppLink>
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger data-testid="account-language-menu">
-            <Languages data-icon="inline-start" />
-            {t('account.language')}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent data-testid="account-language-menu-content">
-            <DropdownMenuRadioGroup
-              value={preference}
-              onValueChange={(value) => setPreference(value as LocalePreference)}
-            >
-              {LANGUAGE_OPTIONS.map((option) => (
-                <DropdownMenuRadioItem
-                  key={option.value}
-                  value={option.value}
-                  data-testid={`account-language-${option.value}`}
-                >
-                  {t(option.key)}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger data-testid="account-theme-menu">
-            <Palette data-icon="inline-start" />
-            {t('account.theme')}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent data-testid="account-theme-menu-content">
-            <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
-              {THEMES.map(({ value, icon: ItemIcon }) => (
-                <DropdownMenuRadioItem key={value} value={value} data-testid={`account-theme-${value}`}>
-                  <ItemIcon data-icon="inline-start" />
-                  {t(THEME_KEYS[value])}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        <DropdownMenuGroup>
+          <DropdownMenuItem asChild data-testid="profile-link">
+            <AppLink to="/profile" data-testid="nav-profile">
+              <UserRound data-icon="inline-start" />
+              {t('account.profile')}
+            </AppLink>
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger data-testid="account-language-menu">
+              <Languages data-icon="inline-start" />
+              {t('account.language')}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent data-testid="account-language-menu-content">
+              <DropdownMenuRadioGroup
+                value={preference}
+                onValueChange={(value) => setPreference(value as LocalePreference)}
+              >
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value}
+                    value={option.value}
+                    data-testid={`account-language-${option.value}`}
+                  >
+                    {t(option.key)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger data-testid="account-theme-menu">
+              <Palette data-icon="inline-start" />
+              {t('account.theme')}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent data-testid="account-theme-menu-content">
+              <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
+                {THEMES.map(({ value }) => (
+                  <DropdownMenuRadioItem key={value} value={value} data-testid={`account-theme-${value}`}>
+                    {t(THEME_KEYS[value])}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          disabled={signingOut}
-          data-testid="account-sign-out"
-          onSelect={async () => {
-            setSigningOut(true)
-            try {
-              await ck.identity.logout()
-              window.location.assign(ck.identity.loginUrl('/cockpit/'))
-            } finally {
-              setSigningOut(false)
-            }
-          }}
-        >
-          {signingOut ? <Spinner data-icon="inline-start" /> : <LogOut data-icon="inline-start" />}
-          {t(signingOut ? 'account.signingOut' : 'account.signOut')}
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={signingOut}
+            data-testid="account-sign-out"
+            onSelect={async () => {
+              setSigningOut(true)
+              try {
+                await ck.identity.logout()
+                window.location.assign(ck.identity.loginUrl('/cockpit/'))
+              } finally {
+                setSigningOut(false)
+              }
+            }}
+          >
+            {signingOut ? <Spinner data-icon="inline-start" /> : <LogOut data-icon="inline-start" />}
+            {t(signingOut ? 'account.signingOut' : 'account.signOut')}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )

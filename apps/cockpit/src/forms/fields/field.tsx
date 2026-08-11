@@ -1,4 +1,4 @@
-import { InfoIcon, TriangleAlertIcon } from 'lucide-react'
+import { CircleHelpIcon, TriangleAlertIcon } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -82,8 +82,10 @@ export function FieldShell({
   const id = useId()
   const helpId = `${id}-help`
   const messageId = `${id}-message`
-  // Order matters: the operator hears the description before the complaint.
-  const describedBy = [help || fallback ? helpId : null, error || warning ? messageId : null].filter(Boolean).join(' ')
+  const fallbackId = `${id}-fallback`
+  const describedBy = [help ? helpId : null, fallback ? fallbackId : null, error || warning ? messageId : null]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <Field
@@ -107,24 +109,6 @@ export function FieldShell({
               as well as at the app root — nesting is legal, and a field rendered
               in a test or a dialog that mounts outside the Shell would otherwise
               throw rather than degrade. */}
-          {definition ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    data-testid={`${testId}-definition`}
-                    aria-label={t('field.definitionLabel', { label })}
-                  >
-                    <InfoIcon />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{definition}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : null}
           {about ? (
             <Popover>
               <PopoverTrigger asChild>
@@ -132,17 +116,40 @@ export function FieldShell({
                   type="button"
                   variant="ghost"
                   size="icon-xs"
-                  data-testid={`${testId}-about`}
+                  data-testid={`${testId}-help`}
                   aria-label={t('field.aboutLabel', { label })}
                 >
-                  <InfoIcon />
+                  <CircleHelpIcon data-icon="inline-start" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent data-testid={`${testId}-about-content`} align="start">
+              <PopoverContent data-testid={`${testId}-help-content`} align="start">
                 <PopoverTitle>{label}</PopoverTitle>
-                <PopoverDescription>{about}</PopoverDescription>
+                <PopoverDescription className="flex flex-col gap-2">
+                  {definition ? <span>{definition}</span> : null}
+                  {help ? <span>{help}</span> : null}
+                  <span>{about}</span>
+                </PopoverDescription>
               </PopoverContent>
             </Popover>
+          ) : definition || help ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    data-testid={`${testId}-help`}
+                    aria-label={t('field.aboutLabel', { label })}
+                  >
+                    <CircleHelpIcon data-icon="inline-start" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent data-testid={`${testId}-help-tooltip`} className="max-w-72">
+                  {[definition, help].filter(Boolean).join(' ')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : null}
         </div>
         {hint ? (
@@ -160,11 +167,14 @@ export function FieldShell({
         'data-testid': `${testId}-control`,
       })}
 
-      {help || fallback ? (
-        <FieldDescription id={helpId} className="text-xs">
+      {fallback ? (
+        <FieldDescription id={fallbackId} className="text-xs italic">
+          {fallback}
+        </FieldDescription>
+      ) : null}
+      {help ? (
+        <FieldDescription id={helpId} className="sr-only !w-px">
           {help}
-          {help && fallback ? ' ' : null}
-          {fallback ? <span className="italic">{fallback}</span> : null}
         </FieldDescription>
       ) : null}
 

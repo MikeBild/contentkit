@@ -78,7 +78,7 @@ export function ConflictDialog({
             {t(changes.length === 1 ? 'conflict.oneKey' : 'conflict.keys', { count: changes.length })}
           </DialogDescription>
         </DialogHeader>
-        <div className="scrollbar-thin overflow-y-auto">
+        <div className="scrollbar-thin min-h-0 overflow-y-auto">
           {/* Two answers with opposite, irreversible consequences: an Alert, not a
               grey line above the buttons. */}
           <Alert data-testid="ck-site-conflict-consequences">

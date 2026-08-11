@@ -95,9 +95,7 @@ export function WebhooksPage() {
         data-testid="ck-webhook-tabs"
         value={tab}
         onValueChange={setTab}
-        // The strip scrolls rather than widening the page: §6 lets a table
-        // scroll sideways and nothing else.
-        className="mb-4 overflow-x-auto"
+        className="mb-4"
         tabs={[
           { id: 'endpoints', label: t('webhook.endpoints'), badge: endpointsBadge },
           { id: 'deliveries', label: t('webhook.deliveries'), badge: deliveriesBadge },
