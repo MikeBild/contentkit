@@ -29,6 +29,11 @@ and this project adheres to
   layouts around the shared localized primitives, including a denser audit log
   and clearer site/release workflows.
 
+### Fixed
+
+- Update the Cockpit's transitive DOMPurify and nanoid resolutions so the
+  release dependency audit contains no known vulnerabilities.
+
 ## 4.18.3 — 2026-08-07
 
 ### Fixed
