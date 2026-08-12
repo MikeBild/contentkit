@@ -88,6 +88,67 @@ test('storage GC keeps active + rollback-window + live-preview releases, removes
   assert.deepEqual(f.removedDeckEvents, ['2025-05-27T00:00:00.000Z'], 'deck facts use 400-day retention')
 })
 
+test('storage GC keeps the release row when a delete batch fails, so its objects stay reachable', async () => {
+  const f = fixture()
+  // ck_release_entries is the only index of these objects. If the row is
+  // dropped anyway, the surviving objects are invisible to every later sweep.
+  f.storage.remove = async () => {
+    throw new Error('Service Unavailable')
+  }
+  const warnings = []
+  const maint = createMaintenance(
+    { releaseHistoryKeep: 1, releaseRetentionMs: 7 * 86400 * 1000, buildingReapMs: 3600 * 1000 },
+    f.db,
+    f.storage,
+    { info() {}, warn: (msg) => warnings.push(msg) },
+  )
+  const result = await maint.run(f.now)
+
+  assert.ok(!f.removedReleases.includes('r-old'), 'row must survive a failed object delete')
+  assert.equal(result.removed_releases, 0)
+  // r-old and the reaped r-building-stuck are both collectable in this sweep,
+  // and neither may lose its row while its objects are unaccounted for.
+  assert.equal(result.deferred_releases, 2, 'releases reported as deferred, not collected')
+  assert.ok(warnings.includes('storage gc delete failed'))
+})
+
+test('storage GC retries a deferred release on the next sweep', async () => {
+  const f = fixture()
+  let failNext = true
+  const realRemove = f.storage.remove
+  f.storage.remove = async (paths) => {
+    if (failNext) throw new Error('Service Unavailable')
+    return realRemove(paths)
+  }
+  const maint = createMaintenance(
+    { releaseHistoryKeep: 1, releaseRetentionMs: 7 * 86400 * 1000, buildingReapMs: 3600 * 1000 },
+    f.db,
+    f.storage,
+    { info() {}, warn() {} },
+  )
+  await maint.run(f.now)
+  assert.equal(f.removedReleases.length, 0)
+
+  failNext = false
+  const second = await maint.run(f.now)
+  assert.equal(second.deferred_releases, 0)
+  assert.ok(f.removedReleases.includes('r-old'), 'collected once storage recovered')
+  assert.ok(f.removedObjects.includes('sites/s1/releases/r-old/index.html'))
+})
+
+test('storage GC still collects when no storage backend is configured', async () => {
+  const f = fixture()
+  const maint = createMaintenance(
+    { releaseHistoryKeep: 1, releaseRetentionMs: 7 * 86400 * 1000, buildingReapMs: 3600 * 1000 },
+    f.db,
+    {},
+    { info() {}, warn() {} },
+  )
+  const result = await maint.run(f.now)
+  assert.ok(f.removedReleases.includes('r-old'), 'no storage.remove is not a failure')
+  assert.equal(result.deferred_releases, 0)
+})
+
 test('storage GC keeps a recently-superseded release even beyond the keep count when within retention', async () => {
   const f = fixture()
   const maint = createMaintenance(

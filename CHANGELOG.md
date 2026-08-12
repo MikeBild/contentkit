@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.21.2 — 2026-08-12
+
+### Fixed
+
+- Keep a release row in place when the storage GC fails to delete its objects.
+  The row was dropped regardless, and because that cascades `ck_release_entries`
+  away — the only index of the objects belonging to a release — any object that
+  survived a failed delete batch became unreachable for every later sweep. A
+  failing release is now deferred and retried on the next run, and reported as
+  `deferred_releases` in the sweep result.
+
 ## 4.21.1 — 2026-08-11
 
 ### Fixed
