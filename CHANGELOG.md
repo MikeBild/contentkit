@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.22.0 — 2026-08-14
+
+### Added
+
+- Concurrent release uploads. The per-file upload loop now runs behind a
+  semaphore sized by `CONTENTKIT_UPLOAD_CONCURRENCY` (default 8) instead of one
+  awaited request at a time.
+- Upload deduplication. A release entry whose `(path, sha256, content_type,
+  cache_control)` matches the currently-active release references the existing
+  storage object instead of re-uploading it, so an unchanged publish uploads
+  close to zero bytes. Serving resolves the object through the entry row with
+  the release prefix as fallback, and the storage GC and release deletion only
+  remove objects no surviving release references. Migration `0016` adds the
+  persisted `cache_control` and a `storage_path` index; pre-existing releases
+  are untouched and the first post-upgrade release seeds the new column.
+- A per-site release cap for the storage GC. Age-based retention
+  (`CONTENTKIT_RELEASE_RETENTION_MS`) only protects a release while it is among
+  the newest `CONTENTKIT_RELEASE_MAX_PER_SITE` rows of its site (default 24),
+  so frequent publishers top out at the cap instead of accumulating a full
+  retention window of site snapshots. The active release, the rollback keep
+  window and live named previews remain absolute keeps.
+
+### Fixed
+
+- A failed build's upload cleanup now removes only the objects that build
+  actually uploaded, never objects a deduplicated entry borrowed from the
+  still-active release.
+
 ## 4.21.2 — 2026-08-12
 
 ### Fixed

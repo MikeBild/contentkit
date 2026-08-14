@@ -843,6 +843,11 @@ describe('repository deletions', () => {
       async remove(table, filter) {
         removedRows.push({ table, filter })
       },
+      // The dedup anti-join (unreferencedStoragePaths). The flat entries
+      // fixture has a single release in play, so every entry belongs to it.
+      async query() {
+        return entries
+      },
     }
     const storage = {
       async remove(paths) {

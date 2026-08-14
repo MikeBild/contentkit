@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createReleaseManager, createSemaphore } from '../../src/releases.mjs'
+import { sha256 } from '../../src/utils.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
@@ -172,7 +173,8 @@ test('a failed build marks the release failed, emits an event and cleans up uplo
   assert.match(failed.body.error, /storage down/)
   assert.equal(repo.outbox.length, 1)
   assert.equal(repo.outbox[0][1], 'contentkit.release.failed')
-  assert.deepEqual(storage.removed, storage.uploaded, 'partial uploads must be removed')
+  // Concurrent uploads make the completion order nondeterministic — compare as sets.
+  assert.deepEqual([...storage.removed].sort(), [...storage.uploaded].sort(), 'partial uploads must be removed')
 })
 
 test('preview returns a named URL plus one-time invitation and stores only hashes', async () => {
@@ -427,6 +429,136 @@ test('a stale-epoch first attempt enqueues nothing; only the retry attempt emits
     repo.enqueued[0].events.map((event) => event.type),
     ['contentkit.release.published'],
   )
+})
+
+// A controlled builder via the buildRunner hook: exact bytes in, so dedup
+// matches are deterministic instead of depending on real build output.
+function makeBuilder(files) {
+  return {
+    async build() {
+      return { files: new Map(files), content: [], accessEntries: [], accessCatalog: [] }
+    },
+    async close() {},
+  }
+}
+
+const HTML = { contentType: 'text/html', cacheControl: 'public,max-age=60,must-revalidate' }
+
+function priorEntry(path, body, overrides = {}) {
+  return {
+    path,
+    storage_path: `sites/site-1/releases/r-prev/${path}`,
+    content_type: HTML.contentType,
+    cache_control: HTML.cacheControl,
+    sha256: sha256(body),
+    byte_size: body.length,
+    ...overrides,
+  }
+}
+
+test('publish reuses unchanged objects from the active release instead of re-uploading', async () => {
+  const unchanged = Buffer.from('same bytes')
+  const changed = Buffer.from('new bytes')
+  const db = makeDb({
+    selectRows: {
+      ck_release_entries: [priorEntry('index.html', unchanged), priorEntry('about.html', Buffer.from('old bytes'))],
+    },
+  })
+  const storage = makeStorage()
+  const repo = makeRepo(makeSnapshot({ site: { ...snapshotSite, active_release_id: 'r-prev' } }))
+  const builder = makeBuilder([
+    ['index.html', { body: unchanged, ...HTML }],
+    ['about.html', { body: changed, ...HTML }],
+  ])
+  const releases = createReleaseManager(config, repo, db, storage, logger, { buildRunner: builder })
+
+  const result = await releases.publish({ siteId: 'site-1', revisionIds: [] })
+  assert.equal(result.file_count, 2)
+  assert.deepEqual(storage.uploaded, [`sites/site-1/releases/${result.release_id}/about.html`])
+  const entries = db.calls.inserts.find((call) => call.table === 'ck_release_entries').body
+  const byPath = new Map(entries.map((entry) => [entry.path, entry]))
+  assert.equal(
+    byPath.get('index.html').storage_path,
+    'sites/site-1/releases/r-prev/index.html',
+    'unchanged file reuses the prior object',
+  )
+  assert.equal(byPath.get('about.html').storage_path, `sites/site-1/releases/${result.release_id}/about.html`)
+  assert.equal(
+    byPath.get('index.html').cache_control,
+    HTML.cacheControl,
+    'cache_control is persisted for future matches',
+  )
+})
+
+test('a changed content type or cache-control defeats the dedup match despite equal bytes', async () => {
+  const body = Buffer.from('same bytes')
+  const db = makeDb({
+    selectRows: {
+      ck_release_entries: [
+        priorEntry('index.html', body, { cache_control: null }),
+        priorEntry('data.json', body, {
+          content_type: 'text/plain',
+          cache_control: 'public,max-age=31536000,immutable',
+        }),
+      ],
+    },
+  })
+  const storage = makeStorage()
+  const repo = makeRepo(makeSnapshot({ site: { ...snapshotSite, active_release_id: 'r-prev' } }))
+  const builder = makeBuilder([
+    ['index.html', { body, ...HTML }],
+    ['data.json', { body, contentType: 'application/json', cacheControl: 'public,max-age=31536000,immutable' }],
+  ])
+  const releases = createReleaseManager(config, repo, db, storage, logger, { buildRunner: builder })
+
+  const result = await releases.publish({ siteId: 'site-1', revisionIds: [] })
+  assert.deepEqual(
+    [...storage.uploaded].sort(),
+    [`sites/site-1/releases/${result.release_id}/data.json`, `sites/site-1/releases/${result.release_id}/index.html`],
+    'legacy NULL cache_control and a different content type both force a fresh upload',
+  )
+})
+
+test('uploads run concurrently but never beyond uploadConcurrency', async () => {
+  let inFlight = 0
+  let maxInFlight = 0
+  const storage = {
+    async upload() {
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((resolve) => setImmediate(resolve))
+      inFlight--
+    },
+  }
+  const files = Array.from({ length: 20 }, (_, i) => [`page-${i}.html`, { body: Buffer.from(`page ${i}`), ...HTML }])
+  const releases = createReleaseManager({ ...config, uploadConcurrency: 3 }, makeRepo(), makeDb(), storage, logger, {
+    buildRunner: makeBuilder(files),
+  })
+
+  await releases.publish({ siteId: 'site-1', revisionIds: [] })
+  assert.ok(maxInFlight > 1, 'uploads must actually overlap')
+  assert.ok(maxInFlight <= 3, `at most 3 uploads in flight, saw ${maxInFlight}`)
+})
+
+test('failure cleanup removes only own uploads, never objects reused from the active release', async () => {
+  const unchanged = Buffer.from('same bytes')
+  const db = makeDb({ selectRows: { ck_release_entries: [priorEntry('index.html', unchanged)] } })
+  const storage = makeStorage({ failOnUpload: 2 })
+  const repo = makeRepo(makeSnapshot({ site: { ...snapshotSite, active_release_id: 'r-prev' } }))
+  const builder = makeBuilder([
+    ['index.html', { body: unchanged, ...HTML }],
+    ['a.html', { body: Buffer.from('a'), ...HTML }],
+    ['b.html', { body: Buffer.from('b'), ...HTML }],
+  ])
+  const releases = createReleaseManager(config, repo, db, storage, logger, { buildRunner: builder })
+
+  await assert.rejects(() => releases.publish({ siteId: 'site-1', revisionIds: [] }), /storage down/)
+  assert.ok(storage.removed.length >= 1, 'the successful upload is cleaned up')
+  assert.ok(
+    storage.removed.every((path) => !path.includes('r-prev')),
+    'the active release object referenced by the reused entry must survive',
+  )
+  assert.deepEqual([...storage.removed].sort(), [...storage.uploaded].sort())
 })
 
 test('rollback emits only release.published with reason rollback and zero counts', async () => {

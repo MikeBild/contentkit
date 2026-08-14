@@ -9,13 +9,39 @@
 // nothing left pointing at them. On a storage error the release is deferred to
 // the next sweep instead — see `deferred` in the run() result.
 //
+// Sharing invariant: dedup lets newer releases reference an older release's
+// objects by storage_path. A sweep therefore deletes only paths no surviving
+// entry names (anti-join below); shared objects outlive the row that uploaded
+// them and fall with their last referencing release.
+//
+// Retention has two axes: age (RETENTION_MS) and count (MAX_PER_SITE). Age
+// protects a release only while it is among the newest MAX_PER_SITE rows of
+// its site — an hourly publisher tops out at the cap instead of accumulating
+// a full retention window of site copies. The keep set (active release,
+// rollback window, live named previews) is absolute and wins over both axes.
+//
 // Deliberately out of scope: ck_assets and their content-addressed storage
 // objects (uploads and read-aloud MP3s) are never collected here, so an asset
 // referenced by ck_audio_jobs.asset_id — live audio — cannot be swept. Audio
 // bytes are reclaimed at their swap point and via DELETE /v1/content/{item}/audio
 // (both in audio.mjs); uploaded assets are currently kept forever.
+// Storage paths belonging to releaseId that no other release's entries name.
+// Only these may be deleted when the release goes; everything else is shared
+// and stays until its last referencing release is swept.
+export async function unreferencedStoragePaths(db, releaseId) {
+  const rows = await db.query(
+    `SELECT e.storage_path FROM ck_release_entries e
+      WHERE e.release_id = $1
+        AND NOT EXISTS (SELECT 1 FROM ck_release_entries o
+                         WHERE o.storage_path = e.storage_path AND o.release_id <> $1)`,
+    [releaseId],
+  )
+  return rows.map((row) => row.storage_path).filter(Boolean)
+}
+
 export function createMaintenance(config, db, storage, logger) {
   const KEEP = config.releaseHistoryKeep ?? 5
+  const MAX_PER_SITE = config.releaseMaxPerSite ?? 24
   const RETENTION_MS = config.releaseRetentionMs ?? 7 * 86400 * 1000
   const BUILDING_REAP_MS = config.buildingReapMs ?? 3600 * 1000
   const PRODUCT_STATS_RETENTION_DAYS = config.productStatsRetentionDays ?? 400
@@ -26,8 +52,7 @@ export function createMaintenance(config, db, storage, logger) {
   // any batch is still unaccounted for.
   async function removeReleaseObjects(releaseId) {
     if (!storage.remove) return { removed: 0, failed: false }
-    const entries = await db.select('ck_release_entries', { release_id: `eq.${releaseId}` })
-    const paths = entries.map((entry) => entry.storage_path).filter(Boolean)
+    const paths = await unreferencedStoragePaths(db, releaseId)
     let removed = 0
     let failed = false
     for (let i = 0; i < paths.length; i += 100) {
@@ -67,25 +92,31 @@ export function createMaintenance(config, db, storage, logger) {
 
   async function computeKeepSet(now) {
     const keep = new Set()
+    const overCap = new Set()
     const sites = await db.select('ck_sites', {})
     for (const site of sites) {
       if (site.active_release_id) keep.add(site.active_release_id)
-      // Keep the most recent releases per site as a rollback window.
-      const recent = await db.select('ck_releases', {
+      const rows = await db.select('ck_releases', {
         site_id: `eq.${site.id}`,
-        kind: 'eq.release',
         order: 'created_at.desc',
       })
-      recent.slice(0, KEEP).forEach((release) => keep.add(release.id))
+      // Keep the most recent releases per site as a rollback window.
+      rows
+        .filter((release) => release.kind === 'release')
+        .slice(0, KEEP)
+        .forEach((release) => keep.add(release.id))
+      // Rows beyond the per-site cap lose their age protection. Ranked across
+      // all kinds so a runaway preview publisher is capped just the same.
+      rows.slice(MAX_PER_SITE).forEach((release) => overCap.add(release.id))
     }
     // Keep releases still reachable through live named preview access.
     const tokens = await db.select('ck_preview_access', { revoked_at: 'is.null' })
     tokens.filter((token) => new Date(token.expires_at).getTime() > now).forEach((token) => keep.add(token.release_id))
-    return keep
+    return { keep, overCap }
   }
 
   async function collectGarbage(now) {
-    const keep = await computeKeepSet(now)
+    const { keep, overCap } = await computeKeepSet(now)
     const cutoff = now - RETENTION_MS
     const releases = await db.select('ck_releases', {})
     let removed = 0
@@ -93,7 +124,8 @@ export function createMaintenance(config, db, storage, logger) {
     let deferred = 0
     for (const release of releases) {
       if (release.status === 'active' || keep.has(release.id)) continue
-      if (new Date(release.created_at).getTime() >= cutoff) continue
+      const young = new Date(release.created_at).getTime() >= cutoff
+      if (young && !overCap.has(release.id)) continue
       const { removed: objectCount, failed } = await removeReleaseObjects(release.id)
       objects += objectCount
       if (failed) {

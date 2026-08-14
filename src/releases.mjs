@@ -163,6 +163,11 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     let deckPng = 0
     let deckCacheResult
     const entries = []
+    // Only paths this build actually uploaded. The failure cleanup below must
+    // iterate these, never `entries`: an entry may reference an object owned by
+    // the still-active previous release, and removing it would break the live
+    // site.
+    const uploadedPaths = []
     try {
       const snapshot = await repo.buildSnapshot(siteId, revisionIds, retireItemIds)
       deckCount = snapshot.revisions.filter((revision) => revision.kind === 'deck').length
@@ -197,18 +202,69 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       deckPng = deckSvg
       deckCacheResult = decks.length ? (decks.every((item) => item.deck_cache_result === 'hit') ? 'hit' : 'miss') : null
       prefix = `sites/${snapshot.site.id}/releases/${releaseId}`
-      for (const [path, file] of built.files) {
-        await storage.upload(`${prefix}/${path}`, file.body, file.contentType, file.cacheControl, false)
-        entries.push({
-          release_id: releaseId,
-          path,
-          storage_path: `${prefix}/${path}`,
-          content_type: file.contentType,
-          byte_size: file.body.length,
-          sha256: sha256(file.body),
-        })
+      // Reuse unchanged objects from the currently-active release instead of
+      // re-uploading them. Safe against the GC: the source release stays
+      // 'active' — and therefore uncollectable — until our own activation,
+      // which runs after the entries insert, so every reused object is
+      // re-referenced before its source could be swept. cache_control belongs
+      // to the stored object (serving derives response headers from it), so it
+      // is part of the match key; legacy entries carry NULL there and simply
+      // never match.
+      const previous = new Map()
+      if (snapshot.site.active_release_id) {
+        const rows = await db.select('ck_release_entries', { release_id: `eq.${snapshot.site.active_release_id}` })
+        for (const row of rows) previous.set(row.path, row)
       }
+      const files = [...built.files]
+      const ordered = new Array(files.length)
+      const uploads = createSemaphore(config.uploadConcurrency ?? 8)
+      let uploadError = null
+      await Promise.all(
+        files.map(async ([path, file], index) => {
+          const digest = sha256(file.body)
+          const cacheControl = file.cacheControl ?? null
+          const entry = {
+            release_id: releaseId,
+            path,
+            content_type: file.contentType,
+            byte_size: file.body.length,
+            sha256: digest,
+            cache_control: cacheControl,
+          }
+          const prior = previous.get(path)
+          if (
+            prior &&
+            prior.sha256 === digest &&
+            prior.content_type === file.contentType &&
+            (prior.cache_control ?? null) === cacheControl
+          ) {
+            ordered[index] = { ...entry, storage_path: prior.storage_path }
+            return
+          }
+          await uploads.acquire()
+          try {
+            // Fail fast after the first error, but let every in-flight upload
+            // settle before build() throws — the cleanup in the catch block
+            // must see each object that actually landed.
+            if (uploadError) return
+            await storage.upload(`${prefix}/${path}`, file.body, file.contentType, file.cacheControl, false)
+            uploadedPaths.push(`${prefix}/${path}`)
+            ordered[index] = { ...entry, storage_path: `${prefix}/${path}` }
+          } catch (error) {
+            uploadError ??= error
+          } finally {
+            uploads.release()
+          }
+        }),
+      )
+      if (uploadError) throw uploadError
+      entries.push(...ordered)
       await db.insert('ck_release_entries', entries, { returning: false })
+      logger.info?.('release uploaded', {
+        release_id: releaseId,
+        uploaded: uploadedPaths.length,
+        reused: entries.length - uploadedPaths.length,
+      })
       if (built.accessEntries?.length) {
         await db.insert(
           'ck_release_access_entries',
@@ -366,10 +422,13 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     } catch (error) {
       // Best-effort remove any objects uploaded before the failure so they don't
       // leak (GC also enumerates via entries, but a crash before that insert has
-      // no entries — this closes that gap).
-      if (storage.remove && entries.length) {
-        const paths = entries.map((entry) => entry.storage_path)
-        for (let i = 0; i < paths.length; i += 100) await storage.remove(paths.slice(i, i + 100)).catch(() => {})
+      // no entries — this closes that gap). Strictly the uploaded paths: reused
+      // entries point at the active release's objects, which the live site is
+      // serving right now.
+      if (storage.remove && uploadedPaths.length) {
+        for (let i = 0; i < uploadedPaths.length; i += 100) {
+          await storage.remove(uploadedPaths.slice(i, i + 100)).catch(() => {})
+        }
       }
       if (error?.stalePublish) {
         // Not a real failure — a concurrent publish won the race. Discard this

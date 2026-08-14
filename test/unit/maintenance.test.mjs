@@ -8,19 +8,26 @@ function fixture() {
   // catches the Date-vs-ISO-string comparison bug (ISO strings would compare fine).
   const old = new Date(now - 30 * 86400 * 1000)
   const recent = new Date(now - 1 * 86400 * 1000)
+  const young = new Date(now - 2 * 86400 * 1000)
   const sites = [{ id: 's1', active_release_id: 'r-active' }]
   const releases = [
     { id: 'r-active', site_id: 's1', kind: 'release', status: 'active', created_at: old },
     { id: 'r-keepwindow', site_id: 's1', kind: 'release', status: 'superseded', created_at: recent },
+    { id: 'r-young-overcap', site_id: 's1', kind: 'release', status: 'superseded', created_at: young },
     { id: 'r-old', site_id: 's1', kind: 'release', status: 'superseded', created_at: old },
     { id: 'r-preview-live', site_id: 's1', kind: 'preview', status: 'preview', created_at: old },
     { id: 'r-building-stuck', site_id: 's1', kind: 'release', status: 'building', created_at: old },
   ]
+  // r-active references one of r-old's objects (upload dedup): the sweep may
+  // remove r-old's row, but never that shared object.
   const entriesByRelease = {
+    'r-active': [{ storage_path: 'sites/s1/releases/r-old/shared.css' }],
     'r-old': [
       { storage_path: 'sites/s1/releases/r-old/index.html' },
       { storage_path: 'sites/s1/releases/r-old/a.css' },
+      { storage_path: 'sites/s1/releases/r-old/shared.css' },
     ],
+    'r-young-overcap': [{ storage_path: 'sites/s1/releases/r-young-overcap/index.html' }],
     'r-building-stuck': [{ storage_path: 'sites/s1/releases/r-building-stuck/partial.html' }],
     'r-preview-live': [{ storage_path: 'sites/s1/releases/r-preview-live/index.html' }],
   }
@@ -53,6 +60,17 @@ function fixture() {
     async update(table, f, body) {
       updated.push({ id: f.id.slice(3), body })
       return [body]
+    },
+    // The dedup anti-join (unreferencedStoragePaths): storage paths of the
+    // given release that no other release's entries name.
+    async query(text, values) {
+      const [releaseId] = values
+      const others = new Set(
+        Object.entries(entriesByRelease)
+          .filter(([id]) => id !== releaseId)
+          .flatMap(([, rows]) => rows.map((row) => row.storage_path)),
+      )
+      return (entriesByRelease[releaseId] || []).filter((row) => !others.has(row.storage_path))
     },
   }
   const storage = {
@@ -158,6 +176,42 @@ test('storage GC keeps a recently-superseded release even beyond the keep count 
     { info() {}, warn() {} },
   )
   await maint.run(f.now)
-  // r-keepwindow is 1 day old, inside the 7-day retention window → not eligible even with keep=0.
+  // r-keepwindow is 1 day old, inside the 7-day retention window and within the
+  // per-site cap → not eligible even with keep=0.
   assert.ok(!f.removedReleases.includes('r-keepwindow'))
+})
+
+test('storage GC collects a young release once it falls beyond the per-site cap', async () => {
+  const f = fixture()
+  const maint = createMaintenance(
+    { releaseHistoryKeep: 1, releaseMaxPerSite: 1, releaseRetentionMs: 7 * 86400 * 1000, buildingReapMs: 3600 * 1000 },
+    f.db,
+    f.storage,
+    { info() {}, warn() {} },
+  )
+  await maint.run(f.now)
+  // 2 days old — well inside retention — but only the newest row is within the
+  // cap, so age no longer protects it.
+  assert.ok(f.removedReleases.includes('r-young-overcap'), 'young over-cap release collected')
+  assert.ok(f.removedObjects.includes('sites/s1/releases/r-young-overcap/index.html'))
+  // The keep set stays absolute even when the cap is tighter than it.
+  for (const kept of ['r-active', 'r-keepwindow', 'r-preview-live']) {
+    assert.ok(!f.removedReleases.includes(kept), `${kept} must survive the cap`)
+  }
+})
+
+test('storage GC never deletes objects still referenced by a surviving release', async () => {
+  const f = fixture()
+  const maint = createMaintenance(
+    { releaseHistoryKeep: 1, releaseRetentionMs: 7 * 86400 * 1000, buildingReapMs: 3600 * 1000 },
+    f.db,
+    f.storage,
+    { info() {}, warn() {} },
+  )
+  await maint.run(f.now)
+  // r-active reuses r-old's shared.css via dedup: the row goes, the shared
+  // object stays, the unshared objects go with the row.
+  assert.ok(f.removedReleases.includes('r-old'))
+  assert.ok(!f.removedObjects.includes('sites/s1/releases/r-old/shared.css'), 'shared object survives')
+  assert.ok(f.removedObjects.includes('sites/s1/releases/r-old/index.html'), 'unshared objects removed')
 })

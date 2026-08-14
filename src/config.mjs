@@ -173,6 +173,7 @@ export function loadConfig() {
     trustProxy: bool('CONTENTKIT_TRUST_PROXY', false),
     maxBodyBytes: integer('CONTENTKIT_MAX_BODY_BYTES', 25 * 1024 * 1024, { min: 1024, max: 250 * 1024 * 1024 }),
     buildConcurrency: integer('CONTENTKIT_BUILD_CONCURRENCY', 1, { min: 1, max: 8 }),
+    uploadConcurrency: integer('CONTENTKIT_UPLOAD_CONCURRENCY', 8, { min: 1, max: 32 }),
     deckBuildConcurrency: integer('CONTENTKIT_DECK_BUILD_CONCURRENCY', 1, { min: 1, max: 4 }),
     deckBuildQueueMax: integer('CONTENTKIT_DECK_BUILD_QUEUE_MAX', 8, { min: 0, max: 64 }),
     deckBuildTimeoutMs: integer('CONTENTKIT_DECK_BUILD_TIMEOUT_MS', 120000, { min: 5000, max: 600000 }),
@@ -190,6 +191,10 @@ export function loadConfig() {
     webhookAllowPrivateTargets: bool('CONTENTKIT_WEBHOOK_ALLOW_PRIVATE', process.env.NODE_ENV !== 'production'),
     turnstileDevBypass: bool('CONTENTKIT_TURNSTILE_DEV_BYPASS', false),
     releaseHistoryKeep: integer('CONTENTKIT_RELEASE_HISTORY_KEEP', 5, { min: 1, max: 100 }),
+    // Hard per-site cap: age-based retention only protects a release while it
+    // is among this many newest rows of its site. Keeps hourly publishers from
+    // accumulating a week of full-site copies.
+    releaseMaxPerSite: integer('CONTENTKIT_RELEASE_MAX_PER_SITE', 24, { min: 1, max: 500 }),
     releaseRetentionMs: integer('CONTENTKIT_RELEASE_RETENTION_MS', 7 * 86400 * 1000, {
       min: 0,
       max: 365 * 86400 * 1000,

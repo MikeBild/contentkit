@@ -7,6 +7,7 @@ import { hashApiKey } from './auth.mjs'
 import { sha256, slugify } from './utils.mjs'
 import { assertDeliverableUrl, decryptSecret, encryptSecret, generateWebhookSecret } from './secrets.mjs'
 import { validateWebhookEvents } from './webhook-events.mjs'
+import { unreferencedStoragePaths } from './maintenance.mjs'
 import {
   createSessionToken,
   hashReaderPassword,
@@ -960,9 +961,10 @@ export function createRepository(config, db, storage) {
         ? await db.select('ck_release_entries', { release_id: inFilter(releases.map((release) => release.id)) })
         : []
       const assets = await db.select('ck_assets', { site_id: `eq.${siteId}` })
+      // Dedup makes entry paths repeat across a site's releases; the site dies
+      // as a whole, so enumerate everything and just drop the duplicates.
       const objects = await removeStorageObjects([
-        ...entries.map((entry) => entry.storage_path),
-        ...assets.map((asset) => asset.storage_path),
+        ...new Set([...entries.map((entry) => entry.storage_path), ...assets.map((asset) => asset.storage_path)]),
       ])
       await db.remove('ck_sites', { id: `eq.${siteId}` })
       return { site_id: siteId, deleted: true, ...inventory, assets: assets.length, removed_objects: objects }
@@ -1660,13 +1662,17 @@ export function createRepository(config, db, storage) {
     async getRelease(id) {
       return one('ck_releases', { id: `eq.${id}` })
     },
+    async getReleaseEntry(releaseId, path) {
+      return one('ck_release_entries', { release_id: `eq.${releaseId}`, path: `eq.${path}` })
+    },
     // Discarding one built release ahead of the retention sweep. Everything that
     // points at it — entries, access catalog, named preview access — cascades in
     // the database; only its storage objects need enumerating first, exactly as
     // the sweep does it.
     async deleteRelease(siteId, releaseId) {
-      const entries = await db.select('ck_release_entries', { release_id: `eq.${releaseId}` })
-      const objects = await removeStorageObjects(entries.map((entry) => entry.storage_path))
+      // Only objects no other release references — dedup lets newer releases
+      // point into this one's storage prefix.
+      const objects = await removeStorageObjects(await unreferencedStoragePaths(db, releaseId))
       await db.remove('ck_releases', { id: `eq.${releaseId}`, site_id: `eq.${siteId}` })
       return { release_id: releaseId, deleted: true, removed_objects: objects }
     },

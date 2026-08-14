@@ -1265,15 +1265,23 @@ Rollback activates an existing `ready`, `active` or `superseded` release. It
 does not rebuild or copy files, and it does not rewrite per-item published
 revision pointers — the next regular release is built from those pointers.
 
-Storage lifecycle: each release uploads a full immutable snapshot, so old
-snapshots accumulate. `POST /v1/maintenance/storage-gc` (cron-triggered, an
-unrestricted `release:write` key) sweeps them: it deletes the objects and rows
-of releases that are past `CONTENTKIT_RELEASE_RETENTION_MS`, not currently
-active, outside the per-site `CONTENTKIT_RELEASE_HISTORY_KEEP` rollback window,
-and not referenced by live named preview access; it also reaps releases stuck in
-`building` past `CONTENTKIT_BUILDING_REAP_MS`. A failed or concurrency-aborted
-build also removes its own partial uploads immediately. The active release and
-recent rollback targets are never deleted.
+Storage lifecycle: each release records a full immutable snapshot, but files
+unchanged since the active release are not re-uploaded — their entries reference
+the existing objects (matched on path, sha256, content type and cache-control),
+so the marginal release is close to zero bytes. `POST /v1/maintenance/storage-gc`
+(cron-triggered, an unrestricted `release:write` key) sweeps old releases: it
+deletes the objects and rows of releases that are past
+`CONTENTKIT_RELEASE_RETENTION_MS`, not currently active, outside the per-site
+`CONTENTKIT_RELEASE_HISTORY_KEEP` rollback window, and not referenced by live
+named preview access. The age window only protects a release while it is among
+the newest `CONTENTKIT_RELEASE_MAX_PER_SITE` rows of its site, so frequent
+publishers top out at the cap instead of accumulating a full retention window of
+snapshots. Objects still referenced by a surviving release are never deleted;
+they fall with their last referencing release. The sweep also reaps releases
+stuck in `building` past `CONTENTKIT_BUILDING_REAP_MS`. A failed or
+concurrency-aborted build removes its own partial uploads immediately (only what
+it actually uploaded — never objects reused from the active release). The active
+release and recent rollback targets are never deleted.
 
 ---
 
@@ -1594,6 +1602,7 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_TRUST_PROXY` | trust `X-Forwarded-For` behind a reverse proxy |
 | `CONTENTKIT_MAX_BODY_BYTES` | upload body limit |
 | `CONTENTKIT_BUILD_CONCURRENCY` | concurrent release builds |
+| `CONTENTKIT_UPLOAD_CONCURRENCY` | concurrent storage uploads per release build; default 8, allowed 1–32 |
 | `CONTENTKIT_DECK_BUILD_CONCURRENCY` | concurrent Slidev builds; default 1, maximum 4 because the compiler is CPU/memory intensive |
 | `CONTENTKIT_DECK_BUILD_QUEUE_MAX` | maximum waiting deck builds; default 8 |
 | `CONTENTKIT_DECK_BUILD_TIMEOUT_MS` | per-build timeout; default 120000 |
@@ -1610,7 +1619,8 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_WEBHOOK_ALLOW_PRIVATE` | allow http/private webhook targets (default true off-production) |
 | `CONTENTKIT_TURNSTILE_DEV_BYPASS` | accept public submissions without a Turnstile secret; local dev only, default false (fail-closed) |
 | `CONTENTKIT_RELEASE_HISTORY_KEEP` | releases kept per site as a rollback window; default 5 |
-| `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible; default 7 days |
+| `CONTENTKIT_RELEASE_RETENTION_MS` | minimum age before a non-active, unreferenced release is GC-eligible — only while it is within the per-site cap; default 7 days |
+| `CONTENTKIT_RELEASE_MAX_PER_SITE` | per-site release cap: rows beyond the newest N lose their age protection at the next sweep; default 24 |
 | `CONTENTKIT_BUILDING_REAP_MS` | age after which a release stuck in building is reaped; default 1 hour |
 | `CONTENTKIT_PRODUCT_STATS_RETENTION_DAYS` | reader-auth aggregate source retention; default 400 days |
 | `CONTENTKIT_USAGE_TELEMETRY_ENABLED` | opt in to privacy-bounded HTTP/composition/MCP usage events; default false |

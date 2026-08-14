@@ -885,7 +885,12 @@ export function createRequestHandler(ctx) {
     privateAccess = false,
   ) {
     const releasePath = canonicalRequestPath(requestPath)
-    const objectPath = `${release.storage_prefix}/${releasePath}`
+    // A deduplicated release can serve an object owned by an earlier release,
+    // so the entry row is authoritative for the storage location. The computed
+    // prefix path remains as fallback, keeping pre-dedup releases (and fakes
+    // without entry lookups) byte-identical.
+    const entry = repo.getReleaseEntry ? await repo.getReleaseEntry(release.id, releasePath) : null
+    const objectPath = entry?.storage_path || `${release.storage_prefix}/${releasePath}`
     let response
     try {
       response = await storage.download(objectPath, { head: method === 'HEAD' })

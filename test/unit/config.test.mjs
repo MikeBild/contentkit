@@ -44,6 +44,30 @@ test('the audio rebuild debounce defaults to 60s and rejects values outside 1sâ€
   }
 })
 
+test('upload concurrency and the per-site release cap default sensibly and reject out-of-range values', () => {
+  const names = ['CONTENTKIT_UPLOAD_CONCURRENCY', 'CONTENTKIT_RELEASE_MAX_PER_SITE']
+  const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
+  try {
+    for (const name of names) delete process.env[name]
+    assert.equal(loadConfig().uploadConcurrency, 8)
+    assert.equal(loadConfig().releaseMaxPerSite, 24)
+    process.env.CONTENTKIT_UPLOAD_CONCURRENCY = '0'
+    assert.throws(() => loadConfig(), /CONTENTKIT_UPLOAD_CONCURRENCY/)
+    process.env.CONTENTKIT_UPLOAD_CONCURRENCY = '33'
+    assert.throws(() => loadConfig(), /CONTENTKIT_UPLOAD_CONCURRENCY/)
+    delete process.env.CONTENTKIT_UPLOAD_CONCURRENCY
+    process.env.CONTENTKIT_RELEASE_MAX_PER_SITE = '0'
+    assert.throws(() => loadConfig(), /CONTENTKIT_RELEASE_MAX_PER_SITE/)
+    process.env.CONTENTKIT_RELEASE_MAX_PER_SITE = '501'
+    assert.throws(() => loadConfig(), /CONTENTKIT_RELEASE_MAX_PER_SITE/)
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
 test('usage telemetry is opt-in, keeps 90 days and requires its own HMAC secret', () => {
   const names = [
     'CONTENTKIT_USAGE_TELEMETRY_ENABLED',
