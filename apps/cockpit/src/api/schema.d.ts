@@ -1152,7 +1152,7 @@ export interface paths {
         put?: never;
         /**
          * Garbage-collect old release objects and reap stuck builds
-         * @description Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by live named preview access; reaps builds stuck in building. A release whose object deletion fails keeps its row and is counted in deferred_releases for the next sweep to retry, so a transient storage error cannot strand objects. Requires an unrestricted release:write key.
+         * @description Cron-triggered lifecycle sweep. Deletes storage objects and rows for releases past the retention window that are not active, within the rollback keep-window, or referenced by live named preview access; the retention window only protects a release while it is among the newest CONTENTKIT_RELEASE_MAX_PER_SITE rows of its site. Storage objects shared with surviving releases (upload dedup) are kept until their last referencing release goes. Also reaps builds stuck in building. A release whose object deletion fails keeps its row and is counted in deferred_releases for the next sweep to retry, so a transient storage error cannot strand objects. Requires an unrestricted release:write key.
          */
         post: operations["maintenanceStorageGc"];
         delete?: never;
