@@ -369,6 +369,7 @@ export const API_ROUTES = [
   },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/activate$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/releases\/[^/]+\/promote$/, methods: ['POST'] },
   { pattern: /^\/v1\/publish-due$/, methods: ['POST'] },
   { pattern: /^\/v1\/maintenance\/storage-gc$/, methods: ['POST'] },
   { pattern: /^\/v1\/api-keys$/, methods: ['GET', 'POST'] },
@@ -2016,6 +2017,22 @@ export function createRequestHandler(ctx) {
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'release:write', site.id))) return
       return sendJson(res, 200, await releases.rollback(site.id, activateMatch[2]))
+    }
+    const promoteMatch = path.match(/^\/v1\/sites\/([^/]+)\/releases\/([^/]+)\/promote$/)
+    if (promoteMatch && req.method === 'POST') {
+      const site = await repo.getSite(promoteMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      const input = parseJson(await bodyFor(req))
+      return sendJson(
+        res,
+        200,
+        await releases.promote({
+          siteId: site.id,
+          releaseId: promoteMatch[2],
+          manifestSha256: input.manifest_sha256,
+        }),
+      )
     }
     if (path === '/v1/publish-due' && req.method === 'POST') {
       const principal = await requireScope(req, res, 'release:write')

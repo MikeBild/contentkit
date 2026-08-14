@@ -25,6 +25,62 @@ test('every tool inputSchema root is a flat object so strict clients accept the 
   }
   const content = manifest.find((entry) => entry.name === 'contentkit_content')
   assert.deepEqual(content.inputSchema.properties.action.enum, ['list', 'revisions', 'delete_draft'])
+  const publish = manifest.find((entry) => entry.name === 'contentkit_publish')
+  assert.deepEqual(publish.inputSchema.properties.action.enum, [
+    'preview',
+    'promote',
+    'publish',
+    'activate',
+    'unpublish',
+  ])
+  assert.equal(publish.inputSchema.properties.manifest_sha256.pattern, '^[0-9a-f]{64}$')
+})
+
+test('MCP preview promotion confirms and forwards the exact immutable binding', async () => {
+  const tool = findTool(principal(['release:write']), 'contentkit_publish')
+  let promoted
+  let confirmation
+  const deps = {
+    repo: {
+      async getSite() {
+        return { id: 'site-1', name: 'Site' }
+      },
+    },
+    auth: { authorize: () => true },
+    releases: {
+      async promote(input) {
+        promoted = input
+        return { release_id: input.releaseId, manifest_sha256: input.manifestSha256, active: true }
+      },
+    },
+    audit: { async record() {} },
+  }
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const digest = 'a'.repeat(64)
+  const result = await tool.execute(
+    deps,
+    principal(['release:write']),
+    {
+      action: 'promote',
+      site: 'site-1',
+      revision_ids: [],
+      item_ids: [],
+      release_id: releaseId,
+      manifest_sha256: digest,
+      reason: 'approved preview',
+      expires_in: 3600,
+    },
+    {
+      async elicitForm(input) {
+        confirmation = input
+        return { action: 'accept', content: { confirmed: true } }
+      },
+    },
+  )
+  assert.match(confirmation.message, new RegExp(releaseId))
+  assert.deepEqual(promoted, { siteId: 'site-1', releaseId, manifestSha256: digest })
+  assert.equal(result.release_id, releaseId)
+  assert.equal(result.active, true)
 })
 
 test('declining draft deletion performs no database mutation', async () => {

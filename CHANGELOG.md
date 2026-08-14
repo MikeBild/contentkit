@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.23.0 — 2026-08-14
+
+### Added
+
+- Exact preview promotion. Preview builds now persist a canonical manifest
+  SHA-256, their base publish epoch and the complete revision/retirement
+  overlay. The REST and native MCP publishing surfaces can promote that exact
+  immutable snapshot after confirmation, without rendering or uploading a
+  second release.
+- Fail-closed review bindings. Promotion rejects a changed manifest, a site
+  changed since preview creation, and deck pointer changes whose source event
+  metadata cannot yet be preserved.
+
 ## 4.22.0 — 2026-08-14
 
 ### Added

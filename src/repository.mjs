@@ -1646,12 +1646,30 @@ export function createRepository(config, db, storage) {
     async listReleases(siteId) {
       const rows = await db.select('ck_releases', { site_id: `eq.${siteId}`, order: 'created_at.desc' })
       return rows.map(
-        ({ id, kind, status, reason, revision_ids, file_count, created_at, completed_at, activated_at }) => ({
+        ({
           id,
+          site_id,
           kind,
           status,
           reason,
           revision_ids,
+          retire_item_ids,
+          base_publish_epoch,
+          manifest_sha256,
+          file_count,
+          created_at,
+          completed_at,
+          activated_at,
+        }) => ({
+          id,
+          site_id,
+          kind,
+          status,
+          reason,
+          revision_ids,
+          retire_item_ids,
+          base_publish_epoch,
+          manifest_sha256,
           file_count,
           created_at,
           completed_at,

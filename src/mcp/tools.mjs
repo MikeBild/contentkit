@@ -555,16 +555,20 @@ const TOOLS = [
   }),
   tool({
     name: 'contentkit_publish',
-    title: 'Preview, publish, activate or unpublish',
+    title: 'Preview, promote, publish, activate or unpublish',
     description:
-      'Lifecycle boundary for immutable releases. Publish/activate/unpublish require native human confirmation.',
+      'Lifecycle boundary for immutable releases. Promote/publish/activate/unpublish require native human confirmation.',
     scopes: ['release:preview', 'release:write'],
     schema: z.object({
-      action: z.enum(['preview', 'publish', 'activate', 'unpublish']),
+      action: z.enum(['preview', 'promote', 'publish', 'activate', 'unpublish']),
       site: siteRef,
       revision_ids: z.array(uuid).max(200).default([]),
       item_ids: z.array(uuid).max(200).default([]),
       release_id: uuid.optional(),
+      manifest_sha256: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/)
+        .optional(),
       reason: z.string().max(500).default('MCP operation'),
       preview_slug: z.string().max(80).optional(),
       expires_in: z.number().int().min(60).max(604800).default(3600),
@@ -594,13 +598,26 @@ const TOOLS = [
         return result
       }
       const summary =
-        input.action === 'activate'
-          ? `Activate release ${input.release_id} for ${site.name}? This changes the live site.`
-          : input.action === 'unpublish'
-            ? `Unpublish ${input.item_ids.length} content item(s) from ${site.name}? This changes the live site.`
-            : `Publish ${input.revision_ids.length} revision(s) to ${site.name}? This changes the live site.`
+        input.action === 'promote'
+          ? `Promote reviewed preview ${input.release_id} for ${site.name}? This activates the exact immutable preview and changes the live site.`
+          : input.action === 'activate'
+            ? `Activate release ${input.release_id} for ${site.name}? This changes the live site.`
+            : input.action === 'unpublish'
+              ? `Unpublish ${input.item_ids.length} content item(s) from ${site.name}? This changes the live site.`
+              : `Publish ${input.revision_ids.length} revision(s) to ${site.name}? This changes the live site.`
       await confirm(context, summary, input.action === 'unpublish' ? 'Unpublish' : 'Change live site')
       const execute = async () => {
+        if (input.action === 'promote') {
+          if (!input.release_id || !input.manifest_sha256)
+            throw Object.assign(new Error('release_id and manifest_sha256 are required for promote'), {
+              statusCode: 422,
+            })
+          return deps.releases.promote({
+            siteId: site.id,
+            releaseId: input.release_id,
+            manifestSha256: input.manifest_sha256,
+          })
+        }
         if (input.action === 'activate') {
           if (!input.release_id)
             throw Object.assign(new Error('release_id is required for activate'), { statusCode: 422 })

@@ -279,6 +279,20 @@ The preview response separates access from navigation. Send the one-time
 `invitation_url` to the reviewer. Opening it creates a path-scoped HttpOnly
 session and redirects to the memorable `preview_url`, for example
 `/previews/article-review/`. The invitation cannot be used a second time.
+The response also returns `release_id`, `manifest_sha256` and
+`base_publish_epoch`. After review, activate those exact rendered bytes without
+another build:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases/<preview-release-id>/promote" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"manifest_sha256":"<digest-returned-by-preview>"}'
+```
+
+Promotion fails when the digest differs or another release changed the site
+after the preview. The MCP `contentkit_publish` action `promote` adds native
+human confirmation around the same boundary.
 
 The full live contract is available at `/openapi.json`. A committed canonical
 snapshot lives in [docs/openapi.json](docs/openapi.json); update it with

@@ -1121,6 +1121,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sites/{site}/releases/{release}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate the exact reviewed preview without rebuilding it
+         * @description Promotes an immutable preview only when manifest_sha256 matches and the site publish epoch is unchanged since the preview build. The operation fails closed on digest or epoch drift and currently refuses deck pointer changes.
+         */
+        post: operations["releasePromotePreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/publish-due": {
         parameters: {
             query?: never;
@@ -2253,7 +2273,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A built, immutable snapshot. Only `kind: release` is activatable; a preview never is. */
+        /** @description A built, immutable snapshot. A preview is activatable only through guarded promotion with its exact manifest digest and unchanged base publish epoch. */
         Release: {
             /** Format: uuid */
             id: string;
@@ -2265,6 +2285,9 @@ export interface components {
             status: "building" | "preview" | "ready" | "active" | "superseded" | "failed";
             reason: string;
             revision_ids: string[];
+            retire_item_ids?: string[];
+            base_publish_epoch?: number | null;
+            manifest_sha256?: string | null;
             storage_prefix?: string | null;
             file_count: number;
             error?: string | null;
@@ -2280,6 +2303,7 @@ export interface components {
             /** Format: uuid */
             release_id: string;
             file_count?: number;
+            manifest_sha256?: string;
             active: boolean;
         };
         CreatedApiKey: components["schemas"]["ApiKeySummary"] & {
@@ -5312,6 +5336,10 @@ export interface operations {
                     "application/json": {
                         /** Format: uuid */
                         release_id: string;
+                        manifest_sha256: string;
+                        base_publish_epoch: number;
+                        revision_ids: string[];
+                        retire_item_ids: string[];
                         /** Format: uri */
                         preview_url: string;
                         /**
@@ -5485,6 +5513,58 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    releasePromotePreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                release: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    manifest_sha256: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Exact preview promoted and active */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseBuildResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Preview not found or not promotable */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Manifest mismatch or publish epoch drift */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid digest or unsupported deck pointer change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     publishDue: {

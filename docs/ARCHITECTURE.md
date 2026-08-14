@@ -28,6 +28,17 @@ a rollback (which moves the site pointer, not item pointers) emits only
 An upload or render failure cannot change the public site. Rollback activates a
 known release without rendering or copying files.
 
+### Reviewed preview promotion
+
+A preview records the site's `publish_epoch`, the exact publish and retire
+overlays, and a canonical SHA-256 digest over every rendered entry. Promotion
+activates those already-rendered bytes without rebuilding them. It is rejected
+when either the supplied digest differs or the site's epoch changed after the
+preview. This makes the reviewed snapshot, rather than a later look-alike
+build, the publication boundary. Deck pointer changes remain excluded from
+promotion until their source-addressed event metadata can be preserved without
+rerendering.
+
 The read API (`GET /v1/sites/{site}/published` and
 `.../published/{kind}/{locale}/{slug}`) exposes the same published state as
 JSON. It lives on the management API behind `content:read` scoped keys —

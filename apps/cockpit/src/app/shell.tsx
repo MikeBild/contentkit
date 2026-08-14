@@ -236,7 +236,8 @@ const NAV = [
     selection: 'governs',
     api: [
       '/v1/sites/{site}/releases',
-      '/v1/sites/{site}/releases/*',
+      '/v1/sites/{site}/releases/{release}',
+      '/v1/sites/{site}/releases/{release}/activate',
       '/v1/sites/{site}/previews',
       '/v1/sites/{site}/content',
       '/v1/content/{item}/revisions',

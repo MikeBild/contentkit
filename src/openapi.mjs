@@ -40,9 +40,13 @@ export function openApi(config) {
       schema: { type: 'string' },
     },
   ]
-  const jsonBody = (required = []) => ({
+  const jsonBody = (requiredOrSchema = []) => ({
     required: true,
-    content: { 'application/json': { schema: { type: 'object', required } } },
+    content: {
+      'application/json': {
+        schema: Array.isArray(requiredOrSchema) ? { type: 'object', required: requiredOrSchema } : requiredOrSchema,
+      },
+    },
   })
   // A 2xx that names its schema. A response described in prose only generates
   // no client type, and the client then guesses the shape — which is how the
@@ -418,7 +422,8 @@ export function openApi(config) {
         },
         Release: {
           type: 'object',
-          description: 'A built, immutable snapshot. Only `kind: release` is activatable; a preview never is.',
+          description:
+            'A built, immutable snapshot. A preview is activatable only through guarded promotion with its exact manifest digest and unchanged base publish epoch.',
           required: ['id', 'site_id', 'kind', 'status', 'reason', 'revision_ids', 'file_count', 'created_at'],
           properties: {
             id: { type: 'string', format: 'uuid' },
@@ -430,6 +435,9 @@ export function openApi(config) {
             },
             reason: { type: 'string' },
             revision_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            retire_item_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            base_publish_epoch: { type: ['integer', 'null'] },
+            manifest_sha256: { type: ['string', 'null'], pattern: '^[0-9a-f]{64}$' },
             storage_prefix: { type: ['string', 'null'] },
             file_count: { type: 'integer' },
             error: { type: ['string', 'null'] },
@@ -445,6 +453,7 @@ export function openApi(config) {
           properties: {
             release_id: { type: 'string', format: 'uuid' },
             file_count: { type: 'integer' },
+            manifest_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' },
             active: { type: 'boolean' },
           },
         },
@@ -2858,9 +2867,22 @@ export function openApi(config) {
                 'application/json': {
                   schema: {
                     type: 'object',
-                    required: ['release_id', 'preview_url', 'invitation_url', 'expires_in'],
+                    required: [
+                      'release_id',
+                      'manifest_sha256',
+                      'base_publish_epoch',
+                      'revision_ids',
+                      'retire_item_ids',
+                      'preview_url',
+                      'invitation_url',
+                      'expires_in',
+                    ],
                     properties: {
                       release_id: { type: 'string', format: 'uuid' },
+                      manifest_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+                      base_publish_epoch: { type: 'integer' },
+                      revision_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                      retire_item_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
                       preview_url: { type: 'string', format: 'uri' },
                       invitation_url: {
                         type: 'string',
@@ -2967,6 +2989,31 @@ export function openApi(config) {
             { name: 'release', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
           ],
           responses: { 200: jsonResponse('Release active', ref('ReleaseBuildResult')) },
+        },
+      },
+      '/v1/sites/{site}/releases/{release}/promote': {
+        post: {
+          operationId: 'releasePromotePreview',
+          summary: 'Activate the exact reviewed preview without rebuilding it',
+          description:
+            'Promotes an immutable preview only when manifest_sha256 matches and the site publish epoch is unchanged since the preview build. The operation fails closed on digest or epoch drift and currently refuses deck pointer changes.',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'release', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody({
+            type: 'object',
+            required: ['manifest_sha256'],
+            properties: { manifest_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
+            additionalProperties: false,
+          }),
+          responses: {
+            200: jsonResponse('Exact preview promoted and active', ref('ReleaseBuildResult')),
+            404: { description: 'Preview not found or not promotable' },
+            409: { description: 'Manifest mismatch or publish epoch drift' },
+            422: { description: 'Invalid digest or unsupported deck pointer change' },
+          },
         },
       },
       '/v1/publish-due': {

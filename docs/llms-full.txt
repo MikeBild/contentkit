@@ -336,6 +336,7 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | POST | `/v1/sites/{site}/previews` | `release:preview` or `release:write` | Build a named expiring preview and return separate invitation and preview URLs |
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
+| POST | `/v1/sites/{site}/releases/{release}/promote` | `release:write` | Activate the exact reviewed preview when its manifest digest and base publish epoch still match |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
 | DELETE | `/v1/sites/{site}/releases/{release}` | `release:write` | Delete a built release or preview and its storage objects; the active release is 409 |
 | DELETE | `/v1/content/{item}` | `content:write` | Discard a never-published draft item and its revisions |
@@ -1209,6 +1210,24 @@ curl -b preview.cookies "$PREVIEW_URL/de/"
 Do not persist or log `invitation_url`; it is the only bearer credential and is
 invalid immediately after the successful exchange. `preview_url` contains no
 secret and can be retained as the human-readable review address.
+
+The preview response also binds the exact snapshot through `release_id`,
+`manifest_sha256`, `base_publish_epoch`, `revision_ids` and
+`retire_item_ids`. After review, promote those already-rendered bytes without a
+second build:
+
+```bash
+curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases/<preview-release-id>/promote" \
+  -H "Authorization: Bearer $CONTENTKIT_PUBLISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"manifest_sha256":"<digest-returned-by-preview>"}'
+```
+
+Promotion fails closed when the digest differs or the site's publish epoch
+changed after the preview. The MCP `contentkit_publish` action `promote` adds a
+native human confirmation to the same boundary. Promotion currently refuses
+deck pointer changes because their source-addressed event metadata must not be
+reconstructed by guesswork.
 
 Publish a release:
 

@@ -39,6 +39,36 @@ export function createSemaphore(limit) {
   }
 }
 
+// Content identity for approval bindings. Storage paths deliberately do not
+// participate: dedup may reuse an older object's path, while the bytes, media
+// type and cache semantics remain identical. Sorting makes the digest stable
+// across concurrent upload completion order.
+export function releaseManifestSha256({
+  siteId,
+  basePublishEpoch,
+  revisionIds = [],
+  retireItemIds = [],
+  entries = [],
+}) {
+  const manifest = {
+    schema_version: 1,
+    site_id: siteId,
+    base_publish_epoch: String(basePublishEpoch ?? 0),
+    revision_ids: [...revisionIds].sort(),
+    retire_item_ids: [...retireItemIds].sort(),
+    entries: entries
+      .map(({ path, content_type, byte_size, sha256: digest, cache_control }) => ({
+        path,
+        content_type,
+        byte_size: Number(byte_size),
+        sha256: digest,
+        cache_control: cache_control ?? null,
+      }))
+      .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0)),
+  }
+  return sha256(JSON.stringify(manifest))
+}
+
 // Derives the content.* webhook events for a release activation from the
 // pointer transitions it is about to make: published fires only when an
 // overlay revision actually changes an item's published pointer (a no-op
@@ -178,6 +208,8 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         status: 'building',
         reason,
         revision_ids: revisionIds,
+        retire_item_ids: retireItemIds,
+        base_publish_epoch: snapshot.site.publish_epoch ?? 0,
       })
       // Only what buildSite reads crosses the thread boundary. `items` and
       // `overlay` stay here: the CMS pointer bookkeeping below needs them, and
@@ -260,6 +292,13 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
       if (uploadError) throw uploadError
       entries.push(...ordered)
       await db.insert('ck_release_entries', entries, { returning: false })
+      const manifestSha256 = releaseManifestSha256({
+        siteId: snapshot.site.id,
+        basePublishEpoch: snapshot.site.publish_epoch,
+        revisionIds,
+        retireItemIds,
+        entries,
+      })
       logger.info?.('release uploaded', {
         release_id: releaseId,
         uploaded: uploadedPaths.length,
@@ -286,6 +325,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           status: kind === 'preview' ? 'preview' : 'ready',
           storage_prefix: prefix,
           file_count: entries.length,
+          manifest_sha256: manifestSha256,
           completed_at: new Date().toISOString(),
         },
       )
@@ -394,6 +434,10 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         }
         return {
           release_id: releaseId,
+          manifest_sha256: manifestSha256,
+          base_publish_epoch: snapshot.site.publish_epoch ?? 0,
+          revision_ids: revisionIds,
+          retire_item_ids: retireItemIds,
           preview_url: `${config.publicUrl}/previews/${slug}/`,
           invitation_url: `${config.publicUrl}/preview-invitations/${token}`,
           expires_in: effectiveExpiresIn,
@@ -418,7 +462,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           { returning: false },
         )
       }
-      return { release_id: releaseId, file_count: entries.length, active: true }
+      return { release_id: releaseId, file_count: entries.length, manifest_sha256: manifestSha256, active: true }
     } catch (error) {
       // Best-effort remove any objects uploaded before the failure so they don't
       // leak (GC also enumerates via entries, but a crash before that insert has
@@ -498,6 +542,69 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     publish,
     preview: async (input) =>
       build({ ...input, previewSlug: normalizePreviewSlug(input.previewSlug), kind: 'preview' }),
+    async promote({ siteId, releaseId, manifestSha256 }) {
+      if (typeof manifestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(manifestSha256)) {
+        throw Object.assign(new Error('manifest_sha256 must be a lowercase SHA-256 digest'), { statusCode: 422 })
+      }
+      const target = await repo.getRelease(releaseId)
+      if (!target || target.site_id !== siteId || target.kind !== 'preview' || target.status !== 'preview') {
+        throw Object.assign(new Error('preview not found or not promotable'), { statusCode: 404 })
+      }
+      if (target.manifest_sha256 !== manifestSha256) {
+        throw Object.assign(new Error('preview manifest mismatch'), { statusCode: 409 })
+      }
+      const revisionIds = target.revision_ids || []
+      const retireItemIds = target.retire_item_ids || []
+      const snapshot = await repo.buildSnapshot(siteId, revisionIds, retireItemIds)
+      if (Number(snapshot.site.publish_epoch ?? 0) !== Number(target.base_publish_epoch ?? 0)) {
+        throw Object.assign(new Error('stale preview: site changed since review'), { statusCode: 409 })
+      }
+      const retiring = new Set(retireItemIds)
+      const promotesDeck =
+        (snapshot.overlay || []).some((revision) => revision.kind === 'deck') ||
+        (snapshot.items || []).some((item) => retiring.has(item.id) && item.kind === 'deck')
+      if (promotesDeck) {
+        throw Object.assign(new Error('preview promotion does not yet support deck pointer changes'), {
+          statusCode: 422,
+        })
+      }
+      const events = await contentTransitionEvents(db, snapshot, retireItemIds, releaseId)
+      const deckCount = (snapshot.revisions || []).filter((revision) => revision.kind === 'deck').length
+      events.push({
+        type: WEBHOOK_EVENT.releasePublished,
+        resourceKind: 'release',
+        resourceId: releaseId,
+        summary: 'Site release published',
+        data: {
+          release_id: releaseId,
+          reason: target.reason,
+          published_count: events.filter((event) => event.type === WEBHOOK_EVENT.contentPublished).length,
+          unpublished_count: events.filter((event) => event.type === WEBHOOK_EVENT.contentUnpublished).length,
+          deck_count: deckCount,
+        },
+      })
+      await db.tx(async (tx) => {
+        await tx.update('ck_releases', { id: `eq.${releaseId}` }, { kind: 'release', status: 'ready' })
+        await tx.rpc('ck_activate_release', {
+          p_release_id: releaseId,
+          p_revision_ids: revisionIds,
+          p_retire_item_ids: retireItemIds,
+          p_expected_epoch: target.base_publish_epoch,
+        })
+        await tx.update(
+          'ck_preview_access',
+          { release_id: `eq.${releaseId}` },
+          { revoked_at: new Date().toISOString() },
+        )
+        await repo.enqueueContentEvents(tx, snapshot.site, events)
+      })
+      if (revisionIds.length && hooks.onPublished) {
+        Promise.resolve(hooks.onPublished({ siteId, revisionIds })).catch((error) =>
+          logger.warn?.('post-promotion hook failed', { siteId, error: String(error.message || error) }),
+        )
+      }
+      return { release_id: releaseId, file_count: target.file_count, manifest_sha256: manifestSha256, active: true }
+    },
     async rollback(siteId, releaseId) {
       const target = await repo.getRelease(releaseId)
       if (!target || target.site_id !== siteId || !['ready', 'active', 'superseded'].includes(target.status)) {

@@ -53,7 +53,7 @@ Existing `ck_...` API keys also authenticate directly at `/mcp`. MCP sessions ne
 | `contentkit_composition` | Recommend, validate or compile semantic visual information architecture |
 | `contentkit_deck` | Plan, validate or compile source-traceable narrative decks |
 | `contentkit_releases` | Inspect release and preview history |
-| `contentkit_publish` | Preview immutable releases; publish/activate/unpublish require `release:write` |
+| `contentkit_publish` | Preview immutable releases; promote/publish/activate/unpublish require `release:write` and native confirmation |
 | `contentkit_stats` | Read product, HTTP, composition and MCP aggregates |
 | `contentkit_manage_sites` | Site configuration CRUD |
 | `contentkit_manage_access` | Reader user/group/rule CRUD |

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createReleaseManager, createSemaphore } from '../../src/releases.mjs'
+import { createReleaseManager, createSemaphore, releaseManifestSha256 } from '../../src/releases.mjs'
 import { sha256 } from '../../src/utils.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
@@ -188,6 +188,10 @@ test('preview returns a named URL plus one-time invitation and stores only hashe
     previewSlug: 'release-review',
   })
   assert.equal(result.preview_url, `${config.publicUrl}/previews/release-review/`)
+  assert.match(result.manifest_sha256, /^[0-9a-f]{64}$/)
+  assert.equal(result.base_publish_epoch, 3)
+  assert.deepEqual(result.revision_ids, [])
+  assert.deepEqual(result.retire_item_ids, [])
   assert.match(result.invitation_url, new RegExp(`^${config.publicUrl}/preview-invitations/[A-Za-z0-9_-]+$`))
   const token = result.invitation_url.split('/').at(-1)
   const stored = db.calls.inserts.find((call) => call.table === 'ck_preview_access')
@@ -196,6 +200,104 @@ test('preview returns a named URL plus one-time invitation and stores only hashe
   assert.ok(!stored.body.invite_token_hash.includes(token), 'raw invitation token must never be stored')
   const noActivation = db.calls.rpcs.every((call) => call.name !== 'ck_activate_release')
   assert.ok(noActivation, 'previews must not activate a release')
+})
+
+test('release manifest digest is canonical and changes with rendered bytes', () => {
+  const a = { path: 'a.html', content_type: 'text/html', byte_size: 1, sha256: sha256('a'), cache_control: null }
+  const b = { path: 'b.json', content_type: 'application/json', byte_size: 1, sha256: sha256('b'), cache_control: 'x' }
+  const input = {
+    siteId: 'site-1',
+    basePublishEpoch: 3,
+    revisionIds: ['rev-b', 'rev-a'],
+    retireItemIds: ['item-b', 'item-a'],
+    entries: [b, a],
+  }
+  const first = releaseManifestSha256(input)
+  const reordered = releaseManifestSha256({
+    ...input,
+    revisionIds: [...input.revisionIds].reverse(),
+    retireItemIds: [...input.retireItemIds].reverse(),
+    entries: [{ ...a, storage_path: 'different-owner' }, b],
+  })
+  assert.equal(first, reordered)
+  assert.notEqual(first, releaseManifestSha256({ ...input, entries: [{ ...a, sha256: sha256('changed') }, b] }))
+})
+
+function promotableRepo(overrides = {}) {
+  const repo = makeRepo()
+  repo.getRelease = async () => ({
+    id: 'preview-1',
+    site_id: 'site-1',
+    kind: 'preview',
+    status: 'preview',
+    reason: 'reviewed article',
+    revision_ids: [],
+    retire_item_ids: [],
+    base_publish_epoch: 3,
+    manifest_sha256: 'a'.repeat(64),
+    file_count: 7,
+    ...overrides,
+  })
+  return repo
+}
+
+test('promotion activates the exact preview digest without rebuilding or uploading', async () => {
+  const db = makeDb()
+  const storage = makeStorage()
+  const repo = promotableRepo()
+  const releases = createReleaseManager(config, repo, db, storage, logger)
+  const result = await releases.promote({
+    siteId: 'site-1',
+    releaseId: 'preview-1',
+    manifestSha256: 'a'.repeat(64),
+  })
+  assert.deepEqual(result, {
+    release_id: 'preview-1',
+    file_count: 7,
+    manifest_sha256: 'a'.repeat(64),
+    active: true,
+  })
+  assert.deepEqual(storage.uploaded, [], 'promotion reuses the already-rendered preview bytes')
+  const activation = db.calls.rpcs.find((call) => call.name === 'ck_activate_release')
+  assert.equal(activation.params.p_release_id, 'preview-1')
+  assert.equal(activation.params.p_expected_epoch, 3)
+  assert.ok(
+    db.calls.updates.some(
+      (call) => call.table === 'ck_releases' && call.body.kind === 'release' && call.body.status === 'ready',
+    ),
+  )
+  assert.ok(db.calls.updates.some((call) => call.table === 'ck_preview_access' && call.body.revoked_at))
+  assert.equal(repo.enqueued.length, 1)
+})
+
+test('promotion fails closed on manifest or publish-epoch drift', async () => {
+  const mismatchDb = makeDb()
+  const mismatch = createReleaseManager(config, promotableRepo(), mismatchDb, makeStorage(), logger)
+  await assert.rejects(
+    () => mismatch.promote({ siteId: 'site-1', releaseId: 'preview-1', manifestSha256: 'b'.repeat(64) }),
+    (error) => error.statusCode === 409 && /manifest mismatch/.test(error.message),
+  )
+  assert.equal(mismatchDb.calls.rpcs.length, 0)
+
+  const staleDb = makeDb()
+  const stale = createReleaseManager(config, promotableRepo({ base_publish_epoch: 2 }), staleDb, makeStorage(), logger)
+  await assert.rejects(
+    () => stale.promote({ siteId: 'site-1', releaseId: 'preview-1', manifestSha256: 'a'.repeat(64) }),
+    (error) => error.statusCode === 409 && /stale preview/.test(error.message),
+  )
+  assert.equal(staleDb.calls.rpcs.length, 0)
+})
+
+test('promotion refuses deck pointer changes until their event metadata can be preserved', async () => {
+  const db = makeDb()
+  const repo = promotableRepo()
+  repo.buildSnapshot = async () => makeSnapshot({ overlay: [{ id: 'deck-rev', item_id: 'deck', kind: 'deck' }] })
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+  await assert.rejects(
+    () => releases.promote({ siteId: 'site-1', releaseId: 'preview-1', manifestSha256: 'a'.repeat(64) }),
+    (error) => error.statusCode === 422 && /deck pointer/.test(error.message),
+  )
+  assert.equal(db.calls.rpcs.length, 0)
 })
 
 test('preview fails with 503 when no preview secret is configured', async () => {
