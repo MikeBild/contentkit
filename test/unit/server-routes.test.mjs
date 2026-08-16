@@ -681,6 +681,143 @@ test('POST /v1/sites/{site}/releases forwards retire_item_ids', async () => {
   })
 })
 
+test('POST preview promotion forwards the exact manifest and audits the authenticated Cockpit operator action', async () => {
+  const promoted = []
+  const audits = []
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const digest = 'c'.repeat(64)
+  const repo = {
+    async getSite() {
+      return { id: 'site-1', slug: 'mikebild' }
+    },
+  }
+  const releases = {
+    async promote(input) {
+      promoted.push(input)
+      return { release_id: input.releaseId, manifest_sha256: input.manifestSha256, active: true }
+    },
+  }
+  const db = {
+    async insert(table, row) {
+      assert.equal(table, 'ck_audit_events')
+      audits.push(row)
+      return [{ id: 1, ...row }]
+    },
+  }
+  const csrf = signCsrf('development')
+  const auth = {
+    async authenticate(headers) {
+      return (headers.get?.('cookie') ?? headers.cookie ?? '').includes('contentkit_operator=')
+        ? { id: 'operator:reviewer', scopes: ['release:write'], site_ids: [], via: 'operator_session' }
+        : null
+    },
+    authorize: (principal, scope) => Boolean(principal) && principal.scopes.includes(scope),
+  }
+  await withApp({ db, repo, releases, auth, config: { publicUrl: 'http://127.0.0.1' } }, async (request) => {
+    const response = await request(`/v1/sites/mikebild/releases/${releaseId}/promote`, {
+      method: 'POST',
+      headers: {
+        cookie: `contentkit_operator=ckos_review; contentkit_csrf=${csrf}`,
+        'x-contentkit-csrf': csrf,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ manifest_sha256: digest }),
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(promoted, [{ siteId: 'site-1', releaseId, manifestSha256: digest }])
+    assert.equal(audits.length, 2)
+    assert.equal(audits[0].action, 'release.promote.approved')
+    assert.equal(audits[0].metadata.review_surface, 'cockpit')
+    assert.equal(audits[1].action, 'release.promote')
+    for (const row of audits) {
+      assert.equal(row.resource_id, releaseId)
+      assert.equal(row.transport, 'http')
+      assert.equal(row.metadata.manifest_sha256, digest)
+    }
+  })
+})
+
+test('POST preview promotion through an API key keeps the direct API contract without recording a human approval', async () => {
+  const audits = []
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const digest = 'b'.repeat(64)
+  await withApp(
+    {
+      repo: {
+        async getSite() {
+          return { id: 'site-1', slug: 'mikebild' }
+        },
+      },
+      releases: {
+        async promote(input) {
+          return { release_id: input.releaseId, manifest_sha256: input.manifestSha256, active: true }
+        },
+      },
+      auth: scopedAuth(['release:write']),
+      db: {
+        async insert(_table, row) {
+          audits.push(row)
+          return [{ id: 1, ...row }]
+        },
+      },
+    },
+    async (request) => {
+      const response = await request(`/v1/sites/mikebild/releases/${releaseId}/promote`, {
+        method: 'POST',
+        headers: { 'x-api-key': 'valid', 'content-type': 'application/json' },
+        body: JSON.stringify({ manifest_sha256: digest }),
+      })
+      assert.equal(response.status, 200)
+      assert.deepEqual(
+        audits.map((row) => row.action),
+        ['release.promote'],
+      )
+    },
+  )
+})
+
+test('POST Cockpit preview promotion fails closed before mutation when the approval audit is unavailable', async () => {
+  let promoted = false
+  const repo = {
+    async getSite() {
+      return { id: 'site-1', slug: 'mikebild' }
+    },
+  }
+  const releases = {
+    async promote() {
+      promoted = true
+    },
+  }
+  const db = {
+    async insert() {
+      throw new Error('audit store unavailable')
+    },
+  }
+  const csrf = signCsrf('development')
+  const auth = {
+    async authenticate(headers) {
+      return (headers.get?.('cookie') ?? headers.cookie ?? '').includes('contentkit_operator=')
+        ? { id: 'operator:reviewer', scopes: ['release:write'], site_ids: [], via: 'operator_session' }
+        : null
+    },
+    authorize: (principal, scope) => Boolean(principal) && principal.scopes.includes(scope),
+  }
+  await withApp({ db, repo, releases, auth, config: { publicUrl: 'http://127.0.0.1' } }, async (request) => {
+    const response = await request('/v1/sites/mikebild/releases/11111111-1111-4111-8111-111111111111/promote', {
+      method: 'POST',
+      headers: {
+        cookie: `contentkit_operator=ckos_review; contentkit_csrf=${csrf}`,
+        'x-contentkit-csrf': csrf,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ manifest_sha256: 'f'.repeat(64) }),
+    })
+    assert.equal(response.status, 503)
+    assert.deepEqual(await response.json(), { error: 'approval_audit_unavailable', mutation_applied: false })
+    assert.equal(promoted, false)
+  })
+})
+
 // undici's fetch forbids overriding the Host header, so these fixtures resolve
 // the site for any host — the behavior under test is the storage 404 fallback,
 // not host routing (which repository.test.mjs covers).

@@ -53,7 +53,11 @@ test('MCP preview promotion confirms and forwards the exact immutable binding', 
         return { release_id: input.releaseId, manifest_sha256: input.manifestSha256, active: true }
       },
     },
-    audit: { async record() {} },
+    audit: {
+      async record() {
+        return { id: 1 }
+      },
+    },
   }
   const releaseId = '11111111-1111-4111-8111-111111111111'
   const digest = 'a'.repeat(64)
@@ -81,6 +85,116 @@ test('MCP preview promotion confirms and forwards the exact immutable binding', 
   assert.deepEqual(promoted, { siteId: 'site-1', releaseId, manifestSha256: digest })
   assert.equal(result.release_id, releaseId)
   assert.equal(result.active, true)
+})
+
+test('MCP preview promotion without a live form returns a durable exact browser review and performs no mutation', async () => {
+  const tool = findTool(principal(['release:write']), 'contentkit_publish')
+  let promoted = false
+  const auditRows = []
+  const deps = {
+    repo: {
+      async getSite() {
+        return { id: 'site-1', slug: 'mikebild', name: 'Site' }
+      },
+    },
+    auth: { authorize: () => true },
+    releases: {
+      async promote() {
+        promoted = true
+      },
+    },
+    audit: {
+      async record(row) {
+        auditRows.push(row)
+      },
+    },
+  }
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const digest = 'b'.repeat(64)
+  const result = await tool.execute(
+    deps,
+    principal(['release:write']),
+    {
+      action: 'promote',
+      site: 'site-1',
+      revision_ids: [],
+      item_ids: [],
+      release_id: releaseId,
+      manifest_sha256: digest,
+      reason: 'reviewed preview',
+      expires_in: 3600,
+    },
+    {
+      formElicitationSupported: false,
+      publicUrl: 'https://contentkit.example',
+      async elicitForm() {
+        throw new Error('must not elicit')
+      },
+    },
+  )
+  assert.equal(promoted, false)
+  assert.equal(result.status, 'human_review_required')
+  assert.equal(result.mutation_applied, false)
+  assert.equal(result.release_id, releaseId)
+  assert.equal(result.manifest_sha256, digest)
+  const review = new URL(result.review_url)
+  assert.equal(review.origin, 'https://contentkit.example')
+  assert.equal(review.pathname, '/cockpit/releases')
+  assert.equal(review.searchParams.get('site'), 'mikebild')
+  assert.equal(review.searchParams.get('promotion_release'), releaseId)
+  assert.equal(review.searchParams.get('promotion_manifest'), digest)
+  assert.equal(auditRows.length, 1)
+  assert.equal(auditRows[0].action, 'release.promotion_review_requested')
+  assert.equal(auditRows[0].resourceId, releaseId)
+  assert.equal(auditRows[0].metadata.manifest_sha256, digest)
+})
+
+test('MCP preview promotion refuses the mutation when the human-decision audit cannot be persisted', async () => {
+  const tool = findTool(principal(['release:write']), 'contentkit_publish')
+  let promoted = false
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const digest = 'e'.repeat(64)
+  await assert.rejects(
+    () =>
+      tool.execute(
+        {
+          repo: {
+            async getSite() {
+              return { id: 'site-1', name: 'Site' }
+            },
+          },
+          auth: { authorize: () => true },
+          releases: {
+            async promote() {
+              promoted = true
+            },
+          },
+          audit: {
+            async record() {
+              return null
+            },
+          },
+        },
+        principal(['release:write']),
+        {
+          action: 'promote',
+          site: 'site-1',
+          release_id: releaseId,
+          manifest_sha256: digest,
+        },
+        {
+          async elicitForm() {
+            return { action: 'accept', content: { confirmed: true } }
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.statusCode, 503)
+      assert.equal(error.reason, 'approval_audit_unavailable')
+      return true
+    },
+  )
+  assert.equal(promoted, false)
 })
 
 test('declining draft deletion performs no database mutation', async () => {

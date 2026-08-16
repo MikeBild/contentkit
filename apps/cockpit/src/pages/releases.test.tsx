@@ -33,6 +33,12 @@ vi.mock('@/app/shell', () => ({
 vi.mock('@/lib/site', () => ({ useSite: () => ({ site: 'mikebild', current: null }) }))
 vi.mock('@/lib/session', () => ({ useCan: () => () => true }))
 vi.mock('@/forms/platform/previews', () => ({ PreviewsCard: () => null }))
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({
+    promotion_release: '11111111-1111-4111-8111-111111111111',
+    promotion_manifest: 'a'.repeat(64),
+  }),
+}))
 
 const building = {
   id: 'rel_building',
@@ -46,12 +52,29 @@ const building = {
   revision_ids: null,
 }
 
+const promotable = {
+  id: '11111111-1111-4111-8111-111111111111',
+  site_id: 'site-1',
+  kind: 'preview',
+  status: 'preview',
+  reason: 'editorial review',
+  created_at: new Date(Date.now() - 60_000).toISOString(),
+  completed_at: new Date(Date.now() - 55_000).toISOString(),
+  activated_at: null,
+  file_count: 42,
+  revision_ids: ['22222222-2222-4222-8222-222222222222'],
+  retire_item_ids: [],
+  base_publish_epoch: 7,
+  manifest_sha256: 'a'.repeat(64),
+}
+
 vi.mock('@/api/ck', () => ({
   ck: {
     releases: {
-      list: () => Promise.resolve([building]),
+      list: () => Promise.resolve([building, promotable]),
       create: () => Promise.resolve({}),
       activate: () => Promise.resolve({}),
+      promote: () => Promise.resolve({}),
       remove: () => Promise.resolve({}),
     },
     content: { list: () => Promise.resolve([]) },
@@ -70,6 +93,15 @@ function renderPage() {
 }
 
 describe('Releases — a build in flight', () => {
+  it('renders a deep-linked promotion review only for the exact preview and manifest', async () => {
+    renderPage()
+    await screen.findByTestId('promotion-review-confirm')
+    const review = screen.getByTestId('promotion-review')
+    expect(review).toHaveTextContent(promotable.id)
+    expect(review).toHaveTextContent(promotable.manifest_sha256)
+    expect(within(review).getByTestId('promotion-review-confirm')).toBeEnabled()
+  })
+
   it('says a build is running', async () => {
     renderPage()
     const card = await screen.findByTestId('release-building')

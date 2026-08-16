@@ -224,6 +224,78 @@ test('elicitation capability matrix: {} and {form:{}} elicit, {url:{}} and absen
   }
 })
 
+test('preview promotion without form capability returns an exact non-mutating Cockpit review handoff', async () => {
+  let promoted = false
+  const auditRows = []
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const digest = 'd'.repeat(64)
+  const handoffDeps = {
+    auth: {
+      async authenticate(headers) {
+        return headers.get('authorization') === 'Bearer key-a'
+          ? { id: 'publisher', name: 'publisher', scopes: ['release:write'], site_ids: ['site-1'] }
+          : null
+      },
+      authorize: () => true,
+    },
+    logger: { info() {}, warn() {}, debug() {} },
+    usage: { async recordMcp() {}, quality: () => ({}) },
+    repo: {
+      async getSite() {
+        return { id: 'site-1', slug: 'mikebild', name: 'MikeBild' }
+      },
+    },
+    releases: {
+      async promote() {
+        promoted = true
+      },
+    },
+    audit: {
+      async record(row) {
+        auditRows.push(row)
+      },
+    },
+    secretHandoffs: { setNotifier() {} },
+  }
+  const mount = createMcpMount(config, handoffDeps)
+  try {
+    const session = await initialize(mount, {})
+    const response = await mount.handler(
+      rpc(
+        {
+          jsonrpc: '2.0',
+          id: 9,
+          method: 'tools/call',
+          params: {
+            name: 'contentkit_publish',
+            arguments: {
+              action: 'promote',
+              site: 'mikebild',
+              release_id: releaseId,
+              manifest_sha256: digest,
+            },
+          },
+        },
+        { session },
+      ),
+    )
+    const final = sseJson(await response.text())
+    assert.notEqual(final.result.isError, true)
+    const payload = toolPayload(final)
+    assert.equal(payload.status, 'human_review_required')
+    assert.equal(payload.mutation_applied, false)
+    assert.equal(promoted, false)
+    const review = new URL(payload.review_url)
+    assert.equal(review.origin, new URL(config.publicUrl).origin)
+    assert.equal(review.searchParams.get('promotion_release'), releaseId)
+    assert.equal(review.searchParams.get('promotion_manifest'), digest)
+    assert.equal(auditRows.length, 1)
+    assert.equal(auditRows[0].action, 'release.promotion_review_requested')
+  } finally {
+    mount.stop()
+  }
+})
+
 test('a fast client auto-cancel is retried once end-to-end then reported as elicitation_auto_cancelled', async () => {
   const { deps: confirmDeps, removals } = confirmationDeps()
   const mount = createMcpMount(config, confirmDeps)

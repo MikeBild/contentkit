@@ -400,6 +400,17 @@ export const ck = {
           body: body({}),
         }),
       ),
+    /**
+     * Promote exactly one immutable preview. The server rejects a manifest
+     * mismatch and any publish-epoch drift since the preview was built.
+     */
+    promote: (site: string, release: string, manifestSha256: string) =>
+      unwrap(
+        api.POST('/v1/sites/{site}/releases/{release}/promote', {
+          params: { path: { site, release } },
+          body: body({ manifest_sha256: manifestSha256 }),
+        }),
+      ),
     /** Only a release the site is not serving; the active one answers 409. */
     remove: (site: string, release: string) =>
       unwrap(api.DELETE('/v1/sites/{site}/releases/{release}', { params: { path: { site, release } } })),

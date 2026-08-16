@@ -532,6 +532,14 @@ const CONTRACTS = [
     asserts: [/toHaveTextContent/],
     min: 1,
   },
+  {
+    id: 'page/releases-promotion-review-is-bound-to-one-preview-manifest',
+    promise:
+      'A deep-linked promotion review exposes its confirmation only for the exact preview release and manifest digest named by the handoff.',
+    title: /deep-linked promotion review only for the exact preview and manifest/i,
+    asserts: [/promotion-review-confirm/, /manifest_sha256/, /toBeEnabled/],
+    min: 1,
+  },
   // ── The site registry: the console's most destructive page ────────────────
   //
   // Added when `pages/sites.tsx` stopped composing its own AlertDialog. The

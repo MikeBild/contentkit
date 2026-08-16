@@ -21,7 +21,7 @@ const INSTRUCTIONS = `ContentKit is a release-oriented Markdown CMS with semanti
 
 Start with contentkit_context. Search/read the active published snapshot before authoring. contentkit_ingest only creates immutable draft revisions. Use contentkit_composition and contentkit_deck to inspect diagnostics and source traceability before publishing. Preview first when practical.
 
-Only tools allowed by the current credential are listed. Publication, activation, unpublishing, deletion, credential changes, identity changes and administrative mutations require native human elicitation. The model must never infer confirmation. Decline, cancel, timeout or unsupported elicitation makes no change.
+Only tools allowed by the current credential are listed. Publication, activation, unpublishing, deletion, credential changes, identity changes and administrative mutations require a human decision. Native form elicitation is primary. When a client cannot render a nested form, immutable preview promotion returns an exact ContentKit Cockpit review link; the browser decision owns the mutation. The model must never infer confirmation. Decline, cancel, timeout or unsupported elicitation makes no change.
 
 Read contentkit://system/agent-guide for the complete workflow and contentkit://docs/llms.txt for documentation routing.`
 
@@ -193,7 +193,7 @@ function promptMessages(name, args = {}) {
     return `Design a ContentKit semantic visual for: ${args.task}.${site} Preserve source claims in the semantic model, make the narrative thesis explicit, use contentkit_composition recommend then validate, and report accessibility and diagnostic results. Do not substitute decorative graphics for information architecture.`
   if (name === 'contentkit_deck')
     return `Create a source-traceable ContentKit deck for: ${args.task}.${site} Establish audience, question, thesis, evidence arc, limitations, conclusion and action. Use contentkit_deck plan, validate and compile; preserve slide source_refs and surface all fallback diagnostics.`
-  return `Review a ContentKit publication for site ${args.site}. Exact revision IDs: ${args.revision_ids}. Read the revisions, validate compositions/decks, build a preview, and summarize the live-site delta. Only then call contentkit_publish; the human must decide in native elicitation.`
+  return `Review a ContentKit publication for site ${args.site}. Exact revision IDs: ${args.revision_ids}. Read the revisions, validate compositions/decks, build a preview, and summarize the live-site delta. Only then call contentkit_publish; the human decides in native elicitation or, when a nested client cannot render it, through the exact ContentKit Cockpit review link the promote action returns.`
 }
 
 async function docsText(config, file) {
@@ -262,6 +262,8 @@ export function createSessionServer(config, deps, principal, sessionId = () => n
         capabilities !== undefined && (capabilities.form !== undefined || capabilities.url === undefined)
       const urlCapable = capabilities?.url !== undefined
       const context = {
+        formElicitationSupported: formCapable,
+        publicUrl: config.publicUrl,
         async elicitForm(params) {
           if (!formCapable)
             throw Object.assign(new Error('This operation requires MCP form elicitation support.'), {

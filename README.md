@@ -205,8 +205,10 @@ ContentKit domains—published knowledge, immutable revision authoring, semantic
 composition, narrative decks and release activation—while access/webhooks/
 credentials/identity moderation use bounded CRUD tools. Tool discovery is
 scope-filtered, and every target is checked against the principal's site grant.
-Live or destructive changes require native human form elicitation. API-key
-secrets use a one-time URL elicitation handoff and never enter the MCP transcript.
+Live or destructive changes require a human decision. Native form elicitation
+is primary; immutable preview promotion falls back to an exact Cockpit review
+link when a nested MCP client cannot render a second live form. API-key secrets
+use a one-time URL elicitation handoff and never enter the MCP transcript.
 
 The complete tool/resource/prompt catalog, OAuth deployment settings and
 security invariants are in [MCP.md](MCP.md). MCP itself is discovered through
@@ -292,7 +294,9 @@ curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases/<preview-release-id>/p
 
 Promotion fails when the digest differs or another release changed the site
 after the preview. The MCP `contentkit_publish` action `promote` adds native
-human confirmation around the same boundary.
+human confirmation around the same boundary. If the caller cannot render the
+form, it returns a non-mutating, exact Cockpit review link instead; the signed-in
+human completes the guarded promotion there.
 
 The full live contract is available at `/openapi.json`. A committed canonical
 snapshot lives in [docs/openapi.json](docs/openapi.json); update it with

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.23.1 — 2026-08-16
+
+### Fixed
+
+- Make exact preview promotion usable through nested MCP clients that cannot
+  render ContentKit's live confirmation form. The MCP call remains
+  non-mutating and returns a durable Cockpit review link bound to the preview
+  release and manifest digest.
+- Require a signed-in, CSRF-protected Cockpit operator with `release:write` to
+  persist the human approval audit before browser promotion. Failure to write
+  that audit prevents the mutation; manifest and publish-epoch drift still
+  fail closed. Direct API-key promotions keep their existing contract and are
+  no longer mislabeled as human approvals.
+
 ## 4.23.0 — 2026-08-14
 
 ### Added

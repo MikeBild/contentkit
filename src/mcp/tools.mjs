@@ -119,7 +119,7 @@ function requireAnyScope(deps, principal, scopes, siteId = null) {
 }
 
 async function audit(deps, principal, input) {
-  await deps.audit.record({ ...auditActor(principal), transport: 'mcp', result: 'success', ...input })
+  return deps.audit.record({ ...auditActor(principal), transport: 'mcp', result: 'success', ...input })
 }
 
 async function recordDeckEvent(deps, siteId, event) {
@@ -184,6 +184,14 @@ async function confirm(context, message, label = 'Confirm') {
     )
   }
   throw Object.assign(new Error('Operation cancelled; no change was made.'), { statusCode: 409, cancelled: true })
+}
+
+function promotionReviewUrl(publicUrl, site, releaseId, manifestSha256) {
+  const url = new URL('/cockpit/releases', publicUrl)
+  url.searchParams.set('site', site.slug || site.id)
+  url.searchParams.set('promotion_release', releaseId)
+  url.searchParams.set('promotion_manifest', manifestSha256)
+  return url.toString()
 }
 
 async function elicitHandoffUrl(context, params) {
@@ -557,7 +565,7 @@ const TOOLS = [
     name: 'contentkit_publish',
     title: 'Preview, promote, publish, activate or unpublish',
     description:
-      'Lifecycle boundary for immutable releases. Promote/publish/activate/unpublish require native human confirmation.',
+      'Lifecycle boundary for immutable releases. Promote/publish/activate/unpublish require a human decision. Native form elicitation is primary; immutable promotion returns an exact ContentKit Cockpit review link when the calling client cannot render a live form.',
     scopes: ['release:preview', 'release:write'],
     schema: z.object({
       action: z.enum(['preview', 'promote', 'publish', 'activate', 'unpublish']),
@@ -597,6 +605,46 @@ const TOOLS = [
         })
         return result
       }
+      // Preview promotion has a durable browser fallback because the preview
+      // itself is already the immutable review object. A nested MCP client
+      // (for example an orchestration engine calling ContentKit) often cannot
+      // render a second, live form inside its own tool call. Failing there made
+      // the exact promotion path unusable even though ContentKit already owns
+      // every binding the reviewer needs: release id, manifest digest and base
+      // publish epoch.
+      //
+      // The fallback does NOT approve or mutate anything. It hands the human to
+      // ContentKit Cockpit, whose operator session, CSRF gate and release:write
+      // scope protect the final POST. The promote endpoint re-checks the exact
+      // manifest and publish epoch, so changing the site after review fails
+      // closed. Other destructive actions have no immutable preview object and
+      // continue to require live form elicitation.
+      if (input.action === 'promote' && context?.formElicitationSupported === false) {
+        if (!input.release_id || !input.manifest_sha256)
+          throw Object.assign(new Error('release_id and manifest_sha256 are required for promote'), {
+            statusCode: 422,
+          })
+        const reviewUrl = promotionReviewUrl(context.publicUrl, site, input.release_id, input.manifest_sha256)
+        await audit(deps, principal, {
+          siteId: site.id,
+          action: 'release.promotion_review_requested',
+          resourceType: 'release',
+          resourceId: input.release_id,
+          metadata: { manifest_sha256: input.manifest_sha256 },
+        })
+        return {
+          status: 'human_review_required',
+          mutation_applied: false,
+          release_id: input.release_id,
+          manifest_sha256: input.manifest_sha256,
+          review_url: reviewUrl,
+          poll_with: 'contentkit_releases',
+          agent_instructions:
+            `Give the operator this exact ContentKit review link: ${reviewUrl} ` +
+            'ContentKit will promote only after the signed-in human confirms there. ' +
+            'Do not infer approval, do not call promote again, and verify the release and live site after the browser decision.',
+        }
+      }
       const summary =
         input.action === 'promote'
           ? `Promote reviewed preview ${input.release_id} for ${site.name}? This activates the exact immutable preview and changes the live site.`
@@ -606,6 +654,21 @@ const TOOLS = [
               ? `Unpublish ${input.item_ids.length} content item(s) from ${site.name}? This changes the live site.`
               : `Publish ${input.revision_ids.length} revision(s) to ${site.name}? This changes the live site.`
       await confirm(context, summary, input.action === 'unpublish' ? 'Unpublish' : 'Change live site')
+      if (input.action === 'promote') {
+        const approvalAudit = await audit(deps, principal, {
+          siteId: site.id,
+          action: 'release.promote.approved',
+          resourceType: 'release',
+          resourceId: input.release_id,
+          metadata: { manifest_sha256: input.manifest_sha256 },
+        })
+        if (!approvalAudit) {
+          throw Object.assign(
+            new Error('The human decision could not be written to the audit log; no change was made.'),
+            { statusCode: 503, reason: 'approval_audit_unavailable' },
+          )
+        }
+      }
       const execute = async () => {
         if (input.action === 'promote') {
           if (!input.release_id || !input.manifest_sha256)

@@ -53,7 +53,7 @@ Existing `ck_...` API keys also authenticate directly at `/mcp`. MCP sessions ne
 | `contentkit_composition` | Recommend, validate or compile semantic visual information architecture |
 | `contentkit_deck` | Plan, validate or compile source-traceable narrative decks |
 | `contentkit_releases` | Inspect release and preview history |
-| `contentkit_publish` | Preview immutable releases; promote/publish/activate/unpublish require `release:write` and native confirmation |
+| `contentkit_publish` | Preview immutable releases; promote/publish/activate/unpublish require `release:write` and human confirmation; immutable promotion has a Cockpit review-link fallback |
 | `contentkit_stats` | Read product, HTTP, composition and MCP aggregates |
 | `contentkit_manage_sites` | Site configuration CRUD |
 | `contentkit_manage_access` | Reader user/group/rule CRUD |
@@ -67,7 +67,9 @@ Prefer these domain verbs over sequences of generic row mutations. CRUD remains 
 
 ## Human-control boundaries
 
-The server uses native MCP form elicitation for live publication, activation, unpublication, draft deletion, revocation, moderation decisions and administrative mutations. The form names the exact target and effect. The agent must not infer or supply the human decision. Decline, cancel, timeout, malformed input or a client without form elicitation leaves state unchanged.
+The server uses native MCP form elicitation for live publication, activation, unpublication, draft deletion, revocation, moderation decisions and administrative mutations. The form names the exact target and effect. The agent must not infer or supply the human decision. Decline, cancel, timeout or malformed input leaves state unchanged.
+
+Immutable preview promotion has one durable fallback for nested MCP clients that cannot render a second live form. `contentkit_publish` returns `status: "human_review_required"`, `mutation_applied: false` and an exact `review_url` containing the preview release id and manifest digest. The agent gives that link to the operator. ContentKit Cockpit reads the immutable release, shows the exact binding, and performs the final promote POST only after the signed-in human confirms. Before any activation, ContentKit must persist a `release.promote.approved` audit row naming that human and manifest; an unavailable audit store fails with `mutation_applied: false`. The promote endpoint then rejects manifest or publish-epoch drift and records the successful `release.promote` result separately. Other destructive tools continue to fail closed without form elicitation because they have no immutable preview object to review out of band.
 
 A form cancel that arrives faster than any human could have read the form is treated as a client auto-cancel, not a human decision: the server retries the form once silently, then fails with reason `elicitation_auto_cancelled` ("The MCP client auto-cancelled the confirmation form without presenting it; no change was made."). A genuine human decline always returns "Operation cancelled; no change was made." A timeout fails with reason `elicitation_timeout` ("Human confirmation timed out; no change was made."). Every elicitation error carries `next_best_actions`.
 
@@ -75,7 +77,7 @@ A form cancel that arrives faster than any human could have read the form is tre
 
 - Claude Code: requires >= 2.1.76. Reused sessions (`/clear`, server restart) can auto-cancel forms; a fresh session recovers.
 - Codex: set `approval_policy = { granular = { mcp_elicitations = true } }` and `approvals_reviewer = "user"` in `~/.codex/config.toml`, then restart the client.
-- Clients that advertise no form elicitation capability fail closed with reason `elicitation_unsupported` and this guidance in `next_best_actions`; no change is made.
+- Clients that advertise no form elicitation capability fail closed with reason `elicitation_unsupported` and this guidance in `next_best_actions`; no change is made. The only exception is immutable preview promotion, which returns the non-mutating Cockpit review handoff described above.
 
 Secrets must never be requested through form elicitation. Creating an API key or rotating/creating a webhook secret uses MCP URL elicitation and a one-time, ten-minute ContentKit handoff page. Opening the page does not consume the capability; the human must press the reveal button, which protects against link prefetchers. The page then reveals the secret once with `no-store`, strict CSP and no referrer; the MCP client receives only metadata. New API keys and webhook changes remain disabled until reveal and fail closed on cancellation, expiry or process failure.
 

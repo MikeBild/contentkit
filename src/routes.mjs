@@ -2022,17 +2022,43 @@ export function createRequestHandler(ctx) {
     if (promoteMatch && req.method === 'POST') {
       const site = await repo.getSite(promoteMatch[1])
       if (!site) return sendJson(res, 404, { error: 'site not found' })
-      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      const principal = await requireScope(req, res, 'release:write', site.id)
+      if (!principal) return
       const input = parseJson(await bodyFor(req))
-      return sendJson(
-        res,
-        200,
-        await releases.promote({
+      // A browser operator is the human approval boundary used by an MCP
+      // review handoff. API keys retain the existing direct API contract and
+      // must not be mislabeled as a human decision in the audit trail.
+      if (principal.via === 'operator_session') {
+        const approvalAudit = await audit.record({
+          ...auditActor(principal),
           siteId: site.id,
-          releaseId: promoteMatch[2],
-          manifestSha256: input.manifest_sha256,
-        }),
-      )
+          action: 'release.promote.approved',
+          resourceType: 'release',
+          resourceId: promoteMatch[2],
+          result: 'success',
+          transport: 'http',
+          metadata: { manifest_sha256: input.manifest_sha256, review_surface: 'cockpit' },
+        })
+        if (!approvalAudit) {
+          return sendJson(res, 503, { error: 'approval_audit_unavailable', mutation_applied: false })
+        }
+      }
+      const result = await releases.promote({
+        siteId: site.id,
+        releaseId: promoteMatch[2],
+        manifestSha256: input.manifest_sha256,
+      })
+      await audit.record({
+        ...auditActor(principal),
+        siteId: site.id,
+        action: 'release.promote',
+        resourceType: 'release',
+        resourceId: result.release_id,
+        result: 'success',
+        transport: 'http',
+        metadata: { manifest_sha256: result.manifest_sha256 },
+      })
+      return sendJson(res, 200, result)
     }
     if (path === '/v1/publish-due' && req.method === 'POST') {
       const principal = await requireScope(req, res, 'release:write')

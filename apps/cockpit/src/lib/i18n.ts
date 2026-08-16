@@ -931,6 +931,21 @@ const EN = {
   'releases.activateTitle': 'Activate this release?',
   'releases.activateDescription': 'The live site for {site} switches to this build immediately. The currently active release becomes superseded.',
   'releases.activate': 'Activate',
+  'releases.promotionReviewTitle': 'Review immutable preview promotion',
+  'releases.promotionReviewDescription':
+    'This exact preview for {site} contains {revisions} revision(s) and {files} file(s), captured at publish epoch {epoch}. Promotion fails if the manifest or live site has changed.',
+  'releases.promotionRelease': 'Preview release',
+  'releases.promotionManifest': 'Manifest SHA-256',
+  'releases.promotionConfirmTitle': 'Promote this exact preview?',
+  'releases.promotionConfirmDescription':
+    'ContentKit will promote preview {release} with manifest {manifest} to the live site {site}. Any manifest or publish-epoch drift is rejected.',
+  'releases.promote': 'Promote exact preview',
+  'releases.promotionScopeMissing': 'Your signed-in account does not have release:write for this site.',
+  'releases.promotionCompleted': 'This exact preview is already the active release.',
+  'releases.promotionLoading': 'Loading the immutable preview binding…',
+  'releases.promotionBindingInvalid':
+    'This review link no longer matches a promotable preview. Nothing changed; request a fresh preview and review link.',
+  'releases.promotionError': 'The exact preview was not promoted: {message}',
   'releases.deletePreviewTitle': 'Delete this preview?',
   'releases.deleteReleaseTitle': 'Delete this release?',
   'releases.deletePreviewDescription': 'The preview build for {site}, its storage objects, invitation and links are deleted immediately. The source content stays unchanged.',
@@ -942,7 +957,8 @@ const EN = {
   'releases.overlaidRevisions': 'Included revisions',
   'releases.noRevisions': 'None — this build contains exactly the published set.',
   'previews.new': 'New preview',
-  'previews.newDescription': 'A preview is a full build behind a one-time invitation. It never becomes the live site.',
+  'previews.newDescription':
+    'A preview is a full build behind an invitation. It never becomes live automatically; guarded promotion requires its exact manifest and unchanged publish epoch.',
   'previews.name': 'Name',
   'previews.nameHelp': 'Appears in the preview URL.',
   'previews.nameAbout': 'Reusing a name atomically replaces the previous preview under it.',
@@ -2669,6 +2685,21 @@ const DE: Catalog = {
   'releases.activateTitle': 'Dieses Release aktivieren?',
   'releases.activateDescription': 'Die Live-Website von {site} wechselt sofort zu diesem Build. Das aktuell aktive Release wird abgelöst.',
   'releases.activate': 'Aktivieren',
+  'releases.promotionReviewTitle': 'Unveränderliche Vorschau zur Veröffentlichung prüfen',
+  'releases.promotionReviewDescription':
+    'Diese konkrete Vorschau für {site} enthält {revisions} Revision(en) und {files} Datei(en); ihr Ausgangspunkt ist Veröffentlichungsstand {epoch}. Bei einem geänderten Manifest oder Live-Stand wird die Übernahme abgelehnt.',
+  'releases.promotionRelease': 'Vorschau-Release',
+  'releases.promotionManifest': 'Manifest-SHA-256',
+  'releases.promotionConfirmTitle': 'Diese konkrete Vorschau übernehmen?',
+  'releases.promotionConfirmDescription':
+    'ContentKit übernimmt Vorschau {release} mit Manifest {manifest} in die Live-Website {site}. Ein abweichendes Manifest oder ein veränderter Veröffentlichungsstand wird abgelehnt.',
+  'releases.promote': 'Geprüfte Vorschau übernehmen',
+  'releases.promotionScopeMissing': 'Das angemeldete Konto besitzt für diese Website kein release:write-Recht.',
+  'releases.promotionCompleted': 'Diese konkrete Vorschau ist bereits das aktive Release.',
+  'releases.promotionLoading': 'Die unveränderliche Vorschau-Bindung wird geladen …',
+  'releases.promotionBindingInvalid':
+    'Dieser Prüflink passt nicht mehr zu einer übernehmbaren Vorschau. Es wurde nichts geändert; erstelle eine neue Vorschau und einen neuen Prüflink.',
+  'releases.promotionError': 'Die konkrete Vorschau wurde nicht übernommen: {message}',
   'releases.deletePreviewTitle': 'Diese Vorschau löschen?',
   'releases.deleteReleaseTitle': 'Dieses Release löschen?',
   'releases.deletePreviewDescription': 'Der Vorschau-Build für {site}, seine Speicherobjekte, Einladung und Links werden sofort gelöscht. Die Quellinhalte bleiben unverändert.',
@@ -2680,7 +2711,8 @@ const DE: Catalog = {
   'releases.overlaidRevisions': 'Enthaltene Revisionen',
   'releases.noRevisions': 'Keine — dieser Build enthält exakt die veröffentlichte Menge.',
   'previews.new': 'Neue Vorschau',
-  'previews.newDescription': 'Eine Vorschau ist ein vollständiger Build hinter einer einmaligen Einladung. Sie wird niemals zur Live-Website.',
+  'previews.newDescription':
+    'Eine Vorschau ist ein vollständiger Build hinter einer einmaligen Einladung. Sie wird nie automatisch live; die kontrollierte Übernahme verlangt ihr konkretes Manifest und einen unveränderten Veröffentlichungsstand.',
   'previews.name': 'Name',
   'previews.nameHelp': 'Erscheint in der Vorschau-URL.',
   'previews.nameAbout': 'Die erneute Verwendung eines Namens ersetzt die vorherige Vorschau unter diesem Namen atomar.',

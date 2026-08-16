@@ -23,6 +23,10 @@ import { WebhooksPage } from '@/pages/webhooks'
 /** Every route carries the selected site; nothing below the root may drop it. */
 export interface RootSearch {
   site?: string
+  /** Exact immutable preview selected by an MCP/browser review hand-off. */
+  promotion_release?: string
+  /** SHA-256 digest the promote endpoint must match byte-for-byte. */
+  promotion_manifest?: string
 }
 
 // The provider reads and writes `?site=` through the router, so it lives inside
@@ -43,8 +47,16 @@ const rootRoute = createRootRoute({
   component: Root,
   // Unrecognised params are dropped rather than rejected: a bookmark carrying a
   // filter a later version removed still opens the page it names.
-  validateSearch: (search: Record<string, unknown>): RootSearch =>
-    typeof search.site === 'string' && search.site ? { site: search.site } : {},
+  validateSearch: (search: Record<string, unknown>): RootSearch => ({
+    ...(typeof search.site === 'string' && search.site ? { site: search.site } : {}),
+    ...(typeof search.promotion_release === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search.promotion_release)
+      ? { promotion_release: search.promotion_release }
+      : {}),
+    ...(typeof search.promotion_manifest === 'string' && /^[0-9a-f]{64}$/.test(search.promotion_manifest)
+      ? { promotion_manifest: search.promotion_manifest }
+      : {}),
+  }),
 })
 
 const routes = [

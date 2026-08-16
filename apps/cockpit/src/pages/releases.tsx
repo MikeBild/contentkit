@@ -1,15 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearch } from '@tanstack/react-router'
 import { RefreshCw } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { ck, type ContentItem, type Release } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
+import { SkeletonText } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StatusBadge, type StatusTone } from '@/forms/status-badge'
@@ -38,10 +41,9 @@ const STATUS_KEYS = {
 } as const
 
 /**
- * A preview is a build behind an invitation, not a candidate for the live site;
- * the server answers 404 for an attempt to activate one. Offering the button
- * anyway — which is what a check on `status` alone does — promises a rollback
- * target that does not exist.
+ * Ordinary activation applies only to releases. A preview reaches the live site
+ * through the separate promotion boundary, which requires its exact manifest
+ * digest and an unchanged base publish epoch.
  */
 function isActivatable(release: Release) {
   return release.kind === 'release' && (release.status === 'ready' || release.status === 'superseded')
@@ -70,6 +72,10 @@ export function ReleasesPage() {
   const client = useQueryClient()
   const [reason, setReason] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const review = useSearch({ strict: false }) as {
+    promotion_release?: string
+    promotion_manifest?: string
+  }
   const fileCount = (count: number | null | undefined) => {
     if (count === null || count === undefined) return t('releases.fileCountUnknown')
     return count === 1 ? t('releases.fileCountOne') : t('releases.fileCountMany', { count })
@@ -79,6 +85,11 @@ export function ReleasesPage() {
   const build = useMutation({ mutationFn: () => ck.releases.create(site, { reason }), onSuccess: invalidate })
   const activate = useMutation({
     mutationFn: (release: string) => ck.releases.activate(site, release),
+    onSuccess: invalidate,
+  })
+  const promote = useMutation({
+    mutationFn: (binding: { release: string; manifest: string }) =>
+      ck.releases.promote(site, binding.release, binding.manifest),
     onSuccess: invalidate,
   })
 
@@ -94,6 +105,15 @@ export function ReleasesPage() {
       (query.state.data ?? []).some((release) => release.status === 'building') || build.isPending ? 3000 : false,
   })
   const refreshing = releases.isFetching
+  const promotionTarget = (releases.data ?? []).find((release) => release.id === review.promotion_release)
+  const promotionBindingValid =
+    promotionTarget?.kind === 'preview' &&
+    promotionTarget.status === 'preview' &&
+    promotionTarget.manifest_sha256 === review.promotion_manifest
+  const promotionCompleted =
+    promotionTarget?.kind === 'release' &&
+    promotionTarget.status === 'active' &&
+    promotionTarget.manifest_sha256 === review.promotion_manifest
 
   // Releases carry revision ids and nothing else; the authoring list is where
   // the titles live. One query resolves them for every expanded row.
@@ -202,6 +222,78 @@ export function ReleasesPage() {
       ) : null}
 
       <PreviewsCard site={site} />
+
+      {review.promotion_release && review.promotion_manifest ? (
+        <Alert className="mb-3" data-testid="promotion-review">
+          <AlertTitle role="heading" aria-level={2} className="mb-2 text-base font-semibold">
+            {t('releases.promotionReviewTitle')}
+          </AlertTitle>
+          <AlertDescription>
+            {promotionBindingValid ? (
+              <>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  {t('releases.promotionReviewDescription', {
+                    site,
+                    revisions: promotionTarget.revision_ids.length,
+                    files: promotionTarget.file_count,
+                    epoch: promotionTarget.base_publish_epoch ?? '—',
+                  })}
+                </p>
+                <dl className="mb-4 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[9rem_1fr]">
+                  <dt className="text-muted-foreground">{t('releases.promotionRelease')}</dt>
+                  <dd className="break-all font-mono">{promotionTarget.id}</dd>
+                  <dt className="text-muted-foreground">{t('releases.promotionManifest')}</dt>
+                  <dd className="break-all font-mono">{review.promotion_manifest}</dd>
+                </dl>
+                {can('release:write') ? (
+                  <Confirm
+                    title={t('releases.promotionConfirmTitle')}
+                    description={t('releases.promotionConfirmDescription', {
+                      site,
+                      release: promotionTarget.id,
+                      manifest: review.promotion_manifest,
+                    })}
+                    confirmLabel={t('releases.promote')}
+                    onConfirm={() =>
+                      promote.mutateAsync({ release: promotionTarget.id, manifest: review.promotion_manifest! })
+                    }
+                  >
+                    {(openDialog) => (
+                      <Button
+                        data-testid="promotion-review-confirm"
+                        variant="outline"
+                        disabled={promote.isPending}
+                        onClick={openDialog}
+                      >
+                        {t('releases.promote')}
+                      </Button>
+                    )}
+                  </Confirm>
+                ) : (
+                  <p className="text-sm text-destructive">{t('releases.promotionScopeMissing')}</p>
+                )}
+                {promote.error ? (
+                  <p className="mt-3 text-sm text-destructive">
+                    {t('releases.promotionError', {
+                      message: promote.error instanceof Error ? promote.error.message : String(promote.error),
+                    })}
+                  </p>
+                ) : null}
+              </>
+            ) : promotionCompleted ? (
+              <p className="text-sm">{t('releases.promotionCompleted')}</p>
+            ) : releases.isPending ? (
+              <SkeletonText
+                lines={2}
+                label={t('releases.promotionLoading')}
+                data-testid="promotion-review-skeleton"
+              />
+            ) : (
+              <p className="text-sm text-destructive">{t('releases.promotionBindingInvalid')}</p>
+            )}
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card className="py-0">
         <Table
