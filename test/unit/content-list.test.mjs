@@ -52,6 +52,7 @@ function fixture({ revisions }) {
 
 const REVISIONS = [
   {
+    id: 'rev-3',
     item_id: 'item-1',
     title: 'A published post',
     slug: 'a-published-post',
@@ -61,6 +62,7 @@ const REVISIONS = [
     created_at: '2026-07-20T10:00:00Z',
   },
   {
+    id: 'rev-4',
     item_id: 'item-2',
     title: 'A draft page',
     slug: 'a-draft-page',
@@ -81,6 +83,7 @@ describe('listContent', () => {
     assert.equal(post.slug, 'a-published-post')
     assert.equal(post.summary, 'One sentence.')
     assert.deepEqual(post.tags, ['contentkit'])
+    assert.equal(post.latest_revision_id, 'rev-3')
 
     // One extra query for the whole page, not one per item.
     assert.equal(queries.length, 1)
@@ -107,6 +110,7 @@ describe('listContent', () => {
     const orphan = items.find((item) => item.id === 'item-3')
     assert.ok(orphan, 'an item without revisions must still be listed')
     assert.equal(orphan.title, undefined)
+    assert.equal(orphan.latest_revision_id, undefined)
     assert.equal(orphan.latest_revision_status, undefined)
   })
 

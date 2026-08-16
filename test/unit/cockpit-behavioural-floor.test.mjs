@@ -290,6 +290,16 @@ const CONTRACTS = [
     min: 1,
   },
   {
+    id: 'confirm/localized-copy-and-identifiers-stay-contained',
+    promise:
+      'A confirmation keeps long localized actions and opaque identifiers inside a responsive panel whose footer can wrap.',
+    incident:
+      'The German preview-promotion action escaped the narrow dialog and the manifest forced the explanatory copy beyond its readable width.',
+    title: /localized actions and opaque identifiers inside a responsive dialog/i,
+    asserts: [/w-\[calc/, /sm:flex-wrap/, /overflow-wrap:anywhere/],
+    min: 1,
+  },
+  {
     id: 'confirm/cancelling-runs-no-mutation',
     promise: 'Cancelling calls nothing.',
     title: /does not run the mutation when it is cancelled/i,
@@ -538,6 +548,16 @@ const CONTRACTS = [
       'A deep-linked promotion review exposes its confirmation only for the exact preview release and manifest digest named by the handoff.',
     title: /deep-linked promotion review only for the exact preview and manifest/i,
     asserts: [/promotion-review-confirm/, /manifest_sha256/, /toBeEnabled/],
+    min: 1,
+  },
+  {
+    id: 'page/releases-promotion-review-explains-content-effect-and-exit',
+    promise:
+      'Before the exact preview can be published, the review names the content, states the immediate live effect and says that leaving changes nothing.',
+    incident:
+      'The former gate led with a release UUID and manifest digest, so an operator could verify the binding but not understand the decision.',
+    title: /names the reviewed content and explains the live effect before confirmation/i,
+    asserts: [/What will be published/, /nothing changes/, /changes immediately/],
     min: 1,
   },
   // ── The site registry: the console's most destructive page ────────────────

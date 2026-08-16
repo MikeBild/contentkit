@@ -479,7 +479,7 @@ export interface paths {
         };
         /**
          * List content items in the authoring workspace
-         * @description Newest first. Each item is merged with its newest revision, so `title`, `slug`, `summary` and `tags` are present without a second call; `latest_revision_status` describes that revision, while `published_revision_id` is what says whether the item is live. Optional `kind` and `locale` filters.
+         * @description Newest first. Each item is merged with its newest revision, so `title`, `slug`, `summary` and `tags` are present without a second call; `latest_revision_id` and `latest_revision_status` identify and describe that revision, while `published_revision_id` is what says whether the item is live. Optional `kind` and `locale` filters.
          */
         get: operations["contentList"];
         put?: never;
@@ -2470,7 +2470,7 @@ export interface components {
             locales: string[];
             rebuild_required: boolean;
         };
-        /** @description A content item merged with its newest revision. Title, slug, summary and tags live on the revision, so an unmerged item row identifies a document only by its translation_key. */
+        /** @description A content item merged with its newest revision. Title, slug, summary and tags live on the revision; latest_revision_id binds those fields to that immutable revision, while published_revision_id separately identifies what is live. */
         ContentItem: {
             /** Format: uuid */
             id: string;
@@ -2486,6 +2486,8 @@ export interface components {
             slug?: string | null;
             summary?: string | null;
             tags?: string[] | null;
+            /** Format: uuid */
+            latest_revision_id?: string | null;
             /** @enum {string|null} */
             latest_revision_status?: "draft" | "scheduled" | "published" | "archived" | null;
             /** Format: date-time */

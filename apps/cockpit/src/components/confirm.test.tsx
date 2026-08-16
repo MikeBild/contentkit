@@ -67,6 +67,20 @@ function Harness({
 }
 
 describe('Confirm — the dialog every destructive operation goes through', () => {
+  it('keeps localized actions and opaque identifiers inside a responsive dialog', async () => {
+    const user = userEvent.setup()
+    render(<Harness onConfirm={() => {}} />)
+
+    await user.click(screen.getByTestId('confirm-trigger'))
+    const dialog = await screen.findByRole('alertdialog')
+    const footer = dialog.querySelector('[data-slot="alert-dialog-footer"]')
+    const description = screen.getByTestId('confirm-description')
+
+    expect(dialog).toHaveClass('w-[calc(100%-2rem)]', 'data-[size=default]:max-w-lg', 'min-w-0')
+    expect(footer).toHaveClass('sm:flex-wrap', 'min-w-0')
+    expect(description).toHaveClass('[overflow-wrap:anywhere]', 'min-w-0')
+  })
+
   it('moves focus INTO the dialog when it opens', async () => {
     const user = userEvent.setup()
     render(<Harness onConfirm={() => {}} />)

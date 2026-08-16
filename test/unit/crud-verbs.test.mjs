@@ -895,13 +895,24 @@ describe('repository deletions', () => {
       async select(table, query) {
         if (table === 'ck_content_items') return query.id === 'eq.item-1' ? [{ id: 'item-1', site_id: 'site-1' }] : []
         if (table === 'ck_content_revisions')
-          return [{ title: 'Newest', slug: 'newest', summary: null, tags: null, status: 'draft', created_at: 'now' }]
+          return [
+            {
+              id: 'revision-2',
+              title: 'Newest',
+              slug: 'newest',
+              summary: null,
+              tags: null,
+              status: 'draft',
+              created_at: 'now',
+            },
+          ]
         return []
       },
     }
     const repo = createRepository({}, db, {})
     const item = await repo.getContentItem('item-1')
     assert.equal(item.title, 'Newest')
+    assert.equal(item.latest_revision_id, 'revision-2')
     assert.equal(item.latest_revision_status, 'draft')
     assert.equal(await repo.getContentItem('missing'), null)
   })

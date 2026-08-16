@@ -124,6 +124,13 @@ export function ReleasesPage() {
     staleTime: 60_000,
   })
   const items = (content.data ?? []) as ContentItem[]
+  const promotionItems =
+    promotionTarget?.revision_ids
+      .map((revisionId) => items.find((item) => item.latest_revision_id === revisionId))
+      .filter((item): item is ContentItem => Boolean(item)) ?? []
+  const visiblePromotionItems = promotionItems.slice(0, 5)
+  const hiddenPromotionItemCount = Math.max(0, promotionItems.length - visiblePromotionItems.length)
+  const promotionRevisionCount = promotionTarget ? promotionTarget.revision_ids.length : 0
 
   if (!site)
     return (
@@ -231,28 +238,86 @@ export function ReleasesPage() {
           <AlertDescription>
             {promotionBindingValid ? (
               <>
-                <p className="mb-3 text-sm text-muted-foreground">
+                <p className="mb-4 text-sm text-muted-foreground">
                   {t('releases.promotionReviewDescription', {
                     site,
-                    revisions: promotionTarget.revision_ids.length,
-                    files: promotionTarget.file_count,
-                    epoch: promotionTarget.base_publish_epoch ?? '—',
                   })}
                 </p>
-                <dl className="mb-4 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[9rem_1fr]">
-                  <dt className="text-muted-foreground">{t('releases.promotionRelease')}</dt>
-                  <dd className="break-all font-mono">{promotionTarget.id}</dd>
-                  <dt className="text-muted-foreground">{t('releases.promotionManifest')}</dt>
-                  <dd className="break-all font-mono">{review.promotion_manifest}</dd>
-                </dl>
+                <div className="mb-4 grid gap-4 sm:grid-cols-2">
+                  <section className="rounded-lg border bg-background/60 p-3" data-testid="promotion-review-content">
+                    <h3 className="mb-2 text-sm font-semibold text-foreground">
+                      {t('releases.promotionContentTitle')}
+                    </h3>
+                    {visiblePromotionItems.length > 0 ? (
+                      <ul className="flex flex-col gap-1 text-sm">
+                        {visiblePromotionItems.map((item) => (
+                          <li key={item.id}>
+                            <span className="font-medium text-foreground">{item.title || item.translation_key}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {item.locale} · /{item.slug || item.translation_key}
+                            </span>
+                          </li>
+                        ))}
+                        {hiddenPromotionItemCount > 0 ? (
+                          <li className="text-muted-foreground">
+                            {t('releases.promotionContentMore', { count: hiddenPromotionItemCount })}
+                          </li>
+                        ) : null}
+                      </ul>
+                    ) : (
+                      <p className="text-sm">
+                        {t('releases.promotionContentCount', { count: promotionRevisionCount })}
+                      </p>
+                    )}
+                  </section>
+                  <section className="rounded-lg border bg-background/60 p-3">
+                    <h3 className="mb-2 text-sm font-semibold text-foreground">
+                      {t('releases.promotionEffectTitle')}
+                    </h3>
+                    <p className="text-sm">{t('releases.promotionEffectDescription', { site })}</p>
+                  </section>
+                </div>
+                <p className="mb-4 text-sm font-medium text-foreground">
+                  {t('releases.promotionNextStep')}
+                </p>
                 {can('release:write') ? (
                   <Confirm
                     title={t('releases.promotionConfirmTitle')}
-                    description={t('releases.promotionConfirmDescription', {
-                      site,
-                      release: promotionTarget.id,
-                      manifest: review.promotion_manifest,
-                    })}
+                    description={
+                      <div className="flex flex-col gap-3 text-left">
+                        <p className="font-medium text-foreground">
+                          {t('releases.promotionConfirmContent', { count: promotionRevisionCount })}
+                        </p>
+                        {visiblePromotionItems.length > 0 ? (
+                          <ul className="flex list-disc flex-col gap-1 pl-5 text-foreground">
+                            {visiblePromotionItems.map((item) => (
+                              <li key={item.id}>{item.title || item.translation_key}</li>
+                            ))}
+                            {hiddenPromotionItemCount > 0 ? (
+                              <li>{t('releases.promotionContentMore', { count: hiddenPromotionItemCount })}</li>
+                            ) : null}
+                          </ul>
+                        ) : null}
+                        <p>{t('releases.promotionConfirmEffect', { site })}</p>
+                        <p>{t('releases.promotionConfirmGuard')}</p>
+                        <details className="rounded-md border p-3 text-xs" data-testid="promotion-technical-details">
+                          <summary
+                            className="cursor-pointer font-medium text-foreground"
+                            data-testid="promotion-dialog-technical-toggle"
+                          >
+                            {t('releases.promotionTechnicalDetails')}
+                          </summary>
+                          <dl className="mt-3 grid min-w-0 gap-x-3 gap-y-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
+                            <dt>{t('releases.promotionRelease')}</dt>
+                            <dd className="break-all font-mono text-foreground">{promotionTarget.id}</dd>
+                            <dt>{t('releases.promotionManifest')}</dt>
+                            <dd className="break-all font-mono text-foreground">{review.promotion_manifest}</dd>
+                            <dt>{t('releases.promotionBaseEpoch')}</dt>
+                            <dd className="font-mono text-foreground">{promotionTarget.base_publish_epoch ?? '—'}</dd>
+                          </dl>
+                        </details>
+                      </div>
+                    }
                     confirmLabel={t('releases.promote')}
                     onConfirm={() =>
                       promote.mutateAsync({ release: promotionTarget.id, manifest: review.promotion_manifest! })
@@ -279,6 +344,24 @@ export function ReleasesPage() {
                     })}
                   </p>
                 ) : null}
+                <details className="mt-4 rounded-lg border p-3 text-xs" data-testid="promotion-review-technical-details">
+                  <summary
+                    className="cursor-pointer font-medium text-foreground"
+                    data-testid="promotion-review-technical-toggle"
+                  >
+                    {t('releases.promotionTechnicalDetails')}
+                  </summary>
+                  <dl className="mt-3 grid min-w-0 gap-x-4 gap-y-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                    <dt className="text-muted-foreground">{t('releases.promotionRelease')}</dt>
+                    <dd className="break-all font-mono">{promotionTarget.id}</dd>
+                    <dt className="text-muted-foreground">{t('releases.promotionManifest')}</dt>
+                    <dd className="break-all font-mono">{review.promotion_manifest}</dd>
+                    <dt className="text-muted-foreground">{t('releases.promotionBaseEpoch')}</dt>
+                    <dd className="font-mono">{promotionTarget.base_publish_epoch ?? '—'}</dd>
+                    <dt className="text-muted-foreground">{t('releases.files')}</dt>
+                    <dd>{fileCount(promotionTarget.file_count)}</dd>
+                  </dl>
+                </details>
               </>
             ) : promotionCompleted ? (
               <p className="text-sm">{t('releases.promotionCompleted')}</p>

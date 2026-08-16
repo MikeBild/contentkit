@@ -1033,6 +1033,122 @@ try {
     await context.close()
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Case 10 — the exact-preview gate is understandable and contained at the
+  // desktop breakpoint where German copy used to escape its 384px dialog.
+  //
+  // This is not covered by the route matrix: the gate exists only behind an
+  // exact release+manifest deep link, and its AlertDialog is opened by a second
+  // interaction. jsdom cannot measure the failure this guards — the old footer
+  // placed the primary action outside the dialog while every DOM test passed.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    await context.addInitScript(() => localStorage.setItem('ck-cockpit-locale', 'de'))
+    const page = await context.newPage()
+    watch(page)
+
+    const releasesResponse = await page.request.get(`${fixture.origin}/v1/sites/canary/releases`)
+    const releaseRows = await releasesResponse.json()
+    const preview = releaseRows.find(
+      (release) =>
+        release.kind === 'preview' && release.status === 'preview' && typeof release.manifest_sha256 === 'string',
+    )
+    if (
+      expect(
+        Boolean(preview),
+        '1280×800 /releases: the generated fixture has no promotable exact preview, so the human gate cannot be validated.',
+      )
+    ) {
+      const params = new URLSearchParams({
+        site: 'canary',
+        promotion_release: preview.id,
+        promotion_manifest: preview.manifest_sha256,
+      })
+      await page.goto(`${fixture.origin}/cockpit/releases?${params}`)
+      await page.waitForSelector('[data-testid="promotion-review-confirm"]', { timeout: 15_000 })
+      await page.locator('[data-testid="promotion-review-confirm"]').click()
+      await page.locator('[role="alertdialog"]').waitFor({ state: 'visible', timeout: 5000 })
+      await settled(page)
+
+      const collapsed = await page.evaluate((expectedRelease) => {
+        const dialog = document.querySelector('[role="alertdialog"]')
+        if (!dialog) return null
+        const box = dialog.getBoundingClientRect()
+        const footer = dialog.querySelector('[data-slot="alert-dialog-footer"]')
+        const footerBox = footer?.getBoundingClientRect()
+        const buttons = [...dialog.querySelectorAll('button')].map((button) => {
+          const buttonBox = button.getBoundingClientRect()
+          return { left: buttonBox.left, right: buttonBox.right, top: buttonBox.top, bottom: buttonBox.bottom }
+        })
+        return {
+          text: dialog.innerText,
+          releaseVisible: dialog.innerText.includes(expectedRelease),
+          contained:
+            box.left >= 0 &&
+            box.right <= window.innerWidth &&
+            box.top >= 0 &&
+            box.bottom <= window.innerHeight &&
+            dialog.scrollWidth <= dialog.clientWidth + 1,
+          footerContained:
+            Boolean(footerBox) &&
+            footerBox.left >= box.left - 1 &&
+            footerBox.right <= box.right + 1 &&
+            footerBox.bottom <= box.bottom + 1,
+          buttonsContained: buttons.every(
+            (button) =>
+              button.left >= box.left - 1 &&
+              button.right <= box.right + 1 &&
+              button.top >= box.top - 1 &&
+              button.bottom <= box.bottom + 1,
+          ),
+        }
+      }, preview.id)
+      note({ case: 'exact-preview-human-gate', state: 'collapsed', ...collapsed })
+
+      expect(
+        collapsed !== null && collapsed.contained && collapsed.footerContained && collapsed.buttonsContained,
+        '1280×800 /releases: the exact-preview confirmation or one of its actions escapes the dialog or viewport.',
+      )
+      expect(
+        collapsed !== null && /Jetzt veröffentlichen/.test(collapsed.text) && /ändert sich sofort/.test(collapsed.text),
+        '1280×800 /releases: the gate does not state the operator action and its immediate live effect in German.',
+      )
+      expect(
+        collapsed !== null && /Sicherheitsprüfung/.test(collapsed.text),
+        '1280×800 /releases: the gate does not explain that drift is rejected.',
+      )
+      expect(
+        collapsed !== null && !collapsed.releaseVisible,
+        '1280×800 /releases: the opaque release UUID dominates the decision before technical details are opened.',
+      )
+
+      await page.locator('[data-testid="promotion-dialog-technical-toggle"]').click()
+      await settled(page)
+      const expanded = await page.evaluate((expectedRelease) => {
+        const dialog = document.querySelector('[role="alertdialog"]')
+        const details = document.querySelector('[data-testid="promotion-technical-details"]')
+        if (!dialog || !details) return null
+        const dialogBox = dialog.getBoundingClientRect()
+        const detailBox = details.getBoundingClientRect()
+        return {
+          releaseVisible: details.innerText.includes(expectedRelease),
+          contained:
+            detailBox.left >= dialogBox.left - 1 &&
+            detailBox.right <= dialogBox.right + 1 &&
+            details.scrollWidth <= details.clientWidth + 1 &&
+            dialogBox.bottom <= window.innerHeight,
+        }
+      }, preview.id)
+      note({ case: 'exact-preview-human-gate', state: 'expanded', ...expanded })
+      expect(
+        expanded !== null && expanded.releaseVisible && expanded.contained,
+        '1280×800 /releases: expanded audit identifiers are missing or overflow the exact-preview dialog.',
+      )
+    }
+    await context.close()
+  }
+
   expect(
     fixture.unanswered.length === 0,
     `The console asked for endpoints the fixture could not answer, so some page rendered against nothing: ${[...new Set(fixture.unanswered)].join('; ')}`,
@@ -1074,6 +1190,7 @@ if (failures.length > 0) {
           "a tab's count equals the list behind it, and the open tab's count is deferred rather than dropped",
           'at 390 nothing scrolls sideways, and no row keeps its own controls off screen',
           "at 390×667 a dialog's footer is inside the dialog and inside the window",
+          'the German exact-preview gate explains the action and keeps hidden audit identifiers plus all actions inside the dialog',
         ],
         known_horizontal_overflow: [...KNOWN_HORIZONTAL_OVERFLOW],
         measurements: observations.length,

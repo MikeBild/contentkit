@@ -69,11 +69,15 @@ export const SITES = [
   { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', slug: 'vantage', name: 'Vantage Product Docs' },
 ]
 
-/** The scopes every NAV entry in apps/cockpit/src/app/shell.tsx names. */
+/**
+ * The scopes needed to expose every navigation entry plus the release actions
+ * whose confirmation geometry the browser suite drives explicitly.
+ */
 export const OPERATOR_SCOPES = [
   'stats:read',
   'content:read',
   'content:write',
+  'release:write',
   'access:admin',
   'webhook:admin',
   'site:admin',

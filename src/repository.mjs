@@ -171,6 +171,10 @@ function withLatestRevision(item, revision) {
     slug: revision.slug,
     summary: revision.summary,
     tags: revision.tags,
+    // The id makes the merged fields auditable. Without it a consumer can read
+    // the newest title but cannot prove which immutable revision supplied it —
+    // in particular, a preview release carries revision ids and no titles.
+    latest_revision_id: revision.id,
     // What the newest revision is, which is not the same question as whether
     // the item is live: published_revision_id answers that.
     latest_revision_status: revision.status,
@@ -1232,7 +1236,7 @@ export function createRepository(config, db, storage) {
       })
       if (!items.length || !db.query) return items
       const latest = await db.query(
-        `SELECT DISTINCT ON (item_id) item_id, title, slug, summary, tags, status, created_at
+        `SELECT DISTINCT ON (item_id) id, item_id, title, slug, summary, tags, status, created_at
            FROM ck_content_revisions
           WHERE item_id = ANY($1::uuid[])
           ORDER BY item_id, created_at DESC`,

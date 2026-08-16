@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
@@ -77,7 +78,23 @@ vi.mock('@/api/ck', () => ({
       promote: () => Promise.resolve({}),
       remove: () => Promise.resolve({}),
     },
-    content: { list: () => Promise.resolve([]) },
+    content: {
+      list: () =>
+        Promise.resolve([
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            site_id: 'site-1',
+            kind: 'post',
+            locale: 'de',
+            translation_key: 'contentkit-cockpit',
+            published_revision_id: null,
+            latest_revision_id: '22222222-2222-4222-8222-222222222222',
+            latest_revision_status: 'draft',
+            title: 'ContentKit: Cockpit and API on one domain',
+            slug: 'contentkit-cockpit',
+          },
+        ]),
+    },
   },
 }))
 
@@ -100,6 +117,25 @@ describe('Releases — a build in flight', () => {
     expect(review).toHaveTextContent(promotable.id)
     expect(review).toHaveTextContent(promotable.manifest_sha256)
     expect(within(review).getByTestId('promotion-review-confirm')).toBeEnabled()
+  })
+
+  it('names the reviewed content and explains the live effect before confirmation', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const review = await screen.findByTestId('promotion-review')
+    await within(review).findByTestId('promotion-review-confirm')
+    expect(within(review).getByText('ContentKit: Cockpit and API on one domain')).toBeInTheDocument()
+    expect(review).toHaveTextContent('What will be published')
+    expect(review).toHaveTextContent('What happens')
+    expect(review).toHaveTextContent('nothing changes')
+
+    await user.click(within(review).getByRole('button', { name: 'Publish now' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveAccessibleName('Publish the reviewed preview now?')
+    expect(dialog).toHaveTextContent('ContentKit: Cockpit and API on one domain')
+    expect(dialog).toHaveTextContent('changes immediately')
+    expect(within(dialog).getByText('Show technical verification details')).toBeInTheDocument()
   })
 
   it('says a build is running', async () => {

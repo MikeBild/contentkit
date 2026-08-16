@@ -720,7 +720,7 @@ export function openApi(config) {
         ContentItem: {
           type: 'object',
           description:
-            'A content item merged with its newest revision. Title, slug, summary and tags live on the revision, so an unmerged item row identifies a document only by its translation_key.',
+            'A content item merged with its newest revision. Title, slug, summary and tags live on the revision; latest_revision_id binds those fields to that immutable revision, while published_revision_id separately identifies what is live.',
           required: ['id', 'site_id', 'kind', 'locale', 'translation_key'],
           properties: {
             id: { type: 'string', format: 'uuid' },
@@ -733,6 +733,7 @@ export function openApi(config) {
             slug: { type: ['string', 'null'] },
             summary: { type: ['string', 'null'] },
             tags: { type: ['array', 'null'], items: { type: 'string' } },
+            latest_revision_id: { type: ['string', 'null'], format: 'uuid' },
             latest_revision_status: {
               type: ['string', 'null'],
               enum: ['draft', 'scheduled', 'published', 'archived', null],
@@ -2085,7 +2086,7 @@ export function openApi(config) {
           operationId: 'contentList',
           summary: 'List content items in the authoring workspace',
           description:
-            'Newest first. Each item is merged with its newest revision, so `title`, `slug`, `summary` and `tags` are present without a second call; `latest_revision_status` describes that revision, while `published_revision_id` is what says whether the item is live. Optional `kind` and `locale` filters.',
+            'Newest first. Each item is merged with its newest revision, so `title`, `slug`, `summary` and `tags` are present without a second call; `latest_revision_id` and `latest_revision_status` identify and describe that revision, while `published_revision_id` is what says whether the item is live. Optional `kind` and `locale` filters.',
           security: secured,
           parameters: [
             siteParameter,
