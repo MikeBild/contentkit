@@ -199,7 +199,8 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       const status = res.headersSent
         ? res.statusCode
         : error.statusCode || (error.status >= 400 && error.status < 600 ? error.status : 500)
-      logger.error('request failed', {
+      const log = status >= 500 ? logger.error.bind(logger) : logger.warn.bind(logger)
+      log(status >= 500 ? 'request failed' : 'request rejected', {
         request_id: requestId,
         trace_id: trace.traceId,
         span_id: trace.spanId,

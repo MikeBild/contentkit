@@ -9,7 +9,7 @@ const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 // Drives the request listener directly with a fake req/res pair: these tests
 // are about the error middleware around handle(), not about routing, so no
 // socket is needed and the response object can be shaped per scenario.
-function appWithFailingHandler(errors) {
+function appWithFailingHandler(errors, warnings = []) {
   return createApp(
     {
       publicUrl: 'https://contentkit-api.example',
@@ -21,7 +21,9 @@ function appWithFailingHandler(errors) {
     {
       logger: {
         info() {},
-        warn() {},
+        warn(message, fields) {
+          warnings.push({ message, fields })
+        },
         debug() {},
         error(message, fields) {
           errors.push({ message, fields })
@@ -64,8 +66,8 @@ function fakeResponse({ headersSent = false, statusCode = 200 } = {}) {
   return { res, writes }
 }
 
-async function dispatch(app, res) {
-  app.server.emit('request', { method: 'GET', url: '/', headers: { host: 'site.example' } }, res)
+async function dispatch(app, res, url = '/') {
+  app.server.emit('request', { method: 'GET', url, headers: { host: 'site.example' } }, res)
   // handle() rejects asynchronously; give the catch a few microtask turns.
   for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve))
   app.limiter.stop()
@@ -95,4 +97,18 @@ test('an uncommitted failure still answers with a JSON 500', async () => {
   const body = JSON.parse(writes[1].payload)
   assert.equal(body.error, 'internal error')
   assert.equal(body.request_id, errors[0].fields.request_id)
+})
+
+test('an invalid client path is a warning, not a service error', async () => {
+  const errors = []
+  const warnings = []
+  const app = appWithFailingHandler(errors, warnings)
+  const { res, writes } = fakeResponse()
+  await dispatch(app, res, '/assets/%00secret')
+  assert.equal(errors.length, 0)
+  assert.equal(warnings.length, 1)
+  assert.equal(warnings[0].message, 'request rejected')
+  assert.equal(warnings[0].fields.status, 400)
+  assert.equal(writes[0].status, 400)
+  assert.equal(JSON.parse(writes[1].payload).error, 'invalid path')
 })
