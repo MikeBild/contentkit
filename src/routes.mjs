@@ -554,13 +554,28 @@ export function createRequestHandler(ctx) {
     'x-frame-options': 'DENY',
     'referrer-policy': 'no-referrer',
   })
-  const previewInvitationPage = (access) =>
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Open ContentKit preview</title><style>body{font:16px ${contentkitFontFamily};margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.preview{width:min(90%,30rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}button{display:block;width:100%;box-sizing:border-box;font:inherit;padding:.75rem;margin-top:1.25rem;border:1px solid #172033;border-radius:.5rem;background:#172033;color:white;cursor:pointer}.meta{color:#526078;font-size:.875rem}</style></head><body><main class="preview"><h1>Open protected preview</h1><p>This link grants access to the immutable preview <strong>${escapeHtml(access.slug)}</strong>. Continue only if you intended to review it.</p><p class="meta">The invitation remains unused until you press the button.</p><form method="post"><input type="hidden" name="confirm" value="open-preview"><button type="submit">Open preview</button></form></main></body></html>`
-  const previewInvitationHeaders = {
+  const browserErrorPage = (req, kind) => {
+    const de = /(?:^|,)\s*de(?:-|;|,|$)/i.test(String(req.headers['accept-language'] || ''))
+    const copy = {
+      invitation: de
+        ? [
+            'Vorschau nicht verfügbar',
+            'Dieser Vorschau-Link ist ungültig, abgelaufen oder wurde widerrufen. Bitte fordere einen neuen Link an.',
+          ]
+        : ['Preview unavailable', 'This preview link is invalid, expired, or revoked. Please request a new link.'],
+      access: de
+        ? ['Vorschau-Link erforderlich', 'Öffne den persönlichen Vorschau-Link, um diese Vorschau anzusehen.']
+        : ['Preview link required', 'Open the preview invitation link to view this preview.'],
+      missing: de
+        ? ['Vorschau nicht gefunden', 'Diese Vorschau ist nicht mehr verfügbar.']
+        : ['Preview not found', 'This preview is no longer available.'],
+    }[kind]
+    return `<!doctype html><html lang="${de ? 'de' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>${escapeHtml(copy[0])} · ContentKit</title><style>body{font:16px ${contentkitFontFamily};margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.error{width:min(90%,30rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}h1{margin-top:0}p{color:#526078;line-height:1.6;margin-bottom:0}</style></head><body><main class="error"><h1>${escapeHtml(copy[0])}</h1><p>${escapeHtml(copy[1])}</p></main></body></html>`
+  }
+  const browserErrorHeaders = {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'private,no-store',
-    'content-security-policy':
-      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
     'x-frame-options': 'DENY',
     'referrer-policy': 'no-referrer',
     'x-robots-tag': 'noindex,nofollow,noarchive',
@@ -947,14 +962,12 @@ export function createRequestHandler(ctx) {
       const sessionToken = cookies[PREVIEW_COOKIE] || cookies[INSECURE_PREVIEW_COOKIE]
       const access = await repo.authenticatePreview(preview[1], sessionToken)
       if (!access)
-        return sendJson(
-          res,
-          401,
-          { error: 'preview invitation required' },
-          { 'cache-control': 'private,no-store', 'www-authenticate': 'ContentKitPreview' },
-        )
+        return send(res, 401, browserErrorPage(req, 'access'), {
+          ...browserErrorHeaders,
+          'www-authenticate': 'ContentKitPreview',
+        })
       const release = await repo.getRelease(access.release_id)
-      if (!release) return sendJson(res, 404, { error: 'preview not found' })
+      if (!release) return send(res, 404, browserErrorPage(req, 'missing'), browserErrorHeaders)
       markUsageContext(req, { siteId: release.site_id, sessionId: sessionToken, requestSource: 'gateway' })
       await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/previews/${preview[1]}`)
       return true
@@ -1091,24 +1104,15 @@ export function createRequestHandler(ctx) {
     // or a 404 — never contentkit's documentation or its request telemetry.
     const apiHost = isApiHost(req, config)
     const invitation = apiHost && path.match(/^\/preview-invitations\/([^/]+)$/)
-    if (invitation && req.method === 'GET') {
+    if (invitation && ['GET', 'POST'].includes(req.method)) {
       const access = await repo.getPreviewInvitation(invitation[1])
-      if (!access) return sendJson(res, 404, { error: 'preview invitation not found' })
-      return send(res, 200, previewInvitationPage(access), previewInvitationHeaders)
-    }
-    if (invitation && req.method === 'POST') {
-      const body = new URLSearchParams((await readBody(req, 1024)).toString('utf8'))
-      if (body.get('confirm') !== 'open-preview') {
-        return sendJson(res, 422, { error: 'preview invitation confirmation required' })
-      }
-      const access = await repo.exchangePreviewInvitation(invitation[1])
-      if (!access) return sendJson(res, 404, { error: 'preview invitation not found' })
+      if (!access) return send(res, 404, browserErrorPage(req, 'invitation'), browserErrorHeaders)
       const maxAge = Math.max(1, Math.floor((new Date(access.expires_at).getTime() - Date.now()) / 1000))
       const secure = String(config.publicUrl || '').startsWith('https://')
       return send(res, 303, '', {
         location: `/previews/${access.slug}/`,
         'cache-control': 'private,no-store',
-        'set-cookie': previewSessionCookie(access.token, access.slug, { secure, maxAge }),
+        'set-cookie': previewSessionCookie(invitation[1], access.slug, { secure, maxAge }),
         'referrer-policy': 'no-referrer',
         'x-robots-tag': 'noindex,nofollow,noarchive',
       })

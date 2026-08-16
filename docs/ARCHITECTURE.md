@@ -126,9 +126,10 @@ provision the database and login; they do not copy or execute migration files.
   Contentkit renderer and PNG uses a bundled font rather than host fonts.
 - Deck compilation is executable trusted source gated by `deck:render`; its
   child process never receives database, storage, webhook or API secrets.
-- Preview invitation and session tokens are random, stored only as separate
-  hashes, expiring and revocable. A one-time invitation exchanges into a
-  path-scoped HttpOnly cookie before the browser reaches the named preview URL.
+- Preview invitation and legacy session tokens are random, stored only as
+  separate hashes, expiring and revocable. Opening an invitation places it in a
+  path-scoped HttpOnly cookie before the browser reaches the named preview URL;
+  the invitation remains usable until expiry, revocation or replacement.
 - Public writes pass Turnstile, honeypot, length and in-memory IP rate limits.
 - Contentkit signs exact webhook bytes using Standard Webhooks HMAC-SHA256; the
   HMAC key is the full `whsec_...` secret string verbatim (not base64-decoded).

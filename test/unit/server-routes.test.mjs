@@ -382,14 +382,14 @@ async function withApp(
   }
 }
 
-test('preview invitation GET is scanner-safe and POST exchanges it into a path-scoped session', async () => {
+test('preview invitation redirects directly, remains reusable and renders browser errors as HTML', async () => {
   let exchanges = 0
   await withApp(
     {
       config: { publicUrl: 'http://127.0.0.1' },
       repo: {
         async getPreviewInvitation(token) {
-          assert.equal(token, 'secret-token')
+          if (token !== 'secret-token') return null
           return {
             slug: 'article-review',
             release_id: 'release-1',
@@ -408,33 +408,27 @@ test('preview invitation GET is scanner-safe and POST exchanges it into a path-s
       },
     },
     async (request) => {
-      const landing = await request('/preview-invitations/secret-token')
-      assert.equal(landing.status, 200)
-      assert.match(landing.headers.get('content-type'), /^text\/html/)
-      assert.equal(landing.headers.get('set-cookie'), null)
-      assert.match(await landing.text(), /method="post"/)
+      const landing = await request('/preview-invitations/secret-token', { redirect: 'manual' })
+      assert.equal(landing.status, 303)
+      assert.equal(landing.headers.get('location'), '/previews/article-review/')
+      assert.match(landing.headers.get('set-cookie'), /^contentkit_preview=secret-token/)
+      assert.match(landing.headers.get('set-cookie'), /Path=\/previews\/article-review\//)
+      assert.match(landing.headers.get('set-cookie'), /HttpOnly/)
+      assert.equal(landing.headers.get('referrer-policy'), 'no-referrer')
       assert.equal(exchanges, 0)
 
-      const missingConfirmation = await request('/preview-invitations/secret-token', {
-        method: 'POST',
-        body: '',
-      })
-      assert.equal(missingConfirmation.status, 422)
+      const repeated = await request('/preview-invitations/secret-token', { redirect: 'manual' })
+      assert.equal(repeated.status, 303)
+      assert.equal(repeated.headers.get('location'), '/previews/article-review/')
       assert.equal(exchanges, 0)
 
-      const response = await request('/preview-invitations/secret-token', {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: 'confirm=open-preview',
-        redirect: 'manual',
+      const missing = await request('/preview-invitations/missing', {
+        headers: { 'accept-language': 'de-DE,de;q=0.9' },
       })
-      assert.equal(response.status, 303)
-      assert.equal(response.headers.get('location'), '/previews/article-review/')
-      assert.match(response.headers.get('set-cookie'), /^contentkit_preview=/)
-      assert.match(response.headers.get('set-cookie'), /Path=\/previews\/article-review\//)
-      assert.match(response.headers.get('set-cookie'), /HttpOnly/)
-      assert.equal(response.headers.get('referrer-policy'), 'no-referrer')
-      assert.equal(exchanges, 1)
+      assert.equal(missing.status, 404)
+      assert.match(missing.headers.get('content-type'), /^text\/html/)
+      assert.match(await missing.text(), /Vorschau nicht verfügbar/)
+      assert.equal(exchanges, 0)
     },
   )
 })

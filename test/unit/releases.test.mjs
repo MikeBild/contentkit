@@ -177,7 +177,7 @@ test('a failed build marks the release failed, emits an event and cleans up uplo
   assert.deepEqual([...storage.removed].sort(), [...storage.uploaded].sort(), 'partial uploads must be removed')
 })
 
-test('preview returns a named URL plus one-time invitation and stores only hashes', async () => {
+test('preview returns a named URL plus an expiring invitation and stores only hashes', async () => {
   const db = makeDb()
   const releases = createReleaseManager(config, makeRepo(), db, makeStorage(), logger)
 

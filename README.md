@@ -96,7 +96,7 @@ Local state lives in the Docker volume `contentkit-local-postgres` and
   download link, blogcast feed, a per-locale blogcast page at
   `/{locale}/blogcast/`, budgets and automatic rebuilds.
 - A per-site `llms.txt` and `llms-full.txt` for AI agents, per locale.
-- Named, session-protected previews with one-time invitations and pointer-based instant rollback.
+- Named, session-protected previews with expiring invitation links and pointer-based instant rollback.
 - Scoped API keys, moderated guest comments and contact submissions.
 - A domain-driven remote MCP API at `/mcp` with scope-filtered tools,
   resources and prompts for published knowledge, authoring, semantic visual
@@ -277,12 +277,11 @@ curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
   -d '{"revision_ids":["<revision-id>"],"reason":"initial release"}'
 ```
 
-The preview response separates access from navigation. Send the one-time
-`invitation_url` to the reviewer. Its scanner-safe GET shows a confirmation
-page without consuming the invitation. An explicit button POST creates a
-path-scoped HttpOnly session and redirects to the memorable `preview_url`, for
-example `/previews/article-review/`. The invitation cannot be exchanged a
-second time.
+The preview response separates access from navigation. Send the expiring
+`invitation_url` to the reviewer. Opening it creates a path-scoped HttpOnly
+session and redirects immediately to the memorable `preview_url`, for example
+`/previews/article-review/`. The invitation can be opened again until it
+expires, is revoked or is replaced by a newer preview with the same slug.
 The response also returns `release_id`, `manifest_sha256` and
 `base_publish_epoch`. After review, activate those exact rendered bytes without
 another build:

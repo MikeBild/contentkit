@@ -72,7 +72,7 @@ test('does not resolve root hosts or unverified wildcard domains', async () => {
   assert.equal(await repo.getSiteByHost('www.unverified.dev'), null)
 })
 
-test('preview invitations exchange once into a separately hashed session', async () => {
+test('preview invitations remain reusable until expiry or revocation and legacy sessions still authenticate', async () => {
   const invite = {
     id: 'preview-access-1',
     release_id: 'release-1',
@@ -86,7 +86,10 @@ test('preview invitations exchange once into a separately hashed session', async
     },
     async select(table, query) {
       assert.equal(table, 'ck_preview_access')
-      if (query.invite_token_hash) return consumed ? [] : [invite]
+      if (query.invite_token_hash) {
+        assert.equal(query.invite_token_hash, 'eq.' + invite.invite_token_hash)
+        return [invite]
+      }
       if (query.slug === 'eq.article-review' && query.session_token_hash === `eq.${invite.session_token_hash}`) {
         return [invite]
       }
@@ -102,6 +105,7 @@ test('preview invitations exchange once into a separately hashed session', async
     },
   }
   const repo = createRepository({ previewSecret: 'preview-secret' }, db, {})
+  invite.invite_token_hash = 'b74c95320c2363d98d5f7b98a96d46265254450316d6f6c7772ad931b7e9a85c'
   assert.deepEqual(await repo.getPreviewInvitation('one-time-secret'), {
     slug: 'article-review',
     release_id: 'release-1',
@@ -112,7 +116,12 @@ test('preview invitations exchange once into a separately hashed session', async
   assert.match(invite.session_token_hash, /^[0-9a-f]{64}$/)
   assert.ok(!invite.session_token_hash.includes(exchanged.token))
   assert.equal(await repo.exchangePreviewInvitation('one-time-secret'), null)
-  assert.equal(await repo.getPreviewInvitation('one-time-secret'), null)
+  assert.deepEqual(await repo.getPreviewInvitation('one-time-secret'), {
+    slug: 'article-review',
+    release_id: 'release-1',
+    expires_at: invite.expires_at,
+  })
+  assert.equal((await repo.authenticatePreview('article-review', 'one-time-secret')).release_id, 'release-1')
   assert.equal((await repo.authenticatePreview('article-review', exchanged.token)).release_id, 'release-1')
 })
 

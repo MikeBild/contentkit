@@ -2834,7 +2834,7 @@ export function openApi(config) {
           operationId: 'previewCreate',
           summary: 'Build a named, time-limited preview',
           description:
-            'Builds an immutable preview and replaces any prior preview with the same slug. The response separates the one-time secret invitation URL from the memorable session-protected preview URL. Opening the invitation atomically consumes it, creates a path-scoped HttpOnly session and redirects to the preview URL.',
+            'Builds an immutable preview and replaces any prior preview with the same slug. The response separates the secret invitation URL from the memorable session-protected preview URL. Opening the invitation creates a path-scoped HttpOnly preview session and redirects immediately. The invitation remains usable until it expires, is revoked or is replaced by a newer preview with the same slug.',
           security: secured,
           parameters: [siteParameter],
           requestBody: {
@@ -2887,7 +2887,8 @@ export function openApi(config) {
                       invitation_url: {
                         type: 'string',
                         format: 'uri',
-                        description: 'Secret one-time URL. Distribute it only to the intended reviewer.',
+                        description:
+                          'Secret expiring URL. It remains reusable until expiry, revocation or replacement; distribute it only to intended reviewers.',
                       },
                       expires_in: { type: 'integer' },
                     },
@@ -2902,9 +2903,9 @@ export function openApi(config) {
       '/preview-invitations/{token}': {
         get: {
           operationId: 'previewInvitationOpen',
-          summary: 'Open a scanner-safe preview invitation',
+          summary: 'Open a preview invitation',
           description:
-            'Returns a no-store confirmation page without consuming the invitation. Link scanners and browser prefetches can safely fetch this page. A consumed, expired, revoked or unknown invitation returns 404.',
+            'Sets a path-scoped HttpOnly preview cookie and redirects immediately to the named preview. The invitation is an expiring, revocable bearer capability and may be opened again. An expired, revoked, replaced or unknown invitation returns a human-readable HTML error page.',
           security: [],
           parameters: [
             {
@@ -2915,51 +2916,48 @@ export function openApi(config) {
               description: 'Secret invitation value returned once by the preview build endpoint.',
             },
           ],
-          responses: {
-            200: {
-              description: 'Human confirmation page; the invitation remains unused',
-              content: { 'text/html': { schema: { type: 'string' } } },
-            },
-            404: { description: 'Invitation unavailable' },
-          },
-        },
-        post: {
-          operationId: 'previewInvitationRedeem',
-          summary: 'Confirm and exchange a one-time preview invitation',
-          description:
-            'Consumes the invitation only after an explicit form submission, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.',
-          security: [],
-          parameters: [
-            {
-              name: 'token',
-              in: 'path',
-              required: true,
-              schema: { type: 'string' },
-              description: 'Secret invitation value returned once by the preview build endpoint.',
-            },
-          ],
-          requestBody: {
-            required: true,
-            content: {
-              'application/x-www-form-urlencoded': {
-                schema: {
-                  type: 'object',
-                  required: ['confirm'],
-                  properties: { confirm: { type: 'string', enum: ['open-preview'] } },
-                },
-              },
-            },
-          },
           responses: {
             303: {
-              description: 'Invitation exchanged; redirect to the clean preview URL',
+              description: 'Preview access established; redirect to the clean preview URL',
               headers: {
                 Location: { schema: { type: 'string' } },
                 'Set-Cookie': { schema: { type: 'string' } },
               },
             },
-            422: { description: 'Explicit preview confirmation is missing' },
-            404: { description: 'Invitation unavailable' },
+            404: {
+              description: 'Invitation unavailable; rendered as a browser-friendly HTML page',
+              content: { 'text/html': { schema: { type: 'string' } } },
+            },
+          },
+        },
+        post: {
+          operationId: 'previewInvitationRedeem',
+          summary: 'Open a preview invitation using the legacy POST method',
+          description:
+            'Backward-compatible alias for GET. No confirmation body is required. Sets the same path-scoped HttpOnly preview cookie and redirects to the named preview URL.',
+          deprecated: true,
+          security: [],
+          parameters: [
+            {
+              name: 'token',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Secret invitation value returned once by the preview build endpoint.',
+            },
+          ],
+          responses: {
+            303: {
+              description: 'Preview access established; redirect to the clean preview URL',
+              headers: {
+                Location: { schema: { type: 'string' } },
+                'Set-Cookie': { schema: { type: 'string' } },
+              },
+            },
+            404: {
+              description: 'Invitation unavailable; rendered as a browser-friendly HTML page',
+              content: { 'text/html': { schema: { type: 'string' } } },
+            },
           },
         },
       },

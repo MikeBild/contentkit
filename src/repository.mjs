@@ -1699,7 +1699,6 @@ export function createRepository(config, db, storage) {
       const inviteHash = sha256(`${config.previewSecret}:invite:${token}`)
       const invite = await one('ck_preview_access', {
         invite_token_hash: `eq.${inviteHash}`,
-        consumed_at: 'is.null',
         revoked_at: 'is.null',
       })
       return invite && new Date(invite.expires_at).getTime() > Date.now()
@@ -1742,11 +1741,18 @@ export function createRepository(config, db, storage) {
     },
     async authenticatePreview(slug, token) {
       if (!slug || !token || !config.previewSecret) return null
-      const access = await one('ck_preview_access', {
+      const sessionAccess = await one('ck_preview_access', {
         slug: `eq.${slug}`,
         session_token_hash: `eq.${sha256(`${config.previewSecret}:session:${token}`)}`,
         revoked_at: 'is.null',
       })
+      const access =
+        sessionAccess ||
+        (await one('ck_preview_access', {
+          slug: `eq.${slug}`,
+          invite_token_hash: `eq.${sha256(`${config.previewSecret}:invite:${token}`)}`,
+          revoked_at: 'is.null',
+        }))
       return access && new Date(access.expires_at).getTime() > Date.now() ? access : null
     },
     async asset(id) {

@@ -30,7 +30,7 @@ test('public access schemas never expose password hashes or session tokens', () 
   assert.deepEqual(spec.components.schemas.AccessRule.properties.match.enum, ['exact', 'prefix'])
 })
 
-test('preview contract separates one-time invitation access from the memorable URL', () => {
+test('preview contract separates reusable invitation access from the memorable URL', () => {
   const operation = spec.paths['/v1/sites/{site}/previews'].post
   const request = operation.requestBody.content['application/json'].schema
   const response = operation.responses[201].content['application/json'].schema
@@ -39,13 +39,9 @@ test('preview contract separates one-time invitation access from the memorable U
   assert.ok(response.required.includes('invitation_url'))
   assert.ok(response.required.includes('preview_url'))
   assert.equal(response.properties.url, undefined)
-  assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[200])
+  assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[303])
   assert.ok(spec.paths['/preview-invitations/{token}'].post.responses[303])
-  assert.deepEqual(
-    spec.paths['/preview-invitations/{token}'].post.requestBody.content['application/x-www-form-urlencoded'].schema
-      .properties.confirm.enum,
-    ['open-preview'],
-  )
+  assert.equal(spec.paths['/preview-invitations/{token}'].post.deprecated, true)
 })
 
 // Everything the main dispatcher owns, not only the two path families this used

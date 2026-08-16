@@ -396,7 +396,7 @@ The same service also serves published static sites:
 
 | Route | Function |
 |---|---|
-| `/preview-invitations/{token}` | Scanner-safe GET confirmation followed by a one-time POST exchange into a path-scoped HttpOnly preview session |
+| `/preview-invitations/{token}` | Direct GET redirect into a path-scoped HttpOnly preview session; the expiring link remains reusable until revocation or replacement |
 | `/previews/{slug}/...` | Memorable session-protected preview; `noindex`, `private,no-store` |
 | `/media/{asset-id}/...` | Content-addressed uploaded asset; immutable cache |
 | Custom domain paths | Active release files resolved by request host |
@@ -1192,34 +1192,30 @@ Preview details:
 - uploads complete static output under an immutable release prefix;
 - requires a human-readable, globally addressed `slug` of 3–80 lowercase
   letters, numbers or hyphens; reusing the slug replaces its previous preview;
-- returns a one-time `invitation_url` and a memorable `preview_url` under
+- returns an expiring `invitation_url` and a memorable `preview_url` under
   `/previews/{slug}/`;
-- stores separate hashes for the invitation and resulting session; raw secrets
-  are never stored;
-- serves a no-store confirmation page on GET without consuming the invitation,
-  so link scanners and browser prefetches cannot invalidate it;
-- consumes the invitation atomically only after the confirmation form POST,
-  sets a path-scoped HttpOnly cookie and redirects to the clean preview URL;
+- stores hashes for invitation and legacy session tokens; raw secrets are never
+  stored;
+- opens the invitation without a confirmation page, sets a path-scoped HttpOnly
+  cookie and redirects directly to the clean preview URL;
+- keeps the invitation usable until expiry, revocation or replacement by a
+  newer preview with the same slug, so a first request cannot destroy the link;
 - caps expiration at seven days internally;
 - serves preview HTML with `X-Robots-Tag: noindex,nofollow,noarchive` and
   `private,no-store`.
 
-Browser clients open `invitation_url` and press the confirmation button. A
-headless client must first GET the confirmation page, then POST the explicit
-confirmation while retaining the response cookie for the redirect and later
-requests:
+Browser clients open `invitation_url` and arrive directly at the preview. A
+headless client follows the redirect while retaining the response cookie for
+later requests:
 
 ```bash
-curl "$INVITATION_URL"
-curl -L -c preview.cookies -b preview.cookies \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data 'confirm=open-preview' "$INVITATION_URL"
+curl -L -c preview.cookies -b preview.cookies "$INVITATION_URL"
 curl -b preview.cookies "$PREVIEW_URL/de/"
 ```
 
-Do not persist or log `invitation_url`; it is the only bearer credential and is
-invalid immediately after the successful exchange. `preview_url` contains no
-secret and can be retained as the human-readable review address.
+Do not persist or log `invitation_url`; it is a bearer credential valid until
+expiry, revocation or replacement. `preview_url` contains no secret and can be
+retained as the human-readable review address.
 
 The preview response also binds the exact snapshot through `release_id`,
 `manifest_sha256`, `base_publish_epoch`, `revision_ids` and
@@ -1752,8 +1748,8 @@ Security boundaries:
 - CMS metadata lives in the dedicated `contentkit` PostgreSQL database.
 - The Storage bucket is private; Contentkit alone has the service-role key.
 - API keys are HMAC-hashed with a server-side pepper and scoped to sites/actions.
-- Preview invitations are one-time; invitation and session tokens are random,
-  separately hashed, expiring and revocable.
+- Preview invitations are expiring bearer links; invitation and legacy session
+  tokens are random, separately hashed, expiring and revocable.
 - Markdown raw HTML is sanitized; unsafe links/scripts do not pass through.
 - Mermaid runs in strict mode.
 - Public writes pass Turnstile, honeypot, length checks and IP rate limits.
@@ -1823,9 +1819,9 @@ Common failures:
   ingress path that does not exist on the receiver. Point it at a live hook and
   ensure the shared secret matches on both sides (the whole `whsec_...` string is
   the HMAC key verbatim, not base64-decoded);
-- preview invitation returns 404 on GET or after confirmation: it was already
-  consumed, expired, revoked or copied incorrectly; create a new invitation by
-  rebuilding the named preview. A scanner-only GET no longer consumes it;
+- preview invitation shows an HTML error page: it expired, was revoked or
+  replaced, or was copied incorrectly; create a new invitation by rebuilding
+  the named preview;
 - named preview returns 401: the browser has no valid path-scoped preview
   session; open its current invitation URL first;
 - custom-domain route returns 503: the site has no active release;

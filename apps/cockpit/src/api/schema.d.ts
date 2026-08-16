@@ -1034,7 +1034,7 @@ export interface paths {
         put?: never;
         /**
          * Build a named, time-limited preview
-         * @description Builds an immutable preview and replaces any prior preview with the same slug. The response separates the one-time secret invitation URL from the memorable session-protected preview URL. Opening the invitation atomically consumes it, creates a path-scoped HttpOnly session and redirects to the preview URL.
+         * @description Builds an immutable preview and replaces any prior preview with the same slug. The response separates the secret invitation URL from the memorable session-protected preview URL. Opening the invitation creates a path-scoped HttpOnly preview session and redirects immediately. The invitation remains usable until it expires, is revoked or is replaced by a newer preview with the same slug.
          */
         post: operations["previewCreate"];
         delete?: never;
@@ -1051,14 +1051,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Open a scanner-safe preview invitation
-         * @description Returns a no-store confirmation page without consuming the invitation. Link scanners and browser prefetches can safely fetch this page. A consumed, expired, revoked or unknown invitation returns 404.
+         * Open a preview invitation
+         * @description Sets a path-scoped HttpOnly preview cookie and redirects immediately to the named preview. The invitation is an expiring, revocable bearer capability and may be opened again. An expired, revoked, replaced or unknown invitation returns a human-readable HTML error page.
          */
         get: operations["previewInvitationOpen"];
         put?: never;
         /**
-         * Confirm and exchange a one-time preview invitation
-         * @description Consumes the invitation only after an explicit form submission, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.
+         * Open a preview invitation using the legacy POST method
+         * @deprecated
+         * @description Backward-compatible alias for GET. No confirmation body is required. Sets the same path-scoped HttpOnly preview cookie and redirects to the named preview URL.
          */
         post: operations["previewInvitationRedeem"];
         delete?: never;
@@ -5348,7 +5349,7 @@ export interface operations {
                         preview_url: string;
                         /**
                          * Format: uri
-                         * @description Secret one-time URL. Distribute it only to the intended reviewer.
+                         * @description Secret expiring URL. It remains reusable until expiry, revocation or replacement; distribute it only to intended reviewers.
                          */
                         invitation_url: string;
                         expires_in: number;
@@ -5378,23 +5379,25 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Human confirmation page; the invitation remains unused */
-            200: {
+            /** @description Preview access established; redirect to the clean preview URL */
+            303: {
+                headers: {
+                    Location?: string;
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Invitation unavailable; rendered as a browser-friendly HTML page */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "text/html": string;
                 };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description Invitation unavailable */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -5408,16 +5411,9 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/x-www-form-urlencoded": {
-                    /** @enum {string} */
-                    confirm: "open-preview";
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Invitation exchanged; redirect to the clean preview URL */
+            /** @description Preview access established; redirect to the clean preview URL */
             303: {
                 headers: {
                     Location?: string;
@@ -5428,19 +5424,14 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description Invitation unavailable */
+            /** @description Invitation unavailable; rendered as a browser-friendly HTML page */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Explicit preview confirmation is missing */
-            422: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "text/html": string;
                 };
-                content?: never;
             };
         };
     };
