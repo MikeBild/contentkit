@@ -119,17 +119,26 @@ function oauthProviders(name) {
 // credential whose presence switches the feature on, the model used when the
 // deployment names none, and the id prefixes that provider serves.
 //
+// The credentials are the bare vendor names the AI SDK itself reads, shared by
+// every product in the family. They are not a shared *value*: each product is
+// started from its own environment file, so ContentKit's key stays ContentKit's
+// key. Nothing here may assume another product's deployment holds the same one.
+//
 // Model ids do not carry across providers, so a foreign id must be refused here
 // by name. Reaching the vendor with it returns an opaque 404 that says nothing
 // about which variable the operator has to change.
 const assistantProviders = Object.freeze({
-  anthropic: { credential: 'CONTENTKIT_ANTHROPIC_API_KEY', model: 'claude-sonnet-5', prefixes: ['claude-'] },
+  anthropic: { credential: 'ANTHROPIC_API_KEY', model: 'claude-sonnet-5', prefixes: ['claude-'] },
   openai: {
-    credential: 'CONTENTKIT_OPENAI_API_KEY',
+    credential: 'OPENAI_API_KEY',
     model: 'gpt-5.4',
     prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt-'],
   },
-  google: { credential: 'CONTENTKIT_GOOGLE_API_KEY', model: 'gemini-pro-latest', prefixes: ['gemini-', 'gemma-'] },
+  google: {
+    credential: 'GOOGLE_GENERATIVE_AI_API_KEY',
+    model: 'gemini-pro-latest',
+    prefixes: ['gemini-', 'gemma-'],
+  },
 })
 
 /**
@@ -187,9 +196,9 @@ export function loadConfig() {
     // Credential = enabled. Without the selected provider's key the Cockpit's
     // authoring assistant does not exist: its routes answer 404 and the console
     // hides the tab. One env var per feature, no separate on/off switch to
-    // drift out of step — CONTENTKIT_ASSISTANT_PROVIDER only decides which key
+    // drift out of step — CONTENTKIT_LLM_PROVIDER only decides which key
     // that one var is.
-    ...assistantProvider('CONTENTKIT_ASSISTANT_PROVIDER', 'CONTENTKIT_ASSISTANT_MODEL'),
+    ...assistantProvider('CONTENTKIT_LLM_PROVIDER', 'CONTENTKIT_MODEL_ASSISTANT'),
     oauthSecret: process.env.CONTENTKIT_OAUTH_SECRET || '',
     oauthProviders: configuredOauthProviders,
     oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring', 'mcp:admin']),

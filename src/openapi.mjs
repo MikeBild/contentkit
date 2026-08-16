@@ -3392,7 +3392,7 @@ export function openApi(config) {
           operationId: 'assistantMessages',
           summary: 'Stream one authoring-assistant turn',
           description:
-            "Present only when the API key of the provider named by CONTENTKIT_ASSISTANT_PROVIDER (anthropic, openai or google) is configured; otherwise every method answers 404. Streams an AI SDK UI message stream. The assistant calls ContentKit's own MCP tools, filtered by the caller's scopes, so it can never exceed what the credential already permits. Publication, activation, deletion and credential changes emit a `data-elicitation` part and block until a human answers at /v1/assistant/elicitations/{elicitation}; decline, expiry or a dropped connection makes no change.",
+            "Present only when the API key of the provider named by CONTENTKIT_LLM_PROVIDER (anthropic, openai or google) is configured; otherwise every method answers 404. Streams an AI SDK UI message stream. The assistant calls ContentKit's own MCP tools, filtered by the caller's scopes, so it can never exceed what the credential already permits. Publication, activation, deletion and credential changes emit a `data-elicitation` part and block until a human answers at /v1/assistant/elicitations/{elicitation}; decline, expiry or a dropped connection makes no change.",
           security: secured,
           requestBody: {
             required: true,

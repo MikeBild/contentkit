@@ -150,7 +150,7 @@ export function createAssistant(config, deps, fetchImpl = fetch) {
   // Unreachable through loadConfig, which rejects an unknown provider at boot.
   // Kept because createAssistant is also constructed from hand-built config.
   if (!provider) {
-    throw new Error(`CONTENTKIT_ASSISTANT_PROVIDER must be one of ${assistantProviders.join(', ')}`)
+    throw new Error(`CONTENTKIT_LLM_PROVIDER must be one of ${assistantProviders.join(', ')}`)
   }
   const model = provider(config.assistantApiKey, fetchImpl)(config.assistantModel)
   const elicitations = createElicitations()

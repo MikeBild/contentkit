@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.25.0 — 2026-08-16
+
+### Changed
+
+- **BREAKING.** The assistant's model-provider configuration now uses the
+  family's naming, so one operator reads one vocabulary across every product.
+  The old names are no longer read — there is no fallback and no deprecation
+  period. Rename them in this deployment's environment file before upgrading:
+
+  | old | new |
+  | --- | --- |
+  | `CONTENTKIT_ASSISTANT_PROVIDER` | `CONTENTKIT_LLM_PROVIDER` |
+  | `CONTENTKIT_ASSISTANT_MODEL` | `CONTENTKIT_MODEL_ASSISTANT` |
+  | `CONTENTKIT_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` |
+  | `CONTENTKIT_OPENAI_API_KEY` | `OPENAI_API_KEY` |
+  | `CONTENTKIT_GOOGLE_API_KEY` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+
+  The credential names are now the vendors' own, but the value is not shared:
+  ContentKit reads its own environment file, so put ContentKit's own key there
+  and keep it distinct from any other deployment's. A deployment left on the
+  old names loses the assistant outright — the routes answer 404 and the
+  Cockpit hides the tab — rather than running half-configured.
+
+  Behaviour is otherwise unchanged: the selected provider's key remains the
+  feature's only switch, `anthropic` remains the default provider, and a model
+  id belonging to another provider is still refused at boot, now naming the new
+  variables.
+
 ## 4.24.0 — 2026-08-16
 
 ### Added

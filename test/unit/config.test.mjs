@@ -228,7 +228,19 @@ test('legacy global webhook URL and secret must be configured as a pair', () => 
 // The assistant is the one feature whose credential is provider-dependent: an
 // operator paying for a single key per product must be able to point it at the
 // provider they already buy from, without ContentKit growing a second switch.
+// The names are the family's, so one operator reads one vocabulary across every
+// product; the values stay per-deployment, one environment file each.
 const assistantVars = [
+  'CONTENTKIT_LLM_PROVIDER',
+  'CONTENTKIT_MODEL_ASSISTANT',
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+]
+
+// Names no longer honoured. Listed only so the environment can be cleared and
+// restored around a test that sets one; nothing in src reads them.
+const retiredAssistantVars = [
   'CONTENTKIT_ASSISTANT_PROVIDER',
   'CONTENTKIT_ASSISTANT_MODEL',
   'CONTENTKIT_ANTHROPIC_API_KEY',
@@ -237,13 +249,14 @@ const assistantVars = [
 ]
 
 function withAssistantEnv(values, run) {
-  const saved = Object.fromEntries(assistantVars.map((name) => [name, process.env[name]]))
+  const managed = [...assistantVars, ...retiredAssistantVars]
+  const saved = Object.fromEntries(managed.map((name) => [name, process.env[name]]))
   try {
-    for (const name of assistantVars) delete process.env[name]
+    for (const name of managed) delete process.env[name]
     for (const [name, value] of Object.entries(values)) process.env[name] = value
     return run()
   } finally {
-    for (const name of assistantVars) {
+    for (const name of managed) {
       if (saved[name] === undefined) delete process.env[name]
       else process.env[name] = saved[name]
     }
@@ -252,13 +265,13 @@ function withAssistantEnv(values, run) {
 
 test('each supported provider contributes its own credential and its own default model', () => {
   const expected = {
-    anthropic: { credential: 'CONTENTKIT_ANTHROPIC_API_KEY', model: 'claude-sonnet-5' },
-    openai: { credential: 'CONTENTKIT_OPENAI_API_KEY', model: 'gpt-5.4' },
-    google: { credential: 'CONTENTKIT_GOOGLE_API_KEY', model: 'gemini-pro-latest' },
+    anthropic: { credential: 'ANTHROPIC_API_KEY', model: 'claude-sonnet-5' },
+    openai: { credential: 'OPENAI_API_KEY', model: 'gpt-5.4' },
+    google: { credential: 'GOOGLE_GENERATIVE_AI_API_KEY', model: 'gemini-pro-latest' },
   }
   for (const [provider, { credential, model }] of Object.entries(expected)) {
     const config = withAssistantEnv(
-      { CONTENTKIT_ASSISTANT_PROVIDER: provider, [credential]: `key-for-${provider}` },
+      { CONTENTKIT_LLM_PROVIDER: provider, [credential]: `key-for-${provider}` },
       loadConfig,
     )
     assert.equal(config.assistantProvider, provider)
@@ -268,7 +281,7 @@ test('each supported provider contributes its own credential and its own default
 })
 
 test('anthropic stays the default provider, so an unchanged deployment is unchanged', () => {
-  const config = withAssistantEnv({ CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-test' }, loadConfig)
+  const config = withAssistantEnv({ ANTHROPIC_API_KEY: 'sk-ant-test' }, loadConfig)
   assert.equal(config.assistantProvider, 'anthropic')
   assert.equal(config.assistantApiKey, 'sk-ant-test')
   assert.equal(config.assistantModel, 'claude-sonnet-5')
@@ -277,10 +290,7 @@ test('anthropic stays the default provider, so an unchanged deployment is unchan
 test('no credential for the selected provider leaves the feature absent, not half-configured', () => {
   // Another provider's key must not switch the assistant on: it is the selected
   // provider's credential, and only that one, that decides the feature exists.
-  const config = withAssistantEnv(
-    { CONTENTKIT_ASSISTANT_PROVIDER: 'openai', CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-test' },
-    loadConfig,
-  )
+  const config = withAssistantEnv({ CONTENTKIT_LLM_PROVIDER: 'openai', ANTHROPIC_API_KEY: 'sk-ant-test' }, loadConfig)
   assert.equal(config.assistantApiKey, '')
   assert.equal(createAssistant(config, { logger: {} }), null)
 })
@@ -292,17 +302,17 @@ test('a model id belonging to another provider is refused by name, never sent to
     () =>
       withAssistantEnv(
         {
-          CONTENTKIT_ASSISTANT_PROVIDER: 'openai',
-          CONTENTKIT_OPENAI_API_KEY: 'sk-openai-test',
-          CONTENTKIT_ASSISTANT_MODEL: 'claude-sonnet-5',
+          CONTENTKIT_LLM_PROVIDER: 'openai',
+          OPENAI_API_KEY: 'sk-openai-test',
+          CONTENTKIT_MODEL_ASSISTANT: 'claude-sonnet-5',
         },
         loadConfig,
       ),
     (error) => {
-      assert.match(error.message, /CONTENTKIT_ASSISTANT_MODEL/)
+      assert.match(error.message, /CONTENTKIT_MODEL_ASSISTANT/)
       assert.match(error.message, /does not belong to the openai provider/)
       assert.match(error.message, /gpt-5\.4/, 'the message must say what to set it to')
-      assert.match(error.message, /CONTENTKIT_ASSISTANT_PROVIDER/, 'the other way out must be named too')
+      assert.match(error.message, /CONTENTKIT_LLM_PROVIDER/, 'the other way out must be named too')
       return true
     },
   )
@@ -310,9 +320,9 @@ test('a model id belonging to another provider is refused by name, never sent to
   assert.equal(
     withAssistantEnv(
       {
-        CONTENTKIT_ASSISTANT_PROVIDER: 'anthropic',
-        CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-test',
-        CONTENTKIT_ASSISTANT_MODEL: 'claude-sonnet-5',
+        CONTENTKIT_LLM_PROVIDER: 'anthropic',
+        ANTHROPIC_API_KEY: 'sk-ant-test',
+        CONTENTKIT_MODEL_ASSISTANT: 'claude-sonnet-5',
       },
       loadConfig,
     ).assistantModel,
@@ -322,7 +332,29 @@ test('a model id belonging to another provider is refused by name, never sent to
 
 test('an unsupported provider is rejected naming the whole set of supported ones', () => {
   assert.throws(
-    () => withAssistantEnv({ CONTENTKIT_ASSISTANT_PROVIDER: 'mistral' }, loadConfig),
-    /CONTENTKIT_ASSISTANT_PROVIDER must be one of anthropic, openai, google/,
+    () => withAssistantEnv({ CONTENTKIT_LLM_PROVIDER: 'mistral' }, loadConfig),
+    /CONTENTKIT_LLM_PROVIDER must be one of anthropic, openai, google/,
   )
+})
+
+test('the retired variable names are not read, not even as a fallback', () => {
+  // A hard break: the product-prefixed names are gone, and a fallback read of
+  // them is the one way this rename could quietly come undone. A deployment
+  // still on the old names must get the feature's clean absence — visible at
+  // once — rather than a half-migrated configuration that works until the day
+  // someone changes only the new name and nothing happens.
+  const config = withAssistantEnv(
+    {
+      CONTENTKIT_ASSISTANT_PROVIDER: 'openai',
+      CONTENTKIT_ASSISTANT_MODEL: 'gpt-5.4',
+      CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-retired',
+      CONTENTKIT_OPENAI_API_KEY: 'sk-openai-retired',
+      CONTENTKIT_GOOGLE_API_KEY: 'key-google-retired',
+    },
+    loadConfig,
+  )
+  assert.equal(config.assistantProvider, 'anthropic', 'the retired provider name must not select a provider')
+  assert.equal(config.assistantApiKey, '', 'a retired credential name must not enable the assistant')
+  assert.equal(config.assistantModel, 'claude-sonnet-5', 'the retired model name must not pick the model')
+  assert.equal(createAssistant(config, { logger: {} }), null)
 })

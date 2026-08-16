@@ -1028,7 +1028,7 @@ const EN = {
   'audio.status.skipped': 'skipped',
   'assistant.disabledTitle': 'The authoring assistant is not enabled',
   'assistant.disabledDescription':
-    'Set the API key of the model provider named by CONTENTKIT_ASSISTANT_PROVIDER for this deployment to enable it.',
+    'Set the API key of the model provider named by CONTENTKIT_LLM_PROVIDER for this deployment to enable it.',
   'assistant.description': 'Describe what you want to publish. The assistant drafts revisions; publishing still requires explicit approval.',
   'assistant.newConversation': 'New conversation',
   'assistant.emptyTitle': 'Nothing said yet',
@@ -2783,7 +2783,7 @@ const DE: Catalog = {
   'audio.status.skipped': 'übersprungen',
   'assistant.disabledTitle': 'Der Autorenassistent ist nicht aktiviert',
   'assistant.disabledDescription':
-    'Setze den API-Schlüssel des in CONTENTKIT_ASSISTANT_PROVIDER genannten Modellanbieters für diese Bereitstellung, um ihn zu aktivieren.',
+    'Setze den API-Schlüssel des in CONTENTKIT_LLM_PROVIDER genannten Modellanbieters für diese Bereitstellung, um ihn zu aktivieren.',
   'assistant.description': 'Beschreibe, was du veröffentlichen möchtest. Der Assistent entwirft Revisionen; die Veröffentlichung erfordert weiterhin eine ausdrückliche Freigabe.',
   'assistant.newConversation': 'Neue Unterhaltung',
   'assistant.emptyTitle': 'Noch nichts gesagt',

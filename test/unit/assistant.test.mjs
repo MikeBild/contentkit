@@ -27,7 +27,7 @@ describe('the authoring assistant', () => {
   test('an unsupported provider is refused naming the supported set', () => {
     assert.throws(
       () => createAssistant({ ...config, assistantProvider: 'mistral' }, deps),
-      /CONTENTKIT_ASSISTANT_PROVIDER must be one of anthropic, openai, google/,
+      /CONTENTKIT_LLM_PROVIDER must be one of anthropic, openai, google/,
     )
   })
 
