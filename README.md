@@ -278,9 +278,11 @@ curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
 ```
 
 The preview response separates access from navigation. Send the one-time
-`invitation_url` to the reviewer. Opening it creates a path-scoped HttpOnly
-session and redirects to the memorable `preview_url`, for example
-`/previews/article-review/`. The invitation cannot be used a second time.
+`invitation_url` to the reviewer. Its scanner-safe GET shows a confirmation
+page without consuming the invitation. An explicit button POST creates a
+path-scoped HttpOnly session and redirects to the memorable `preview_url`, for
+example `/previews/article-review/`. The invitation cannot be exchanged a
+second time.
 The response also returns `release_id`, `manifest_sha256` and
 `base_publish_epoch`. After review, activate those exact rendered bytes without
 another build:

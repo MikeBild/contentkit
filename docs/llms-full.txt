@@ -396,7 +396,7 @@ The same service also serves published static sites:
 
 | Route | Function |
 |---|---|
-| `/preview-invitations/{token}` | One-time exchange into a path-scoped HttpOnly preview session |
+| `/preview-invitations/{token}` | Scanner-safe GET confirmation followed by a one-time POST exchange into a path-scoped HttpOnly preview session |
 | `/previews/{slug}/...` | Memorable session-protected preview; `noindex`, `private,no-store` |
 | `/media/{asset-id}/...` | Content-addressed uploaded asset; immutable cache |
 | Custom domain paths | Active release files resolved by request host |
@@ -1196,17 +1196,24 @@ Preview details:
   `/previews/{slug}/`;
 - stores separate hashes for the invitation and resulting session; raw secrets
   are never stored;
-- consumes the invitation atomically, sets a path-scoped HttpOnly cookie and
-  redirects to the clean preview URL;
+- serves a no-store confirmation page on GET without consuming the invitation,
+  so link scanners and browser prefetches cannot invalidate it;
+- consumes the invitation atomically only after the confirmation form POST,
+  sets a path-scoped HttpOnly cookie and redirects to the clean preview URL;
 - caps expiration at seven days internally;
 - serves preview HTML with `X-Robots-Tag: noindex,nofollow,noarchive` and
   `private,no-store`.
 
-Browser clients follow `invitation_url` normally. A headless client must retain
-the response cookie while following the redirect and on later requests:
+Browser clients open `invitation_url` and press the confirmation button. A
+headless client must first GET the confirmation page, then POST the explicit
+confirmation while retaining the response cookie for the redirect and later
+requests:
 
 ```bash
-curl -L -c preview.cookies -b preview.cookies "$INVITATION_URL"
+curl "$INVITATION_URL"
+curl -L -c preview.cookies -b preview.cookies \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'confirm=open-preview' "$INVITATION_URL"
 curl -b preview.cookies "$PREVIEW_URL/de/"
 ```
 
@@ -1816,8 +1823,9 @@ Common failures:
   ingress path that does not exist on the receiver. Point it at a live hook and
   ensure the shared secret matches on both sides (the whole `whsec_...` string is
   the HMAC key verbatim, not base64-decoded);
-- preview invitation returns 404: it was already consumed, expired, revoked or
-  copied incorrectly; create a new invitation by rebuilding the named preview;
+- preview invitation returns 404 on GET or after confirmation: it was already
+  consumed, expired, revoked or copied incorrectly; create a new invitation by
+  rebuilding the named preview. A scanner-only GET no longer consumes it;
 - named preview returns 401: the browser has no valid path-scoped preview
   session; open its current invitation URL first;
 - custom-domain route returns 503: the site has no active release;

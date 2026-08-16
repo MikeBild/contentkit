@@ -1051,12 +1051,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Exchange a one-time preview invitation
-         * @description Consumes the invitation, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.
+         * Open a scanner-safe preview invitation
+         * @description Returns a no-store confirmation page without consuming the invitation. Link scanners and browser prefetches can safely fetch this page. A consumed, expired, revoked or unknown invitation returns 404.
          */
-        get: operations["previewInvitationRedeem"];
+        get: operations["previewInvitationOpen"];
         put?: never;
-        post?: never;
+        /**
+         * Confirm and exchange a one-time preview invitation
+         * @description Consumes the invitation only after an explicit form submission, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.
+         */
+        post: operations["previewInvitationRedeem"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5362,7 +5366,7 @@ export interface operations {
             };
         };
     };
-    previewInvitationRedeem: {
+    previewInvitationOpen: {
         parameters: {
             query?: never;
             header?: never;
@@ -5373,6 +5377,45 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Human confirmation page; the invitation remains unused */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Invitation unavailable */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    previewInvitationRedeem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Secret invitation value returned once by the preview build endpoint. */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    /** @enum {string} */
+                    confirm: "open-preview";
+                };
+            };
+        };
         responses: {
             /** @description Invitation exchanged; redirect to the clean preview URL */
             303: {
@@ -5387,6 +5430,13 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             /** @description Invitation unavailable */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Explicit preview confirmation is missing */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

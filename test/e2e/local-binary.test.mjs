@@ -433,12 +433,27 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.match(preview.invitation_url, /\/preview-invitations\/[A-Za-z0-9_-]+$/)
       const unauthenticatedPreview = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`)
       assert.equal(unauthenticatedPreview.status, 401)
-      const invitation = await fetch(preview.invitation_url, { redirect: 'manual' })
+      const invitationLanding = await fetch(preview.invitation_url)
+      assert.equal(invitationLanding.status, 200)
+      assert.match(await invitationLanding.text(), /The invitation remains unused until you press the button/)
+      const secondScannerRead = await fetch(preview.invitation_url)
+      assert.equal(secondScannerRead.status, 200)
+      const invitation = await fetch(preview.invitation_url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'confirm=open-preview',
+        redirect: 'manual',
+      })
       assert.equal(invitation.status, 303)
       assert.equal(invitation.headers.get('location'), '/previews/local-release-review/')
       const previewCookie = invitation.headers.get('set-cookie')?.split(';')[0]
       assert.match(previewCookie || '', /^contentkit_preview=/)
-      const consumedInvitation = await fetch(preview.invitation_url, { redirect: 'manual' })
+      const consumedInvitation = await fetch(preview.invitation_url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'confirm=open-preview',
+        redirect: 'manual',
+      })
       assert.equal(consumedInvitation.status, 404)
       const legacyPreview = await fetch(`${origin}/p/legacy-token/de/blog/lokaler-e2e-beitrag/`)
       assert.equal(legacyPreview.status, 404)

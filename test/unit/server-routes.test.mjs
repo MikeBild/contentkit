@@ -382,13 +382,23 @@ async function withApp(
   }
 }
 
-test('one-time preview invitation sets a path-scoped HttpOnly cookie and redirects to the clean URL', async () => {
+test('preview invitation GET is scanner-safe and POST exchanges it into a path-scoped session', async () => {
+  let exchanges = 0
   await withApp(
     {
       config: { publicUrl: 'http://127.0.0.1' },
       repo: {
+        async getPreviewInvitation(token) {
+          assert.equal(token, 'secret-token')
+          return {
+            slug: 'article-review',
+            release_id: 'release-1',
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+          }
+        },
         async exchangePreviewInvitation(token) {
           assert.equal(token, 'secret-token')
+          exchanges += 1
           return {
             token: 'session-token',
             slug: 'article-review',
@@ -398,7 +408,24 @@ test('one-time preview invitation sets a path-scoped HttpOnly cookie and redirec
       },
     },
     async (request) => {
+      const landing = await request('/preview-invitations/secret-token')
+      assert.equal(landing.status, 200)
+      assert.match(landing.headers.get('content-type'), /^text\/html/)
+      assert.equal(landing.headers.get('set-cookie'), null)
+      assert.match(await landing.text(), /method="post"/)
+      assert.equal(exchanges, 0)
+
+      const missingConfirmation = await request('/preview-invitations/secret-token', {
+        method: 'POST',
+        body: '',
+      })
+      assert.equal(missingConfirmation.status, 422)
+      assert.equal(exchanges, 0)
+
       const response = await request('/preview-invitations/secret-token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'confirm=open-preview',
         redirect: 'manual',
       })
       assert.equal(response.status, 303)
@@ -407,6 +434,7 @@ test('one-time preview invitation sets a path-scoped HttpOnly cookie and redirec
       assert.match(response.headers.get('set-cookie'), /Path=\/previews\/article-review\//)
       assert.match(response.headers.get('set-cookie'), /HttpOnly/)
       assert.equal(response.headers.get('referrer-policy'), 'no-referrer')
+      assert.equal(exchanges, 1)
     },
   )
 })

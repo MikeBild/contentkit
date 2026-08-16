@@ -39,7 +39,13 @@ test('preview contract separates one-time invitation access from the memorable U
   assert.ok(response.required.includes('invitation_url'))
   assert.ok(response.required.includes('preview_url'))
   assert.equal(response.properties.url, undefined)
-  assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[303])
+  assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[200])
+  assert.ok(spec.paths['/preview-invitations/{token}'].post.responses[303])
+  assert.deepEqual(
+    spec.paths['/preview-invitations/{token}'].post.requestBody.content['application/x-www-form-urlencoded'].schema
+      .properties.confirm.enum,
+    ['open-preview'],
+  )
 })
 
 // Everything the main dispatcher owns, not only the two path families this used

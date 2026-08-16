@@ -329,7 +329,7 @@ export const API_ROUTES = [
   { pattern: /^\/_contentkit\/login$/, methods: ['GET', 'POST'] },
   { pattern: /^\/_contentkit\/logout$/, methods: ['POST'] },
   { pattern: /^\/_contentkit\/(session|navigation\.json|search-index\.json)$/, methods: ['GET'] },
-  { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET'], apiHostOnly: true },
+  { pattern: /^\/preview-invitations\/[^/]+$/, methods: ['GET', 'POST'], apiHostOnly: true },
   { pattern: /^\/v1\/sites$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+$/, methods: ['GET', 'PATCH', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/locales$/, methods: ['GET', 'POST'] },
@@ -554,6 +554,17 @@ export function createRequestHandler(ctx) {
     'x-frame-options': 'DENY',
     'referrer-policy': 'no-referrer',
   })
+  const previewInvitationPage = (access) =>
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Open ContentKit preview</title><style>body{font:16px ${contentkitFontFamily};margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.preview{width:min(90%,30rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}button{display:block;width:100%;box-sizing:border-box;font:inherit;padding:.75rem;margin-top:1.25rem;border:1px solid #172033;border-radius:.5rem;background:#172033;color:white;cursor:pointer}.meta{color:#526078;font-size:.875rem}</style></head><body><main class="preview"><h1>Open protected preview</h1><p>This link grants access to the immutable preview <strong>${escapeHtml(access.slug)}</strong>. Continue only if you intended to review it.</p><p class="meta">The invitation remains unused until you press the button.</p><form method="post"><input type="hidden" name="confirm" value="open-preview"><button type="submit">Open preview</button></form></main></body></html>`
+  const previewInvitationHeaders = {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'private,no-store',
+    'content-security-policy':
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+    'x-robots-tag': 'noindex,nofollow,noarchive',
+  }
 
   async function readerRoutes(req, res, url, path, ip) {
     if (!path.startsWith('/_contentkit/')) return false
@@ -1081,6 +1092,15 @@ export function createRequestHandler(ctx) {
     const apiHost = isApiHost(req, config)
     const invitation = apiHost && path.match(/^\/preview-invitations\/([^/]+)$/)
     if (invitation && req.method === 'GET') {
+      const access = await repo.getPreviewInvitation(invitation[1])
+      if (!access) return sendJson(res, 404, { error: 'preview invitation not found' })
+      return send(res, 200, previewInvitationPage(access), previewInvitationHeaders)
+    }
+    if (invitation && req.method === 'POST') {
+      const body = new URLSearchParams((await readBody(req, 1024)).toString('utf8'))
+      if (body.get('confirm') !== 'open-preview') {
+        return sendJson(res, 422, { error: 'preview invitation confirmation required' })
+      }
       const access = await repo.exchangePreviewInvitation(invitation[1])
       if (!access) return sendJson(res, 404, { error: 'preview invitation not found' })
       const maxAge = Math.max(1, Math.floor((new Date(access.expires_at).getTime() - Date.now()) / 1000))

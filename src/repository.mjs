@@ -1694,6 +1694,22 @@ export function createRepository(config, db, storage) {
       await db.remove('ck_releases', { id: `eq.${releaseId}`, site_id: `eq.${siteId}` })
       return { release_id: releaseId, deleted: true, removed_objects: objects }
     },
+    async getPreviewInvitation(token) {
+      if (!token || !config.previewSecret) return null
+      const inviteHash = sha256(`${config.previewSecret}:invite:${token}`)
+      const invite = await one('ck_preview_access', {
+        invite_token_hash: `eq.${inviteHash}`,
+        consumed_at: 'is.null',
+        revoked_at: 'is.null',
+      })
+      return invite && new Date(invite.expires_at).getTime() > Date.now()
+        ? {
+            slug: invite.slug,
+            release_id: invite.release_id,
+            expires_at: invite.expires_at,
+          }
+        : null
+    },
     async exchangePreviewInvitation(token) {
       if (!token || !config.previewSecret) return null
       const inviteHash = sha256(`${config.previewSecret}:invite:${token}`)

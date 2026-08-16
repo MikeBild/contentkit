@@ -2901,10 +2901,10 @@ export function openApi(config) {
       },
       '/preview-invitations/{token}': {
         get: {
-          operationId: 'previewInvitationRedeem',
-          summary: 'Exchange a one-time preview invitation',
+          operationId: 'previewInvitationOpen',
+          summary: 'Open a scanner-safe preview invitation',
           description:
-            'Consumes the invitation, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.',
+            'Returns a no-store confirmation page without consuming the invitation. Link scanners and browser prefetches can safely fetch this page. A consumed, expired, revoked or unknown invitation returns 404.',
           security: [],
           parameters: [
             {
@@ -2916,6 +2916,41 @@ export function openApi(config) {
             },
           ],
           responses: {
+            200: {
+              description: 'Human confirmation page; the invitation remains unused',
+              content: { 'text/html': { schema: { type: 'string' } } },
+            },
+            404: { description: 'Invitation unavailable' },
+          },
+        },
+        post: {
+          operationId: 'previewInvitationRedeem',
+          summary: 'Confirm and exchange a one-time preview invitation',
+          description:
+            'Consumes the invitation only after an explicit form submission, sets a path-scoped HttpOnly preview-session cookie and redirects to the named preview URL. A consumed, expired, revoked or unknown invitation returns 404.',
+          security: [],
+          parameters: [
+            {
+              name: 'token',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Secret invitation value returned once by the preview build endpoint.',
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/x-www-form-urlencoded': {
+                schema: {
+                  type: 'object',
+                  required: ['confirm'],
+                  properties: { confirm: { type: 'string', enum: ['open-preview'] } },
+                },
+              },
+            },
+          },
+          responses: {
             303: {
               description: 'Invitation exchanged; redirect to the clean preview URL',
               headers: {
@@ -2923,6 +2958,7 @@ export function openApi(config) {
                 'Set-Cookie': { schema: { type: 'string' } },
               },
             },
+            422: { description: 'Explicit preview confirmation is missing' },
             404: { description: 'Invitation unavailable' },
           },
         },

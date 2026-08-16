@@ -102,11 +102,17 @@ test('preview invitations exchange once into a separately hashed session', async
     },
   }
   const repo = createRepository({ previewSecret: 'preview-secret' }, db, {})
+  assert.deepEqual(await repo.getPreviewInvitation('one-time-secret'), {
+    slug: 'article-review',
+    release_id: 'release-1',
+    expires_at: invite.expires_at,
+  })
   const exchanged = await repo.exchangePreviewInvitation('one-time-secret')
   assert.equal(exchanged.slug, 'article-review')
   assert.match(invite.session_token_hash, /^[0-9a-f]{64}$/)
   assert.ok(!invite.session_token_hash.includes(exchanged.token))
   assert.equal(await repo.exchangePreviewInvitation('one-time-secret'), null)
+  assert.equal(await repo.getPreviewInvitation('one-time-secret'), null)
   assert.equal((await repo.authenticatePreview('article-review', exchanged.token)).release_id, 'release-1')
 })
 
