@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { createAssistant } from '../../src/assistant.mjs'
 import { loadConfig } from '../../src/config.mjs'
 
 test('development starts with complete committed defaults and no .env', () => {
@@ -222,4 +223,106 @@ test('legacy global webhook URL and secret must be configured as a pair', () => 
     if (savedSecret === undefined) delete process.env.CONTENTKIT_WEBHOOK_SECRET
     else process.env.CONTENTKIT_WEBHOOK_SECRET = savedSecret
   }
+})
+
+// The assistant is the one feature whose credential is provider-dependent: an
+// operator paying for a single key per product must be able to point it at the
+// provider they already buy from, without ContentKit growing a second switch.
+const assistantVars = [
+  'CONTENTKIT_ASSISTANT_PROVIDER',
+  'CONTENTKIT_ASSISTANT_MODEL',
+  'CONTENTKIT_ANTHROPIC_API_KEY',
+  'CONTENTKIT_OPENAI_API_KEY',
+  'CONTENTKIT_GOOGLE_API_KEY',
+]
+
+function withAssistantEnv(values, run) {
+  const saved = Object.fromEntries(assistantVars.map((name) => [name, process.env[name]]))
+  try {
+    for (const name of assistantVars) delete process.env[name]
+    for (const [name, value] of Object.entries(values)) process.env[name] = value
+    return run()
+  } finally {
+    for (const name of assistantVars) {
+      if (saved[name] === undefined) delete process.env[name]
+      else process.env[name] = saved[name]
+    }
+  }
+}
+
+test('each supported provider contributes its own credential and its own default model', () => {
+  const expected = {
+    anthropic: { credential: 'CONTENTKIT_ANTHROPIC_API_KEY', model: 'claude-sonnet-5' },
+    openai: { credential: 'CONTENTKIT_OPENAI_API_KEY', model: 'gpt-5.4' },
+    google: { credential: 'CONTENTKIT_GOOGLE_API_KEY', model: 'gemini-pro-latest' },
+  }
+  for (const [provider, { credential, model }] of Object.entries(expected)) {
+    const config = withAssistantEnv(
+      { CONTENTKIT_ASSISTANT_PROVIDER: provider, [credential]: `key-for-${provider}` },
+      loadConfig,
+    )
+    assert.equal(config.assistantProvider, provider)
+    assert.equal(config.assistantApiKey, `key-for-${provider}`)
+    assert.equal(config.assistantModel, model)
+  }
+})
+
+test('anthropic stays the default provider, so an unchanged deployment is unchanged', () => {
+  const config = withAssistantEnv({ CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-test' }, loadConfig)
+  assert.equal(config.assistantProvider, 'anthropic')
+  assert.equal(config.assistantApiKey, 'sk-ant-test')
+  assert.equal(config.assistantModel, 'claude-sonnet-5')
+})
+
+test('no credential for the selected provider leaves the feature absent, not half-configured', () => {
+  // Another provider's key must not switch the assistant on: it is the selected
+  // provider's credential, and only that one, that decides the feature exists.
+  const config = withAssistantEnv(
+    { CONTENTKIT_ASSISTANT_PROVIDER: 'openai', CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-test' },
+    loadConfig,
+  )
+  assert.equal(config.assistantApiKey, '')
+  assert.equal(createAssistant(config, { logger: {} }), null)
+})
+
+test('a model id belonging to another provider is refused by name, never sent to the vendor', () => {
+  // A vendor answers a foreign model id with an opaque 404 that names no
+  // variable. The operator has to be told which one of theirs is wrong.
+  assert.throws(
+    () =>
+      withAssistantEnv(
+        {
+          CONTENTKIT_ASSISTANT_PROVIDER: 'openai',
+          CONTENTKIT_OPENAI_API_KEY: 'sk-openai-test',
+          CONTENTKIT_ASSISTANT_MODEL: 'claude-sonnet-5',
+        },
+        loadConfig,
+      ),
+    (error) => {
+      assert.match(error.message, /CONTENTKIT_ASSISTANT_MODEL/)
+      assert.match(error.message, /does not belong to the openai provider/)
+      assert.match(error.message, /gpt-5\.4/, 'the message must say what to set it to')
+      assert.match(error.message, /CONTENTKIT_ASSISTANT_PROVIDER/, 'the other way out must be named too')
+      return true
+    },
+  )
+  // The same id under the provider that serves it is accepted.
+  assert.equal(
+    withAssistantEnv(
+      {
+        CONTENTKIT_ASSISTANT_PROVIDER: 'anthropic',
+        CONTENTKIT_ANTHROPIC_API_KEY: 'sk-ant-test',
+        CONTENTKIT_ASSISTANT_MODEL: 'claude-sonnet-5',
+      },
+      loadConfig,
+    ).assistantModel,
+    'claude-sonnet-5',
+  )
+})
+
+test('an unsupported provider is rejected naming the whole set of supported ones', () => {
+  assert.throws(
+    () => withAssistantEnv({ CONTENTKIT_ASSISTANT_PROVIDER: 'mistral' }, loadConfig),
+    /CONTENTKIT_ASSISTANT_PROVIDER must be one of anthropic, openai, google/,
+  )
 })

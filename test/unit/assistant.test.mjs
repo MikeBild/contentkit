@@ -1,10 +1,13 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { createAssistant, createElicitations, jsonSafe } from '../../src/assistant.mjs'
+import { assistantProviders, createAssistant, createElicitations, jsonSafe } from '../../src/assistant.mjs'
 import { visibleTools } from '../../src/mcp/tools.mjs'
 
+const models = { anthropic: 'claude-sonnet-5', openai: 'gpt-5.4', google: 'gemini-pro-latest' }
+
 const config = {
-  anthropicApiKey: 'sk-ant-test',
+  assistantProvider: 'anthropic',
+  assistantApiKey: 'sk-ant-test',
   assistantModel: 'claude-sonnet-5',
   mcpElicitationTimeoutMs: 60_000,
 }
@@ -12,10 +15,20 @@ const config = {
 const deps = { logger: { info() {}, warn() {}, error() {} }, usage: {}, repo: {} }
 
 describe('the authoring assistant', () => {
-  test('does not exist without a credential', () => {
-    // Credential = enabled. No second switch to fall out of step with the key.
-    assert.equal(createAssistant({ ...config, anthropicApiKey: '' }, deps), null)
-    assert.ok(createAssistant(config, deps))
+  test('does not exist without a credential, whichever provider is selected', () => {
+    // Credential = enabled. No second switch to fall out of step with the key,
+    // and choosing a provider only chooses which key that is.
+    for (const assistantProvider of assistantProviders) {
+      assert.equal(createAssistant({ ...config, assistantProvider, assistantApiKey: '' }, deps), null)
+      assert.ok(createAssistant({ ...config, assistantProvider, assistantModel: models[assistantProvider] }, deps))
+    }
+  })
+
+  test('an unsupported provider is refused naming the supported set', () => {
+    assert.throws(
+      () => createAssistant({ ...config, assistantProvider: 'mistral' }, deps),
+      /CONTENTKIT_ASSISTANT_PROVIDER must be one of anthropic, openai, google/,
+    )
   })
 
   test('offers exactly the tools the principal is already allowed on MCP', () => {
@@ -153,6 +166,89 @@ describe('tool results are normalised before they reach the model', () => {
   test('ordinary values pass through unchanged', () => {
     for (const value of [{ a: 1, b: [true, 'x', null] }, [], 'text', 0, false]) {
       assert.deepEqual(jsonSafe(value), value)
+    }
+  })
+})
+
+/**
+ * The provider switch is only real if the first turn reaches the right vendor
+ * with a payload that vendor accepts, so these assert the request that actually
+ * goes out rather than the configuration that produced it.
+ */
+describe('the selected model provider', () => {
+  async function captureRequest(assistantProvider) {
+    let captured = null
+    const capturingFetch = async (url, init) => {
+      captured = { url: String(url), body: JSON.parse(init.body), headers: init.headers }
+      throw new Error('captured before the network')
+    }
+    const assistant = createAssistant(
+      { ...config, assistantProvider, assistantModel: models[assistantProvider] },
+      deps,
+      capturingFetch,
+    )
+    const response = assistant.stream(
+      { scopes: ['*'], site_ids: [] },
+      { messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }] }] },
+      new AbortController().signal,
+    )
+    // Draining is what runs the turn; the capturing fetch ends it.
+    for await (const _chunk of response.body) void _chunk
+    assert.ok(captured, `${assistantProvider} never issued a request`)
+    return captured
+  }
+
+  test('each provider is reached at its own endpoint with the model it was given', async () => {
+    const endpoints = {
+      anthropic: /anthropic\.com/,
+      openai: /openai\.com/,
+      google: /googleapis\.com/,
+    }
+    for (const assistantProvider of assistantProviders) {
+      const { url, body } = await captureRequest(assistantProvider)
+      assert.match(url, endpoints[assistantProvider])
+      // Google names the model in the path, the other two in the body.
+      assert.match(`${url} ${JSON.stringify(body)}`, new RegExp(models[assistantProvider].replace('.', '\\.')))
+    }
+  })
+
+  test('every provider is offered ContentKit’s tools, and no provider is offered more', async () => {
+    const expected = visibleTools({ scopes: ['*'], site_ids: [] })
+      .map((candidate) => candidate.name)
+      .toSorted()
+    const named = {
+      anthropic: (body) => body.tools.map((entry) => entry.name),
+      openai: (body) => body.tools.map((entry) => entry.name),
+      google: (body) => body.tools.flatMap((entry) => entry.functionDeclarations.map((fn) => fn.name)),
+    }
+    for (const assistantProvider of assistantProviders) {
+      const { body } = await captureRequest(assistantProvider)
+      assert.deepEqual(named[assistantProvider](body).toSorted(), expected, assistantProvider)
+    }
+  })
+
+  /**
+   * OpenAI's strict structured-output mode requires every key in an object's
+   * `properties` to appear in `required`. ContentKit's tool schemas are the MCP
+   * manifest's schemas: they carry optional properties and defaults by design,
+   * and always will. Enabling strict mode would therefore break every call at
+   * runtime while boot and health checks stayed green, so this reads the JSON
+   * actually sent instead of trusting that nobody turned it on.
+   */
+  test('no provider is asked for a strict schema the tools could never satisfy', async () => {
+    const optional = visibleTools({ scopes: ['*'], site_ids: [] }).filter((candidate) => {
+      const required = new Set(candidate.inputSchema.required || [])
+      return Object.keys(candidate.inputSchema.properties || {}).some((key) => !required.has(key))
+    })
+    assert.ok(optional.length > 0, 'the premise of this test is that optional tool properties exist')
+
+    for (const assistantProvider of assistantProviders) {
+      const { body } = await captureRequest(assistantProvider)
+      assert.doesNotMatch(
+        JSON.stringify(body),
+        /"strict":\s*true/,
+        `${assistantProvider} must not be sent strict:true while tool schemas have optional properties`,
+      )
     }
   })
 })

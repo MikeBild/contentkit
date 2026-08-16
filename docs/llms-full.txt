@@ -229,8 +229,10 @@ The complete provider-neutral browser and token boundary is:
 | POST | `/v1/assistant/messages` | Stream one authoring-assistant turn |
 | POST | `/v1/assistant/elicitations/{elicitation}` | Record the human decision on a pending confirmation |
 
-The authoring assistant exists only when `CONTENTKIT_ANTHROPIC_API_KEY` is set;
-without it both routes answer 404. It calls ContentKit's own MCP tools through
+The authoring assistant exists only when the API key of the provider named by
+`CONTENTKIT_ASSISTANT_PROVIDER` is set — `CONTENTKIT_ANTHROPIC_API_KEY`,
+`CONTENTKIT_OPENAI_API_KEY` or `CONTENTKIT_GOOGLE_API_KEY`. Without it both
+routes answer 404. It calls ContentKit's own MCP tools through
 the same scope filter, so it can never exceed what the caller's credential
 already permits. Publication, activation, deletion and credential changes emit a
 `data-elicitation` part and block until a human answers; decline, expiry or a
@@ -1653,6 +1655,11 @@ Production config is explicit. Missing required production values fail startup.
 | `CONTENTKIT_TTS_GOOGLE_API_KEY` | Google Cloud TTS API key (sent as `?key=`) |
 | `CONTENTKIT_TTS_GOOGLE_TOKEN` | OAuth bearer token alternative to the API key |
 | `CONTENTKIT_TTS_GOOGLE_QUOTA_PROJECT` | `x-goog-user-project` quota project header |
+| `CONTENTKIT_ASSISTANT_PROVIDER` | model provider for the authoring assistant: `anthropic` (default), `openai` or `google` |
+| `CONTENTKIT_ANTHROPIC_API_KEY` | assistant credential when the provider is `anthropic`; its presence is what enables the feature |
+| `CONTENTKIT_OPENAI_API_KEY` | assistant credential when the provider is `openai` |
+| `CONTENTKIT_GOOGLE_API_KEY` | assistant credential when the provider is `google` |
+| `CONTENTKIT_ASSISTANT_MODEL` | model id, which must belong to the selected provider; defaults to `claude-sonnet-5`, `gpt-5.4` or `gemini-pro-latest` |
 | `LOG_LEVEL` | structured log verbosity |
 | `CONTENTKIT_DEPLOYMENT_ENVIRONMENT` | structured-log deployment environment; defaults to `production` or `development` from `NODE_ENV` |
 

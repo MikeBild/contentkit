@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.24.0 — 2026-08-16
+
+### Added
+
+- A model-provider switch for the authoring assistant.
+  `CONTENTKIT_ASSISTANT_PROVIDER` selects `anthropic` (default), `openai` or
+  `google`, and the selected provider's key —
+  `CONTENTKIT_ANTHROPIC_API_KEY`, `CONTENTKIT_OPENAI_API_KEY` or
+  `CONTENTKIT_GOOGLE_API_KEY` — remains the feature's only switch: without it
+  the assistant routes answer 404 and the Cockpit hides the tab. A deployment
+  that sets nothing keeps its existing Anthropic behaviour and model.
+- `CONTENTKIT_ASSISTANT_MODEL` is validated against the selected provider at
+  boot. A model id belonging to another provider is refused with a message
+  naming the variable, a model id that would work, and the provider that serves
+  the configured one, instead of reaching the vendor and returning an opaque
+  404 on the first turn.
+
 ## 4.23.1 — 2026-08-16
 
 ### Fixed

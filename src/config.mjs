@@ -115,6 +115,51 @@ function oauthProviders(name) {
   })
 }
 
+// The model providers the authoring assistant can reach. Each entry names the
+// credential whose presence switches the feature on, the model used when the
+// deployment names none, and the id prefixes that provider serves.
+//
+// Model ids do not carry across providers, so a foreign id must be refused here
+// by name. Reaching the vendor with it returns an opaque 404 that says nothing
+// about which variable the operator has to change.
+const assistantProviders = Object.freeze({
+  anthropic: { credential: 'CONTENTKIT_ANTHROPIC_API_KEY', model: 'claude-sonnet-5', prefixes: ['claude-'] },
+  openai: {
+    credential: 'CONTENTKIT_OPENAI_API_KEY',
+    model: 'gpt-5.4',
+    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt-'],
+  },
+  google: { credential: 'CONTENTKIT_GOOGLE_API_KEY', model: 'gemini-pro-latest', prefixes: ['gemini-', 'gemma-'] },
+})
+
+/**
+ * Resolves the assistant's provider, its credential and its model as one unit.
+ *
+ * Credential = enabled, and the selected provider decides which credential that
+ * is. There is deliberately no separate on/off switch: a deployment that names
+ * a provider but no key gets the feature's clean absence, not a half-configured
+ * assistant that fails on its first turn.
+ */
+function assistantProvider(providerName, modelName) {
+  const name = (process.env[providerName] || 'anthropic').trim()
+  const supported = Object.keys(assistantProviders)
+  if (!Object.hasOwn(assistantProviders, name)) {
+    throw new Error(`${providerName} must be one of ${supported.join(', ')}`)
+  }
+  const provider = assistantProviders[name]
+  const model = (process.env[modelName] || '').trim()
+  if (model && !provider.prefixes.some((prefix) => model.startsWith(prefix))) {
+    throw new Error(
+      `${modelName}=${model} does not belong to the ${name} provider; set ${modelName} to a ${name} model id such as ${provider.model}, or set ${providerName} to the provider that serves ${model}`,
+    )
+  }
+  return {
+    assistantProvider: name,
+    assistantApiKey: process.env[provider.credential] || '',
+    assistantModel: model || provider.model,
+  }
+}
+
 export function loadConfig() {
   loadEnvironment()
   const configuredOauthProviders = oauthProviders('CONTENTKIT_OAUTH_PROVIDERS')
@@ -139,11 +184,12 @@ export function loadConfig() {
       min: 10 * 1000,
       max: 15 * 60 * 1000,
     }),
-    // Credential = enabled. Without a key the Cockpit's authoring assistant
-    // does not exist: its routes answer 404 and the console hides the tab. One
-    // env var per feature, no separate on/off switch to drift out of step.
-    anthropicApiKey: process.env.CONTENTKIT_ANTHROPIC_API_KEY || '',
-    assistantModel: process.env.CONTENTKIT_ASSISTANT_MODEL || 'claude-sonnet-5',
+    // Credential = enabled. Without the selected provider's key the Cockpit's
+    // authoring assistant does not exist: its routes answer 404 and the console
+    // hides the tab. One env var per feature, no separate on/off switch to
+    // drift out of step — CONTENTKIT_ASSISTANT_PROVIDER only decides which key
+    // that one var is.
+    ...assistantProvider('CONTENTKIT_ASSISTANT_PROVIDER', 'CONTENTKIT_ASSISTANT_MODEL'),
     oauthSecret: process.env.CONTENTKIT_OAUTH_SECRET || '',
     oauthProviders: configuredOauthProviders,
     oauthAllowedScopes: csv('CONTENTKIT_OAUTH_ALLOWED_SCOPES', ['mcp:read', 'mcp:authoring', 'mcp:admin']),

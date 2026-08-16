@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createOpenAI } from '@ai-sdk/openai'
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -21,6 +23,25 @@ import { visibleTools } from './mcp/tools.mjs'
 // is reimplemented, so the two surfaces cannot drift apart in what they permit.
 const MAX_STEPS = 12
 const MAX_MESSAGES = 60
+
+/**
+ * The model providers a deployment can select. Only the credential and the
+ * model id differ; nothing below this map is provider-aware, so the tools, the
+ * scope ceiling and the elicitation transport are identical whichever one runs.
+ *
+ * No provider option is set here on purpose. The advertised tool schemas are
+ * ContentKit's MCP schemas, which carry optional properties and defaults, and a
+ * strict JSON-schema mode would reject every one of them at call time while
+ * boot and health checks stayed green. Providers must receive these schemas as
+ * they are.
+ */
+const providers = Object.freeze({
+  anthropic: (apiKey, fetchImpl) => createAnthropic({ apiKey, fetch: fetchImpl }),
+  openai: (apiKey, fetchImpl) => createOpenAI({ apiKey, fetch: fetchImpl }),
+  google: (apiKey, fetchImpl) => createGoogleGenerativeAI({ apiKey, fetch: fetchImpl }),
+})
+
+export const assistantProviders = Object.freeze(Object.keys(providers))
 
 const INSTRUCTIONS = `You are the authoring assistant inside ContentKit Cockpit, helping an operator produce and inspect content.
 
@@ -120,10 +141,18 @@ export function jsonSafe(value) {
   return value === undefined ? null : JSON.parse(JSON.stringify(value))
 }
 
-export function createAssistant(config, deps) {
-  if (!config.anthropicApiKey) return null
+// fetchImpl is the same seam createTtsProvider uses: the only way to assert
+// what a provider is actually sent is to look at the request it makes.
+export function createAssistant(config, deps, fetchImpl = fetch) {
+  if (!config.assistantApiKey) return null
 
-  const anthropic = createAnthropic({ apiKey: config.anthropicApiKey })
+  const provider = providers[config.assistantProvider]
+  // Unreachable through loadConfig, which rejects an unknown provider at boot.
+  // Kept because createAssistant is also constructed from hand-built config.
+  if (!provider) {
+    throw new Error(`CONTENTKIT_ASSISTANT_PROVIDER must be one of ${assistantProviders.join(', ')}`)
+  }
+  const model = provider(config.assistantApiKey, fetchImpl)(config.assistantModel)
   const elicitations = createElicitations()
   const timeoutMs = config.mcpElicitationTimeoutMs || 5 * 60 * 1000
 
@@ -251,7 +280,7 @@ export function createAssistant(config, deps) {
           }
 
           const result = streamText({
-            model: anthropic(config.assistantModel),
+            model,
             instructions: site ? `${INSTRUCTIONS}\n\nThe operator is working on the site \`${site}\`.` : INSTRUCTIONS,
             // Async despite what the bundled type declaration claims: without
             // the await, streamText receives a Promise and fails deep inside

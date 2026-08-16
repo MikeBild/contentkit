@@ -74,7 +74,7 @@ export function AssistantPage() {
     bottom.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Without CONTENTKIT_ANTHROPIC_API_KEY the route does not exist at all.
+  // Without the selected provider's API key the route does not exist at all.
   useEffect(() => {
     fetch('/v1/assistant/messages', { method: 'OPTIONS' })
       .then((response) => {

@@ -84,8 +84,8 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       deckJobs,
       secretHandoffs,
     })
-  // Credential = enabled: without CONTENTKIT_ANTHROPIC_API_KEY this is null and
-  // the assistant routes answer 404, so the console hides the tab entirely.
+  // Credential = enabled: without the selected provider's API key this is null
+  // and the assistant routes answer 404, so the console hides the tab entirely.
   const assistant =
     dependencies.assistant ??
     createAssistant(config, {
