@@ -23,9 +23,10 @@ test('clientIp trusts only the rightmost X-Forwarded-For hop behind a proxy', ()
   assert.equal(clientIp(req, false), '10.0.0.1')
 })
 
-test('preview rewriting covers responsive and styled release assets without capturing API routes', () => {
-  const html = `<picture><source srcset="/assets/chart-small.svg 390w, /assets/chart.svg 1200w"><img src="/assets/chart.svg" style="background:url('/assets/grid.svg')"></picture><form action="/public/v1/contact"><a href="/de/report/">Report</a><a href="/_contentkit/login">Sign in</a></form>`
+test('preview rewriting covers redirects, responsive and styled release assets without capturing API routes', () => {
+  const html = `<meta http-equiv="refresh" content="0;url=/de/"><picture><source srcset="/assets/chart-small.svg 390w, /assets/chart.svg 1200w"><img src="/assets/chart.svg" style="background:url('/assets/grid.svg')"></picture><form action="/public/v1/contact"><a href="/de/report/">Report</a><a href="/_contentkit/login">Sign in</a></form>`
   const rewritten = rewritePreviewHtml(html, '/previews/release-review')
+  assert.match(rewritten, /content="0;url=\/previews\/release-review\/de\/"/)
   assert.match(rewritten, /\/previews\/release-review\/assets\/chart-small\.svg 390w/)
   assert.match(rewritten, /src="\/previews\/release-review\/assets\/chart\.svg"/)
   assert.match(rewritten, /url\('\/previews\/release-review\/assets\/grid\.svg'\)/)

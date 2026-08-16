@@ -238,6 +238,10 @@ export function rewritePreviewHtml(html, previewBase) {
     /\b(href|xlink:href|src|action|poster|data|data-index)=(['"])(.*?)\2/gi,
     (_match, attribute, quote, url) => `${attribute}=${quote}${previewUrl(url, previewBase)}${quote}`,
   )
+  value = value.replace(
+    /(<meta\b[^>]*\bcontent=)(['"])(\s*\d+\s*;\s*url=)(\/[^'"]*)\2/gi,
+    (_match, prefix, quote, delay, url) => `${prefix}${quote}${delay}${previewUrl(url, previewBase)}${quote}`,
+  )
   value = value.replace(/\bsrcset=(['"])(.*?)\1/gi, (_match, quote, srcset) => {
     return `srcset=${quote}${previewSrcset(srcset, previewBase)}${quote}`
   })

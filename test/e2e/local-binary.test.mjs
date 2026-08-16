@@ -442,6 +442,11 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.equal(invitation.headers.get('location'), '/previews/local-release-review/')
       const previewCookie = invitation.headers.get('set-cookie')?.split(';')[0]
       assert.match(previewCookie || '', /^contentkit_preview=/)
+      const previewRoot = await fetch(preview.preview_url, {
+        headers: { cookie: previewCookie },
+      })
+      assert.equal(previewRoot.status, 200)
+      assert.match(await previewRoot.text(), /content="0;url=\/previews\/local-release-review\/de\/"/)
       const repeatedInvitation = await fetch(preview.invitation_url, {
         redirect: 'manual',
       })
