@@ -6,5 +6,11 @@ const source = await readFile(new URL('../../assets/search.js', import.meta.url)
 
 test('preview search uses only the immutable preview index', () => {
   assert.match(source, /const previewPath = \/\^\\\/\(\?:previews\|p\)/)
-  assert.match(source, /previewPath\s*\? Promise\.resolve\(\[\]\)\s*: fetch\(`\/_contentkit\/search-index\.json/)
+  assert.match(source, /if \(previewPath\) return Promise\.resolve\(\[\]\)/)
+})
+
+test('public search asks for protected records only for an authenticated reader', () => {
+  assert.match(source, /fetch\('\/_contentkit\/session'/)
+  assert.match(source, /if \(session\?\.authenticated !== true\) return \[\]/)
+  assert.match(source, /fetch\(`\/_contentkit\/search-index\.json/)
 })

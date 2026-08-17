@@ -671,20 +671,22 @@ export function createRequestHandler(ctx) {
       })
     }
     const reader = await readerFor(req, site)
-    if (!reader)
-      return sendJson(res, 401, { error: 'reader authentication required' }, { 'cache-control': 'private,no-store' })
     if (path === '/_contentkit/session') {
       return sendJson(
         res,
         200,
-        {
-          authenticated: true,
-          user: { id: reader.id, username: reader.username, display_name: reader.display_name },
-          groups: reader.groups,
-        },
+        reader
+          ? {
+              authenticated: true,
+              user: { id: reader.id, username: reader.username, display_name: reader.display_name },
+              groups: reader.groups,
+            }
+          : { authenticated: false, user: null, groups: [] },
         { 'cache-control': 'private,no-store' },
       )
     }
+    if (!reader)
+      return sendJson(res, 401, { error: 'reader authentication required' }, { 'cache-control': 'private,no-store' })
     if (!site.active_release_id) return sendJson(res, 503, { error: 'site has no active release' })
     const catalog = await repo.releaseAccessCatalog(site.active_release_id, url.searchParams.get('locale') || undefined)
     const visible = catalog.filter((entry) => readerAllowed(entry, reader))

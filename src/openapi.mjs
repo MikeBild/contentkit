@@ -1679,7 +1679,7 @@ export function openApi(config) {
         get: {
           operationId: 'readerSession',
           summary: 'Describe the current site reader session',
-          responses: { 200: { description: 'Reader and group projection' }, 401: { description: 'Not signed in' } },
+          responses: { 200: { description: 'Authenticated reader projection or an anonymous session state' } },
         },
       },
       '/_contentkit/navigation.json': {

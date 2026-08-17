@@ -978,6 +978,9 @@ test('gateway redirects anonymous readers and serves protected pages only to an 
     },
   }
   await withApp({ repo, storage }, async (request) => {
+    const anonymousSession = await request('/_contentkit/session')
+    assert.equal(anonymousSession.status, 200)
+    assert.deepEqual(await anonymousSession.json(), { authenticated: false, user: null, groups: [] })
     const anonymous = await request('/en/docs/internal/', { redirect: 'manual' })
     assert.equal(anonymous.status, 302)
     assert.match(anonymous.headers.get('location'), /^\/_contentkit\/login/)
@@ -991,6 +994,15 @@ test('gateway redirects anonymous readers and serves protected pages only to an 
     assert.equal(allowed.status, 200)
     assert.match(await allowed.text(), /Protected/)
     assert.equal(allowed.headers.get('cache-control'), 'private,no-store')
+    const allowedSession = await request('/_contentkit/session', {
+      headers: { cookie: '__Host-contentkit_session=allowed' },
+    })
+    assert.equal(allowedSession.status, 200)
+    assert.deepEqual(await allowedSession.json(), {
+      authenticated: true,
+      user: { id: 'reader-1' },
+      groups: ['customers'],
+    })
   })
 })
 

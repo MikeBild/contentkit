@@ -54,6 +54,19 @@
   const lower = (value) => String(value).toLocaleLowerCase(lang)
   const internal = (url) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
 
+  function loadProtectedIndex() {
+    if (previewPath) return Promise.resolve([])
+    return fetch('/_contentkit/session', { credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : { authenticated: false }))
+      .then((session) => {
+        if (session?.authenticated !== true) return []
+        return fetch(`/_contentkit/search-index.json?locale=${encodeURIComponent(lang)}`, {
+          credentials: 'same-origin',
+        }).then((response) => (response.ok ? response.json() : []))
+      })
+      .catch(() => [])
+  }
+
   function loadIndex() {
     if (records) return Promise.resolve(records)
     if (pending) return pending
@@ -63,11 +76,7 @@
       fetch(input.dataset.index, { credentials: 'same-origin' }).then((response) =>
         response.ok ? response.json() : Promise.reject(new Error('http')),
       ),
-      previewPath
-        ? Promise.resolve([])
-        : fetch(`/_contentkit/search-index.json?locale=${encodeURIComponent(lang)}`, { credentials: 'same-origin' })
-            .then((response) => (response.ok ? response.json() : []))
-            .catch(() => []),
+      loadProtectedIndex(),
     ])
       .then(([publicData, protectedData]) => {
         // A poisoned index must not be able to produce javascript: hrefs.
