@@ -745,9 +745,10 @@ function siteFooter(ctx) {
 // result count either way.
 function siteSearch(ctx) {
   const { locale, t } = ctx
+  const indexUrl = ctx.searchIndex || `/${locale}/search-index.json`
   return `<form class="site-search" role="search" method="get" action="/${escapeHtml(locale)}/search/" data-site-search>
 <label class="sr-only" for="site-search-input">${escapeHtml(t.search)}</label>
-<input id="site-search-input" class="search-box" type="search" name="q" maxlength="100" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="${escapeHtml(t.searchPlaceholder)}" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false" aria-controls="site-search-listbox" data-search-input data-index="/${escapeHtml(locale)}/search-index.json" data-empty-text="${escapeHtml(t.noResults)}" data-count-one="${escapeHtml(t.oneResult)}" data-count-many="${escapeHtml(t.manyResults)}">
+<input id="site-search-input" class="search-box" type="search" name="q" maxlength="100" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="${escapeHtml(t.searchPlaceholder)}" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false" aria-controls="site-search-listbox" data-search-input data-index="${escapeHtml(indexUrl)}" data-empty-text="${escapeHtml(t.noResults)}" data-count-one="${escapeHtml(t.oneResult)}" data-count-many="${escapeHtml(t.manyResults)}">
 <div class="search-panel" data-search-panel hidden><div class="search-results" id="site-search-listbox" role="listbox" aria-label="${escapeHtml(t.searchResults)}" data-search-listbox hidden></div><p class="search-empty" data-search-empty hidden>${escapeHtml(t.noResults)}</p></div>
 <div class="sr-only" role="status" aria-live="polite" data-search-status></div>
 </form>`

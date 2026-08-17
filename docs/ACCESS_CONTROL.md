@@ -104,6 +104,12 @@ The login form uses a signed CSRF token and accepts only a same-origin
 Secure on HTTPS sites. Sessions expire after 12 idle hours and after seven days
 absolutely. The database stores only an HMAC of the random session token.
 
+A site protected by a root prefix rule points its header search at the private
+`/_contentkit/search-index.json` catalog after sign-in. Its static public search
+index remains empty, so titles and summaries cannot leak before authentication.
+A site-scoped `content:read` machine principal may read the same private catalog
+for release acceptance without becoming a browser reader session.
+
 Protected responses use `Cache-Control: private,no-store`. An anonymous HTML
 request redirects to login; protected media returns `401`; an authenticated
 reader without a required grant receives `403`.

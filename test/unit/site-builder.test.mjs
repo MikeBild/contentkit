@@ -1170,6 +1170,7 @@ test('a fully private product home renders a cadence catalog for only same-grant
     ],
   })
   const home = result.files.get('en/index.html').body.toString()
+  assert.match(home, /data-index="\/_contentkit\/search-index\.json\?locale=en"/)
   assert.match(home, /href="\/en\/" aria-current="page">Overview<\/a>/)
   assert.match(home, /href="\/en\/report-09\/"[^>]*>Latest report<\/a>/)
   assert.doesNotMatch(home, /report-catalog-nav|href="#current-reports"/)

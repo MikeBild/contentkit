@@ -1020,6 +1020,18 @@ test('a site-scoped content:read key can verify a protected release without beco
     async authenticateReader() {
       return null
     },
+    async releaseAccessCatalog() {
+      return [
+        {
+          title: 'Radar overview',
+          summary: 'Private market analysis',
+          url: '/de/ueberblick/',
+          search_text: 'radar overview private market analysis',
+          group_slugs: ['radar-readers'],
+          user_ids: [],
+        },
+      ]
+    },
   }
   const storage = {
     async download() {
@@ -1033,7 +1045,8 @@ test('a site-scoped content:read key can verify a protected release without beco
   }
   const auth = {
     async authenticate(headers) {
-      return headers.get?.('x-api-key') === 'radar-read-key'
+      const apiKey = headers.get?.('x-api-key') || headers['x-api-key']
+      return apiKey === 'radar-read-key'
         ? { id: 'radar-acceptance', scopes: ['content:read'], site_ids: ['site-1'] }
         : null
     },
@@ -1053,6 +1066,19 @@ test('a site-scoped content:read key can verify a protected release without beco
 
     const session = await request('/_contentkit/session', { headers: { 'x-api-key': 'radar-read-key' } })
     assert.deepEqual(await session.json(), { authenticated: false, user: null, groups: [] })
+
+    const search = await request('/_contentkit/search-index.json?locale=de', {
+      headers: { 'x-api-key': 'radar-read-key' },
+    })
+    assert.equal(search.status, 200)
+    assert.deepEqual(await search.json(), [
+      {
+        title: 'Radar overview',
+        summary: 'Private market analysis',
+        url: '/de/ueberblick/',
+        text: 'radar overview private market analysis',
+      },
+    ])
   })
 })
 

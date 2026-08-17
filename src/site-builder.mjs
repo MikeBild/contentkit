@@ -718,7 +718,21 @@ export async function buildSite({
     // Whether this locale's blogcast feed will exist at all (same condition as
     // the blogcast.xml emit below) — templates hide every blogcast link without it.
     const blogcast = site.settings?.audio?.enabled === true && posts.some((post) => post.audio)
-    const base = { site, locale, t, posts, projects, pages, allPages, decks, assets, now, blogcast }
+    const siteWideReaderAccess = accessRules.some((rule) => rule.match === 'prefix' && rule.path === '/')
+    const base = {
+      site,
+      locale,
+      t,
+      posts,
+      projects,
+      pages,
+      allPages,
+      decks,
+      assets,
+      now,
+      blogcast,
+      ...(siteWideReaderAccess ? { searchIndex: `/_contentkit/search-index.json?locale=${locale}` } : {}),
+    }
     const personData = {
       '@context': 'https://schema.org',
       '@type': 'Person',

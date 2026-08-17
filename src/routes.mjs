@@ -701,11 +701,12 @@ export function createRequestHandler(ctx) {
         { 'cache-control': 'private,no-store' },
       )
     }
-    if (!reader)
+    const machine = reader ? null : await machineReaderFor(req, site)
+    if (!reader && !machine)
       return sendJson(res, 401, { error: 'reader authentication required' }, { 'cache-control': 'private,no-store' })
     if (!site.active_release_id) return sendJson(res, 503, { error: 'site has no active release' })
     const catalog = await repo.releaseAccessCatalog(site.active_release_id, url.searchParams.get('locale') || undefined)
-    const visible = catalog.filter((entry) => readerAllowed(entry, reader))
+    const visible = machine ? catalog : catalog.filter((entry) => readerAllowed(entry, reader))
     if (path === '/_contentkit/navigation.json') {
       return sendJson(
         res,
