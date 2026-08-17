@@ -855,6 +855,28 @@ test('report pages derive a localized section navigation from level-two headings
   )
 })
 
+test('long standard pages get localized section navigation, category and an authored update date', () => {
+  const item = {
+    kind: 'page',
+    layout: 'standard',
+    title: 'Market radar',
+    summary: 'A bounded market view.',
+    category: 'Vergleich',
+    updated_at: '2026-08-16T16:57:16.830Z',
+    html: '<h2 id="products"><a class="heading-anchor" href="#products">Produkte</a></h2><p>A</p><h2 id="business"><a class="heading-anchor" href="#business">Geschäftsmodelle</a></h2>',
+  }
+  const html = contentBody(item, {
+    site: { id: 's', settings: {} },
+    t: dictionary('de'),
+    locale: 'de',
+  })
+  assert.match(html, /<div class="eyebrow">Vergleich<\/div>/)
+  assert.match(html, /Aktualisiert: 16\.8\.2026/)
+  assert.match(html, /aria-label="Auf dieser Seite"/)
+  assert.match(html, /href="#products">Produkte<\/a>/)
+  assert.match(html, /href="#business">Geschäftsmodelle<\/a>/)
+})
+
 test('theme tokens emit :root custom properties and a dark override behind prefers-color-scheme', () => {
   const html = render({
     site: {

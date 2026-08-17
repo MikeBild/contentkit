@@ -468,14 +468,15 @@ test('site gateway terminates after sending a no-release response', async () => 
       },
       repo: {
         async getSiteByHost() {
-          return { id: 'private-site', active_release_id: null }
+          return { id: 'private-site', name: 'Leerer Bericht', default_locale: 'de', active_release_id: null }
         },
       },
     },
     async (request) => {
       const response = await request('/', { headers: { host: 'cockpit.example' } })
       assert.equal(response.status, 503)
-      assert.deepEqual(await response.json(), { error: 'site has no active release' })
+      assert.match(response.headers.get('content-type'), /^text\/html/)
+      assert.match(await response.text(), /Noch nicht veröffentlicht.*Leerer Bericht/s)
     },
   )
   assert.deepEqual(errors, [])

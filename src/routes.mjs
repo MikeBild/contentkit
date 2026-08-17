@@ -598,6 +598,16 @@ export function createRequestHandler(ctx) {
     'referrer-policy': 'no-referrer',
     'x-robots-tag': 'noindex,nofollow,noarchive',
   }
+  const unpublishedSitePage = (site) => {
+    const de = String(site.default_locale || '')
+      .toLowerCase()
+      .startsWith('de')
+    const title = de ? 'Noch nicht veröffentlicht' : 'Not published yet'
+    const message = de
+      ? 'Diese Website hat noch keine freigegebene Veröffentlichung. Nach der ersten Freigabe erscheint der Inhalt hier.'
+      : 'This website does not have an approved release yet. Its content will appear here after the first publication.'
+    return `<!doctype html><html lang="${de ? 'de' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>${escapeHtml(title)} · ${escapeHtml(site.name)}</title><style>body{font:16px ${contentkitFontFamily};margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.empty{width:min(90%,32rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}.brand{font-size:.8rem;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:#526078}h1{margin:.5rem 0}p{color:#526078;line-height:1.6;margin-bottom:0}</style></head><body><main class="empty"><div class="brand">${escapeHtml(site.name)}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main></body></html>`
+  }
 
   async function readerRoutes(req, res, url, path, ip) {
     if (!path.startsWith('/_contentkit/')) return false
@@ -1069,7 +1079,7 @@ export function createRequestHandler(ctx) {
       return true
     }
     if (!site) return false
-    if (!site.active_release_id) return sendJson(res, 503, { error: 'site has no active release' })
+    if (!site.active_release_id) return send(res, 503, unpublishedSitePage(site), browserErrorHeaders)
     const leaf = url.pathname.split('/').at(-1)
     if (url.pathname !== '/' && !url.pathname.endsWith('/') && !leaf.includes('.')) {
       send(res, 308, '', { location: `${url.pathname}/${url.search}` })

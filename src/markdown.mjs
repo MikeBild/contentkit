@@ -1623,7 +1623,12 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     locale,
     slug,
     translation_key: translationKey,
-    summary: String(data.summary || '').trim(),
+    // `summary` is ContentKit's canonical card/search field. `description` is
+    // accepted as the common Markdown/CMS spelling so an otherwise valid
+    // integration does not silently fall back to a mangled excerpt of tables,
+    // URLs or headings. When both are present the explicit ContentKit field
+    // remains authoritative.
+    summary: String(data.summary || data.description || '').trim(),
     tags,
     published_at: parseIsoDate(data.date || data.publishedAt, 'date'),
     scheduled_at: parseIsoDate(data.scheduledAt, 'scheduledAt'),

@@ -11,6 +11,7 @@ const words = {
     latest: 'Neueste Beiträge',
     latestReport: 'Aktueller Report',
     reportSections: 'Reportbereiche',
+    pageSections: 'Auf dieser Seite',
     reportPeriods: 'Zeiträume',
     reportHistory: 'Reportverlauf',
     reportHistoryHint: 'Die letzten abgeschlossenen Reports bleiben unverändert und nachvollziehbar.',
@@ -113,6 +114,7 @@ const words = {
     latest: 'Latest posts',
     latestReport: 'Latest report',
     reportSections: 'Report sections',
+    pageSections: 'On this page',
     reportPeriods: 'Periods',
     reportHistory: 'Report history',
     reportHistoryHint: 'The latest completed reports remain immutable and traceable.',
@@ -941,8 +943,10 @@ ${siteFooter(ctx)}
 // project's tags would link into 404s. Projects carry `technologies` for the
 // same job, and that is not rendered here either.
 export function card(item) {
+  const stamp = item.updated_at || item.published_at
+  const label = item.category || ''
   return `<article class="card"><a href="${escapeHtml(item.url)}">
-<div class="meta">${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div>
+<div class="meta">${label ? `<span class="card-category">${escapeHtml(label)}</span>` : ''}${stamp ? `<time datetime="${escapeHtml(stamp)}">${escapeHtml(formatDate(stamp, item.locale))}</time>` : ''}</div>
 <h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.summary)}</p>
 </a>${item.kind === 'post' && item.tags?.length ? `<div class="tags">${item.tags.map((tag) => `<a class="tag" href="/${escapeHtml(item.locale)}/tags/${slugify(tag)}/">${escapeHtml(tag)}</a>`).join('')}</div>` : ''}</article>`
 }
@@ -989,7 +993,7 @@ export function presetHomeBody(ctx) {
   ) {
     return reportCatalogBody(ctx, title, visible)
   }
-  return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(preset)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
+  return `<section class="container hero preset-hero"><div><div class="eyebrow">${escapeHtml(ctx.site.settings?.eyebrow || ctx.t.overview)}</div><h1>${escapeHtml(title)}</h1><p class="hero-copy">${escapeHtml(ctx.site.settings?.hero_text || ctx.site.description || '')}</p></div></section>
 <section class="container section"><div class="grid">${visible.slice(0, 12).map(card).join('')}</div></section>`
 }
 
@@ -1416,14 +1420,15 @@ function extraBody(item, ctx) {
     .join('')}</dl>`
 }
 
-function reportSectionNavigation(item, ctx) {
+function sectionNavigation(item, ctx, isReport) {
   const sections = [
     ...String(item.html || '').matchAll(/<h2 id="([^"]+)"[^>]*>(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/h2>/g),
   ]
     .slice(0, 12)
     .map((match) => ({ id: match[1], label: match[2].replace(/<[^>]+>/g, '') }))
   if (sections.length < 2) return ''
-  return `<nav class="container report-section-nav" aria-label="${escapeHtml(ctx.t.reportSections)}"><span>${escapeHtml(ctx.t.reportSections)}</span><ol>${sections
+  const label = isReport ? ctx.t.reportSections : ctx.t.pageSections
+  return `<nav class="container report-section-nav" aria-label="${escapeHtml(label)}"><span>${escapeHtml(label)}</span><ol>${sections
     .map((section) => `<li><a href="#${escapeHtml(section.id)}">${section.label}</a></li>`)
     .join('')}</ol></nav>`
 }
@@ -1433,7 +1438,7 @@ export function contentBody(item, ctx, comments = []) {
   const isReport = item.layout === 'composition' && item.composition?.format === 'report'
   const isComposition = item.layout === 'composition'
   const locale = item.locale || ctx.locale
-  const updated = item.updated_at && item.updated_at > item.published_at ? item.updated_at : ''
+  const updated = item.updated_at && (!item.published_at || item.updated_at > item.published_at) ? item.updated_at : ''
   const meta = [
     item.published_at
       ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(formatDate(item.published_at, locale))}</time>`
@@ -1465,9 +1470,11 @@ export function contentBody(item, ctx, comments = []) {
   const footer = isPost
     ? `${relatedBody(item, ctx)}${postNav(item, ctx)}${feedbackBody(item, ctx)}${commentsBody(item, ctx, comments)}`
     : ''
-  const reportNavigation = isReport ? reportSectionNavigation(item, ctx) : ''
+  const sectionNav = !isPost ? sectionNavigation(item, ctx, isReport) : ''
   const displayTitle = isReport ? reportDisplayTitle(item, ctx.site) : item.title
-  return `<article${isComposition ? ' class="composition-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(isComposition ? item.composition?.format || 'composition' : item.kind)}</div><h1>${escapeHtml(displayTitle)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${reportNavigation}<div class="container prose${isComposition ? ' composition-prose' : ''}${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
+  const typeLabel =
+    item.category || (isReport ? item.composition?.format || 'Report' : isPost ? ctx.t.blog : ctx.t.pages)
+  return `<article${isComposition ? ' class="composition-page"' : ''}><header class="container article-header${isReport ? ' report-header' : ''}"><div class="eyebrow">${escapeHtml(typeLabel)}</div><h1>${escapeHtml(displayTitle)}</h1><p class="article-summary">${escapeHtml(item.summary)}</p><div class="meta">${meta}</div>${pills}${aiActions}</header>${sectionNav}<div class="container prose${isComposition ? ' composition-prose' : ''}${isReport ? ' report-prose' : ''}">${player}${notice}${tldrBody(item, ctx)}${item.html}${extraBody(item, ctx)}${faqBody(item, ctx)}${footer}</div></article>`
 }
 
 export function commentsEnabled(site) {

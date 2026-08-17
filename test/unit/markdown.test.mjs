@@ -78,6 +78,32 @@ test('validates required frontmatter', async () => {
   await assert.rejects(() => renderMarkdown('---\nlocale: invalid_locale\n---\n# Missing'), /title is required/)
 })
 
+test('description is a safe summary alias and explicit summary wins', async () => {
+  const described = await renderMarkdown(`---
+kind: page
+title: Market comparison
+locale: de
+slug: market-comparison
+description: A deliberately authored card description.
+---
+| Product | Feature |
+|---|---|
+| A | B |`)
+  assert.equal(described.meta.summary, 'A deliberately authored card description.')
+  assert.doesNotMatch(described.meta.summary, /Product|\|/)
+
+  const explicit = await renderMarkdown(`---
+kind: page
+title: Market comparison
+locale: de
+slug: market-comparison
+summary: Canonical summary.
+description: Compatibility description.
+---
+Body.`)
+  assert.equal(explicit.meta.summary, 'Canonical summary.')
+})
+
 test('tldr and faq frontmatter are validated, trimmed and default to empty', async () => {
   const doc = `---\nkind: post\ntitle: T\nlocale: de\nslug: t\nsummary: S\ntldr:\n  - " Erste Kernaussage "\n  - Zweite Kernaussage\nfaq:\n  - q: " Was ist T? "\n    a: Ein Test.\n---\nBody.`
   const result = await renderMarkdown(doc)
