@@ -229,6 +229,24 @@ test('preview promotion without form capability returns an exact non-mutating Co
   const auditRows = []
   const releaseId = '11111111-1111-4111-8111-111111111111'
   const digest = 'd'.repeat(64)
+  let reviewRow = null
+  const fakeDb = {
+    async tx(fn) {
+      return fn(fakeDb)
+    },
+    async select(table) {
+      return table === 'ck_promotion_reviews' && reviewRow ? [reviewRow] : []
+    },
+    async insert(table, row) {
+      if (table !== 'ck_promotion_reviews') throw new Error(`unexpected insert ${table}`)
+      reviewRow = { ...row, requested_at: '2026-08-17T10:00:00.000Z' }
+      return [reviewRow]
+    },
+    async query(sql, values) {
+      if (!sql.includes('INSERT INTO ck_decisions')) throw new Error('unexpected query')
+      return [{ id: 'decision-1', source_id: values[3] }]
+    },
+  }
   const handoffDeps = {
     auth: {
       async authenticate(headers) {
@@ -244,7 +262,11 @@ test('preview promotion without form capability returns an exact non-mutating Co
       async getSite() {
         return { id: 'site-1', slug: 'mikebild', name: 'MikeBild' }
       },
+      async getRelease() {
+        return { id: releaseId, site_id: 'site-1', kind: 'preview', status: 'preview', manifest_sha256: digest }
+      },
     },
+    db: fakeDb,
     releases: {
       async promote() {
         promoted = true
@@ -287,10 +309,10 @@ test('preview promotion without form capability returns an exact non-mutating Co
     assert.equal(promoted, false)
     const review = new URL(payload.review_url)
     assert.equal(review.origin, new URL(config.publicUrl).origin)
-    assert.equal(review.searchParams.get('promotion_release'), releaseId)
-    assert.equal(review.searchParams.get('promotion_manifest'), digest)
+    assert.equal(review.searchParams.get('promotion_review'), payload.promotion_review_id)
+    assert.equal(review.searchParams.size, 2)
     assert.equal(auditRows.length, 1)
-    assert.equal(auditRows[0].action, 'release.promotion_review_requested')
+    assert.equal(auditRows[0].action, 'promotion_review.request')
   } finally {
     mount.stop()
   }

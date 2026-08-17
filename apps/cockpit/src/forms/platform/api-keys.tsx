@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { InfoIcon, TriangleAlert } from 'lucide-react'
+import { InfoIcon, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type ApiKey } from '@/api/ck'
 import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -14,8 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DateTimeField, EntityMultiSelect, RevealOnce, ScopePicker, TextField } from '@/forms/fields'
 import { SCOPE_LABEL_KEYS } from '@/forms/fields/scopes'
@@ -58,8 +67,7 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
   // The server refuses a key scoped wider than its own principal, so a
   // restricted operator must pick sites; offering "all sites" would be a 403.
   const mustScopeToSites = session.site_ids.length > 0
-  const canCreate =
-    !create.isPending && Boolean(name) && scopes.length > 0 && (!mustScopeToSites || siteIds.length > 0)
+  const canCreate = !create.isPending && Boolean(name) && scopes.length > 0 && (!mustScopeToSites || siteIds.length > 0)
 
   return (
     <Dialog
@@ -114,11 +122,7 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
             label={t('identity.sites')}
             required={mustScopeToSites}
             definition={t('identity.sitesDefinition')}
-            fallback={
-              mustScopeToSites
-                ? t('apiKey.sitesRestricted')
-                : t('apiKey.sitesAll')
-            }
+            fallback={mustScopeToSites ? t('apiKey.sitesRestricted') : t('apiKey.sitesAll')}
             value={siteIds}
             options={sites.map((site) => ({ value: site.id, label: site.name, hint: site.slug }))}
             emptyMessage={t('identity.noSites')}
@@ -159,7 +163,8 @@ function CreateKeyDialog({ onIssued, onClose }: { onIssued: (raw: string) => voi
 
 function keyState(key: ApiKey, t: I18nValue['t']): { tone: 'success' | 'danger' | 'warning'; label: string } {
   if (key.revoked_at) return { tone: 'danger', label: t('apiKey.revoked') }
-  if (key.expires_at && new Date(key.expires_at).valueOf() < Date.now()) return { tone: 'warning', label: t('apiKey.expired') }
+  if (key.expires_at && new Date(key.expires_at).valueOf() < Date.now())
+    return { tone: 'warning', label: t('apiKey.expired') }
   return { tone: 'success', label: t('apiKey.active') }
 }
 
@@ -172,7 +177,12 @@ export function ApiKeysCard() {
   const [issued, setIssued] = useState<string | null>(null)
 
   const apiKeys = useQuery({ queryKey: keys.credentials.apiKeys, queryFn: () => ck.credentials.apiKeys() })
-  const rows = apiKeys.data ?? []
+  const rows = [...(apiKeys.data ?? [])].sort((left, right) => {
+    if (!left.last_used_at && !right.last_used_at) return right.created_at.localeCompare(left.created_at)
+    if (!left.last_used_at) return 1
+    if (!right.last_used_at) return -1
+    return right.last_used_at.localeCompare(left.last_used_at)
+  })
   const writable = can('api-key:admin') || can('site:admin')
 
   return (
@@ -198,7 +208,10 @@ export function ApiKeysCard() {
               </PopoverContent>
             </Popover>
           </div>
-          <CardDescription>{t('apiKey.noUpdate')}</CardDescription>
+          <CardDescription className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{t('apiKey.boundary')}</Badge>
+            <span>{t('apiKey.noUpdate')}</span>
+          </CardDescription>
         </div>
         {writable ? (
           <Button size="sm" variant="outline" data-testid="ck-api-key-new" onClick={() => setCreating(true)}>
@@ -258,42 +271,77 @@ export function ApiKeysCard() {
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{key.key_prefix}</TableCell>
                     <TableCell className="max-w-[18rem] text-xs text-muted-foreground">
-                      {list((key.scopes ?? []).map((scope) =>
-                        scope in SCOPE_LABEL_KEYS ? t(SCOPE_LABEL_KEYS[scope as ProductScope]) : scope,
-                      ))}
+                      {list(
+                        (key.scopes ?? []).map((scope) =>
+                          scope in SCOPE_LABEL_KEYS ? t(SCOPE_LABEL_KEYS[scope as ProductScope]) : scope,
+                        ),
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {key.site_ids?.length
-                        ? list(key.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite')))
+                        ? list(
+                            key.site_ids.map(
+                              (id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite'),
+                            ),
+                          )
                         : t('identity.everySite')}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {key.expires_at ? dateTime(key.expires_at) : t('apiKey.never')}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(key.created_at)}</TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {key.last_used_at ? dateTime(key.last_used_at) : '—'}
+                      <RelativeTime value={key.created_at} data-testid={`api-key-${keyIndex}-age`} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {key.last_used_at ? (
+                        <RelativeTime value={key.last_used_at} data-testid={`api-key-${keyIndex}-last-used`} />
+                      ) : (
+                        <StatusBadge tone="warning">{t('apiKey.neverUsed')}</StatusBadge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {key.revoked_at || !writable ? (
                         <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
                       ) : (
-                        <Confirm
-                          title={t('apiKey.revokeTitle')}
-                          description={t('apiKey.revokeDescription', { name: key.name, prefix: key.key_prefix })}
-                          confirmLabel={t('apiKey.revokeKey')}
-                          destructive
-                          onConfirm={async () => {
-                            await ck.credentials.revokeApiKey(key.id)
-                            await client.invalidateQueries({ queryKey: keys.credentials.apiKeys })
-                          }}
-                        >
-                          {(open) => (
-                            <Button size="sm" variant="destructive" data-testid={`ck-api-key-${keyIndex}-revoke`} onClick={open}>
-                              {t('identity.revoke')}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              data-testid={`api-key-${keyIndex}-actions`}
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={t('content.list.rowActions')}
+                            >
+                              <MoreHorizontal data-icon="inline-start" />
                             </Button>
-                          )}
-                        </Confirm>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <Confirm
+                                title={t('apiKey.revokeTitle')}
+                                description={t('apiKey.revokeDescription', { name: key.name, prefix: key.key_prefix })}
+                                confirmLabel={t('apiKey.revokeKey')}
+                                destructive
+                                onConfirm={async () => {
+                                  await ck.credentials.revokeApiKey(key.id)
+                                  await client.invalidateQueries({ queryKey: keys.credentials.apiKeys })
+                                }}
+                              >
+                                {(open) => (
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    data-testid={`ck-api-key-${keyIndex}-revoke`}
+                                    onSelect={(event) => {
+                                      event.preventDefault()
+                                      open()
+                                    }}
+                                  >
+                                    {t('identity.revoke')}
+                                  </DropdownMenuItem>
+                                )}
+                              </Confirm>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </TableCell>
                   </TableRow>

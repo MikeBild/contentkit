@@ -305,6 +305,7 @@ describe('creating a site is one request', () => {
       slug: 'mike-bild',
       base_url: 'https://example.com',
       default_locale: 'de',
+      environment: 'production',
       locales: ['en', 'fr'],
       settings: {
         presentation: {
@@ -450,9 +451,9 @@ describe('the wizard’s markup', () => {
     assert.match(wizard, /t\('wizard\.oneRequest'\)/, 'the summary must name what will be sent')
     assert.match(wizard, /data-testid="ck-site-wizard-next-steps"/)
     // Release-oriented: content alone changes nothing a reader can see.
-    assert.match(catalog, /'wizard\.after\.content': 'Add content/)
-    assert.match(catalog, /'wizard\.after\.release': 'Build a release/)
-    assert.match(catalog, /'wizard\.after\.activate': 'Activate that release/)
+    assert.match(catalog, /'wizard\.after\.content':\s*'Add content/)
+    assert.match(catalog, /'wizard\.after\.release':\s*'Build a release/)
+    assert.match(catalog, /'wizard\.after\.activate':\s*'Activate that release/)
   })
 })
 
@@ -510,13 +511,13 @@ describe('“languages can be added later” is true of the console, not just of
     assert.match(catalog, /'siteForm\.defaultLocaleTooltip': '[^']*cannot be removed/, 'and it must say why')
     assert.match(
       catalog,
-      /'siteForm\.localesAboutDescription': '[^']*published or scheduled content/,
+      /'siteForm\.localesAboutDescription':\s*'[^']*published or scheduled content/,
       'the other refusal must be named before it is hit',
     )
     assert.match(body, /draft_items/, 'the removal answer’s count of items left behind must be shown')
     assert.match(
       catalog,
-      /'siteForm\.localesAboutDescription': '[^']*next release is built/,
+      /'siteForm\.localesAboutDescription':\s*'[^']*next release is built/,
       'a locale change is invisible until the next release',
     )
   })
@@ -549,12 +550,12 @@ describe('“languages can be added later” is true of the console, not just of
     const catalog = await read('lib', 'i18n.ts')
     assert.match(
       catalog,
-      /'wizard\.languagesAboutDescription': 'Languages can be added and removed later in the Languages section of the site settings/,
+      /'wizard\.languagesAboutDescription':\s*'Languages can be added and removed later in the Languages section of the site settings/,
       'the promise must name the place in the console that keeps it',
     )
     assert.match(
       catalog,
-      /'wizard\.languagesAboutDescription': '[^']*Removing is refused while a locale is the default or still carries published or scheduled content/,
+      /'wizard\.languagesAboutDescription':\s*'[^']*Removing is refused while a locale is the default or still carries published or scheduled content/,
       'the refusal conditions must be named, not just the capability',
     )
     assert.match(wizard, /t\('wizard\.languagesAboutDescription'\)/)

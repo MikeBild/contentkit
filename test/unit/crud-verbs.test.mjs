@@ -466,11 +466,17 @@ describe('POST /v1/sites/{site}/render', () => {
 
 describe('moderation deletes', () => {
   const commentDb = (comment) => ({
+    async tx(fn) {
+      return fn(this)
+    },
     async select(table) {
       return table === 'ck_comments' ? [comment] : []
     },
     async remove() {},
     async insert() {
+      return []
+    },
+    async query() {
       return []
     },
   })
@@ -563,6 +569,9 @@ describe('moderation deletes', () => {
   test('a contact submission can go back to new, and can be erased', async () => {
     const removed = []
     const db = {
+      async tx(fn) {
+        return fn(this)
+      },
       async select(table) {
         return table === 'ck_contact_submissions' ? [{ id: 's1', site_id: 'site-1', status: 'closed' }] : []
       },
@@ -571,6 +580,12 @@ describe('moderation deletes', () => {
       },
       async remove(table, filter) {
         removed.push({ table, filter })
+      },
+      async insert() {
+        return []
+      },
+      async query() {
+        return []
       },
     }
     await withApp({ db }, async (request) => {
@@ -600,6 +615,9 @@ describe('moderation deletes', () => {
   test('resetting feedback deletes the votes of exactly one post', async () => {
     const removed = []
     const db = {
+      async tx(fn) {
+        return fn(this)
+      },
       async select(table, query) {
         if (table === 'ck_content_items') return query.id === 'eq.item-1' ? [{ id: 'item-1', site_id: 'site-1' }] : []
         if (table === 'ck_post_feedback') return [{ vote: 'up' }, { vote: 'down' }, { vote: 'up' }]
@@ -607,6 +625,12 @@ describe('moderation deletes', () => {
       },
       async remove(table, filter) {
         removed.push({ table, filter })
+      },
+      async insert() {
+        return []
+      },
+      async query() {
+        return []
       },
     }
     await withApp({ db }, async (request) => {

@@ -1398,7 +1398,8 @@ describe('the release chain, on screen', () => {
     // total the payload never sent with the one number an operator reads as "this
     // happened, nought times" — in the same function whose next three lines
     // already refuse to do that to the points.
-    assert.doesNotMatch(stripComments(overview), /\?\? 0/)
+    const statistics = stripComments(overview).slice(0, stripComments(overview).indexOf('function DecisionZone'))
+    assert.doesNotMatch(statistics, /\?\? 0/)
     assert.match(overview, /typeof totals\[name\] === 'number' \? totals\[name\] : null/)
   })
 

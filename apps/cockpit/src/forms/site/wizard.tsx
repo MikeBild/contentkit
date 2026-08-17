@@ -206,7 +206,9 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
               <Steps data-testid="ck-site-wizard-steps" steps={stepList} value={step} onChange={setStep} />
 
               {step === 'purpose' ? <PurposeStep draft={draft} onChange={setDraft} /> : null}
-              {step === 'home' ? <HomeStep draft={draft} onChange={setDraft} slug={slug} takenSlugs={takenSlugs} /> : null}
+              {step === 'home' ? (
+                <HomeStep draft={draft} onChange={setDraft} slug={slug} takenSlugs={takenSlugs} />
+              ) : null}
               {step === 'languages' ? <LanguagesStep draft={draft} onChange={setDraft} /> : null}
               {step === 'ready' ? <ReadyStep draft={draft} slug={slug} extra={extra} /> : null}
 
@@ -219,7 +221,8 @@ export function CreateSiteWizard({ onCreated }: { onCreated: (slug: string) => v
                   <TriangleAlert />
                   <AlertTitle>{t('wizard.createErrorTitle')}</AlertTitle>
                   <AlertDescription>
-                    {create.error instanceof Error ? create.error.message : t('wizard.createError')} — {t('wizard.createErrorSuffix')}
+                    {create.error instanceof Error ? create.error.message : t('wizard.createError')} —{' '}
+                    {t('wizard.createErrorSuffix')}
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -359,22 +362,22 @@ function PurposeStep({ draft, onChange }: StepProps) {
         </div>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        {draft.preset === 'portfolio'
-          ? t('wizard.portfolioStorage')
-          : t('wizard.presetStorage')}
+        {draft.preset === 'portfolio' ? t('wizard.portfolioStorage') : t('wizard.presetStorage')}
       </p>
     </div>
   )
 }
 
-function HomeStep({
-  draft,
-  onChange,
-  slug,
-  takenSlugs,
-}: StepProps & { slug: string; takenSlugs: readonly string[] }) {
+function HomeStep({ draft, onChange, slug, takenSlugs }: StepProps & { slug: string; takenSlugs: readonly string[] }) {
   const { t } = useI18n()
   const base = draft.base_url.trim()
+  const environments: readonly Choice<SiteDraft['environment']>[] = (['production', 'canary', 'test'] as const).map(
+    (value) => ({
+      value,
+      label: t(`site.environment.${value}` as TranslationKey),
+      description: t(`wizard.environment.${value}` as TranslationKey),
+    }),
+  )
   return (
     <div className="flex flex-col gap-4">
       <TextField
@@ -404,6 +407,14 @@ function HomeStep({
         siblings={takenSlugs}
         value={draft.slug}
         onChange={(next) => onChange({ ...draft, slug: next })}
+      />
+      <ChoiceCards
+        label={t('wizard.environment')}
+        required
+        data-testid="ck-site-wizard-environment"
+        options={environments}
+        value={draft.environment}
+        onChange={(environment) => onChange({ ...draft, environment })}
       />
       <p className="text-xs text-muted-foreground">
         {t('wizard.storedAs', { slug: slug || '—' })}
@@ -524,9 +535,8 @@ function ReadyStep({ draft, slug, extra }: { draft: SiteDraft; slug: string; ext
           {t(locales.length === 1 ? 'wizard.requestLocaleOne' : 'wizard.requestLocaleMany', {
             count: locales.length,
             extra: extra.length ? t('wizard.extraBesideDefault', { locales: extra.join(', ') }) : '',
-            settings: draft.preset === 'portfolio'
-              ? t('wizard.noSettings')
-              : t('wizard.withPreset', { preset: draft.preset }),
+            settings:
+              draft.preset === 'portfolio' ? t('wizard.noSettings') : t('wizard.withPreset', { preset: draft.preset }),
           })}
         </AlertDescription>
       </Alert>

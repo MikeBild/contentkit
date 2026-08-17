@@ -58,6 +58,13 @@ import {
 import { auditActor } from './audit.mjs'
 import { csrfSecretFor, csrfSetCookie, signCsrf, verifyCsrf } from './csrf.mjs'
 import { serveCockpit } from './cockpit.mjs'
+import {
+  createDecision,
+  decideSource,
+  listDecisions,
+  promotionReviewDetails,
+  transitionDecision,
+} from './decisions.mjs'
 
 export const SERVICE = {
   name: 'contentkit',
@@ -353,6 +360,13 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/locales$/, methods: ['GET', 'POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/locales\/[^/]+$/, methods: ['DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/content$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/decisions$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/decisions\/[^/]+$/, methods: ['PATCH'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/draft-captures$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/draft-captures\/[^/]+$/, methods: ['GET', 'PATCH'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/draft-captures\/[^/]+\/(triage|discard)$/, methods: ['POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/promotion-reviews\/[^/]+$/, methods: ['GET'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/promotion-reviews\/[^/]+\/reject$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/render$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/compositions\/(recommend|validate|compile)$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/decks\/(plan|validate|compile)$/, methods: ['POST'] },
@@ -867,6 +881,13 @@ export function createRequestHandler(ctx) {
             status: row.status,
           },
         })
+        await createDecision(tx, {
+          siteId: site.id,
+          kind: 'comment',
+          sourceId: row.id,
+          sourceVersion: row.created_at,
+          openedAt: row.created_at,
+        })
         return row
       })
       return sendJson(res, 201, { accepted: true, id: record.id })
@@ -897,13 +918,28 @@ export function createRequestHandler(ctx) {
           if (!readerAllowed(entry, reader)) return sendJson(res, 403, { error: 'reader access denied' })
         }
       }
-      // No outbox event: votes are anonymous and unmoderatable, and a webhook
-      // per thumb-click is noise. Without the event there is nothing to keep
-      // atomic, so the insert also skips db.tx.
-      const [row] = await db.insert('ck_post_feedback', {
-        site_id: site.id,
-        content_item_id: feedbackMatch[1],
-        vote: input.vote,
+      const row = await db.tx(async (tx) => {
+        const [vote] = await tx.insert('ck_post_feedback', {
+          site_id: site.id,
+          content_item_id: feedbackMatch[1],
+          vote: input.vote,
+        })
+        const active = await tx.query(
+          `SELECT id FROM ck_decisions
+            WHERE site_id = $1 AND kind = 'feedback' AND source_id = $2 AND state <> 'decided'
+            LIMIT 1`,
+          [site.id, feedbackMatch[1]],
+        )
+        if (!active.length) {
+          await createDecision(tx, {
+            siteId: site.id,
+            kind: 'feedback',
+            sourceId: feedbackMatch[1],
+            sourceVersion: vote.created_at,
+            openedAt: vote.created_at,
+          })
+        }
+        return vote
       })
       return sendJson(res, 201, { accepted: true, id: row.id })
     }
@@ -939,6 +975,13 @@ export function createRequestHandler(ctx) {
           resourceId: row.id,
           summary: 'New contact request',
           data: { name: row.name, email: row.email, message: row.body },
+        })
+        await createDecision(tx, {
+          siteId: site.id,
+          kind: 'contact',
+          sourceId: row.id,
+          sourceVersion: row.created_at,
+          openedAt: row.created_at,
         })
         return row
       })
@@ -1402,6 +1445,309 @@ export function createRequestHandler(ctx) {
       const updated = await repo.updateSite(site.id, parseJson(await bodyFor(req)))
       return sendJson(res, 200, updated, { etag: siteEtag(updated) })
     }
+    const decisionsMatch = path.match(/^\/v1\/sites\/([^/]+)\/decisions$/)
+    if (decisionsMatch && req.method === 'GET') {
+      const site = await repo.getSite(decisionsMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      const principal = await requireAnyScope(req, res, ['content:write', 'moderation:write', 'release:write'], site.id)
+      if (!principal) return
+      const allowedKinds = [
+        ...(auth.authorize(principal, 'content:write', site.id) ? ['draft_capture'] : []),
+        ...(auth.authorize(principal, 'moderation:write', site.id) ? ['comment', 'contact', 'feedback'] : []),
+        ...(auth.authorize(principal, 'release:write', site.id) ? ['promotion'] : []),
+      ]
+      return sendJson(
+        res,
+        200,
+        await listDecisions(db, site.id, { ...Object.fromEntries(url.searchParams), allowedKinds }),
+      )
+    }
+    const decisionMatch = path.match(/^\/v1\/sites\/([^/]+)\/decisions\/([^/]+)$/)
+    if (decisionMatch && req.method === 'PATCH') {
+      const site = await repo.getSite(decisionMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      const [existing] = await db.select('ck_decisions', {
+        id: `eq.${decisionMatch[2]}`,
+        site_id: `eq.${site.id}`,
+        limit: '1',
+      })
+      if (!existing) return sendJson(res, 404, { error: 'decision not found' })
+      const scope =
+        existing.kind === 'draft_capture'
+          ? 'content:write'
+          : existing.kind === 'promotion'
+            ? 'release:write'
+            : 'moderation:write'
+      const principal = await requireScope(req, res, scope, site.id)
+      if (!principal) return
+      const input = parseJson(await bodyFor(req))
+      const record = await db.tx(async (tx) => {
+        const updated = await transitionDecision(tx, site.id, existing.id, input, principal.id)
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: site.id,
+              action: `decision.${input.action}`,
+              resourceType: 'decision',
+              resourceId: existing.id,
+              result: 'success',
+              transport: 'http',
+              metadata: { kind: existing.kind },
+            },
+            tx,
+          )
+        }
+        return updated
+      })
+      return sendJson(res, 200, record)
+    }
+
+    const captureCollection = path.match(/^\/v1\/sites\/([^/]+)\/draft-captures$/)
+    if (captureCollection && req.method === 'POST') {
+      const site = await repo.getSite(captureCollection[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      const principal = await requireScope(req, res, 'content:write', site.id)
+      if (!principal) return
+      const input = parseJson(await bodyFor(req)) || {}
+      const text = String(input.text || '')
+      if (Buffer.byteLength(text) > 262_144) return sendJson(res, 422, { error: 'text exceeds 256 KiB' })
+      const result = await db.tx(async (tx) => {
+        const [capture] = await tx.insert('ck_draft_captures', { site_id: site.id, text, status: 'pending' })
+        const decision = await createDecision(tx, {
+          siteId: site.id,
+          kind: 'draft_capture',
+          sourceId: capture.id,
+          sourceVersion: capture.created_at,
+          openedAt: capture.created_at,
+        })
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: site.id,
+              action: 'draft_capture.create',
+              resourceType: 'draft_capture',
+              resourceId: capture.id,
+              result: 'success',
+              transport: 'http',
+            },
+            tx,
+          )
+        }
+        return { capture, decision }
+      })
+      return sendJson(res, 201, result)
+    }
+    const captureItem = path.match(/^\/v1\/sites\/([^/]+)\/draft-captures\/([^/]+)$/)
+    if (captureItem && ['GET', 'PATCH'].includes(req.method)) {
+      const site = await repo.getSite(captureItem[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      const principal = await requireScope(req, res, 'content:write', site.id)
+      if (!principal) return
+      const [capture] = await db.select('ck_draft_captures', {
+        id: `eq.${captureItem[2]}`,
+        site_id: `eq.${site.id}`,
+        limit: '1',
+      })
+      if (!capture) return sendJson(res, 404, { error: 'draft capture not found' })
+      if (req.method === 'GET') return sendJson(res, 200, capture)
+      if (capture.status !== 'pending') return sendJson(res, 409, { error: 'draft capture is already closed' })
+      const input = parseJson(await bodyFor(req)) || {}
+      const text = String(input.text || '')
+      if (Buffer.byteLength(text) > 262_144) return sendJson(res, 422, { error: 'text exceeds 256 KiB' })
+      const [updated] = await db.update(
+        'ck_draft_captures',
+        { id: `eq.${capture.id}` },
+        { text, updated_at: new Date().toISOString() },
+      )
+      return sendJson(res, 200, updated)
+    }
+    const captureAction = path.match(/^\/v1\/sites\/([^/]+)\/draft-captures\/([^/]+)\/(triage|discard)$/)
+    if (captureAction && req.method === 'POST') {
+      const site = await repo.getSite(captureAction[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      const principal = await requireScope(req, res, 'content:write', site.id)
+      if (!principal) return
+      const input = parseJson(await bodyFor(req)) || {}
+      const [capture] = await db.select('ck_draft_captures', {
+        id: `eq.${captureAction[2]}`,
+        site_id: `eq.${site.id}`,
+        limit: '1',
+      })
+      if (!capture) return sendJson(res, 404, { error: 'draft capture not found' })
+      if (capture.status !== 'pending') return sendJson(res, 409, { error: 'draft capture is already closed' })
+      if (captureAction[3] === 'discard') {
+        const result = await db.tx(async (tx) => {
+          const now = new Date().toISOString()
+          const [updated] = await tx.update(
+            'ck_draft_captures',
+            { id: `eq.${capture.id}` },
+            { status: 'discarded', discarded_at: now, updated_at: now },
+          )
+          await decideSource(tx, {
+            siteId: site.id,
+            kind: 'draft_capture',
+            sourceId: capture.id,
+            outcome: 'discarded',
+            reason: String(input.reason || '').slice(0, 500),
+            actorId: principal.id,
+          })
+          if (audit.recordStrict) {
+            await audit.recordStrict(
+              {
+                ...auditActor(principal),
+                siteId: site.id,
+                action: 'draft_capture.discard',
+                resourceType: 'draft_capture',
+                resourceId: capture.id,
+                result: 'success',
+                transport: 'http',
+              },
+              tx,
+            )
+          }
+          return updated
+        })
+        return sendJson(res, 200, result)
+      }
+      if (typeof input.markdown !== 'string') return sendJson(res, 422, { error: 'markdown is required' })
+      const rendered = await renderMarkdown(input.markdown)
+      const meta = rendered.meta
+      const result = await db.tx(async (tx) => {
+        const locales = await tx.select('ck_site_locales', { site_id: `eq.${site.id}` })
+        const builds = locales.length ? locales.map((row) => row.locale) : [site.default_locale]
+        if (!builds.includes(meta.locale)) {
+          throw Object.assign(new Error(`locale ${meta.locale} is not a locale this site builds`), { statusCode: 422 })
+        }
+        let [item] = await tx.select('ck_content_items', {
+          site_id: `eq.${site.id}`,
+          kind: `eq.${meta.kind}`,
+          locale: `eq.${meta.locale}`,
+          translation_key: `eq.${meta.translation_key}`,
+          limit: '1',
+        })
+        if (!item) {
+          ;[item] = await tx.insert('ck_content_items', {
+            site_id: site.id,
+            kind: meta.kind,
+            locale: meta.locale,
+            translation_key: meta.translation_key,
+          })
+        }
+        const sourceHash = sha256(input.markdown)
+        let [revision] = await tx.select('ck_content_revisions', {
+          item_id: `eq.${item.id}`,
+          source_sha256: `eq.${sourceHash}`,
+          slug: `eq.${meta.slug}`,
+          limit: '1',
+        })
+        if (!revision) {
+          ;[revision] = await tx.insert('ck_content_revisions', {
+            item_id: item.id,
+            status: meta.scheduled_at ? 'scheduled' : 'draft',
+            markdown: input.markdown,
+            source_sha256: sourceHash,
+            slug: meta.slug,
+            title: meta.title,
+            summary: meta.summary,
+            tags: meta.tags,
+            metadata: meta,
+            scheduled_at: meta.scheduled_at,
+          })
+        }
+        const now = new Date().toISOString()
+        await tx.update(
+          'ck_draft_captures',
+          { id: `eq.${capture.id}` },
+          { status: 'triaged', content_item_id: item.id, triaged_at: now, updated_at: now },
+          { returning: false },
+        )
+        await decideSource(tx, {
+          siteId: site.id,
+          kind: 'draft_capture',
+          sourceId: capture.id,
+          outcome: 'triaged',
+          actorId: principal.id,
+        })
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: site.id,
+              action: 'draft_capture.triage',
+              resourceType: 'draft_capture',
+              resourceId: capture.id,
+              result: 'success',
+              transport: 'http',
+              metadata: { item_id: item.id, revision_id: revision.id },
+            },
+            tx,
+          )
+        }
+        return { capture_id: capture.id, item, revision }
+      })
+      return sendJson(res, 200, result)
+    }
+
+    const promotionReviewMatch = path.match(/^\/v1\/sites\/([^/]+)\/promotion-reviews\/([^/]+)$/)
+    if (promotionReviewMatch && req.method === 'GET') {
+      const site = await repo.getSite(promotionReviewMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      if (!(await requireScope(req, res, 'release:write', site.id))) return
+      const review = await promotionReviewDetails(db, config.publicUrl, site.id, promotionReviewMatch[2])
+      return review ? sendJson(res, 200, review) : sendJson(res, 404, { error: 'promotion review not found' })
+    }
+    const promotionRejectMatch = path.match(/^\/v1\/sites\/([^/]+)\/promotion-reviews\/([^/]+)\/reject$/)
+    if (promotionRejectMatch && req.method === 'POST') {
+      const site = await repo.getSite(promotionRejectMatch[1])
+      if (!site) return sendJson(res, 404, { error: 'site not found' })
+      const principal = await requireScope(req, res, 'release:write', site.id)
+      if (!principal) return
+      const input = parseJson(await bodyFor(req)) || {}
+      const result = await db.tx(async (tx) => {
+        const [review] = await tx.select('ck_promotion_reviews', {
+          id: `eq.${promotionRejectMatch[2]}`,
+          site_id: `eq.${site.id}`,
+          limit: '1',
+        })
+        if (!review) throw Object.assign(new Error('promotion review not found'), { statusCode: 404 })
+        if (review.status !== 'pending')
+          throw Object.assign(new Error('promotion review is already closed'), { statusCode: 409 })
+        const now = new Date().toISOString()
+        const reason = String(input.reason || '').slice(0, 500)
+        const [updated] = await tx.update(
+          'ck_promotion_reviews',
+          { id: `eq.${review.id}` },
+          { status: 'rejected', reason, decided_at: now },
+        )
+        await decideSource(tx, {
+          siteId: site.id,
+          kind: 'promotion',
+          sourceId: review.id,
+          outcome: 'rejected',
+          reason,
+          actorId: principal.id,
+        })
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: site.id,
+              action: 'promotion_review.reject',
+              resourceType: 'promotion_review',
+              resourceId: review.id,
+              result: 'success',
+              transport: 'http',
+            },
+            tx,
+          )
+        }
+        return updated
+      })
+      return sendJson(res, 200, result)
+    }
+
     // Locale rows decide what a release contains at all — one page tree per
     // locale — and until these routes existed only createSite could write them
     // and nothing could read them back. All three are `site:admin`, like every
@@ -2110,39 +2456,69 @@ export function createRequestHandler(ctx) {
       const principal = await requireScope(req, res, 'release:write', site.id)
       if (!principal) return
       const input = parseJson(await bodyFor(req))
-      // A browser operator is the human approval boundary used by an MCP
-      // review handoff. API keys retain the existing direct API contract and
-      // must not be mislabeled as a human decision in the audit trail.
+      let review = null
       if (principal.via === 'operator_session') {
-        const approvalAudit = await audit.record({
-          ...auditActor(principal),
-          siteId: site.id,
-          action: 'release.promote.approved',
-          resourceType: 'release',
-          resourceId: promoteMatch[2],
-          result: 'success',
-          transport: 'http',
-          metadata: { manifest_sha256: input.manifest_sha256, review_surface: 'cockpit' },
+        if (!input.promotion_review_id) return sendJson(res, 422, { error: 'promotion_review_id is required' })
+        ;[review] = await db.select('ck_promotion_reviews', {
+          id: `eq.${input.promotion_review_id}`,
+          site_id: `eq.${site.id}`,
+          release_id: `eq.${promoteMatch[2]}`,
+          manifest_sha256: `eq.${input.manifest_sha256}`,
+          status: 'eq.pending',
+          limit: '1',
         })
-        if (!approvalAudit) {
-          return sendJson(res, 503, { error: 'approval_audit_unavailable', mutation_applied: false })
-        }
+        if (!review) return sendJson(res, 409, { error: 'promotion review is missing, closed or bound differently' })
       }
       const result = await releases.promote({
         siteId: site.id,
         releaseId: promoteMatch[2],
         manifestSha256: input.manifest_sha256,
+        onActivated: review
+          ? async (tx) => {
+              const now = new Date().toISOString()
+              await tx.update(
+                'ck_promotion_reviews',
+                { id: `eq.${review.id}` },
+                { status: 'activated', decided_at: now },
+                { returning: false },
+              )
+              await decideSource(tx, {
+                siteId: site.id,
+                kind: 'promotion',
+                sourceId: review.id,
+                outcome: 'activated',
+                actorId: principal.id,
+              })
+              if (audit.recordStrict) {
+                await audit.recordStrict(
+                  {
+                    ...auditActor(principal),
+                    siteId: site.id,
+                    action: 'promotion_review.activate',
+                    resourceType: 'promotion_review',
+                    resourceId: review.id,
+                    result: 'success',
+                    transport: 'http',
+                    metadata: { release_id: promoteMatch[2], manifest_sha256: input.manifest_sha256 },
+                  },
+                  tx,
+                )
+              }
+            }
+          : undefined,
       })
-      await audit.record({
-        ...auditActor(principal),
-        siteId: site.id,
-        action: 'release.promote',
-        resourceType: 'release',
-        resourceId: result.release_id,
-        result: 'success',
-        transport: 'http',
-        metadata: { manifest_sha256: result.manifest_sha256 },
-      })
+      if (!review) {
+        await audit.record({
+          ...auditActor(principal),
+          siteId: site.id,
+          action: 'release.promote',
+          resourceType: 'release',
+          resourceId: result.release_id,
+          result: 'success',
+          transport: 'http',
+          metadata: { manifest_sha256: result.manifest_sha256 },
+        })
+      }
       return sendJson(res, 200, result)
     }
     if (path === '/v1/publish-due' && req.method === 'POST') {
@@ -2405,9 +2781,33 @@ export function createRequestHandler(ctx) {
     if (commentMatch && ['PATCH', 'DELETE'].includes(req.method)) {
       const existing = await db.select('ck_comments', { id: `eq.${commentMatch[1]}`, limit: '1' })
       if (!existing[0]) return sendJson(res, 404, { error: 'comment not found' })
-      if (!(await requireScope(req, res, 'moderation:write', existing[0].site_id))) return
+      const principal = await requireScope(req, res, 'moderation:write', existing[0].site_id)
+      if (!principal) return
       if (req.method === 'DELETE') {
-        await db.remove('ck_comments', { id: `eq.${existing[0].id}` })
+        await db.tx(async (tx) => {
+          await tx.remove('ck_comments', { id: `eq.${existing[0].id}` })
+          await decideSource(tx, {
+            siteId: existing[0].site_id,
+            kind: 'comment',
+            sourceId: existing[0].id,
+            outcome: 'deleted',
+            actorId: principal.id,
+          })
+          if (audit.recordStrict) {
+            await audit.recordStrict(
+              {
+                ...auditActor(principal),
+                siteId: existing[0].site_id,
+                action: 'comment.delete',
+                resourceType: 'comment',
+                resourceId: existing[0].id,
+                result: 'success',
+                transport: 'http',
+              },
+              tx,
+            )
+          }
+        })
         // An approved comment is baked into the published pages, so removing the
         // row is only half the deletion — the same best-effort republish that
         // approval uses takes it off the live site. `?publish=false` defers that
@@ -2436,24 +2836,49 @@ export function createRequestHandler(ctx) {
       const input = parseJson(await bodyFor(req))
       if (!['approved', 'rejected'].includes(input.status))
         return sendJson(res, 422, { error: 'status must be approved or rejected' })
-      const rows = await db.update(
-        'ck_comments',
-        { id: `eq.${commentMatch[1]}` },
-        { status: input.status, moderated_at: new Date().toISOString() },
-      )
-      const record = rows[0]
-      if (!record) return sendJson(res, 404, { error: 'comment not found' })
-      if (input.status === 'approved') {
-        const approvedSite = (await repo.getSite(record.site_id)) || { id: record.site_id, name: null }
-        await repo.enqueueEvent(db, {
-          site: approvedSite,
-          type: WEBHOOK_EVENT.commentApproved,
-          resourceKind: 'comment',
-          resourceId: record.id,
-          summary: 'Comment approved',
-          data: { post_id: record.content_item_id, author_name: record.author_name, body: record.body },
+      const record = await db.tx(async (tx) => {
+        const [updated] = await tx.update(
+          'ck_comments',
+          { id: `eq.${commentMatch[1]}` },
+          { status: input.status, moderated_at: new Date().toISOString() },
+        )
+        if (!updated) return null
+        if (input.status === 'approved') {
+          const approvedSite = (await repo.getSite(updated.site_id)) || { id: updated.site_id, name: null }
+          await repo.enqueueEvent(tx, {
+            site: approvedSite,
+            type: WEBHOOK_EVENT.commentApproved,
+            resourceKind: 'comment',
+            resourceId: updated.id,
+            summary: 'Comment approved',
+            data: { post_id: updated.content_item_id, author_name: updated.author_name, body: updated.body },
+          })
+        }
+        await decideSource(tx, {
+          siteId: updated.site_id,
+          kind: 'comment',
+          sourceId: updated.id,
+          outcome: input.status,
+          reason: String(input.reason || '').slice(0, 500),
+          actorId: principal.id,
         })
-      }
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: updated.site_id,
+              action: `comment.${input.status}`,
+              resourceType: 'comment',
+              resourceId: updated.id,
+              result: 'success',
+              transport: 'http',
+            },
+            tx,
+          )
+        }
+        return updated
+      })
+      if (!record) return sendJson(res, 404, { error: 'comment not found' })
       // Approval is authoritative and already committed; the re-render is
       // best-effort. If it fails (e.g. a transient build error), don't 500 —
       // the comment stays approved and the next publish picks it up.
@@ -2497,9 +2922,33 @@ export function createRequestHandler(ctx) {
     if (contactMatch && ['PATCH', 'DELETE'].includes(req.method)) {
       const existing = await db.select('ck_contact_submissions', { id: `eq.${contactMatch[1]}`, limit: '1' })
       if (!existing[0]) return sendJson(res, 404, { error: 'contact submission not found' })
-      if (!(await requireScope(req, res, 'moderation:write', existing[0].site_id))) return
+      const principal = await requireScope(req, res, 'moderation:write', existing[0].site_id)
+      if (!principal) return
       if (req.method === 'DELETE') {
-        await db.remove('ck_contact_submissions', { id: `eq.${existing[0].id}` })
+        await db.tx(async (tx) => {
+          await tx.remove('ck_contact_submissions', { id: `eq.${existing[0].id}` })
+          await decideSource(tx, {
+            siteId: existing[0].site_id,
+            kind: 'contact',
+            sourceId: existing[0].id,
+            outcome: 'deleted',
+            actorId: principal.id,
+          })
+          if (audit.recordStrict) {
+            await audit.recordStrict(
+              {
+                ...auditActor(principal),
+                siteId: existing[0].site_id,
+                action: 'contact.delete',
+                resourceType: 'contact',
+                resourceId: existing[0].id,
+                result: 'success',
+                transport: 'http',
+              },
+              tx,
+            )
+          }
+        })
         return sendJson(res, 200, { id: existing[0].id, deleted: true })
       }
       const input = parseJson(await bodyFor(req))
@@ -2507,8 +2956,46 @@ export function createRequestHandler(ctx) {
       // marked read by mistake has to be returnable to the inbox.
       if (!['new', 'read', 'closed'].includes(input.status))
         return sendJson(res, 422, { error: 'status must be new, read or closed' })
-      const rows = await db.update('ck_contact_submissions', { id: `eq.${contactMatch[1]}` }, { status: input.status })
-      return sendJson(res, 200, rows[0])
+      const updated = await db.tx(async (tx) => {
+        const [record] = await tx.update(
+          'ck_contact_submissions',
+          { id: `eq.${contactMatch[1]}` },
+          { status: input.status },
+        )
+        if (input.status !== 'new') {
+          await decideSource(tx, {
+            siteId: record.site_id,
+            kind: 'contact',
+            sourceId: record.id,
+            outcome: input.status,
+            actorId: principal.id,
+          })
+        } else {
+          await tx.query(
+            `UPDATE ck_decisions
+                SET state = 'open', version = version + 1, decided_at = null,
+                    outcome = null, actor_id = $3, updated_at = now()
+              WHERE site_id = $1 AND kind = 'contact' AND source_id = $2`,
+            [record.site_id, record.id, principal.id],
+          )
+        }
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: record.site_id,
+              action: `contact.${input.status}`,
+              resourceType: 'contact',
+              resourceId: record.id,
+              result: 'success',
+              transport: 'http',
+            },
+            tx,
+          )
+        }
+        return record
+      })
+      return sendJson(res, 200, updated)
     }
     if (path === '/v1/feedback' && req.method === 'GET') {
       const principal = await requireScope(req, res, 'moderation:write')
@@ -2534,8 +3021,10 @@ export function createRequestHandler(ctx) {
           site_id: row.site_id,
           up: 0,
           down: 0,
+          first_received_at: row.created_at,
         }
         entry[row.vote] += 1
+        if (Date.parse(row.created_at) < Date.parse(entry.first_received_at)) entry.first_received_at = row.created_at
         byPost.set(row.content_item_id, entry)
       }
       return sendJson(
@@ -2553,9 +3042,34 @@ export function createRequestHandler(ctx) {
     if (feedbackResetMatch && req.method === 'DELETE') {
       const items = await db.select('ck_content_items', { id: `eq.${feedbackResetMatch[1]}`, limit: '1' })
       if (!items[0]) return sendJson(res, 404, { error: 'content item not found' })
-      if (!(await requireScope(req, res, 'moderation:write', items[0].site_id))) return
+      const principal = await requireScope(req, res, 'moderation:write', items[0].site_id)
+      if (!principal) return
       const votes = await db.select('ck_post_feedback', { content_item_id: `eq.${items[0].id}` })
-      if (votes.length) await db.remove('ck_post_feedback', { content_item_id: `eq.${items[0].id}` })
+      await db.tx(async (tx) => {
+        if (votes.length) await tx.remove('ck_post_feedback', { content_item_id: `eq.${items[0].id}` })
+        await decideSource(tx, {
+          siteId: items[0].site_id,
+          kind: 'feedback',
+          sourceId: items[0].id,
+          outcome: 'reset',
+          actorId: principal.id,
+        })
+        if (audit.recordStrict) {
+          await audit.recordStrict(
+            {
+              ...auditActor(principal),
+              siteId: items[0].site_id,
+              action: 'feedback.reset',
+              resourceType: 'content_item',
+              resourceId: items[0].id,
+              result: 'success',
+              transport: 'http',
+              metadata: { deleted_votes: votes.length },
+            },
+            tx,
+          )
+        }
+      })
       return sendJson(res, 200, { content_item_id: items[0].id, deleted_votes: votes.length })
     }
 

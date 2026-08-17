@@ -10,6 +10,7 @@ import { CompositionsPage } from '@/pages/compositions'
 import { ContentPage } from '@/pages/content'
 import { CredentialsPage } from '@/pages/credentials'
 import { DecksPage } from '@/pages/decks'
+import { DecisionsPage } from '@/pages/decisions'
 import { ModerationPage } from '@/pages/moderation'
 import { OverviewPage } from '@/pages/overview'
 import { ProfilePage } from '@/pages/profile'
@@ -23,10 +24,10 @@ import { WebhooksPage } from '@/pages/webhooks'
 /** Every route carries the selected site; nothing below the root may drop it. */
 export interface RootSearch {
   site?: string
-  /** Exact immutable preview selected by an MCP/browser review hand-off. */
-  promotion_release?: string
-  /** SHA-256 digest the promote endpoint must match byte-for-byte. */
-  promotion_manifest?: string
+  /** Durable review selected by an MCP/browser review hand-off. */
+  promotion_review?: string
+  /** A bounded intent, never arbitrary prompt text in the URL. */
+  assistant_intent?: 'draft-capture'
 }
 
 // The provider reads and writes `?site=` through the router, so it lives inside
@@ -49,18 +50,17 @@ const rootRoute = createRootRoute({
   // filter a later version removed still opens the page it names.
   validateSearch: (search: Record<string, unknown>): RootSearch => ({
     ...(typeof search.site === 'string' && search.site ? { site: search.site } : {}),
-    ...(typeof search.promotion_release === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search.promotion_release)
-      ? { promotion_release: search.promotion_release }
+    ...(typeof search.promotion_review === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search.promotion_review)
+      ? { promotion_review: search.promotion_review }
       : {}),
-    ...(typeof search.promotion_manifest === 'string' && /^[0-9a-f]{64}$/.test(search.promotion_manifest)
-      ? { promotion_manifest: search.promotion_manifest }
-      : {}),
+    ...(search.assistant_intent === 'draft-capture' ? { assistant_intent: 'draft-capture' as const } : {}),
   }),
 })
 
 const routes = [
   ['/', OverviewPage],
+  ['/decisions', DecisionsPage],
   // The registry and one site's settings are two routes on purpose: the site
   // switcher governs the second and plays no part in the first.
   ['/sites', SitesPage],

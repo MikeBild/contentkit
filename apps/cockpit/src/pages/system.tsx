@@ -12,6 +12,16 @@ import { StatusBadge } from '@/forms/status-badge'
 import { keys } from '@/lib/query'
 import { reportedCount } from '@/lib/reported'
 import { useCan } from '@/lib/session'
+import { useSite } from '@/lib/site'
+
+const STATS_WINDOW = { bucket: 'day', tz: 'UTC' } as const
+
+function usageValue(payload: unknown, name: string): number | null {
+  const metric = (
+    payload as { totals?: { metrics?: Record<string, { value?: number | null; value_state?: string }> }[] }
+  )?.totals?.[0]?.metrics?.[name]
+  return !metric || metric.value_state === 'missing' || typeof metric.value !== 'number' ? null : metric.value
+}
 
 const FieldGallery = lazy(() => import('@/forms/gallery').then((module) => ({ default: module.FieldGallery })))
 
@@ -61,6 +71,7 @@ function StatusReading({
 export function SystemPage() {
   const { t, dateTime, number } = useI18n()
   const can = useCan()
+  const { site } = useSite()
   const health = useQuery({
     queryKey: [...keys.system, 'health'],
     queryFn: () => ck.system.health(),
@@ -77,6 +88,18 @@ export function SystemPage() {
     queryKey: [...keys.system, 'descriptor'],
     queryFn: () => ck.system.descriptor(),
     refetchInterval: 15_000,
+    retry: false,
+  })
+  const http = useQuery({
+    queryKey: keys.stats(site, 'http', STATS_WINDOW),
+    queryFn: () => ck.stats(site, 'http', STATS_WINDOW),
+    enabled: Boolean(site) && can('stats:read'),
+    retry: false,
+  })
+  const mcp = useQuery({
+    queryKey: keys.stats(site, 'mcp', STATS_WINDOW),
+    queryFn: () => ck.stats(site, 'mcp', STATS_WINDOW),
+    enabled: Boolean(site) && can('stats:read'),
     retry: false,
   })
   const now = useNow()
@@ -106,11 +129,7 @@ export function SystemPage() {
                 testId="system-health"
                 label={t('system.liveness')}
                 value={
-                  health.isPending
-                    ? t('system.checking')
-                    : health.error
-                      ? t('system.unreachable')
-                      : t('system.ok')
+                  health.isPending ? t('system.checking') : health.error ? t('system.unreachable') : t('system.ok')
                 }
                 tone={health.error ? 'danger' : 'success'}
                 detail={health.error instanceof Error ? health.error.message : t('system.healthDetail')}
@@ -186,6 +205,35 @@ export function SystemPage() {
                 detail={t('system.queued', { count: deckQueued === null ? '—' : number(deckQueued) })}
               />
             </dl>
+            {site && can('stats:read') ? (
+              <div data-testid="system-traffic" className="mt-3 border-t border-border pt-3">
+                <div className="px-(--card-spacing) pb-2">
+                  <h3 className="font-medium">{t('system.traffic')}</h3>
+                  <p className="text-xs text-muted-foreground">{t('system.trafficDescription')}</p>
+                </div>
+                <dl className="flex flex-col divide-y divide-border">
+                  {(['http', 'mcp'] as const).map((surface) => {
+                    const result = surface === 'http' ? http : mcp
+                    const calls = usageValue(result.data, 'calls')
+                    const p95 = usageValue(result.data, 'duration_ms_p95')
+                    return (
+                      <div
+                        key={surface}
+                        className="grid grid-cols-[1fr_auto_auto] items-baseline gap-4 px-(--card-spacing) py-2.5 text-sm"
+                      >
+                        <dt className="font-medium">{surface === 'http' ? 'HTTP' : 'MCP'}</dt>
+                        <dd className="text-muted-foreground">
+                          {t('system.calls', { count: calls === null ? '—' : number(calls) })}
+                        </dd>
+                        <dd className="text-muted-foreground">
+                          {t('system.p95', { value: p95 === null ? '—' : number(p95) })}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -237,11 +285,7 @@ export function SystemPage() {
             <CardContent>
               <Suspense
                 fallback={
-                  <SkeletonFields
-                    fields={6}
-                    label={t('system.fieldGalleryLoading')}
-                    data-testid="gallery-skeleton"
-                  />
+                  <SkeletonFields fields={6} label={t('system.fieldGalleryLoading')} data-testid="gallery-skeleton" />
                 }
               >
                 <FieldGallery />

@@ -1,27 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearch } from '@tanstack/react-router'
-import { RefreshCw } from 'lucide-react'
-import { Fragment, useState } from 'react'
-import { ck, type ContentItem, type Release } from '@/api/ck'
+import { MoreHorizontal, RefreshCw } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ck, type Release } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
-import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { DataTable, firstPage, useTableView, type DataColumn } from '@/components/ui/data-table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
-import { Spinner } from '@/components/ui/spinner'
-import { SkeletonText } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { StatusBadge, type StatusTone } from '@/forms/status-badge'
-import { TableState } from '@/forms/table-state'
 import { RelativeTime } from '@/components/ui/relative-time'
+import { SkeletonText } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { StatusBadge, type StatusTone } from '@/forms/status-badge'
 import { PreviewsCard } from '@/forms/platform/previews'
+import { useI18n } from '@/lib/i18n-context'
 import { keys } from '@/lib/query'
 import { useCan } from '@/lib/session'
 import { useSite } from '@/lib/site'
+import { compareText, compareTime } from '@/lib/table-view'
 
 const TONE: Record<Release['status'], StatusTone> = {
   active: 'success',
@@ -31,6 +39,7 @@ const TONE: Record<Release['status'], StatusTone> = {
   superseded: 'neutral',
   failed: 'danger',
 }
+
 const STATUS_KEYS = {
   active: 'releases.status.active',
   ready: 'releases.status.ready',
@@ -40,42 +49,28 @@ const STATUS_KEYS = {
   failed: 'releases.status.failed',
 } as const
 
-/**
- * Ordinary activation applies only to releases. A preview reaches the live site
- * through the separate promotion boundary, which requires its exact manifest
- * digest and an unchanged base publish epoch.
- */
 function isActivatable(release: Release) {
   return release.kind === 'release' && (release.status === 'ready' || release.status === 'superseded')
 }
 
-/** The active release is what the site is served out of, so it cannot be deleted. */
 function isDeletable(release: Release) {
   return release.status !== 'active' && release.status !== 'building'
 }
 
-/**
- * What a build says it holds, or the fact that it said nothing.
- *
- * A build of zero files is an active release that serves nothing — which is how a
- * site once came to answer empty pages while every status in the console read
- * green. That makes 0 the state with an incident attached to it, and it is
- * exactly the value `?? 0` used to put here for a count the release never
- * reported. `liveStep` in lib/release-chain.ts calls an absent count 'unknown'
- * for that reason, and the Overview and this page must not disagree about one
- * release: an absent count reads as absent in both.
- */
+function releaseName(release: Release) {
+  return `Release ${new Date(release.created_at).toLocaleDateString()}`
+}
+
 export function ReleasesPage() {
-  const { t, dateTime } = useI18n()
+  const { t } = useI18n()
   const { site } = useSite()
   const can = useCan()
   const client = useQueryClient()
+  const search = useSearch({ strict: false }) as { promotion_review?: string }
   const [reason, setReason] = useState('')
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const review = useSearch({ strict: false }) as {
-    promotion_release?: string
-    promotion_manifest?: string
-  }
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<'all' | Release['status']>('all')
+  const [page, setPage] = useState(firstPage)
   const fileCount = (count: number | null | undefined) => {
     if (count === null || count === undefined) return t('releases.fileCountUnknown')
     return count === 1 ? t('releases.fileCountOne') : t('releases.fileCountMany', { count })
@@ -83,82 +78,161 @@ export function ReleasesPage() {
 
   const invalidate = () => client.invalidateQueries({ queryKey: keys.releases(site) })
   const build = useMutation({ mutationFn: () => ck.releases.create(site, { reason }), onSuccess: invalidate })
-  const activate = useMutation({
-    mutationFn: (release: string) => ck.releases.activate(site, release),
-    onSuccess: invalidate,
-  })
+  const activate = useMutation({ mutationFn: (id: string) => ck.releases.activate(site, id), onSuccess: invalidate })
   const promote = useMutation({
-    mutationFn: (binding: { release: string; manifest: string }) =>
-      ck.releases.promote(site, binding.release, binding.manifest),
-    onSuccess: invalidate,
+    mutationFn: (binding: { release: string; manifest: string; review: string }) =>
+      ck.releases.promote(site, binding.release, binding.manifest, binding.review),
+    onSuccess: () => {
+      void invalidate()
+      void client.invalidateQueries({ queryKey: ['decisions', site] })
+    },
   })
-
   const releases = useQuery({
     queryKey: keys.releases(site),
     queryFn: () => ck.releases.list(site),
     enabled: Boolean(site),
-    // A build is asynchronous; while one is in flight the list is the only
-    // place its outcome shows up. The pending mutation counts too: the POST
-    // blocks for the whole build, so without it the row that appears while this
-    // operator waits would not be polled and the elapsed time would stand still.
-    refetchInterval: (query) =>
-      (query.state.data ?? []).some((release) => release.status === 'building') || build.isPending ? 3000 : false,
+    refetchInterval: (result) =>
+      (result.state.data ?? []).some((release) => release.status === 'building') || build.isPending ? 3000 : false,
   })
-  const refreshing = releases.isFetching
-  const promotionTarget = (releases.data ?? []).find((release) => release.id === review.promotion_release)
-  const promotionBindingValid =
-    promotionTarget?.kind === 'preview' &&
-    promotionTarget.status === 'preview' &&
-    promotionTarget.manifest_sha256 === review.promotion_manifest
-  const promotionCompleted =
-    promotionTarget?.kind === 'release' &&
-    promotionTarget.status === 'active' &&
-    promotionTarget.manifest_sha256 === review.promotion_manifest
-
-  // Releases carry revision ids and nothing else; the authoring list is where
-  // the titles live. One query resolves them for every expanded row.
-  const content = useQuery({
-    queryKey: keys.content.list(site),
-    queryFn: () => ck.content.list(site),
-    enabled: Boolean(site),
-    staleTime: 60_000,
+  const review = useQuery({
+    queryKey: keys.promotionReview(site, search.promotion_review || ''),
+    queryFn: () => ck.promotionReviews.get(site, search.promotion_review!),
+    enabled: Boolean(site && search.promotion_review),
+    retry: false,
   })
-  const items = (content.data ?? []) as ContentItem[]
-  const promotionItems =
-    promotionTarget?.revision_ids
-      .map((revisionId) => items.find((item) => item.latest_revision_id === revisionId))
-      .filter((item): item is ContentItem => Boolean(item)) ?? []
-  const visiblePromotionItems = promotionItems.slice(0, 5)
-  const hiddenPromotionItemCount = Math.max(0, promotionItems.length - visiblePromotionItems.length)
-  const promotionRevisionCount = promotionTarget ? promotionTarget.revision_ids.length : 0
 
-  if (!site)
-    return (
-      <Page title={t('page.releases.title')}>
-        <NoSite />
-      </Page>
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return (releases.data ?? []).filter(
+      (release) =>
+        (status === 'all' || release.status === status) &&
+        (!needle || release.reason.toLowerCase().includes(needle) || release.id.toLowerCase().includes(needle)),
     )
+  }, [releases.data, query, status])
+  const availableStatuses = useMemo(
+    () => [...new Set((releases.data ?? []).map((release) => release.status))],
+    [releases.data],
+  )
 
-  const rows = releases.data ?? []
-  const active = rows.find((release) => release.status === 'active')
+  const columns = useMemo<DataColumn<Release>[]>(
+    () => [
+      {
+        id: 'release',
+        label: t('releases.created'),
+        required: true,
+        kind: 'identity',
+        priority: 'essential',
+        compare: (left, right) => compareTime(left.created_at, right.created_at),
+        cell: (release) => (
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="font-medium">{releaseName(release)}</span>
+            <span className="break-words text-xs text-muted-foreground">{release.reason || '—'}</span>
+          </div>
+        ),
+      },
+      {
+        id: 'status',
+        label: t('releases.status'),
+        kind: 'status',
+        priority: 'essential',
+        compare: (left, right) => compareText(left.status, right.status),
+        cell: (release) => <StatusBadge tone={TONE[release.status]}>{t(STATUS_KEYS[release.status])}</StatusBadge>,
+      },
+      {
+        id: 'kind',
+        label: t('releases.kind'),
+        priority: 'supporting',
+        compare: (left, right) => compareText(left.kind, right.kind),
+        cell: (release) => t(release.kind === 'preview' ? 'releases.kind.preview' : 'releases.kind.release'),
+      },
+      {
+        id: 'files',
+        label: t('releases.files'),
+        priority: 'detail',
+        compare: (left, right) => Number(left.file_count ?? -1) - Number(right.file_count ?? -1),
+        cell: (release) => fileCount(release.file_count),
+      },
+      {
+        id: 'actions',
+        label: t('common.actions'),
+        headerHidden: true,
+        required: true,
+        kind: 'actions',
+        priority: 'essential',
+        cell: (release, rowIndex) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                data-testid={`release-row-${rowIndex}-actions`}
+                variant="ghost"
+                size="icon"
+                aria-label={t('common.actions')}
+              >
+                <MoreHorizontal data-icon="inline-start" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                {can('release:write') && isActivatable(release) ? (
+                  <Confirm
+                    title={t('releases.activateTitle')}
+                    description={t('releases.activateDescription', { site })}
+                    confirmLabel={t('releases.activate')}
+                    onConfirm={() => activate.mutateAsync(release.id)}
+                  >
+                    {(open) => (
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          open()
+                        }}
+                      >
+                        {t('releases.activate')}
+                      </DropdownMenuItem>
+                    )}
+                  </Confirm>
+                ) : null}
+                {can('release:write') && isDeletable(release) ? (
+                  <Confirm
+                    title={
+                      release.kind === 'preview' ? t('releases.deletePreviewTitle') : t('releases.deleteReleaseTitle')
+                    }
+                    description={
+                      release.kind === 'preview'
+                        ? t('releases.deletePreviewDescription', { site })
+                        : t('releases.deleteReleaseDescription', { site, status: t(STATUS_KEYS[release.status]) })
+                    }
+                    confirmLabel={t('releases.delete')}
+                    destructive
+                    onConfirm={async () => {
+                      await ck.releases.remove(site, release.id)
+                      await invalidate()
+                    }}
+                  >
+                    {(open) => (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          open()
+                        }}
+                      >
+                        {t('releases.delete')}
+                      </DropdownMenuItem>
+                    )}
+                  </Confirm>
+                ) : null}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+      },
+    ],
+    [activate, can, site, t],
+  )
+  const table = useTableView('releases', columns)
 
-  /*
-   * What is known about a build in progress, and nothing beyond it.
-   *
-   * `GET /v1/sites/{site}/releases` answers `id`, `kind`, `status`, `reason`,
-   * `revision_ids`, `file_count`, `created_at`, `completed_at` and `activated_at`
-   * — no step, no total, no percentage; `file_count` is written once, in the same
-   * update that flips the status to `ready`. So a fraction does not exist to draw,
-   * and a bar filling at a guessed rate on work measured at over a hundred seconds
-   * would reach ninety per cent and sit there until the operator cancelled a build
-   * that was fine.
-   *
-   * Two real facts are left: that it is running, and since when. `created_at` is
-   * the server's own instant; a pending POST is this operator's own, which matters
-   * because the request blocks for the whole build and the row is not visible
-   * until the next poll brings it back.
-   */
-  const building = rows.filter((release) => release.status === 'building')
+  const building = (releases.data ?? []).filter((release) => release.status === 'building')
   const startedAt =
     building.reduce<string | null>(
       (oldest, release) =>
@@ -166,6 +240,14 @@ export function ReleasesPage() {
       null,
     ) ?? (build.isPending ? build.submittedAt : null)
   const inFlight = Math.max(building.length, build.isPending ? 1 : 0)
+  const active = (releases.data ?? []).find((release) => release.status === 'active')
+
+  if (!site)
+    return (
+      <Page title={t('page.releases.title')}>
+        <NoSite />
+      </Page>
+    )
 
   return (
     <Page
@@ -175,11 +257,11 @@ export function ReleasesPage() {
         can('release:write') ? (
           <>
             <Input
-              className="w-56"
               data-testid="release-reason"
-              placeholder={t('releases.reasonPlaceholder')}
+              className="w-56"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
+              placeholder={t('releases.reasonPlaceholder')}
             />
             <Confirm
               title={t('releases.buildTitle')}
@@ -188,7 +270,7 @@ export function ReleasesPage() {
               onConfirm={() => build.mutateAsync()}
             >
               {(open) => (
-                <Button data-testid="release-build" onClick={open} disabled={build.isPending} aria-busy={build.isPending}>
+                <Button data-testid="release-build" onClick={open} disabled={build.isPending}>
                   {build.isPending ? <Spinner data-icon="inline-start" /> : null}
                   {t('releases.new')}
                 </Button>
@@ -206,387 +288,153 @@ export function ReleasesPage() {
         </p>
       ) : null}
 
+      {search.promotion_review ? (
+        <Alert className="mb-4" data-testid="promotion-review">
+          <AlertTitle>{t('releases.promotionReviewTitle')}</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3">
+            {review.isPending ? (
+              <SkeletonText lines={4} data-testid="promotion-review-skeleton" />
+            ) : review.error ? (
+              review.error.message
+            ) : review.data ? (
+              <>
+                <p>{t('releases.promotionConfirmContent', { count: review.data.changes.length })}</p>
+                <ul data-testid="promotion-review-content" className="flex list-disc flex-col gap-1 pl-5">
+                  {review.data.changes.map((change) => (
+                    <li key={`${change.content_item_id}-${change.effect}`}>{change.title}</li>
+                  ))}
+                </ul>
+                <p>{t('releases.promotionConfirmEffect', { site })}</p>
+                <p>{t('releases.promotionNextStep')}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">{review.data.status}</Badge>
+                  <Badge variant="secondary">{review.data.manifest_sha256.slice(0, 12)}</Badge>
+                </div>
+                {review.data.status === 'pending' ? (
+                  <Confirm
+                    title={t('releases.promotionConfirmTitle')}
+                    description={t('releases.promotionConfirmGuard')}
+                    confirmLabel={t('releases.promote')}
+                    onConfirm={() =>
+                      promote.mutateAsync({
+                        release: review.data.release_id,
+                        manifest: review.data.manifest_sha256,
+                        review: review.data.id,
+                      })
+                    }
+                  >
+                    {(open) => (
+                      <Button
+                        data-testid="promotion-review-activate"
+                        variant="outline"
+                        onClick={open}
+                        disabled={promote.isPending}
+                      >
+                        {promote.isPending ? <Spinner data-icon="inline-start" /> : null}
+                        {t('releases.promote')}
+                      </Button>
+                    )}
+                  </Confirm>
+                ) : null}
+              </>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {startedAt !== null ? (
-        <Card size="sm" className="mb-3 max-w-md" data-testid="release-building">
+        <Card size="sm" className="mb-4 max-w-md" data-testid="release-building">
           <CardContent>
             <Progress
               data-testid="release-build-progress"
-              label={
-                inFlight === 1 ? t('releases.buildingOne') : t('releases.buildingMany', { count: inFlight })
-              }
+              label={inFlight === 1 ? t('releases.buildingOne') : t('releases.buildingMany', { count: inFlight })}
               since={startedAt}
-              // Spelled out for the test id alone: `release-build-since` is the
-              // name a browser test already knows the elapsed time by, and
-              // `Progress` would otherwise derive `-progress-value`. Same
-              // component, same sentence, same instant.
               valueLabel={<RelativeTime value={startedAt} data-testid="release-build-since" />}
             />
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              {t('releases.elapsedDescription')}
-            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('releases.elapsedDescription')}</p>
           </CardContent>
         </Card>
       ) : null}
 
       <PreviewsCard site={site} />
 
-      {review.promotion_release && review.promotion_manifest ? (
-        <Alert className="mb-3" data-testid="promotion-review">
-          <AlertTitle role="heading" aria-level={2} className="mb-2 text-base font-semibold">
-            {t('releases.promotionReviewTitle')}
-          </AlertTitle>
-          <AlertDescription>
-            {promotionBindingValid ? (
-              <>
-                <p className="mb-4 text-sm text-muted-foreground">
-                  {t('releases.promotionReviewDescription', {
-                    site,
-                  })}
-                </p>
-                <div className="mb-4 grid gap-4 sm:grid-cols-2">
-                  <section className="rounded-lg border bg-background/60 p-3" data-testid="promotion-review-content">
-                    <h3 className="mb-2 text-sm font-semibold text-foreground">
-                      {t('releases.promotionContentTitle')}
-                    </h3>
-                    {visiblePromotionItems.length > 0 ? (
-                      <ul className="flex flex-col gap-1 text-sm">
-                        {visiblePromotionItems.map((item) => (
-                          <li key={item.id}>
-                            <span className="font-medium text-foreground">{item.title || item.translation_key}</span>
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {item.locale} · /{item.slug || item.translation_key}
-                            </span>
-                          </li>
-                        ))}
-                        {hiddenPromotionItemCount > 0 ? (
-                          <li className="text-muted-foreground">
-                            {t('releases.promotionContentMore', { count: hiddenPromotionItemCount })}
-                          </li>
-                        ) : null}
-                      </ul>
-                    ) : (
-                      <p className="text-sm">
-                        {t('releases.promotionContentCount', { count: promotionRevisionCount })}
-                      </p>
-                    )}
-                  </section>
-                  <section className="rounded-lg border bg-background/60 p-3">
-                    <h3 className="mb-2 text-sm font-semibold text-foreground">
-                      {t('releases.promotionEffectTitle')}
-                    </h3>
-                    <p className="text-sm">{t('releases.promotionEffectDescription', { site })}</p>
-                  </section>
-                </div>
-                <p className="mb-4 text-sm font-medium text-foreground">
-                  {t('releases.promotionNextStep')}
-                </p>
-                {can('release:write') ? (
-                  <Confirm
-                    title={t('releases.promotionConfirmTitle')}
-                    description={
-                      <div className="flex flex-col gap-3 text-left">
-                        <p className="font-medium text-foreground">
-                          {t('releases.promotionConfirmContent', { count: promotionRevisionCount })}
-                        </p>
-                        {visiblePromotionItems.length > 0 ? (
-                          <ul className="flex list-disc flex-col gap-1 pl-5 text-foreground">
-                            {visiblePromotionItems.map((item) => (
-                              <li key={item.id}>{item.title || item.translation_key}</li>
-                            ))}
-                            {hiddenPromotionItemCount > 0 ? (
-                              <li>{t('releases.promotionContentMore', { count: hiddenPromotionItemCount })}</li>
-                            ) : null}
-                          </ul>
-                        ) : null}
-                        <p>{t('releases.promotionConfirmEffect', { site })}</p>
-                        <p>{t('releases.promotionConfirmGuard')}</p>
-                        <details className="rounded-md border p-3 text-xs" data-testid="promotion-technical-details">
-                          <summary
-                            className="cursor-pointer font-medium text-foreground"
-                            data-testid="promotion-dialog-technical-toggle"
-                          >
-                            {t('releases.promotionTechnicalDetails')}
-                          </summary>
-                          <dl className="mt-3 grid min-w-0 gap-x-3 gap-y-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
-                            <dt>{t('releases.promotionRelease')}</dt>
-                            <dd className="break-all font-mono text-foreground">{promotionTarget.id}</dd>
-                            <dt>{t('releases.promotionManifest')}</dt>
-                            <dd className="break-all font-mono text-foreground">{review.promotion_manifest}</dd>
-                            <dt>{t('releases.promotionBaseEpoch')}</dt>
-                            <dd className="font-mono text-foreground">{promotionTarget.base_publish_epoch ?? '—'}</dd>
-                          </dl>
-                        </details>
-                      </div>
-                    }
-                    confirmLabel={t('releases.promote')}
-                    onConfirm={() =>
-                      promote.mutateAsync({ release: promotionTarget.id, manifest: review.promotion_manifest! })
-                    }
-                  >
-                    {(openDialog) => (
-                      <Button
-                        data-testid="promotion-review-confirm"
-                        variant="outline"
-                        disabled={promote.isPending}
-                        onClick={openDialog}
-                      >
-                        {t('releases.promote')}
-                      </Button>
-                    )}
-                  </Confirm>
-                ) : (
-                  <p className="text-sm text-destructive">{t('releases.promotionScopeMissing')}</p>
-                )}
-                {promote.error ? (
-                  <p className="mt-3 text-sm text-destructive">
-                    {t('releases.promotionError', {
-                      message: promote.error instanceof Error ? promote.error.message : String(promote.error),
-                    })}
-                  </p>
-                ) : null}
-                <details className="mt-4 rounded-lg border p-3 text-xs" data-testid="promotion-review-technical-details">
-                  <summary
-                    className="cursor-pointer font-medium text-foreground"
-                    data-testid="promotion-review-technical-toggle"
-                  >
-                    {t('releases.promotionTechnicalDetails')}
-                  </summary>
-                  <dl className="mt-3 grid min-w-0 gap-x-4 gap-y-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
-                    <dt className="text-muted-foreground">{t('releases.promotionRelease')}</dt>
-                    <dd className="break-all font-mono">{promotionTarget.id}</dd>
-                    <dt className="text-muted-foreground">{t('releases.promotionManifest')}</dt>
-                    <dd className="break-all font-mono">{review.promotion_manifest}</dd>
-                    <dt className="text-muted-foreground">{t('releases.promotionBaseEpoch')}</dt>
-                    <dd className="font-mono">{promotionTarget.base_publish_epoch ?? '—'}</dd>
-                    <dt className="text-muted-foreground">{t('releases.files')}</dt>
-                    <dd>{fileCount(promotionTarget.file_count)}</dd>
-                  </dl>
-                </details>
-              </>
-            ) : promotionCompleted ? (
-              <p className="text-sm">{t('releases.promotionCompleted')}</p>
-            ) : releases.isPending ? (
-              <SkeletonText
-                lines={2}
-                label={t('releases.promotionLoading')}
-                data-testid="promotion-review-skeleton"
-              />
-            ) : (
-              <p className="text-sm text-destructive">{t('releases.promotionBindingInvalid')}</p>
-            )}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <Card className="py-0">
-        <Table
-          mobileLabels={[
-            t('releases.status'),
-            t('releases.kind'),
-            t('releases.reason'),
-            t('releases.revisions'),
-            t('releases.files'),
-            t('releases.completed'),
-            '',
-          ]}
-        >
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('releases.status')}</TableHead>
-              <TableHead>{t('releases.kind')}</TableHead>
-              <TableHead>{t('releases.reason')}</TableHead>
-              <TableHead>{t('releases.revisions')}</TableHead>
-              <TableHead>{t('releases.files')}</TableHead>
-              <TableHead>{t('releases.completed')}</TableHead>
-              <TableHead>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        data-testid="release-refresh"
-                        aria-label={t('releases.reload')}
-                        disabled={refreshing}
-                        onClick={() => releases.refetch()}
-                      >
-                        <RefreshCw data-icon="inline-start" data-spinning={refreshing} className="data-[spinning=true]:animate-spin" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t('releases.reload')}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableState
-              columns={7}
-              isLoading={releases.isPending}
-              error={releases.error}
-              isEmpty={rows.length === 0}
-              onRetry={() => releases.refetch()}
-              emptyTitle={t('releases.empty')}
-              emptyMessage={t('releases.emptyDescription')}
+      <DataTable
+        testId="release-list"
+        columns={columns}
+        rows={rows}
+        rowKey={(release) => release.id}
+        rowTestId="release-row"
+        isLoading={releases.isPending}
+        error={releases.error}
+        onRetry={() => releases.refetch()}
+        emptyMessage={t('releases.emptyDescription')}
+        view={table.view}
+        onViewChange={table.setView}
+        page={page}
+        onPageChange={setPage}
+        unit={t('nav.releases')}
+        toolbar={
+          <>
+            <Input
+              data-testid="release-search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setPage(firstPage)
+              }}
+              placeholder={t('releases.search')}
+              className="max-w-xs"
+            />
+            <ToggleGroup
+              className="max-w-full flex-wrap"
+              type="single"
+              value={status}
+              onValueChange={(value) => {
+                if (value) {
+                  setStatus(value as typeof status)
+                  setPage(firstPage)
+                }
+              }}
             >
-              {rows.map((release, releaseIndex) => {
-                const open = expanded === release.id
-                return (
-                  <Fragment key={release.id}>
-                    <TableRow data-testid={`release-row-${releaseIndex}`} data-release={release.id}>
-                      <TableCell>
-                        <StatusBadge tone={TONE[release.status]}>{t(STATUS_KEYS[release.status])}</StatusBadge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {t(release.kind === 'preview' ? 'releases.kind.preview' : 'releases.kind.release')}
-                      </TableCell>
-                      <TableCell className="max-w-[18rem] truncate">{release.reason || '—'}</TableCell>
-                      {/*
-                        0 is a claim of its own here — "this build is exactly the
-                        published set", which is what the detail row spells out —
-                        so an absent list does not get to borrow it, the same way
-                        the Files column beside it refuses to.
-                      */}
-                      <TableCell className="tabular-nums text-muted-foreground">
-                        {release.revision_ids?.length ?? '—'}
-                      </TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">{release.file_count ?? '—'}</TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {release.completed_at ? dateTime(release.completed_at) : '—'}
-                      </TableCell>
-                      {/*
-                        Three acts, three grammars — the row this rule was
-                        written for. `Details` reveals the row below and changes
-                        nothing, so it is the console's disclosure: ghost, with
-                        `aria-expanded` saying which state it is in. `Activate`
-                        changes the live site, so it is a button. `Delete` cannot
-                        be undone, so it is `destructive` — it used to be `ghost`,
-                        which made an irreversible act and a disclosure the same
-                        control to look at.
-                      */}
-                      <TableCell className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-expanded={open}
-                          data-testid={`release-${releaseIndex}-expand`}
-                          onClick={() => setExpanded(open ? null : release.id)}
-                        >
-                          {open ? t('common.hide') : t('common.details')}
-                        </Button>
-                        {can('release:write') && isActivatable(release) ? (
-                          <Confirm
-                            title={t('releases.activateTitle')}
-                            description={t('releases.activateDescription', { site })}
-                            confirmLabel={t('releases.activate')}
-                            onConfirm={() => activate.mutateAsync(release.id)}
-                          >
-                            {(openDialog) => (
-                              <Button
-                                data-testid={`release-${releaseIndex}-activate`}
-                                size="sm"
-                                variant="outline"
-                                onClick={openDialog}
-                              >
-                                {t('releases.activate')}
-                              </Button>
-                            )}
-                          </Confirm>
-                        ) : null}
-                        {can('release:write') && isDeletable(release) ? (
-                          <Confirm
-                            title={
-                              release.kind === 'preview'
-                                ? t('releases.deletePreviewTitle')
-                                : t('releases.deleteReleaseTitle')
-                            }
-                            description={
-                              release.kind === 'preview'
-                                ? t('releases.deletePreviewDescription', { site })
-                                : t('releases.deleteReleaseDescription', {
-                                    site,
-                                    status: t(STATUS_KEYS[release.status]),
-                                  })
-                            }
-                            confirmLabel={t('releases.delete')}
-                            destructive
-                            onConfirm={async () => {
-                              await ck.releases.remove(site, release.id)
-                              await invalidate()
-                            }}
-                          >
-                            {(openDialog) => (
-                              <Button
-                                data-testid={`release-${releaseIndex}-delete`}
-                                size="sm"
-                                variant="destructive"
-                                onClick={openDialog}
-                              >
-                                {t('releases.delete')}
-                              </Button>
-                            )}
-                          </Confirm>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                    {open ? (
-                      <TableRow data-testid={`release-${releaseIndex}-detail`}>
-                        <TableCell colSpan={7} className="bg-muted/40">
-                          <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[10rem_1fr]">
-                            <dt className="text-muted-foreground">{t('releases.created')}</dt>
-                            <dd>{dateTime(release.created_at)}</dd>
-                            <dt className="text-muted-foreground">{t('releases.activated')}</dt>
-                            <dd>{release.activated_at ? dateTime(release.activated_at) : '—'}</dd>
-                            <dt className="text-muted-foreground">{t('releases.files')}</dt>
-                            <dd className="tabular-nums">{release.file_count ?? '—'}</dd>
-                            {/*
-                              Drawn when a reason arrives and never faked when one
-                              does not: `listReleases` in src/repository.mjs
-                              projects nine fields and `error` is not among them,
-                              so today this row does not appear on a failed build.
-                              The declared `Release` schema does carry `error`;
-                              until the projection sends it, "the last build
-                              failed" is the whole of what this console knows.
-                            */}
-                            {release.error ? (
-                              <>
-                                <dt className="text-muted-foreground">{t('releases.error')}</dt>
-                                <dd className="whitespace-pre-wrap break-words text-destructive">{release.error}</dd>
-                              </>
-                            ) : null}
-                            <dt className="text-muted-foreground">{t('releases.overlaidRevisions')}</dt>
-                            <dd>
-                              {release.revision_ids?.length ? (
-                                <ul className="flex flex-col gap-0.5">
-                                  {release.revision_ids.map((revisionId) => (
-                                    <li key={revisionId} className="font-mono">
-                                      {/*
-                                        The list carries no revision→item mapping,
-                                        so a title is shown when the content list
-                                        happens to name the same slug and the id
-                                        otherwise. An id is a poor label, but a
-                                        wrong title would be worse.
-                                      */}
-                                      {items.find((item) => item.published_revision_id === revisionId)?.title ??
-                                        t('common.unavailableDocument')}
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <span className="text-muted-foreground">{t('releases.noRevisions')}</span>
-                              )}
-                            </dd>
-                          </dl>
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </Fragment>
-                )
-              })}
-            </TableState>
-          </TableBody>
-        </Table>
-      </Card>
+              <ToggleGroupItem data-testid="release-status-all" value="all">
+                {t('releases.filterAll')}
+              </ToggleGroupItem>
+              {availableStatuses.map((entry) => (
+                <ToggleGroupItem data-testid={`release-status-${entry}`} key={entry} value={entry}>
+                  {t(STATUS_KEYS[entry])}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <Button
+              data-testid="release-reload"
+              variant="ghost"
+              size="icon"
+              aria-label={t('releases.reload')}
+              onClick={() => releases.refetch()}
+              disabled={releases.isFetching}
+            >
+              <RefreshCw
+                data-icon="inline-start"
+                data-spinning={releases.isFetching}
+                className="data-[spinning=true]:animate-spin"
+              />
+            </Button>
+          </>
+        }
+        renderMobileRow={(release, rowIndex) => (
+          <div className="flex items-start justify-between gap-3 p-4">
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="font-medium">{releaseName(release)}</span>
+              <span className="break-words text-sm text-muted-foreground">{release.reason || '—'}</span>
+              <RelativeTime value={release.created_at} data-testid={`release-mobile-${rowIndex}-age`} />
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <StatusBadge tone={TONE[release.status]}>{t(STATUS_KEYS[release.status])}</StatusBadge>
+              {columns.find((column) => column.id === 'actions')?.cell(release, rowIndex)}
+            </div>
+          </div>
+        )}
+      />
     </Page>
   )
 }

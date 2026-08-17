@@ -30,6 +30,7 @@ import {
   updateIdentityGrant,
 } from '../oauth/policy.mjs'
 import { sha256 } from '../utils.mjs'
+import { createDecision } from '../decisions.mjs'
 
 const siteRef = z.string().min(1).max(100).describe('Site UUID or slug.')
 const uuid = z.string().uuid()
@@ -186,11 +187,10 @@ async function confirm(context, message, label = 'Confirm') {
   throw Object.assign(new Error('Operation cancelled; no change was made.'), { statusCode: 409, cancelled: true })
 }
 
-function promotionReviewUrl(publicUrl, site, releaseId, manifestSha256) {
+function promotionReviewUrl(publicUrl, site, reviewId) {
   const url = new URL('/cockpit/releases', publicUrl)
   url.searchParams.set('site', site.slug || site.id)
-  url.searchParams.set('promotion_release', releaseId)
-  url.searchParams.set('promotion_manifest', manifestSha256)
+  url.searchParams.set('promotion_review', reviewId)
   return url.toString()
 }
 
@@ -605,13 +605,13 @@ const TOOLS = [
         })
         return result
       }
-      // Preview promotion has a durable browser fallback because the preview
-      // itself is already the immutable review object. A nested MCP client
+      // Preview promotion has a durable browser fallback. A nested MCP client
       // (for example an orchestration engine calling ContentKit) often cannot
       // render a second, live form inside its own tool call. Failing there made
       // the exact promotion path unusable even though ContentKit already owns
-      // every binding the reviewer needs: release id, manifest digest and base
-      // publish epoch.
+      // every immutable binding the reviewer needs. ContentKit stores those
+      // bindings in a promotion-review row and the browser URL carries only its
+      // opaque id.
       //
       // The fallback does NOT approve or mutate anything. It hands the human to
       // ContentKit Cockpit, whose operator session, CSRF gate and release:write
@@ -624,17 +624,59 @@ const TOOLS = [
           throw Object.assign(new Error('release_id and manifest_sha256 are required for promote'), {
             statusCode: 422,
           })
-        const reviewUrl = promotionReviewUrl(context.publicUrl, site, input.release_id, input.manifest_sha256)
-        await audit(deps, principal, {
-          siteId: site.id,
-          action: 'release.promotion_review_requested',
-          resourceType: 'release',
-          resourceId: input.release_id,
-          metadata: { manifest_sha256: input.manifest_sha256 },
+        const release = await deps.repo.getRelease(input.release_id)
+        if (
+          !release ||
+          release.site_id !== site.id ||
+          release.kind !== 'preview' ||
+          release.status !== 'preview' ||
+          release.manifest_sha256 !== input.manifest_sha256
+        ) {
+          throw Object.assign(new Error('preview not found or manifest binding does not match'), { statusCode: 409 })
+        }
+        const transact = deps.db.tx ? deps.db.tx.bind(deps.db) : async (fn) => fn(deps.db)
+        const review = await transact(async (tx) => {
+          const existing = await tx.select('ck_promotion_reviews', {
+            site_id: `eq.${site.id}`,
+            release_id: `eq.${input.release_id}`,
+            manifest_sha256: `eq.${input.manifest_sha256}`,
+            limit: '1',
+          })
+          if (existing[0]) return existing[0]
+          const [created] = await tx.insert('ck_promotion_reviews', {
+            id: randomUUID(),
+            site_id: site.id,
+            release_id: input.release_id,
+            manifest_sha256: input.manifest_sha256,
+            status: 'pending',
+            reason: input.reason || '',
+          })
+          await createDecision(tx, {
+            siteId: site.id,
+            kind: 'promotion',
+            sourceId: created.id,
+            sourceVersion: input.manifest_sha256,
+            openedAt: created.requested_at,
+          })
+          const event = {
+            ...auditActor(principal),
+            siteId: site.id,
+            action: 'promotion_review.request',
+            resourceType: 'promotion_review',
+            resourceId: created.id,
+            result: 'success',
+            transport: 'mcp',
+            metadata: { release_id: input.release_id, manifest_sha256: input.manifest_sha256 },
+          }
+          if (deps.audit.recordStrict) await deps.audit.recordStrict(event, tx)
+          else await deps.audit.record(event)
+          return created
         })
+        const reviewUrl = promotionReviewUrl(context.publicUrl, site, review.id)
         return {
-          status: 'human_review_required',
+          status: review.status === 'rejected' ? 'human_review_rejected' : 'human_review_required',
           mutation_applied: false,
+          promotion_review_id: review.id,
           release_id: input.release_id,
           manifest_sha256: input.manifest_sha256,
           review_url: reviewUrl,

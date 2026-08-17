@@ -36,6 +36,8 @@ export const keys = {
   /** One entry per finished message and colour scheme — the unit of one render call. */
   render: (site: string, id: string, scheme: string) => ['render', site, id, scheme] as const,
   releases: (site: string) => ['releases', site] as const,
+  decisions: (site: string, query?: unknown) => ['decisions', site, query ?? null] as const,
+  promotionReview: (site: string, review: string) => ['promotion-review', site, review] as const,
   stats: (site: string, kind: string, window?: unknown) => ['stats', site, kind, window ?? null] as const,
   access: {
     users: (site: string) => ['access', site, 'users'] as const,

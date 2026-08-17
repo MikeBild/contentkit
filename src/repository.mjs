@@ -171,6 +171,7 @@ function withLatestRevision(item, revision) {
     slug: revision.slug,
     summary: revision.summary,
     tags: revision.tags,
+    category: revision.metadata?.category ?? null,
     // The id makes the merged fields auditable. Without it a consumer can read
     // the newest title but cannot prove which immutable revision supplied it —
     // in particular, a preview release carries revision ids and no titles.
@@ -724,6 +725,7 @@ export function createRepository(config, db, storage) {
         description: input.description || '',
         base_url: validBaseUrl(input.base_url),
         default_locale: locales[0],
+        environment: ['production', 'canary', 'test'].includes(input.environment) ? input.environment : 'production',
         settings: input.settings || {},
       })
       // default_locale is what the root redirect and the 404 page target, so it
@@ -751,9 +753,12 @@ export function createRepository(config, db, storage) {
     async updateSite(siteId, input) {
       const allowed = Object.fromEntries(
         Object.entries(input).filter(([key]) =>
-          ['name', 'description', 'base_url', 'default_locale', 'settings'].includes(key),
+          ['name', 'description', 'base_url', 'default_locale', 'environment', 'settings'].includes(key),
         ),
       )
+      if ('environment' in allowed && !['production', 'canary', 'test'].includes(allowed.environment)) {
+        throw Object.assign(new Error('environment must be production, canary or test'), { statusCode: 422 })
+      }
       if (allowed.base_url) allowed.base_url = validBaseUrl(allowed.base_url)
       if ('settings' in allowed) validateSiteSettings(allowed.settings)
       // Guard on presence (not truthiness) so an empty string can't slip through.
@@ -1283,7 +1288,7 @@ export function createRepository(config, db, storage) {
       })
       if (!items.length || !db.query) return items
       const latest = await db.query(
-        `SELECT DISTINCT ON (item_id) id, item_id, title, slug, summary, tags, status, created_at
+        `SELECT DISTINCT ON (item_id) id, item_id, title, slug, summary, tags, metadata, status, created_at
            FROM ck_content_revisions
           WHERE item_id = ANY($1::uuid[])
           ORDER BY item_id, created_at DESC`,

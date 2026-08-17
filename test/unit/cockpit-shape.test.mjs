@@ -272,6 +272,7 @@ describe('the container ladder is countable', () => {
 const STRIPS = {
   'compositions.tsx': { testId: 'composition-tabs', ids: ['compile', 'patterns', 'guides'] },
   'content.tsx': { testId: 'content-tabs', ids: ['editor', 'revisions', 'audio', 'live'] },
+  'decisions.tsx': { testId: 'decision-diff-tabs', ids: ['before', 'after'] },
   'credentials.tsx': { testId: 'ck-credentials-tabs', ids: ['keys', 'grants'] },
   'moderation.tsx': { testId: 'ck-moderation-tabs', ids: ['comments', 'contact', 'feedback'] },
   'published.tsx': { testId: 'published-tab', ids: ['rendered', 'markdown', 'semantic', 'diagnostics', 'composition'] },
@@ -452,7 +453,7 @@ const PRIMARY_LESS = {
   'access.tsx': { because: 'no-controls' },
   'credentials.tsx': { because: 'no-controls' },
   'moderation.tsx': { because: 'no-controls' },
-  'overview.tsx': { because: 'no-controls' },
+  'overview.tsx': { because: 'read-only' },
   'webhooks.tsx': { because: 'no-controls' },
 
   // The page's one act is rendered by a component it mounts, so the primary

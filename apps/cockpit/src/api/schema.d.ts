@@ -490,6 +490,143 @@ export interface paths {
         patch: operations["accessRuleUpdate"];
         trace?: never;
     };
+    "/v1/sites/{site}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the durable Cockpit decision queue */
+        get: operations["decisionList"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/decisions/{decision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Defer, dismiss or restore one decision */
+        patch: operations["decisionTransition"];
+        trace?: never;
+    };
+    "/v1/sites/{site}/draft-captures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture an incomplete draft without required metadata */
+        post: operations["draftCaptureCreate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/draft-captures/{capture}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an incomplete draft capture */
+        get: operations["draftCaptureGet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update an incomplete draft capture */
+        patch: operations["draftCaptureUpdate"];
+        trace?: never;
+    };
+    "/v1/sites/{site}/draft-captures/{capture}/triage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn a capture into canonical immutable content */
+        post: operations["draftCaptureTriage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/draft-captures/{capture}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard a capture while keeping history */
+        post: operations["draftCaptureDiscard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/promotion-reviews/{review}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the exact immutable preview review */
+        get: operations["promotionReviewGet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sites/{site}/promotion-reviews/{review}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject the exact promotion proposal */
+        post: operations["promotionReviewReject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sites/{site}/content": {
         parameters: {
             query?: never;
@@ -1157,7 +1294,7 @@ export interface paths {
         put?: never;
         /**
          * Activate the exact reviewed preview without rebuilding it
-         * @description Promotes an immutable preview only when manifest_sha256 matches and the site publish epoch is unchanged since the preview build. The operation fails closed on digest or epoch drift and currently refuses deck pointer changes.
+         * @description Promotes an immutable preview only when manifest_sha256 matches and the site publish epoch is unchanged since the preview build. Cockpit operator sessions must also send the pending promotion_review_id; direct API credentials keep the headless promotion contract. The operation fails closed on any binding drift.
          */
         post: operations["releasePromotePreview"];
         delete?: never;
@@ -2111,6 +2248,8 @@ export interface components {
             /** Format: date-time */
             revoked_at?: string | null;
             /** Format: date-time */
+            last_used_at?: string | null;
+            /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
             updated_at?: string | null;
@@ -2242,6 +2381,103 @@ export interface components {
             site_id: string;
             up: number;
             down: number;
+            /** Format: date-time */
+            first_received_at?: string | null;
+        };
+        Decision: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            /** @enum {string} */
+            kind: "draft_capture" | "comment" | "contact" | "feedback" | "promotion";
+            /** Format: uuid */
+            source_id: string;
+            source_version: string;
+            /** @enum {string} */
+            state: "open" | "deferred" | "dismissed" | "decided";
+            version: number;
+            /** Format: date-time */
+            opened_at: string;
+            /** Format: date-time */
+            due_at: string;
+            /** Format: date-time */
+            remind_at?: string | null;
+            /** Format: date-time */
+            decided_at?: string | null;
+            outcome?: string | null;
+            reason?: string;
+            title: string;
+            summary: string;
+            source: {
+                [key: string]: unknown;
+            };
+        };
+        DecisionList: {
+            items: components["schemas"]["Decision"][];
+            next_cursor: string | null;
+            counts: {
+                open: number;
+                overdue: number;
+                by_kind: {
+                    [key: string]: number;
+                };
+            };
+        };
+        DraftCapture: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            text: string;
+            /** @enum {string} */
+            status: "pending" | "triaged" | "discarded";
+            /** Format: uuid */
+            content_item_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            triaged_at?: string | null;
+            /** Format: date-time */
+            discarded_at?: string | null;
+        };
+        PromotionReview: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            site_id: string;
+            /** Format: uuid */
+            release_id: string;
+            manifest_sha256: string;
+            /** @enum {string} */
+            status: "pending" | "rejected" | "activated" | "expired";
+            reason?: string;
+            /** Format: date-time */
+            requested_at: string;
+            /** Format: date-time */
+            decided_at?: string | null;
+            /** Format: uri */
+            preview_url?: string | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            release?: {
+                [key: string]: unknown;
+            };
+            changes: {
+                /** Format: uuid */
+                content_item_id: string;
+                title: string;
+                /** @enum {string} */
+                effect: "added" | "modified" | "removed";
+                old: {
+                    [key: string]: unknown;
+                } | null;
+                new: {
+                    [key: string]: unknown;
+                } | null;
+            }[];
         };
         /** @description A subscription without its signing secret. Enablement is `disabled_at`: a timestamp means paused, null means live. */
         WebhookEndpoint: {
@@ -2409,6 +2645,8 @@ export interface components {
             /** Format: uri */
             base_url?: string;
             default_locale?: string;
+            /** @enum {string} */
+            environment?: "production" | "canary" | "test";
             domains?: string[];
             settings?: components["schemas"]["SiteSettings"];
         };
@@ -2425,6 +2663,11 @@ export interface components {
             base_url: string;
             /** @description IETF language tag such as `de` or `en-us`, case-folded. Always stored as a locale row too — the root redirect and the 404 page target it. */
             default_locale: string;
+            /**
+             * @default production
+             * @enum {string}
+             */
+            environment: "production" | "canary" | "test";
             /** @description Additional locales to build, validated and case-folded exactly like `default_locale`, which is always included. At most 32 in total: each one adds a full page tree to every release. */
             locales?: string[];
             /** @description Hostnames to map to this site, stored as verified. */
@@ -2440,6 +2683,8 @@ export interface components {
             /** Format: uri */
             base_url: string;
             default_locale: string;
+            /** @enum {string} */
+            environment: "production" | "canary" | "test";
             settings: components["schemas"]["SiteSettings"];
         } & {
             [key: string]: unknown;
@@ -2506,6 +2751,7 @@ export interface components {
             slug?: string | null;
             summary?: string | null;
             tags?: string[] | null;
+            category?: string | null;
             /** Format: uuid */
             latest_revision_id?: string | null;
             /** @enum {string|null} */
@@ -4136,6 +4382,288 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    decisionList: {
+        parameters: {
+            query?: {
+                state?: "open" | "deferred" | "dismissed" | "decided";
+                kind?: "draft_capture" | "comment" | "contact" | "feedback" | "promotion";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Decisions visible to the current principal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    decisionTransition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                decision: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                    /** @enum {string} */
+                    action: "defer" | "dismiss" | "restore";
+                    /** Format: date-time */
+                    remind_at?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated decision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Decision changed since it was read */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    draftCaptureCreate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    text?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Capture and its queue decision */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        capture: components["schemas"]["DraftCapture"];
+                        decision: components["schemas"]["Decision"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    draftCaptureGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                capture: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Capture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftCapture"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    draftCaptureUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                capture: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated capture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftCapture"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    draftCaptureTriage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                capture: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    markdown: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created item and revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    draftCaptureDiscard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                capture: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Discarded capture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftCapture"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    promotionReviewGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                review: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Promotion review with Markdown changes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionReview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    promotionReviewReject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+                review: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Rejected review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionReview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     contentList: {
         parameters: {
             query?: {
@@ -5637,6 +6165,8 @@ export interface operations {
             content: {
                 "application/json": {
                     manifest_sha256: string;
+                    /** Format: uuid */
+                    promotion_review_id?: string;
                 };
             };
         };

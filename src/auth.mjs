@@ -101,6 +101,13 @@ export function createAuth(config, db) {
         )
         const token = rows[0]
         if (!token) return null
+        if (db.update)
+          db.update(
+            'ck_oauth_identity_grants',
+            { id: `eq.${token.grant_id}` },
+            { last_used_at: new Date().toISOString() },
+            { returning: false },
+          ).catch(() => {})
         const tokenSites = token.token_site_ids || []
         const grantSites = token.grant_site_ids || []
         const siteIds =

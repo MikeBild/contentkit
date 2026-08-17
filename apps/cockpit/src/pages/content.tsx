@@ -1,8 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, TriangleAlert } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
+import { ArrowLeft, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ck, type ContentItem, type ContentKind, type Revision } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { AppLink } from '@/components/app-link'
 import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -10,21 +12,32 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable, firstPage, useTableView, type DataColumn } from '@/components/ui/data-table'
-import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { RelativeTime } from '@/components/ui/relative-time'
+import { Textarea } from '@/components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { StatusBadge } from '@/forms/status-badge'
 import { type AudioJobStatus } from '@/forms/contracts/enums.generated'
 import { TableState } from '@/forms/table-state'
 import { SkeletonFields, SkeletonText } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabPanel } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/toast'
 import { ContentHtml, useContentScheme } from '@/content/lazy'
@@ -111,8 +124,13 @@ export function ContentPage() {
   const { site } = useSite()
   const can = useCan()
   const client = useQueryClient()
+  const navigate = useNavigate()
   const [kind, setKind] = useState<'' | ContentKind>('')
   const [locale, setLocale] = useState('')
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('all')
+  const [capturing, setCapturing] = useState(false)
+  const [captureText, setCaptureText] = useState('')
   const [open, setOpen] = useState<{ itemId: string | null } | null>(null)
 
   const query = { ...(kind ? { kind } : {}), ...(locale ? { locale } : {}) }
@@ -120,6 +138,15 @@ export function ContentPage() {
     queryKey: keys.content.list(site, query),
     queryFn: () => ck.content.list(site, query as never),
     enabled: Boolean(site),
+  })
+  const capture = useMutation({
+    mutationFn: () => ck.draftCaptures.create(site!, captureText),
+    onSuccess: async () => {
+      setCapturing(false)
+      setCaptureText('')
+      await client.invalidateQueries({ queryKey: keys.decisions(site!) })
+      await navigate({ to: '/decisions', search: { site: site! } })
+    },
   })
 
   const columns = useMemo<DataColumn<ContentItem>[]>(
@@ -133,8 +160,13 @@ export function ContentPage() {
         priority: 'essential',
         kind: 'identity',
         compare: (left, right) => compareText(name(left), name(right)),
-        className: 'max-w-[22rem] truncate font-medium',
-        cell: (item) => name(item),
+        className: 'max-w-[34rem]',
+        cell: (item) => (
+          <div className="min-w-0">
+            <div className="font-medium">{name(item)}</div>
+            {item.summary ? <p className="mt-0.5 text-xs font-normal text-muted-foreground">{item.summary}</p> : null}
+          </div>
+        ),
       },
       {
         id: 'kind',
@@ -200,7 +232,9 @@ export function ContentPage() {
         // "vor 2 Stunden" is what the operator reads; the instant is in `title`
         // and in `<time datetime>`, because deciding whether an edit landed
         // before or after a release needs the timestamp, not a rounding of it.
-        cell: (item, rowIndex) => <RelativeTime value={item.updated_at} data-testid={`content-row-${rowIndex}-updated`} />,
+        cell: (item, rowIndex) => (
+          <RelativeTime value={item.updated_at} data-testid={`content-row-${rowIndex}-updated`} />
+        ),
       },
       {
         id: 'created',
@@ -213,7 +247,9 @@ export function ContentPage() {
         // is the list in this order".
         hiddenByDefault: true,
         className: 'text-muted-foreground',
-        cell: (item, rowIndex) => <RelativeTime value={item.created_at} data-testid={`content-row-${rowIndex}-created`} />,
+        cell: (item, rowIndex) => (
+          <RelativeTime value={item.created_at} data-testid={`content-row-${rowIndex}-created`} />
+        ),
       },
       {
         id: 'actions',
@@ -222,7 +258,7 @@ export function ContentPage() {
         priority: 'essential',
         kind: 'actions',
         headerHidden: true,
-        className: 'flex gap-2',
+        className: 'flex justify-end gap-2',
         cell: (item, rowIndex) => (
           <>
             <Button
@@ -233,41 +269,74 @@ export function ContentPage() {
             >
               {can('content:write') ? t('content.list.edit') : t('content.list.inspect')}
             </Button>
-            {can('content:write') && !item.published_revision_id ? (
-              <Confirm
-                title={t('content.list.discardTitle')}
-                description={t('content.list.discardDescription', { name: name(item) })}
-                confirmLabel={t('content.list.discardDraft')}
-                destructive
-                onConfirm={async () => {
-                  await ck.content.deleteDraft(item.id)
-                  await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
-                }}
-              >
-                {(openConfirm) => (
-                  <Button data-testid={`content-row-${rowIndex}-discard`} size="sm" variant="destructive" onClick={openConfirm}>
-                    {t('content.list.discard')}
+            {(can('content:write') && !item.published_revision_id) ||
+            (can('release:write') && item.published_revision_id) ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    data-testid={`content-row-${rowIndex}-actions`}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('content.list.rowActions')}
+                  >
+                    <MoreHorizontal data-icon="inline-start" />
                   </Button>
-                )}
-              </Confirm>
-            ) : null}
-            {can('release:write') && item.published_revision_id ? (
-              <Confirm
-                title={t('content.list.unpublishTitle')}
-                description={t('content.list.unpublishDescription', { name: name(item) })}
-                confirmLabel={t('content.list.unpublish')}
-                destructive
-                onConfirm={async () => {
-                  await ck.content.unpublish(item.id)
-                  await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
-                }}
-              >
-                {(openConfirm) => (
-                  <Button data-testid={`content-row-${rowIndex}-unpublish`} size="sm" variant="destructive" onClick={openConfirm}>
-                    {t('content.list.unpublish')}
-                  </Button>
-                )}
-              </Confirm>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuGroup>
+                    {can('content:write') && !item.published_revision_id ? (
+                      <Confirm
+                        title={t('content.list.discardTitle')}
+                        description={t('content.list.discardDescription', { name: name(item) })}
+                        confirmLabel={t('content.list.discardDraft')}
+                        destructive
+                        onConfirm={async () => {
+                          await ck.content.deleteDraft(item.id)
+                          await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
+                        }}
+                      >
+                        {(openConfirm) => (
+                          <DropdownMenuItem
+                            data-testid={`content-row-${rowIndex}-discard`}
+                            variant="destructive"
+                            onSelect={(event) => {
+                              event.preventDefault()
+                              openConfirm()
+                            }}
+                          >
+                            {t('content.list.discard')}
+                          </DropdownMenuItem>
+                        )}
+                      </Confirm>
+                    ) : null}
+                    {can('release:write') && item.published_revision_id ? (
+                      <Confirm
+                        title={t('content.list.unpublishTitle')}
+                        description={t('content.list.unpublishDescription', { name: name(item) })}
+                        confirmLabel={t('content.list.unpublish')}
+                        destructive
+                        onConfirm={async () => {
+                          await ck.content.unpublish(item.id)
+                          await client.invalidateQueries({ queryKey: keys.content.list(site, query) })
+                        }}
+                      >
+                        {(openConfirm) => (
+                          <DropdownMenuItem
+                            data-testid={`content-row-${rowIndex}-unpublish`}
+                            variant="destructive"
+                            onSelect={(event) => {
+                              event.preventDefault()
+                              openConfirm()
+                            }}
+                          >
+                            {t('content.list.unpublish')}
+                          </DropdownMenuItem>
+                        )}
+                      </Confirm>
+                    ) : null}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </>
         ),
@@ -323,17 +392,38 @@ export function ContentPage() {
     )
   }
 
-  const rows = items.data ?? []
-
+  const allRows = items.data ?? []
+  const categories = [
+    ...new Set(allRows.map((item) => item.category).filter((value): value is string => Boolean(value))),
+  ].sort()
+  const needle = search.trim().toLocaleLowerCase()
+  const rows = allRows.filter(
+    (item) =>
+      (category === 'all' || item.category === category) &&
+      (!needle || `${name(item)} ${item.summary ?? ''}`.toLocaleLowerCase().includes(needle)),
+  )
   return (
     <Page
       title={t('page.content.title')}
       description={t('content.list.description')}
       actions={
         can('content:write') ? (
-          <Button data-testid="content-new" onClick={() => setOpen({ itemId: null })}>
-            {t('content.list.new')}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {!items.isPending && allRows.length === 0 ? (
+              <Button asChild variant="outline">
+                <AppLink
+                  data-testid="content-capture-assistant"
+                  to="/assistant"
+                  search={{ site, assistant_intent: 'draft-capture' } as never}
+                >
+                  {t('content.capture.withAssistant')}
+                </AppLink>
+              </Button>
+            ) : null}
+            <Button data-testid="content-new" onClick={() => setCapturing(true)}>
+              {t('content.list.new')}
+            </Button>
+          </div>
         ) : null
       }
     >
@@ -354,6 +444,14 @@ export function ContentPage() {
         onPageChange={setPage}
         toolbar={
           <>
+            <Input
+              className="w-56"
+              data-testid="content-search"
+              aria-label={t('content.list.search')}
+              placeholder={t('content.list.search')}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
             {/* The kind filter is a Radix Select now, and `content-kind-filter`
                 sits on the trigger: the root renders no DOM node, so an id on it
                 would name nothing a browser test could click. Radix also refuses
@@ -388,9 +486,76 @@ export function ContentPage() {
               value={locale}
               onChange={(event) => setLocale(event.target.value.trim())}
             />
+            {categories.length ? (
+              <ToggleGroup
+                type="single"
+                className="max-w-full flex-wrap"
+                value={category}
+                onValueChange={(value) => setCategory(value || 'all')}
+                aria-label={t('content.category')}
+              >
+                <ToggleGroupItem data-testid="content-category-all" value="all">
+                  {t('common.all')}
+                </ToggleGroupItem>
+                {categories.map((value, index) => (
+                  <ToggleGroupItem data-testid={`content-category-option-${index + 1}`} key={value} value={value}>
+                    {value}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            ) : null}
           </>
         }
       />
+      <Dialog open={capturing} onOpenChange={(next) => !capture.isPending && setCapturing(next)}>
+        <DialogContent
+          closeDisabled={capture.isPending}
+          onEscapeKeyDown={(event) => capture.isPending && event.preventDefault()}
+          onPointerDownOutside={(event) => capture.isPending && event.preventDefault()}
+          data-testid="content-capture-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>{t('content.capture.title')}</DialogTitle>
+            <DialogDescription>{t('content.capture.description')}</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            data-testid="content-capture-text"
+            autoFocus
+            rows={9}
+            value={captureText}
+            placeholder={t('content.capture.placeholder')}
+            onChange={(event) => setCaptureText(event.target.value)}
+          />
+          {capture.error ? (
+            <Alert variant="destructive">
+              <TriangleAlert />
+              <AlertTitle>{t('content.capture.error')}</AlertTitle>
+              <AlertDescription>
+                {capture.error instanceof Error ? capture.error.message : t('common.error')}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              data-testid="content-capture-cancel"
+              variant="outline"
+              disabled={capture.isPending}
+              onClick={() => setCapturing(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              data-testid="content-capture-save"
+              variant="outline"
+              disabled={capture.isPending}
+              onClick={() => capture.mutate()}
+            >
+              {capture.isPending ? <Spinner data-icon="inline-start" /> : null}
+              {t('content.capture.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Page>
   )
 }
@@ -489,9 +654,7 @@ function ContentDetail({
     <Page
       title={title}
       description={
-        item.data
-          ? `${t(KIND_KEYS[item.data.kind])} · ${item.data.locale}`
-          : t('content.detail.newDescription')
+        item.data ? `${t(KIND_KEYS[item.data.kind])} · ${item.data.locale}` : t('content.detail.newDescription')
       }
       actions={
         <Button variant="outline" data-testid="content-back" onClick={onClose}>

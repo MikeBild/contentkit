@@ -542,7 +542,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     publish,
     preview: async (input) =>
       build({ ...input, previewSlug: normalizePreviewSlug(input.previewSlug), kind: 'preview' }),
-    async promote({ siteId, releaseId, manifestSha256 }) {
+    async promote({ siteId, releaseId, manifestSha256, onActivated }) {
       if (typeof manifestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(manifestSha256)) {
         throw Object.assign(new Error('manifest_sha256 must be a lowercase SHA-256 digest'), { statusCode: 422 })
       }
@@ -597,6 +597,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           { revoked_at: new Date().toISOString() },
         )
         await repo.enqueueContentEvents(tx, snapshot.site, events)
+        if (onActivated) await onActivated(tx)
       })
       if (revisionIds.length && hooks.onPublished) {
         Promise.resolve(hooks.onPublished({ siteId, revisionIds })).catch((error) =>

@@ -359,6 +359,12 @@ const PROSE_ONLY = {
       created_at: timestamp(`revision-created:${index}`),
     })),
   'GET /v1/content/{item}/audio': () => ({ audio: null }),
+  'GET /v1/sites/{site}/promotion-reviews/{review}': ({ path }) => ({
+    ...instance(document.components.schemas.PromotionReview, { seed: 'promotion-review' }),
+    id: path.review,
+    status: 'pending',
+    preview_url: 'https://canary.example.test/previews/editorial-review/',
+  }),
 }
 
 function siteRecord(reference) {

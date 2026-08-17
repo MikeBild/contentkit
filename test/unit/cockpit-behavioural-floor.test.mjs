@@ -545,9 +545,9 @@ const CONTRACTS = [
   {
     id: 'page/releases-promotion-review-is-bound-to-one-preview-manifest',
     promise:
-      'A deep-linked promotion review exposes its confirmation only for the exact preview release and manifest digest named by the handoff.',
-    title: /deep-linked promotion review only for the exact preview and manifest/i,
-    asserts: [/promotion-review-confirm/, /manifest_sha256/, /toBeEnabled/],
+      'A deep-linked promotion review resolves one durable server record and forwards only the immutable preview and manifest binding returned by that record.',
+    title: /deep-linked server-side promotion review only for its immutable preview and manifest binding/i,
+    asserts: [/manifest_sha256/, /toHaveBeenCalledWith/],
     min: 1,
   },
   {
@@ -557,7 +557,14 @@ const CONTRACTS = [
     incident:
       'The former gate led with a release UUID and manifest digest, so an operator could verify the binding but not understand the decision.',
     title: /names the reviewed content and explains the live effect before confirmation/i,
-    asserts: [/What will be published/, /nothing changes/, /changes immediately/],
+    asserts: [/A reviewed article/, /nothing changes/, /changes immediately/],
+    min: 1,
+  },
+  {
+    id: 'page/releases-destructive-delete-lives-in-overflow',
+    promise: 'Release deletion is absent from the primary row surface and remains behind an overflow confirmation.',
+    title: /keeps deletion out of the list primary surface and behind an overflow confirmation/i,
+    asserts: [/menuitem/, /alertdialog/, /not\.toHaveBeenCalled/],
     min: 1,
   },
   // ── The site registry: the console's most destructive page ────────────────
@@ -841,6 +848,12 @@ const COVERED_SUBJECTS = [
  * ────────────────────────────────────────────────────────────────────────── */
 
 const UNCOVERED = [
+  {
+    id: 'decisions/the-unified-human-queue',
+    missing:
+      'The queue filters, overdue split, draft triage, moderation actions and promotion-review handoff are exercised by browser validation and source contracts, but the Decisions page does not yet have a dedicated rendering suite.',
+    where: ['pages/decisions.tsx'],
+  },
   {
     id: 'shell/sidebar-collapse-and-its-tooltips',
     missing:

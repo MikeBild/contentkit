@@ -316,6 +316,12 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | POST | `/v1/sites/{site}/content` | `content:write` | Create a content item if needed and create its first immutable revision |
 | GET | `/v1/content/{item}/revisions` | `content:read` | List immutable revisions for one content item |
 | PUT | `/v1/content/{item}/revisions` | `content:write` | Create another immutable revision for an existing content item |
+| GET | `/v1/sites/{site}/decisions` | `content:write`, `moderation:write` or `release:write` | Read the deduplicated current-state queue visible to the caller, with overdue and per-kind counts |
+| PATCH | `/v1/sites/{site}/decisions/{decision}` | scope for the decision kind | Defer, dismiss or restore one decision with an optimistic version check |
+| POST | `/v1/sites/{site}/draft-captures` | `content:write` | Capture an unstructured draft without requiring metadata and open its triage decision |
+| GET/PATCH | `/v1/sites/{site}/draft-captures/{capture}` | `content:write` | Read or update a still-pending draft capture |
+| POST | `/v1/sites/{site}/draft-captures/{capture}/triage` | `content:write` | Turn a capture into a canonical content item and immutable draft revision, then close its decision |
+| POST | `/v1/sites/{site}/draft-captures/{capture}/discard` | `content:write` | Discard a capture without changing canonical content, then close its decision |
 | GET | `/v1/sites/{site}/published` | `content:read` | List published content as JSON (read API), including the immutable `revision_sha256` for metadata-only inventory consumers: `kind`, `locale`, exact `tag`, `updated_since`, keyset `limit`/`cursor` |
 | GET | `/v1/sites/{site}/published/{kind}/{locale}/{slug}` | `content:read` | Read one document including Markdown, HTML, Semantic AST, Narrative, Composition, diagnostics and representation links |
 | GET | `/v1/composition-patterns` | public | List/filter declarative Pattern Packages with a registry ETag |
@@ -340,6 +346,8 @@ See `MCP.md` for the exact tool catalog, safety boundaries and operations.
 | GET | `/v1/sites/{site}/releases` | `content:read` | List releases newest first (for audit and rollback targets) |
 | POST | `/v1/sites/{site}/releases` | `release:write` | Build and atomically activate a public release |
 | POST | `/v1/sites/{site}/releases/{release}/promote` | `release:write` | Activate the exact reviewed preview when its manifest digest and base publish epoch still match |
+| GET | `/v1/sites/{site}/promotion-reviews/{review}` | `release:write` | Read one server-bound review, its safe preview URL and rendered before/after source material; never returns the invitation secret |
+| POST | `/v1/sites/{site}/promotion-reviews/{review}/reject` | `release:write` | Reject the bound promotion and close its queue decision without changing the live site |
 | POST | `/v1/sites/{site}/releases/{release}/activate` | `release:write` | Roll back by activating a prior release pointer |
 | DELETE | `/v1/sites/{site}/releases/{release}` | `release:write` | Delete a built release or preview and its storage objects; the active release is 409 |
 | DELETE | `/v1/content/{item}` | `content:write` | Discard a never-published draft item and its revisions |

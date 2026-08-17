@@ -39,6 +39,9 @@ const TABLES = new Set([
   'ck_oauth_refresh_tokens',
   'ck_audit_events',
   'ck_idempotency_keys',
+  'ck_draft_captures',
+  'ck_promotion_reviews',
+  'ck_decisions',
 ])
 
 function assertKnownContentkitIdentifiers(text) {

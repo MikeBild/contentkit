@@ -1,21 +1,17 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ChartNoAxesColumn, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
-import { ck, statsKinds, usageStatsKinds, type StatsKind } from '@/api/ck'
+import { ck, usageStatsKinds, type Decision, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
+import { AppLink } from '@/components/app-link'
 import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ReleaseChain } from '@/components/ui/release-chain'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { keys } from '@/lib/query'
@@ -25,12 +21,28 @@ import { useSite } from '@/lib/site'
 import { tileEmptiness, visibleMetrics, type TileEmptiness } from '@/lib/stat-tile'
 
 const WINDOW = { bucket: 'day', tz: 'UTC' } as const
+const OVERVIEW_STATS: StatsKind[] = [
+  'releases',
+  'content',
+  'decks',
+  'readers',
+  'webhooks',
+  'audio',
+  'engagement',
+  'compositions',
+]
 
 const STAT_KIND_KEYS: Record<StatsKind, TranslationKey> = {
-  releases: 'overview.stat.releases', content: 'overview.stat.content', decks: 'overview.stat.decks',
-  readers: 'overview.stat.readers', webhooks: 'overview.stat.webhooks', audio: 'overview.stat.audio',
-  engagement: 'overview.stat.engagement', http: 'overview.stat.http',
-  compositions: 'overview.stat.compositions', mcp: 'overview.stat.mcp',
+  releases: 'overview.stat.releases',
+  content: 'overview.stat.content',
+  decks: 'overview.stat.decks',
+  readers: 'overview.stat.readers',
+  webhooks: 'overview.stat.webhooks',
+  audio: 'overview.stat.audio',
+  engagement: 'overview.stat.engagement',
+  http: 'overview.stat.http',
+  compositions: 'overview.stat.compositions',
+  mcp: 'overview.stat.mcp',
 }
 
 const METRIC_KEYS: Record<string, TranslationKey> = {
@@ -155,7 +167,10 @@ function readTile(kind: StatsKind, result?: StatsResult): Tile {
  * in it is ordinarily a site that never switched it on — a different sentence
  * from a product statistic that recorded nothing.
  */
-const QUIET_WORD = { 'measured-all-zero': 'overview.measuredZero', 'nothing-came-back': 'overview.notRecorded' } as const
+const QUIET_WORD = {
+  'measured-all-zero': 'overview.measuredZero',
+  'nothing-came-back': 'overview.notRecorded',
+} as const
 const QUIET_WORD_USAGE = {
   'measured-all-zero': 'overview.measuredZero',
   'nothing-came-back': 'overview.notOptedIn',
@@ -170,6 +185,19 @@ export function OverviewPage() {
   // an empty list, and an empty list here means "nothing waiting" — the exact
   // lie the chain exists to avoid. So it is not asked, and the chain says so.
   const canReadChain = can('content:read')
+  const canReadDecisions = can('content:write') || can('moderation:write') || can('release:write')
+  const decisions = useQuery({
+    queryKey: keys.decisions(site, { state: 'open', limit: 3 }),
+    queryFn: () => ck.decisions.list(site, { state: 'open', limit: 3 }),
+    enabled: Boolean(site) && canReadDecisions,
+    retry: false,
+  })
+  const activity = useQuery({
+    queryKey: keys.audit({ site, limit: 5 }),
+    queryFn: () => ck.audit({ site, limit: 5 }),
+    enabled: Boolean(site) && can('audit:read'),
+    retry: false,
+  })
 
   const releases = useQuery({
     queryKey: keys.releases(site),
@@ -202,7 +230,7 @@ export function OverviewPage() {
   const chainLoading = canReadChain && (releases.isPending || content.isPending)
 
   const results = useQueries({
-    queries: statsKinds.map((kind) => ({
+    queries: OVERVIEW_STATS.map((kind) => ({
       queryKey: keys.stats(site, kind, WINDOW),
       queryFn: () => ck.stats(site, kind, WINDOW),
       enabled: Boolean(site),
@@ -212,7 +240,7 @@ export function OverviewPage() {
     })),
   })
 
-  const tiles = statsKinds.map((kind, index) => readTile(kind, results[index]))
+  const tiles = OVERVIEW_STATS.map((kind, index) => readTile(kind, results[index]))
   const pending = tiles.filter((tile) => tile.result?.isPending)
   const failed = tiles.filter((tile) => !tile.result?.isPending && tile.result?.error)
   const reporting = tiles.filter((tile) => !tile.result?.isPending && !tile.result?.error && tile.shown.length > 0)
@@ -231,6 +259,8 @@ export function OverviewPage() {
     // are measured over is a fact about the numbers, so it sits with them.
     <Page title={t('page.overview.title')} description={t('page.overview.description', { site })}>
       <div className="flex flex-col gap-6">
+        {canReadDecisions ? <DecisionZone site={site} result={decisions.data} loading={decisions.isPending} /> : null}
+
         {/*
           First, and alone: the chain is the only thing on this page an operator
           acts on. A chain with nothing wrong in it is one line; a chain with an
@@ -239,6 +269,39 @@ export function OverviewPage() {
           layout choice, not a second reading of the same two endpoints.
         */}
         <ReleaseChain chain={chain} isLoading={chainLoading} variant={chain.calm ? 'compact' : 'card'} />
+
+        {can('audit:read') ? (
+          <Card data-testid="ck-overview-activity">
+            <CardHeader>
+              <CardTitle>{t('overview.activity')}</CardTitle>
+            </CardHeader>
+            <CardContent className="px-0">
+              {activity.isPending ? (
+                <SkeletonGroup className="px-(--card-spacing)">
+                  <Skeleton className="h-16" />
+                </SkeletonGroup>
+              ) : activity.data?.length ? (
+                <ul className="divide-y divide-border">
+                  {activity.data.map((event, index) => (
+                    <li
+                      key={event.id}
+                      className="flex items-baseline justify-between gap-4 px-(--card-spacing) py-2.5 text-sm"
+                    >
+                      <span>{event.action}</span>
+                      <RelativeTime
+                        value={event.created_at}
+                        className="shrink-0 text-xs text-muted-foreground"
+                        data-testid={`overview-activity-age-${index}`}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-(--card-spacing) text-sm text-muted-foreground">{t('overview.noActivity')}</p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/*
           Then the reference half, under its own heading so that it reads as
@@ -278,6 +341,63 @@ export function OverviewPage() {
   )
 }
 
+function DecisionZone({
+  site,
+  result,
+  loading,
+}: {
+  site: string
+  result?: { items: Decision[]; counts: { open: number; overdue: number } }
+  loading: boolean
+}) {
+  const { t } = useI18n()
+  const count = result?.counts.open ?? 0
+  const overdue = result?.counts.overdue ?? 0
+  return (
+    <Card className={count ? 'border-warning/40' : undefined} data-testid="ck-overview-decisions">
+      <CardHeader>
+        <div>
+          <CardTitle>{t('overview.waitingForYou')}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {loading ? t('common.loading') : count ? t('overview.openDecisions', { count }) : t('overview.noDecisions')}
+          </p>
+        </div>
+        <CardAction>
+          <Button asChild variant="outline" size="sm">
+            <AppLink data-testid="overview-open-decisions" to="/decisions" search={{ site } as never}>
+              {t('overview.openQueue')}
+            </AppLink>
+          </Button>
+        </CardAction>
+      </CardHeader>
+      {overdue ? (
+        <CardContent className="pb-3">
+          <Alert variant="destructive">
+            <TriangleAlert />
+            <AlertTitle>{t('overview.overdueDecisions', { count: overdue })}</AlertTitle>
+          </Alert>
+        </CardContent>
+      ) : null}
+      {result?.items.length ? (
+        <CardContent className="px-0">
+          <ul className="divide-y divide-border">
+            {result.items.slice(0, 3).map((decision, index) => (
+              <li key={decision.id} className="flex items-center justify-between gap-4 px-(--card-spacing) py-2.5">
+                <span className="min-w-0 text-sm font-medium">{decision.title}</span>
+                <RelativeTime
+                  value={decision.opened_at}
+                  className="shrink-0 text-xs text-muted-foreground"
+                  data-testid={`overview-decision-age-${index}`}
+                />
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      ) : null}
+    </Card>
+  )
+}
+
 /**
  * Every statistic that could not be read, said once per distinct refusal.
  *
@@ -298,9 +418,7 @@ function UnreadableStats({ tiles }: { tiles: Tile[] }) {
     <Alert variant="destructive" data-testid="ck-overview-unreadable" data-count={tiles.length}>
       <TriangleAlert />
       <AlertTitle>
-        {tiles.length === 1
-          ? t('overview.unreadableOne')
-          : t('overview.unreadableMany', { count: tiles.length })}
+        {tiles.length === 1 ? t('overview.unreadableOne') : t('overview.unreadableMany', { count: tiles.length })}
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-1.5">
         {[...grouped].map(([message, kinds]) => (
@@ -335,12 +453,8 @@ function QuietStats({ tiles, total }: { tiles: Tile[]; total: number }) {
         <EmptyMedia variant="icon">
           <ChartNoAxesColumn />
         </EmptyMedia>
-        <EmptyTitle>
-          {t('overview.quietTitle', { quiet: tiles.length, total })}
-        </EmptyTitle>
-        <EmptyDescription>
-          {t('overview.quietDescription')}
-        </EmptyDescription>
+        <EmptyTitle>{t('overview.quietTitle', { quiet: tiles.length, total })}</EmptyTitle>
+        <EmptyDescription>{t('overview.quietDescription')}</EmptyDescription>
       </EmptyHeader>
       <EmptyContent className="max-w-none">
         <ul className="flex flex-wrap items-center justify-center gap-1.5">

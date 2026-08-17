@@ -256,10 +256,11 @@ function list(chunk, name) {
 function parseNav() {
   return objectChunks(tableBody(shell, 'const NAV = [')).map((chunk) => {
     const scopeMatch = chunk.match(/\bscope:\s*(?:'([^']*)'|(null))/)
+    const scopes = list(chunk, 'scope')
     return {
       to: field(chunk, /\bto:\s*'([^']*)'/),
       label: field(chunk, /\blabel:\s*'([^']*)'/),
-      scope: scopeMatch ? (scopeMatch[1] ?? null) : undefined,
+      scope: scopeMatch ? (scopeMatch[1] ?? null) : scopes,
       context: field(chunk, /\bcontext:\s*'([^']*)'/),
       group: field(chunk, /\bgroup:\s*'([^']*)'/),
       selection: field(chunk, /\bselection:\s*'([^']*)'/),
@@ -442,7 +443,9 @@ const because = (failure) => `${failure} — see “Cockpit navigation: what thi
 const withNav = { skip: navFailure ? because(navFailure) : false }
 const withRules = { skip: navFailure || rulesFailure ? because(navFailure ?? rulesFailure) : false }
 
-const SCOPES = [...new Set(NAV.map((entry) => entry.scope).filter(Boolean))]
+const SCOPES = [
+  ...new Set(NAV.flatMap((entry) => (Array.isArray(entry.scope) ? entry.scope : [entry.scope])).filter(Boolean)),
+]
 
 /**
  * An entry declares the OpenAPI paths its page talks to. A pattern is either an
@@ -585,7 +588,7 @@ function parseCkTable(text) {
       current = null
     }
     const key = line.match(/^(\s+)([A-Za-z_$][\w$]*):\s*(.*)$/)
-    if (key) {
+    if (key && (!stack.length || key[1].length === stack[stack.length - 1].indent + 2)) {
       const indent = key[1].length
       while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop()
       if (key[3].trim() === '{') {
@@ -867,6 +870,7 @@ describe('Cockpit navigation: site context versus installation context', withNav
     // called Content, and it needs content:read exactly as it did.
     const expected = new Map([
       ['Overview', 'stats:read'],
+      ['Decisions', ['content:write', 'moderation:write', 'release:write']],
       ['Sites', 'site:admin'],
       ['Site settings', 'site:admin'],
       ['Documents', 'content:read'],
@@ -1192,11 +1196,12 @@ describe('Cockpit navigation: site context versus installation context', withNav
         ['', 'site'],
         ['Content', 'site'],
         ['Deliver', 'site'],
+        ['Tools', 'site'],
         ['Access', 'site'],
         ['Settings', 'site'],
         ['Installation', 'installation'],
       ],
-      'the blocks, in order, are Overview (unheaded), Content, Deliver, Access, Settings and Installation',
+      'the blocks, in order, are Overview (unheaded), Content, Deliver, Tools, Access, Settings and Installation',
     )
     assert.deepEqual(
       GROUPS.map((group) => [group.id, group.label]).filter(([, label]) => label !== ''),
@@ -1524,7 +1529,7 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
     assert.deepEqual(labelsFor([]), ['System'], 'a session with no scopes may see only what needs none')
     assert.deepEqual(labelsFor(['audit:read']), ['Audit', 'System'])
     assert.deepEqual(labelsFor(['stats:read']), ['Overview', 'System'])
-    assert.deepEqual(labelsFor(['moderation:write']), ['Moderation', 'System'])
+    assert.deepEqual(labelsFor(['moderation:write']), ['Decisions', 'Moderation', 'System'])
     // Held twice, or held alongside something no page names: still the same set.
     assert.deepEqual(labelsFor(['audit:read', 'audit:read', 'not:a-scope']), ['Audit', 'System'])
   })
@@ -1534,7 +1539,11 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
     // Credentials (api-key:admin), Reader access (access:admin) or Webhooks
     // (webhook:admin), and it carries no read scope at all.
     assert.deepEqual(labelsFor(['site:admin']), ['Site settings', 'Sites', 'System'])
-    assert.deepEqual(labelsFor(['content:write']), ['Assistant', 'System'], 'writing content is not reading it')
+    assert.deepEqual(
+      labelsFor(['content:write']),
+      ['Decisions', 'Assistant', 'System'],
+      'writing content is not reading it, but it does permit its decision queue',
+    )
     assert.deepEqual(labelsFor(['access:admin']), ['Reader access', 'System'])
     assert.deepEqual(labelsFor(['api-key:admin']), ['Credentials', 'System'])
 
@@ -1568,10 +1577,16 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
       NAV.map((entry) => entry.label),
     )
     for (const scope of SCOPES) {
-      const withheld = NAV.filter((entry) => entry.scope === scope).map((entry) => entry.label)
+      const remaining = SCOPES.filter((held) => held !== scope)
+      const stillVisible = (entry) =>
+        entry.scope === null ||
+        (Array.isArray(entry.scope)
+          ? entry.scope.some((required) => remaining.includes(required))
+          : remaining.includes(entry.scope))
+      const withheld = NAV.filter((entry) => !stillVisible(entry)).map((entry) => entry.label)
       assert.deepEqual(
-        labelsFor(SCOPES.filter((held) => held !== scope)),
-        NAV.filter((entry) => entry.scope !== scope).map((entry) => entry.label),
+        labelsFor(remaining),
+        NAV.filter(stillVisible).map((entry) => entry.label),
         `without ${scope} the sidebar must not offer ${withheld.join(', ')} — authorize() answers 403 for each`,
       )
     }
@@ -1605,10 +1620,10 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
     // there is nothing for the control to do, and it says so by being absent.
     assert.equal(
       mounted(['api-key:admin'], 'Credentials'),
-      false,
-      'Credentials and System both ignore the selection, so a switcher there would govern nothing',
+      true,
+      'Credentials ignores the selection, but System uses it for the selected site’s traffic readings',
     )
-    assert.equal(mounted([], 'System'), false)
+    assert.equal(mounted([], 'System'), true)
   })
 
   test('no block’s emptiness can unmount the switcher', () => {
@@ -1627,7 +1642,7 @@ describe('Cockpit navigation: the rules the sidebar applies to that table', with
 
     const scopes = ['moderation:write']
     const visible = visibleFor(scopes)
-    for (const group of GROUPS.filter((candidate) => candidate.context === 'site')) {
+    for (const group of GROUPS.filter((candidate) => candidate.context === 'site' && candidate.id !== 'overview')) {
       const items = visible.filter((entry) => entry.group === group.id)
       assert.deepEqual(items, [], `a moderation-only session has no page in the '${group.id}' block`)
       assert.equal(

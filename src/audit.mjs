@@ -53,27 +53,35 @@ export function auditActor(principal) {
 }
 
 export function createAudit(db, logger) {
+  const rowFor = (event) => ({
+    site_id: event.siteId || null,
+    actor_type: event.actorType || 'system',
+    actor_id: event.actorId ? String(event.actorId).slice(0, 200) : null,
+    action: String(event.action).slice(0, 120),
+    resource_type: String(event.resourceType || 'system').slice(0, 80),
+    resource_id: event.resourceId ? String(event.resourceId).slice(0, 200) : null,
+    result: event.result || 'success',
+    transport: event.transport || 'worker',
+    request_id: event.requestId ? String(event.requestId).slice(0, 80) : null,
+    metadata: sanitize(event.metadata || {}),
+  })
   return {
     async record(event) {
       if (!db.insert) return null
-      const row = {
-        site_id: event.siteId || null,
-        actor_type: event.actorType || 'system',
-        actor_id: event.actorId ? String(event.actorId).slice(0, 200) : null,
-        action: String(event.action).slice(0, 120),
-        resource_type: String(event.resourceType || 'system').slice(0, 80),
-        resource_id: event.resourceId ? String(event.resourceId).slice(0, 200) : null,
-        result: event.result || 'success',
-        transport: event.transport || 'worker',
-        request_id: event.requestId ? String(event.requestId).slice(0, 80) : null,
-        metadata: sanitize(event.metadata || {}),
-      }
+      const row = rowFor(event)
       try {
         return (await db.insert('ck_audit_events', row))[0] || null
       } catch (error) {
         logger?.warn?.('audit write failed', { action: row.action, error: String(error.message || error) })
         return null
       }
+    },
+    // Human decisions are one transaction with their business write. Unlike
+    // record(), this deliberately propagates a failure so the mutation cannot
+    // commit without its durable history.
+    async recordStrict(event, exec = db) {
+      if (!exec.insert) throw new Error('audit storage is unavailable')
+      return (await exec.insert('ck_audit_events', rowFor(event)))[0] || null
     },
   }
 }

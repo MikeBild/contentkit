@@ -985,6 +985,7 @@ describe('the components the console stopped hand-rolling', () => {
     'webhooks',
     'moderation',
     'credentials',
+    'decisions',
     'audit',
     'profile',
   ]

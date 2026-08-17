@@ -1,5 +1,6 @@
 import { useChat } from '@ai-sdk/react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearch } from '@tanstack/react-router'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BotMessageSquare, ExternalLink, ShieldQuestionMark, TriangleAlert } from 'lucide-react'
@@ -40,10 +41,15 @@ interface Elicitation {
 export function AssistantPage() {
   const { t } = useI18n()
   const { site } = useSite()
+  const search = useSearch({ strict: false }) as { assistant_intent?: 'draft-capture' }
   const [input, setInput] = useState('')
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [model, setModel] = useState<string | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (search.assistant_intent === 'draft-capture') setInput(t('assistant.draftCapturePrompt'))
+  }, [search.assistant_intent, t])
 
   // The AI SDK drives this POST itself, so it never passes through the API
   // client that attaches the CSRF header — without this every turn is rejected
@@ -100,9 +106,7 @@ export function AssistantPage() {
               <BotMessageSquare />
             </EmptyMedia>
             <EmptyTitle>{t('assistant.disabledTitle')}</EmptyTitle>
-            <EmptyDescription>
-              {t('assistant.disabledDescription')}
-            </EmptyDescription>
+            <EmptyDescription>{t('assistant.disabledDescription')}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       </Page>
@@ -370,9 +374,7 @@ function ApprovalCard({ elicitation }: { elicitation: Elicitation }) {
       <Alert data-testid="assistant-elicitation" className="text-left">
         <ExternalLink />
         <AlertTitle>{elicitation.message}</AlertTitle>
-        <AlertDescription>
-          {t('assistant.secureDescription')}
-        </AlertDescription>
+        <AlertDescription>{t('assistant.secureDescription')}</AlertDescription>
         <div className="col-start-2 mt-2">
           {/*
             This opens a page; it changes nothing here. It was a filled button

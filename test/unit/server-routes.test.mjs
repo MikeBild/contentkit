@@ -138,6 +138,9 @@ test('public comment submission returns 404 when comments are disabled for the s
         },
       },
       db: {
+        async tx(fn) {
+          return fn(this)
+        },
         async select() {
           throw new Error('disabled comments must not query content')
         },
@@ -166,6 +169,9 @@ test('public feedback accepts a vote without Turnstile when the site opts in', a
         },
       },
       db: {
+        async tx(fn) {
+          return fn(this)
+        },
         async select(table, filters) {
           assert.equal(table, 'ck_content_items')
           assert.equal(filters.kind, 'eq.post')
@@ -175,7 +181,10 @@ test('public feedback accepts a vote without Turnstile when the site opts in', a
           assert.equal(table, 'ck_post_feedback')
           assert.equal(row.vote, 'up')
           assert.equal(row.content_item_id, 'post-1')
-          return [{ id: 'fb-1' }]
+          return [{ id: 'fb-1', created_at: '2026-08-17T10:00:00.000Z' }]
+        },
+        async query(sql) {
+          return sql.includes('INSERT INTO ck_decisions') ? [{ id: 'decision-1' }] : []
         },
       },
     },
@@ -302,7 +311,18 @@ test('public contact submission is unaffected by disabled comments', async () =>
           return fn({
             async insert(table, row) {
               assert.equal(table, 'ck_contact_submissions')
-              return [{ id: 'contact-1', name: row.name, email: row.email, body: row.body }]
+              return [
+                {
+                  id: 'contact-1',
+                  name: row.name,
+                  email: row.email,
+                  body: row.body,
+                  created_at: '2026-08-17T10:00:00.000Z',
+                },
+              ]
+            },
+            async query(sql) {
+              return sql.includes('INSERT INTO ck_decisions') ? [{ id: 'decision-1' }] : []
             },
           })
         },
@@ -535,6 +555,9 @@ test('missing key yields 401, an under-scoped key yields 403 insufficient_scope'
 
 test('DELETE /v1/content/{item}/published returns 409 for an unpublished item', async () => {
   const db = {
+    async tx(fn) {
+      return fn(this)
+    },
     async select(table, query) {
       if (table === 'ck_content_items' && query.id === 'eq.item-1') {
         return [{ id: 'item-1', site_id: 'site-1', published_revision_id: null }]
@@ -725,10 +748,11 @@ test('POST /v1/sites/{site}/releases forwards retire_item_ids', async () => {
   })
 })
 
-test('POST preview promotion forwards the exact manifest and audits the authenticated Cockpit operator action', async () => {
+test('POST Cockpit promotion uses the durable server-side review binding and audits activation atomically', async () => {
   const promoted = []
   const audits = []
   const releaseId = '11111111-1111-4111-8111-111111111111'
+  const reviewId = '22222222-2222-4222-8222-222222222222'
   const digest = 'c'.repeat(64)
   const repo = {
     async getSite() {
@@ -737,15 +761,25 @@ test('POST preview promotion forwards the exact manifest and audits the authenti
   }
   const releases = {
     async promote(input) {
-      promoted.push(input)
+      promoted.push({ siteId: input.siteId, releaseId: input.releaseId, manifestSha256: input.manifestSha256 })
+      await input.onActivated({
+        async update() {},
+        async query() {
+          return []
+        },
+        async insert(table, row) {
+          assert.equal(table, 'ck_audit_events')
+          audits.push(row)
+          return [{ id: 1, ...row }]
+        },
+      })
       return { release_id: input.releaseId, manifest_sha256: input.manifestSha256, active: true }
     },
   }
   const db = {
-    async insert(table, row) {
-      assert.equal(table, 'ck_audit_events')
-      audits.push(row)
-      return [{ id: 1, ...row }]
+    async select(table) {
+      assert.equal(table, 'ck_promotion_reviews')
+      return [{ id: reviewId, site_id: 'site-1', release_id: releaseId, manifest_sha256: digest, status: 'pending' }]
     },
   }
   const csrf = signCsrf('development')
@@ -765,19 +799,15 @@ test('POST preview promotion forwards the exact manifest and audits the authenti
         'x-contentkit-csrf': csrf,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ manifest_sha256: digest }),
+      body: JSON.stringify({ manifest_sha256: digest, promotion_review_id: reviewId }),
     })
     assert.equal(response.status, 200)
     assert.deepEqual(promoted, [{ siteId: 'site-1', releaseId, manifestSha256: digest }])
-    assert.equal(audits.length, 2)
-    assert.equal(audits[0].action, 'release.promote.approved')
-    assert.equal(audits[0].metadata.review_surface, 'cockpit')
-    assert.equal(audits[1].action, 'release.promote')
-    for (const row of audits) {
-      assert.equal(row.resource_id, releaseId)
-      assert.equal(row.transport, 'http')
-      assert.equal(row.metadata.manifest_sha256, digest)
-    }
+    assert.equal(audits.length, 1)
+    assert.equal(audits[0].action, 'promotion_review.activate')
+    assert.equal(audits[0].resource_id, reviewId)
+    assert.equal(audits[0].transport, 'http')
+    assert.equal(audits[0].metadata.manifest_sha256, digest)
   })
 })
 
@@ -820,21 +850,34 @@ test('POST preview promotion through an API key keeps the direct API contract wi
   )
 })
 
-test('POST Cockpit preview promotion fails closed before mutation when the approval audit is unavailable', async () => {
+test('POST Cockpit promotion fails closed when the review decision cannot be audited', async () => {
   let promoted = false
+  const releaseId = '11111111-1111-4111-8111-111111111111'
+  const reviewId = '22222222-2222-4222-8222-222222222222'
+  const digest = 'f'.repeat(64)
   const repo = {
     async getSite() {
       return { id: 'site-1', slug: 'mikebild' }
     },
   }
   const releases = {
-    async promote() {
+    async promote(input) {
+      await input.onActivated({
+        async update() {},
+        async query() {
+          return []
+        },
+        async insert() {
+          throw new Error('audit store unavailable')
+        },
+      })
       promoted = true
     },
   }
   const db = {
-    async insert() {
-      throw new Error('audit store unavailable')
+    async select(table) {
+      assert.equal(table, 'ck_promotion_reviews')
+      return [{ id: reviewId, site_id: 'site-1', release_id: releaseId, manifest_sha256: digest, status: 'pending' }]
     },
   }
   const csrf = signCsrf('development')
@@ -847,17 +890,16 @@ test('POST Cockpit preview promotion fails closed before mutation when the appro
     authorize: (principal, scope) => Boolean(principal) && principal.scopes.includes(scope),
   }
   await withApp({ db, repo, releases, auth, config: { publicUrl: 'http://127.0.0.1' } }, async (request) => {
-    const response = await request('/v1/sites/mikebild/releases/11111111-1111-4111-8111-111111111111/promote', {
+    const response = await request(`/v1/sites/mikebild/releases/${releaseId}/promote`, {
       method: 'POST',
       headers: {
         cookie: `contentkit_operator=ckos_review; contentkit_csrf=${csrf}`,
         'x-contentkit-csrf': csrf,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ manifest_sha256: 'f'.repeat(64) }),
+      body: JSON.stringify({ manifest_sha256: digest, promotion_review_id: reviewId }),
     })
-    assert.equal(response.status, 503)
-    assert.deepEqual(await response.json(), { error: 'approval_audit_unavailable', mutation_applied: false })
+    assert.equal(response.status, 500)
     assert.equal(promoted, false)
   })
 })
@@ -2236,11 +2278,20 @@ test('publish-due isolates a failing site and still reports per-site results', a
 test('comment approval returns 200 even when the republish fails', async () => {
   const comment = { id: 'c1', site_id: 's1', content_item_id: 'i1', author_name: 'A', body: 'b', status: 'approved' }
   const db = {
+    async tx(fn) {
+      return fn(this)
+    },
     async select(table) {
       return table === 'ck_comments' ? [comment] : []
     },
     async update() {
       return [comment]
+    },
+    async insert() {
+      return []
+    },
+    async query() {
+      return []
     },
   }
   const repo = {

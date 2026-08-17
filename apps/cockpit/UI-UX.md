@@ -15,6 +15,27 @@ the real work, and stating an absolute the console breaks forty-four times. A st
 guide that is wrong about itself is worse than none, so the marking matters as much as
 the rules.
 
+The family-level behaviour contract is [Cockpit Convention 1.4](../../contract/COCKPIT-CONVENTION.md).
+It complements this product-specific component and layout guide. In ContentKit it
+means, concretely:
+
+- Overview is ordered as Decisions, Release Chain, Recent Activity; HTTP, MCP and
+  p95 live on System.
+- Draft capture has no required metadata. Decisions is the separate triage step.
+- Drafts, moderation and preview promotions share one current-state queue; Audit
+  keeps the append-only history.
+- Promotion review uses one server-side review id bound to an immutable release and
+  manifest. Its diff card may inspect and reject; activation remains the explicit
+  browser gate.
+- Collection rows show summaries, data-derived categories and destructive actions
+  only in confirmed overflow menus.
+- Credentials are a permission inventory: last use first, age and never-used state
+  visible, with enforced authorization described as a Boundary.
+- Site switching groups Production, Canary and Test and can hide Test.
+
+These are product-neutral ContentKit rules. Dogfooding tenants may verify them but
+do not contribute tenant-specific nouns or behaviour to the core.
+
 ---
 
 ## 1. What a page is

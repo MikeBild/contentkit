@@ -91,12 +91,34 @@ test('MCP preview promotion without a live form returns a durable exact browser 
   const tool = findTool(principal(['release:write']), 'contentkit_publish')
   let promoted = false
   const auditRows = []
+  let reviewRow = null
+  const fakeDb = {
+    async tx(fn) {
+      return fn(fakeDb)
+    },
+    async select(table) {
+      return table === 'ck_promotion_reviews' && reviewRow ? [reviewRow] : []
+    },
+    async insert(table, row) {
+      if (table !== 'ck_promotion_reviews') throw new Error(`unexpected insert ${table}`)
+      reviewRow = { ...row, requested_at: '2026-08-17T10:00:00.000Z' }
+      return [reviewRow]
+    },
+    async query(sql, values) {
+      if (!sql.includes('INSERT INTO ck_decisions')) throw new Error('unexpected query')
+      return [{ id: 'decision-1', source_id: values[3] }]
+    },
+  }
   const deps = {
     repo: {
       async getSite() {
         return { id: 'site-1', slug: 'mikebild', name: 'Site' }
       },
+      async getRelease() {
+        return { id: releaseId, site_id: 'site-1', kind: 'preview', status: 'preview', manifest_sha256: digest }
+      },
     },
+    db: fakeDb,
     auth: { authorize: () => true },
     releases: {
       async promote() {
@@ -141,11 +163,11 @@ test('MCP preview promotion without a live form returns a durable exact browser 
   assert.equal(review.origin, 'https://contentkit.example')
   assert.equal(review.pathname, '/cockpit/releases')
   assert.equal(review.searchParams.get('site'), 'mikebild')
-  assert.equal(review.searchParams.get('promotion_release'), releaseId)
-  assert.equal(review.searchParams.get('promotion_manifest'), digest)
+  assert.equal(review.searchParams.get('promotion_review'), result.promotion_review_id)
+  assert.equal(review.searchParams.size, 2)
   assert.equal(auditRows.length, 1)
-  assert.equal(auditRows[0].action, 'release.promotion_review_requested')
-  assert.equal(auditRows[0].resourceId, releaseId)
+  assert.equal(auditRows[0].action, 'promotion_review.request')
+  assert.equal(auditRows[0].resourceId, result.promotion_review_id)
   assert.equal(auditRows[0].metadata.manifest_sha256, digest)
 })
 

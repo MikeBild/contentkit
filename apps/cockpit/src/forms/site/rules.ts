@@ -31,6 +31,7 @@ export const STEP_ORDER: readonly StepId[] = ['purpose', 'home', 'languages', 'r
 
 export interface SiteDraft {
   preset: PresentationPreset
+  environment: 'production' | 'canary' | 'test'
   /** Only read for `product-docs`, which the server refuses without one version. */
   docsVersion: { id: string; label: string }
   name: string
@@ -43,6 +44,7 @@ export interface SiteDraft {
 
 export const EMPTY_DRAFT: SiteDraft = {
   preset: 'portfolio',
+  environment: 'production',
   docsVersion: { id: 'v1', label: 'Version 1' },
   name: '',
   base_url: '',
@@ -266,6 +268,7 @@ export function createInput(draft: SiteDraft): SiteCreateInput {
     slug: derivedSlug(draft),
     base_url: draft.base_url.trim(),
     default_locale: storedDefaultLocale(draft),
+    environment: draft.environment,
     ...(locales.length ? { locales } : {}),
     ...(presentation ? { settings: { presentation } } : {}),
   }

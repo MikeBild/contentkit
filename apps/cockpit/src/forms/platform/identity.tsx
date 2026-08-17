@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { InfoIcon, TriangleAlert } from 'lucide-react'
+import { InfoIcon, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { ck, type GrantInput, type IdentityGrant, type IdentityGrantConflict } from '@/api/ck'
 import { ApiError } from '@/api/client'
@@ -15,8 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { OPERATOR_ROLE, type OperatorRole, type ProductScope } from '@/forms/contracts/enums.generated'
 import { ChoiceCards, EntityMultiSelect, EnumSelect, ScopePicker, TextField } from '@/forms/fields'
@@ -344,7 +352,7 @@ function GrantDialog({
 }
 
 export function IdentityGrantsCard() {
-  const { t, dateTime, list } = useI18n()
+  const { t, list } = useI18n()
   const can = useCan()
   const client = useQueryClient()
   const { sites } = useSite()
@@ -356,7 +364,12 @@ export function IdentityGrantsCard() {
     enabled: can('identity:admin'),
   })
 
-  const rows = grants.data ?? []
+  const rows = [...(grants.data ?? [])].sort((left, right) => {
+    if (!left.last_used_at && !right.last_used_at) return (right.created_at ?? '').localeCompare(left.created_at ?? '')
+    if (!left.last_used_at) return 1
+    if (!right.last_used_at) return -1
+    return right.last_used_at.localeCompare(left.last_used_at)
+  })
   if (!can('identity:admin')) return null
 
   return (
@@ -397,6 +410,7 @@ export function IdentityGrantsCard() {
             t('identity.ceiling'),
             t('identity.sites'),
             t('webhook.created'),
+            t('apiKey.lastUsed'),
             '',
           ]}
         >
@@ -408,12 +422,13 @@ export function IdentityGrantsCard() {
               <TableHead>{t('identity.ceiling')}</TableHead>
               <TableHead>{t('identity.sites')}</TableHead>
               <TableHead>{t('webhook.created')}</TableHead>
+              <TableHead>{t('apiKey.lastUsed')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableState
-              columns={7}
+              columns={8}
               isLoading={grants.isPending}
               error={grants.error}
               isEmpty={rows.length === 0}
@@ -437,19 +452,36 @@ export function IdentityGrantsCard() {
                     </StatusBadge>
                   </TableCell>
                   <TableCell className="max-w-[18rem] text-xs text-muted-foreground">
-                    {list((grant.product_scopes ?? []).map((scope) =>
-                      scope in SCOPE_LABEL_KEYS ? t(SCOPE_LABEL_KEYS[scope as ProductScope]) : scope,
-                    ))}
+                    {list(
+                      (grant.product_scopes ?? []).map((scope) =>
+                        scope in SCOPE_LABEL_KEYS ? t(SCOPE_LABEL_KEYS[scope as ProductScope]) : scope,
+                      ),
+                    )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {grant.site_ids?.length
-                      ? list(grant.site_ids.map((id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite')))
+                      ? list(
+                          grant.site_ids.map(
+                            (id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite'),
+                          ),
+                        )
                       : t('identity.everySite')}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {grant.created_at ? dateTime(grant.created_at) : '—'}
+                    {grant.created_at ? (
+                      <RelativeTime value={grant.created_at} data-testid={`grant-${grantIndex}-age`} />
+                    ) : (
+                      '—'
+                    )}
                   </TableCell>
-                  <TableCell className="flex gap-2">
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {grant.last_used_at ? (
+                      <RelativeTime value={grant.last_used_at} data-testid={`grant-${grantIndex}-last-used`} />
+                    ) : (
+                      <StatusBadge tone="warning">{t('apiKey.neverUsed')}</StatusBadge>
+                    )}
+                  </TableCell>
+                  <TableCell className="flex justify-end gap-2">
                     {grant.revoked_at ? (
                       <>
                         <StatusBadge tone="danger">{t('identity.revoked')}</StatusBadge>
@@ -472,24 +504,47 @@ export function IdentityGrantsCard() {
                         >
                           {t('webhook.edit')}
                         </Button>
-                        <Confirm
-                          title={t('identity.revokeTitle')}
-                          description={t('identity.revokeDescription', {
-                            identity: grantLabel(grant, t('identity.grant')),
-                          })}
-                          confirmLabel={t('identity.revokeGrant')}
-                          destructive
-                          onConfirm={async () => {
-                            await ck.credentials.revokeGrant(grant.id)
-                            await client.invalidateQueries({ queryKey: keys.credentials.grants })
-                          }}
-                        >
-                          {(open) => (
-                            <Button size="sm" variant="destructive" data-testid={`ck-grant-${grantIndex}-revoke`} onClick={open}>
-                              {t('identity.revoke')}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              data-testid={`ck-grant-${grantIndex}-actions`}
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={t('content.list.rowActions')}
+                            >
+                              <MoreHorizontal data-icon="inline-start" />
                             </Button>
-                          )}
-                        </Confirm>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <Confirm
+                                title={t('identity.revokeTitle')}
+                                description={t('identity.revokeDescription', {
+                                  identity: grantLabel(grant, t('identity.grant')),
+                                })}
+                                confirmLabel={t('identity.revokeGrant')}
+                                destructive
+                                onConfirm={async () => {
+                                  await ck.credentials.revokeGrant(grant.id)
+                                  await client.invalidateQueries({ queryKey: keys.credentials.grants })
+                                }}
+                              >
+                                {(open) => (
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    data-testid={`ck-grant-${grantIndex}-revoke`}
+                                    onSelect={(event) => {
+                                      event.preventDefault()
+                                      open()
+                                    }}
+                                  >
+                                    {t('identity.revoke')}
+                                  </DropdownMenuItem>
+                                )}
+                              </Confirm>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </>
                     )}
                   </TableCell>

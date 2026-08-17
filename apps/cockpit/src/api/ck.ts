@@ -10,7 +10,9 @@ type Query<T extends keyof operations> = operations[T] extends { parameters: { q
  * "forgot the site" a type error instead of a page that quietly mixes two.
  */
 type SiteScoped<T extends keyof operations> = Omit<NonNullable<Query<T>>, 'site_id'>
-type Json<T extends keyof operations> = operations[T] extends { requestBody?: { content: { 'application/json': infer B } } }
+type Json<T extends keyof operations> = operations[T] extends {
+  requestBody?: { content: { 'application/json': infer B } }
+}
   ? B
   : never
 type Result<T extends keyof operations> = operations[T] extends {
@@ -94,6 +96,10 @@ export type IdentityGrantConflict = Schema<'IdentityGrantConflict'>
 export type Comment = Schema<'Comment'>
 export type ContactSubmission = Schema<'ContactSubmission'>
 export type FeedbackAggregate = Schema<'FeedbackAggregate'>
+export type Decision = Schema<'Decision'>
+export type DecisionList = Schema<'DecisionList'>
+export type DraftCapture = Schema<'DraftCapture'>
+export type PromotionReview = Schema<'PromotionReview'>
 
 export type WebhookEndpoint = Schema<'WebhookEndpoint'>
 export type CreatedWebhookEndpoint = Schema<'CreatedWebhookEndpoint'>
@@ -310,12 +316,13 @@ export const ck = {
       /** Narrates one published post: the backfill narrowed to that post's slug. */
       create: (item: string, input: { force?: boolean; dry_run?: boolean; limit_chars?: number } = {}) =>
         unwrap(api.POST('/v1/content/{item}/audio', { params: { path: { item } }, body: input })),
-      remove: (item: string) =>
-        unwrapAs<void>(api.DELETE('/v1/content/{item}/audio', { params: { path: { item } } })),
+      remove: (item: string) => unwrapAs<void>(api.DELETE('/v1/content/{item}/audio', { params: { path: { item } } })),
       jobs: (site: string, query?: Query<'audioJobList'>) =>
         unwrap(api.GET('/v1/sites/{site}/audio/jobs', { params: { path: { site }, query } })),
       backfill: (site: string, input: { limit_chars?: number; dry_run?: boolean; force?: boolean } = {}) =>
-        unwrapAs<unknown>(api.POST('/v1/sites/{site}/audio/backfill', { params: { path: { site } }, body: body(input) })),
+        unwrapAs<unknown>(
+          api.POST('/v1/sites/{site}/audio/backfill', { params: { path: { site } }, body: body(input) }),
+        ),
       /** Re-queues one job. A job the worker already holds answers 409. */
       retry: (site: string, job: string) =>
         unwrap(
@@ -354,8 +361,7 @@ export const ck = {
     pattern: (pattern: string) =>
       unwrap(api.GET('/v1/composition-patterns/{pattern}', { params: { path: { pattern } } })),
     guides: () => unwrapAs<{ guides: PublishingGuide[] }>(api.GET('/v1/publishing-guides', {})),
-    guide: (guide: string) =>
-      unwrap(api.GET('/v1/publishing-guides/{guide}', { params: { path: { guide } } })),
+    guide: (guide: string) => unwrap(api.GET('/v1/publishing-guides/{guide}', { params: { path: { guide } } })),
     recommend: (site: string, input: unknown) =>
       unwrapAs<unknown>(
         api.POST('/v1/sites/{site}/compositions/recommend', { params: { path: { site } }, body: body(input) }),
@@ -404,11 +410,11 @@ export const ck = {
      * Promote exactly one immutable preview. The server rejects a manifest
      * mismatch and any publish-epoch drift since the preview was built.
      */
-    promote: (site: string, release: string, manifestSha256: string) =>
+    promote: (site: string, release: string, manifestSha256: string, promotionReviewId?: string) =>
       unwrap(
         api.POST('/v1/sites/{site}/releases/{release}/promote', {
           params: { path: { site, release } },
-          body: body({ manifest_sha256: manifestSha256 }),
+          body: body({ manifest_sha256: manifestSha256, promotion_review_id: promotionReviewId }),
         }),
       ),
     /** Only a release the site is not serving; the active one answers 409. */
@@ -421,13 +427,71 @@ export const ck = {
     storageGc: () => unwrapAs<unknown>(api.POST('/v1/maintenance/storage-gc', { body: body({}) })),
   },
 
+  decisions: {
+    list: (site: string, query?: Query<'decisionList'>) =>
+      unwrap(api.GET('/v1/sites/{site}/decisions', { params: { path: { site }, query } })),
+    transition: (
+      site: string,
+      decision: string,
+      input: { version: number; action: 'defer' | 'dismiss' | 'restore'; remind_at?: string },
+    ) =>
+      unwrap(
+        api.PATCH('/v1/sites/{site}/decisions/{decision}', {
+          params: { path: { site, decision } },
+          body: input,
+        }),
+      ),
+  },
+
+  draftCaptures: {
+    create: (site: string, text = '') =>
+      unwrap(api.POST('/v1/sites/{site}/draft-captures', { params: { path: { site } }, body: { text } })),
+    get: (site: string, capture: string) =>
+      unwrap(api.GET('/v1/sites/{site}/draft-captures/{capture}', { params: { path: { site, capture } } })),
+    update: (site: string, capture: string, text: string) =>
+      unwrap(
+        api.PATCH('/v1/sites/{site}/draft-captures/{capture}', {
+          params: { path: { site, capture } },
+          body: { text },
+        }),
+      ),
+    triage: (site: string, capture: string, markdown: string) =>
+      unwrap(
+        api.POST('/v1/sites/{site}/draft-captures/{capture}/triage', {
+          params: { path: { site, capture } },
+          body: { markdown },
+        }),
+      ),
+    discard: (site: string, capture: string, reason = '') =>
+      unwrap(
+        api.POST('/v1/sites/{site}/draft-captures/{capture}/discard', {
+          params: { path: { site, capture } },
+          body: { reason },
+        }),
+      ),
+  },
+
+  promotionReviews: {
+    get: (site: string, review: string) =>
+      unwrap(api.GET('/v1/sites/{site}/promotion-reviews/{review}', { params: { path: { site, review } } })),
+    reject: (site: string, review: string, reason = '') =>
+      unwrap(
+        api.POST('/v1/sites/{site}/promotion-reviews/{review}/reject', {
+          params: { path: { site, review } },
+          body: { reason },
+        }),
+      ),
+  },
+
   access: {
     users: (site: string) => unwrap(api.GET('/v1/sites/{site}/access/users', { params: { path: { site } } })),
     createUser: (site: string, input: ReaderInput) =>
       unwrap(api.POST('/v1/sites/{site}/access/users', { params: { path: { site } }, body: body(input) })),
     /** A password change or a deactivation revokes every session of that reader. */
     updateUser: (site: string, user: string, input: ReaderInput) =>
-      unwrap(api.PATCH('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } }, body: body(input) })),
+      unwrap(
+        api.PATCH('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } }, body: body(input) }),
+      ),
     deleteUser: (site: string, user: string) =>
       unwrap(api.DELETE('/v1/sites/{site}/access/users/{user}', { params: { path: { site, user } } })),
     revokeSessions: (site: string, user: string) =>
@@ -464,7 +528,9 @@ export const ck = {
      * Callers send both audience keys every time.
      */
     updateRule: (site: string, rule: string, input: RuleInput) =>
-      unwrap(api.PATCH('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } }, body: body(input) })),
+      unwrap(
+        api.PATCH('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } }, body: body(input) }),
+      ),
     deleteRule: (site: string, rule: string) =>
       unwrap(api.DELETE('/v1/sites/{site}/access/rules/{rule}', { params: { path: { site, rule } } })),
   },

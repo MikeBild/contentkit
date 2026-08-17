@@ -49,9 +49,6 @@ function braceGroup(text, from) {
 
 const record = (name) => new Function(`return (${braceGroup(overview, overview.indexOf(`const ${name} =`))})`)()
 
-/** Every `<Tag` opening in the file, comments removed. */
-const opened = (tag) => [...stripComments(overview).matchAll(new RegExp(`<${tag}\\b`, 'g'))].length
-
 describe('the Overview says "nothing measured" once, and still says which nothing it is', () => {
   test('a measured zero and a value nobody recorded never share a word', () => {
     for (const [name, words] of [
@@ -101,8 +98,11 @@ describe('the Overview says "nothing measured" once, and still says which nothin
     // One of each in the whole file. Nine tiles with nothing to plot is one
     // sentence about this window; nine tiles that answered 403 is one sentence
     // about this operator's scope.
-    assert.equal(opened('Empty'), 1, 'a grid of nine cards each saying "nothing here" is nine times the pixels')
-    assert.equal(opened('Alert'), 1, 'and nine identical refusals is nine times the pixels for one 403')
+    const clean = stripComments(overview)
+    const quiet = clean.slice(clean.indexOf('function QuietStats'), clean.indexOf('function StatCard'))
+    const unreadable = clean.slice(clean.indexOf('function UnreadableStats'), clean.indexOf('function QuietStats'))
+    assert.equal([...quiet.matchAll(/<Empty\b/g)].length, 1, 'one quiet state serves the whole statistics surface')
+    assert.equal([...unreadable.matchAll(/<Alert\b/g)].length, 1, 'one refusal serves the whole statistics surface')
     // Both must sit outside the card, or the count above is satisfied by a card
     // that renders the only one.
     const card = stripComments(overview).indexOf('function StatCard')

@@ -45,5 +45,13 @@ export async function loadOperatorSession(db, config, token) {
     { last_used_at: new Date().toISOString(), expires_at: new Date(Date.now() + OPERATOR_IDLE_MS).toISOString() },
     { returning: false },
   )
+  await db
+    .update(
+      'ck_oauth_identity_grants',
+      { id: `eq.${session.grant_id}` },
+      { last_used_at: new Date().toISOString() },
+      { returning: false },
+    )
+    .catch(() => {})
   return session
 }

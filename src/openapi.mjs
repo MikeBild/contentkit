@@ -203,6 +203,7 @@ export function openApi(config) {
             product_scopes: { type: 'array', items: { type: 'string' } },
             site_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
             revoked_at: { type: ['string', 'null'], format: 'date-time' },
+            last_used_at: { type: ['string', 'null'], format: 'date-time' },
             created_at: { type: 'string', format: 'date-time' },
             updated_at: { type: ['string', 'null'], format: 'date-time' },
           },
@@ -356,6 +357,105 @@ export function openApi(config) {
             site_id: { type: 'string', format: 'uuid' },
             up: { type: 'integer' },
             down: { type: 'integer' },
+            first_received_at: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+        Decision: {
+          type: 'object',
+          required: [
+            'id',
+            'site_id',
+            'kind',
+            'source_id',
+            'source_version',
+            'state',
+            'version',
+            'opened_at',
+            'due_at',
+            'title',
+            'summary',
+            'source',
+          ],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            kind: { type: 'string', enum: ['draft_capture', 'comment', 'contact', 'feedback', 'promotion'] },
+            source_id: { type: 'string', format: 'uuid' },
+            source_version: { type: 'string' },
+            state: { type: 'string', enum: ['open', 'deferred', 'dismissed', 'decided'] },
+            version: { type: 'integer' },
+            opened_at: { type: 'string', format: 'date-time' },
+            due_at: { type: 'string', format: 'date-time' },
+            remind_at: { type: ['string', 'null'], format: 'date-time' },
+            decided_at: { type: ['string', 'null'], format: 'date-time' },
+            outcome: { type: ['string', 'null'] },
+            reason: { type: 'string' },
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            source: { type: 'object', additionalProperties: true },
+          },
+        },
+        DecisionList: {
+          type: 'object',
+          required: ['items', 'next_cursor', 'counts'],
+          properties: {
+            items: { type: 'array', items: { $ref: '#/components/schemas/Decision' } },
+            next_cursor: { type: ['string', 'null'] },
+            counts: {
+              type: 'object',
+              required: ['open', 'overdue', 'by_kind'],
+              properties: {
+                open: { type: 'integer' },
+                overdue: { type: 'integer' },
+                by_kind: { type: 'object', additionalProperties: { type: 'integer' } },
+              },
+            },
+          },
+        },
+        DraftCapture: {
+          type: 'object',
+          required: ['id', 'site_id', 'text', 'status', 'created_at', 'updated_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            text: { type: 'string' },
+            status: { type: 'string', enum: ['pending', 'triaged', 'discarded'] },
+            content_item_id: { type: ['string', 'null'], format: 'uuid' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+            triaged_at: { type: ['string', 'null'], format: 'date-time' },
+            discarded_at: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+        PromotionReview: {
+          type: 'object',
+          required: ['id', 'site_id', 'release_id', 'manifest_sha256', 'status', 'requested_at', 'changes'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            site_id: { type: 'string', format: 'uuid' },
+            release_id: { type: 'string', format: 'uuid' },
+            manifest_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+            status: { type: 'string', enum: ['pending', 'rejected', 'activated', 'expired'] },
+            reason: { type: 'string' },
+            requested_at: { type: 'string', format: 'date-time' },
+            decided_at: { type: ['string', 'null'], format: 'date-time' },
+            preview_url: { type: ['string', 'null'], format: 'uri' },
+            expires_at: { type: ['string', 'null'], format: 'date-time' },
+            release: { type: 'object', additionalProperties: true },
+            changes: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['content_item_id', 'title', 'effect', 'old', 'new'],
+                properties: {
+                  content_item_id: { type: 'string', format: 'uuid' },
+                  title: { type: 'string' },
+                  effect: { type: 'string', enum: ['added', 'modified', 'removed'] },
+                  old: { type: ['object', 'null'], additionalProperties: true },
+                  new: { type: ['object', 'null'], additionalProperties: true },
+                },
+              },
+            },
           },
         },
         WebhookEndpoint: {
@@ -577,6 +677,7 @@ export function openApi(config) {
             description: { type: 'string' },
             base_url: { type: 'string', format: 'uri' },
             default_locale: { type: 'string' },
+            environment: { type: 'string', enum: ['production', 'canary', 'test'] },
             domains: { type: 'array', items: { type: 'string' } },
             settings: { $ref: '#/components/schemas/SiteSettings' },
           },
@@ -601,6 +702,7 @@ export function openApi(config) {
               description:
                 'IETF language tag such as `de` or `en-us`, case-folded. Always stored as a locale row too — the root redirect and the 404 page target it.',
             },
+            environment: { type: 'string', enum: ['production', 'canary', 'test'], default: 'production' },
             locales: {
               type: 'array',
               maxItems: 32,
@@ -619,7 +721,7 @@ export function openApi(config) {
         Site: {
           type: 'object',
           additionalProperties: true,
-          required: ['id', 'slug', 'name', 'base_url', 'default_locale', 'settings'],
+          required: ['id', 'slug', 'name', 'base_url', 'default_locale', 'environment', 'settings'],
           properties: {
             id: { type: 'string', format: 'uuid' },
             slug: { type: 'string' },
@@ -627,6 +729,7 @@ export function openApi(config) {
             description: { type: 'string' },
             base_url: { type: 'string', format: 'uri' },
             default_locale: { type: 'string' },
+            environment: { type: 'string', enum: ['production', 'canary', 'test'] },
             settings: { $ref: '#/components/schemas/SiteSettings' },
           },
         },
@@ -733,6 +836,7 @@ export function openApi(config) {
             slug: { type: ['string', 'null'] },
             summary: { type: ['string', 'null'] },
             tags: { type: ['array', 'null'], items: { type: 'string' } },
+            category: { type: ['string', 'null'] },
             latest_revision_id: { type: ['string', 'null'], format: 'uuid' },
             latest_revision_status: {
               type: ['string', 'null'],
@@ -2097,6 +2201,166 @@ export function openApi(config) {
           },
         },
       },
+      '/v1/sites/{site}/decisions': {
+        get: {
+          operationId: 'decisionList',
+          summary: 'List the durable Cockpit decision queue',
+          security: secured,
+          parameters: [
+            siteParameter,
+            {
+              name: 'state',
+              in: 'query',
+              schema: { type: 'string', enum: ['open', 'deferred', 'dismissed', 'decided'], default: 'open' },
+            },
+            {
+              name: 'kind',
+              in: 'query',
+              schema: { type: 'string', enum: ['draft_capture', 'comment', 'contact', 'feedback', 'promotion'] },
+            },
+            { name: 'cursor', in: 'query', schema: { type: 'string' } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } },
+          ],
+          responses: { 200: jsonResponse('Decisions visible to the current principal', ref('DecisionList')) },
+        },
+      },
+      '/v1/sites/{site}/decisions/{decision}': {
+        patch: {
+          operationId: 'decisionTransition',
+          summary: 'Defer, dismiss or restore one decision',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'decision', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody({
+            type: 'object',
+            additionalProperties: false,
+            required: ['version', 'action'],
+            properties: {
+              version: { type: 'integer', minimum: 1 },
+              action: { type: 'string', enum: ['defer', 'dismiss', 'restore'] },
+              remind_at: { type: 'string', format: 'date-time' },
+            },
+          }),
+          responses: {
+            200: jsonResponse('Updated decision', ref('Decision')),
+            409: jsonResponse('Decision changed since it was read', ref('Error')),
+          },
+        },
+      },
+      '/v1/sites/{site}/draft-captures': {
+        post: {
+          operationId: 'draftCaptureCreate',
+          summary: 'Capture an incomplete draft without required metadata',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: jsonBody({
+            type: 'object',
+            additionalProperties: false,
+            properties: { text: { type: 'string', maxLength: 262144 } },
+          }),
+          responses: {
+            201: jsonResponse('Capture and its queue decision', {
+              type: 'object',
+              required: ['capture', 'decision'],
+              properties: { capture: ref('DraftCapture'), decision: ref('Decision') },
+            }),
+          },
+        },
+      },
+      '/v1/sites/{site}/draft-captures/{capture}': {
+        get: {
+          operationId: 'draftCaptureGet',
+          summary: 'Read an incomplete draft capture',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'capture', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: { 200: jsonResponse('Capture', ref('DraftCapture')) },
+        },
+        patch: {
+          operationId: 'draftCaptureUpdate',
+          summary: 'Update an incomplete draft capture',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'capture', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody({
+            type: 'object',
+            additionalProperties: false,
+            required: ['text'],
+            properties: { text: { type: 'string', maxLength: 262144 } },
+          }),
+          responses: { 200: jsonResponse('Updated capture', ref('DraftCapture')) },
+        },
+      },
+      '/v1/sites/{site}/draft-captures/{capture}/triage': {
+        post: {
+          operationId: 'draftCaptureTriage',
+          summary: 'Turn a capture into canonical immutable content',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'capture', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody({
+            type: 'object',
+            additionalProperties: false,
+            required: ['markdown'],
+            properties: { markdown: { type: 'string' } },
+          }),
+          responses: { 200: jsonResponse('Created item and revision', { type: 'object', additionalProperties: true }) },
+        },
+      },
+      '/v1/sites/{site}/draft-captures/{capture}/discard': {
+        post: {
+          operationId: 'draftCaptureDiscard',
+          summary: 'Discard a capture while keeping history',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'capture', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody({
+            type: 'object',
+            additionalProperties: false,
+            properties: { reason: { type: 'string', maxLength: 500 } },
+          }),
+          responses: { 200: jsonResponse('Discarded capture', ref('DraftCapture')) },
+        },
+      },
+      '/v1/sites/{site}/promotion-reviews/{review}': {
+        get: {
+          operationId: 'promotionReviewGet',
+          summary: 'Read the exact immutable preview review',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'review', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          responses: { 200: jsonResponse('Promotion review with Markdown changes', ref('PromotionReview')) },
+        },
+      },
+      '/v1/sites/{site}/promotion-reviews/{review}/reject': {
+        post: {
+          operationId: 'promotionReviewReject',
+          summary: 'Reject the exact promotion proposal',
+          security: secured,
+          parameters: [
+            siteParameter,
+            { name: 'review', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: jsonBody({
+            type: 'object',
+            additionalProperties: false,
+            properties: { reason: { type: 'string', maxLength: 500 } },
+          }),
+          responses: { 200: jsonResponse('Rejected review', ref('PromotionReview')) },
+        },
+      },
       '/v1/sites/{site}/content': {
         get: {
           operationId: 'contentList',
@@ -3063,7 +3327,7 @@ export function openApi(config) {
           operationId: 'releasePromotePreview',
           summary: 'Activate the exact reviewed preview without rebuilding it',
           description:
-            'Promotes an immutable preview only when manifest_sha256 matches and the site publish epoch is unchanged since the preview build. The operation fails closed on digest or epoch drift and currently refuses deck pointer changes.',
+            'Promotes an immutable preview only when manifest_sha256 matches and the site publish epoch is unchanged since the preview build. Cockpit operator sessions must also send the pending promotion_review_id; direct API credentials keep the headless promotion contract. The operation fails closed on any binding drift.',
           security: secured,
           parameters: [
             siteParameter,
@@ -3072,7 +3336,10 @@ export function openApi(config) {
           requestBody: jsonBody({
             type: 'object',
             required: ['manifest_sha256'],
-            properties: { manifest_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
+            properties: {
+              manifest_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+              promotion_review_id: { type: 'string', format: 'uuid' },
+            },
             additionalProperties: false,
           }),
           responses: {

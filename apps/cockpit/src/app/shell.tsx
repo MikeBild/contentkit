@@ -1,4 +1,5 @@
 import { Outlet, useRouterState } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   BookOpen,
@@ -10,6 +11,7 @@ import {
   KeyRound,
   Languages,
   LayoutDashboard,
+  ListChecks,
   Library,
   LogOut,
   MessagesSquare,
@@ -43,6 +45,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuRadioGroup,
@@ -64,6 +67,7 @@ import {
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
+  SidebarMenuBadge,
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarProvider,
@@ -80,6 +84,7 @@ import { useSite } from '@/lib/site'
 import { useTheme, type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { visibleLabel } from '@/lib/opaque'
+import { keys } from '@/lib/query'
 
 /**
  * The console's two contexts.
@@ -152,7 +157,34 @@ const NAV = [
     selection: 'governs',
     // The release chain is derived from the two lists that answer it; both are
     // site-parameterised, so the page stays in the site context.
-    api: ['/v1/sites/{site}/stats/*', '/v1/sites/{site}/content', '/v1/sites/{site}/releases'],
+    api: [
+      '/v1/sites/{site}/stats/*',
+      '/v1/sites/{site}/content',
+      '/v1/sites/{site}/releases',
+      '/v1/sites/{site}/decisions',
+      '/v1/audit-events',
+    ],
+  },
+  {
+    to: '/decisions',
+    label: 'Decisions',
+    icon: ListChecks,
+    scope: ['content:write', 'moderation:write', 'release:write'],
+    context: 'site',
+    group: 'overview',
+    selection: 'governs',
+    api: [
+      '/v1/sites/{site}/decisions',
+      '/v1/sites/{site}/decisions/{decision}',
+      '/v1/sites/{site}/draft-captures/{capture}/triage',
+      '/v1/sites/{site}/draft-captures/{capture}/discard',
+      '/v1/sites/{site}/promotion-reviews/{review}',
+      '/v1/sites/{site}/promotion-reviews/{review}/reject',
+      '/v1/sites/{site}/render',
+      '/v1/comments/{comment}',
+      '/v1/contact-submissions/{id}',
+      '/v1/feedback/{item}',
+    ],
   },
   {
     to: '/content',
@@ -171,6 +203,7 @@ const NAV = [
       '/v1/sites/{site}/content',
       '/v1/sites/{site}/render',
       '/v1/sites/{site}/previews',
+      '/v1/sites/{site}/draft-captures',
       '/v1/sites/{site}/access/groups',
       '/v1/sites/{site}/audio/jobs',
       '/v1/sites/{site}/compositions/validate',
@@ -198,7 +231,7 @@ const NAV = [
     icon: Boxes,
     scope: 'content:read',
     context: 'site',
-    group: 'content',
+    group: 'tools',
     selection: 'governs',
     api: [
       '/v1/sites/{site}/compositions/*',
@@ -214,7 +247,7 @@ const NAV = [
     icon: Presentation,
     scope: 'content:read',
     context: 'site',
-    group: 'content',
+    group: 'tools',
     selection: 'governs',
     // Not /v1/sites/{site}/decks/plan: the Cockpit compiles and validates, and
     // nothing in it calls plan. A `decks/*` prefix here would have claimed it.
@@ -239,6 +272,7 @@ const NAV = [
       '/v1/sites/{site}/releases/{release}',
       '/v1/sites/{site}/releases/{release}/activate',
       '/v1/sites/{site}/releases/{release}/promote',
+      '/v1/sites/{site}/promotion-reviews/{review}',
       '/v1/sites/{site}/previews',
       '/v1/sites/{site}/content',
       '/v1/content/{item}/revisions',
@@ -390,8 +424,8 @@ const NAV = [
     scope: null,
     context: 'installation',
     group: 'installation',
-    selection: 'ignored',
-    api: ['/health', '/ready', '/v1/publish-due', '/v1/maintenance/storage-gc'],
+    selection: 'scopes',
+    api: ['/health', '/ready', '/v1/publish-due', '/v1/maintenance/storage-gc', '/v1/sites/{site}/stats/*'],
   },
 ] as const
 
@@ -415,11 +449,25 @@ type NavEntry = (typeof NAV)[number]
  */
 const MIXED = [
   {
+    label: 'Overview',
+    context: 'site',
+    crosses: ['/v1/audit-events'],
+    reason:
+      'the dashboard is site-governed through /v1/sites/{site}/decisions and /v1/sites/{site}/stats/*, while /v1/audit-events contributes the installation activity stream',
+  },
+  {
     label: 'Webhooks',
     context: 'site',
     crosses: ['/v1/webhook-deliveries', '/v1/webhook-deliveries/{delivery}/retry'],
     reason:
       'the endpoints are per-site, but /v1/webhook-deliveries holds every site’s attempts and /v1/webhook-deliveries/{delivery}/retry is id-addressed; the page narrows the list with ?site_id=',
+  },
+  {
+    label: 'Decisions',
+    context: 'site',
+    crosses: ['/v1/comments/{comment}', '/v1/contact-submissions/{id}', '/v1/feedback/{item}'],
+    reason:
+      'the queue is governed by /v1/sites/{site}/decisions, while /v1/comments/{comment}, /v1/contact-submissions/{id} and /v1/feedback/{item} resolve their site from the reviewed source id',
   },
   {
     label: 'Decks',
@@ -445,6 +493,24 @@ const MIXED = [
     crosses: ['/v1/sites/{site}/render'],
     reason:
       'installation-wide transport on /v1/assistant/messages and /v1/assistant/elicitations/{elicitation}, but its previews render through /v1/sites/{site}/render for the selected site',
+  },
+  {
+    label: 'System',
+    context: 'installation',
+    crosses: [
+      '/v1/sites/{site}/stats/audio',
+      '/v1/sites/{site}/stats/compositions',
+      '/v1/sites/{site}/stats/content',
+      '/v1/sites/{site}/stats/decks',
+      '/v1/sites/{site}/stats/engagement',
+      '/v1/sites/{site}/stats/http',
+      '/v1/sites/{site}/stats/mcp',
+      '/v1/sites/{site}/stats/readers',
+      '/v1/sites/{site}/stats/releases',
+      '/v1/sites/{site}/stats/webhooks',
+    ],
+    reason:
+      'process health is installation-wide on /health and /ready, while /v1/sites/{site}/stats/http and /v1/sites/{site}/stats/mcp supply the selected site’s traffic readings',
   },
   {
     label: 'Moderation',
@@ -531,6 +597,15 @@ const GROUPS = [
     separated: false,
   },
   {
+    id: 'tools',
+    label: 'Tools',
+    context: 'site',
+    testId: 'nav-group-tools',
+    collapsible: true,
+    startsOpen: true,
+    separated: false,
+  },
+  {
     id: 'access',
     label: 'Access',
     context: 'site',
@@ -579,6 +654,7 @@ const SELECTION_NOTE_KEYS: Record<Exclude<NavEntry['selection'], 'governs'>, Tra
 
 const NAV_KEYS: Record<(typeof NAV)[number]['to'], TranslationKey> = {
   '/': 'nav.overview',
+  '/decisions': 'nav.decisions',
   '/content': 'nav.documents',
   '/published': 'nav.published',
   '/compositions': 'nav.compositions',
@@ -599,6 +675,7 @@ const NAV_KEYS: Record<(typeof NAV)[number]['to'], TranslationKey> = {
 const GROUP_KEYS: Partial<Record<NavGroupDefinition['id'], TranslationKey>> = {
   content: 'nav.content',
   deliver: 'nav.deliver',
+  tools: 'nav.tools',
   access: 'nav.readerAccess',
   settings: 'nav.settings',
   installation: 'nav.installation',
@@ -634,6 +711,15 @@ export function Shell() {
   const { t } = useI18n()
   const open = entryFor(pathname)
   const note = switcherNote(open)
+  const canReadDecisions = ['content:write', 'moderation:write', 'release:write'].some((scope) =>
+    session.product_scopes.includes(scope),
+  )
+  const decisionCount = useQuery({
+    queryKey: keys.decisions(selection.site, { state: 'open', limit: 1 }),
+    queryFn: () => ck.decisions.list(selection.site, { state: 'open', limit: 1 }),
+    enabled: Boolean(selection.site) && canReadDecisions,
+    retry: false,
+  })
   const noteText = open
     ? open.selection !== 'governs'
       ? t(SELECTION_NOTE_KEYS[open.selection])
@@ -642,7 +728,13 @@ export function Shell() {
         : ''
     : ''
 
-  const visible = NAV.filter((item) => !item.scope || session.product_scopes.includes(item.scope))
+  const visible = NAV.filter(
+    (item) =>
+      !item.scope ||
+      (typeof item.scope === 'string'
+        ? session.product_scopes.includes(item.scope)
+        : item.scope.some((scope) => session.product_scopes.includes(scope))),
+  )
   // The switcher is header chrome above every block, but installation pages read
   // the selection too, so it stays mounted while any visible page reads it —
   // otherwise Moderation, which shows nothing without one, offers no way to
@@ -746,7 +838,13 @@ export function Shell() {
                 return (
                   <Fragment key={group.id}>
                     {group.separated ? <SidebarSeparator data-testid={`${group.testId}-separator`} /> : null}
-                    <NavBlock group={group} items={items} open={open} />
+                    <NavBlock
+                      group={group}
+                      items={items}
+                      open={open}
+                      decisionCount={decisionCount.data?.counts.open ?? 0}
+                      decisionOverdue={Boolean(decisionCount.data?.counts.overdue)}
+                    />
                   </Fragment>
                 )
               })}
@@ -785,7 +883,10 @@ export function Shell() {
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
             <SidebarTrigger data-testid="sidebar-toggle" />
           </header>
-          <div data-testid="page-scroll" className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip">
+          <div
+            data-testid="page-scroll"
+            className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip"
+          >
             <Outlet />
           </div>
         </SidebarInset>
@@ -809,10 +910,14 @@ function NavBlock({
   group,
   items,
   open,
+  decisionCount,
+  decisionOverdue,
 }: {
   group: NavGroupDefinition
   items: readonly NavEntry[]
   open: NavEntry | undefined
+  decisionCount: number
+  decisionOverdue: boolean
 }) {
   const { t } = useI18n()
   const { state } = useSidebar()
@@ -829,14 +934,19 @@ function NavBlock({
         {items.map(({ to, icon: Icon }) => {
           const translated = t(NAV_KEYS[to])
           return (
-          <SidebarMenuItem key={to}>
-            <SidebarMenuButton asChild isActive={open?.to === to} tooltip={translated}>
-              <AppLink to={to} data-testid={`nav-${to === '/' ? 'overview' : to.slice(1)}`}>
-                <Icon data-icon="inline-start" />
-                <span>{translated}</span>
-              </AppLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+            <SidebarMenuItem key={to}>
+              <SidebarMenuButton asChild isActive={open?.to === to} tooltip={translated}>
+                <AppLink to={to} data-testid={`nav-${to === '/' ? 'overview' : to.slice(1)}`}>
+                  <Icon data-icon="inline-start" />
+                  <span>{translated}</span>
+                </AppLink>
+              </SidebarMenuButton>
+              {to === '/decisions' && decisionCount > 0 ? (
+                <SidebarMenuBadge className={decisionOverdue ? 'text-destructive' : undefined}>
+                  {decisionCount}
+                </SidebarMenuBadge>
+              ) : null}
+            </SidebarMenuItem>
           )
         })}
       </SidebarMenu>
@@ -878,11 +988,7 @@ function NavBlock({
  * without a tooltip, which meant the control answering "which site am I about to
  * change?" showed a globe and nothing else.
  */
-const THEMES: readonly { value: Theme }[] = [
-  { value: 'system' },
-  { value: 'light' },
-  { value: 'dark' },
-]
+const THEMES: readonly { value: Theme }[] = [{ value: 'system' }, { value: 'light' }, { value: 'dark' }]
 
 const THEME_KEYS: Record<Theme, TranslationKey> = {
   light: 'account.theme.light',
@@ -932,12 +1038,14 @@ function accountRoleKey(role: string | null | undefined): TranslationKey {
  * an operator looks, not the code.
  */
 function initials(value: string): string {
-  return value
-    .split(/[@\s._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'CK'
+  return (
+    value
+      .split(/[@\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || 'CK'
+  )
 }
 
 function AccountMenu() {
@@ -1057,15 +1165,29 @@ function SiteSwitcher({
   error,
 }: {
   site: string
-  current: { id: string; slug: string; name: string } | undefined
+  current: { id: string; slug: string; name: string; environment: 'production' | 'canary' | 'test' } | undefined
   setSite: (site: string) => void
-  sites: { id: string; slug: string; name: string }[]
+  sites: { id: string; slug: string; name: string; environment: 'production' | 'canary' | 'test' }[]
   isLoading: boolean
   error: unknown
 }) {
   const { t } = useI18n()
   const { state, isMobile } = useSidebar()
+  const [showTestSites, setShowTestSites] = useState(() => {
+    try {
+      return window.localStorage.getItem('ck-cockpit-show-test-sites') !== 'false'
+    } catch {
+      return true
+    }
+  })
   const name = current?.name || site
+  const ordered = ['production', 'canary', 'test'] as const
+  const grouped = ordered.map((environment) => ({
+    environment,
+    sites: sites
+      .filter((candidate) => candidate.environment === environment && (environment !== 'test' || showTestSites))
+      .sort((left, right) => left.name.localeCompare(right.name)),
+  }))
 
   if (isLoading)
     return (
@@ -1174,32 +1296,56 @@ function SiteSwitcher({
             className="w-auto min-w-56 max-w-(--radix-dropdown-menu-content-available-width)"
           >
             <DropdownMenuLabel>{t('site.list')}</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              checked={showTestSites}
+              onCheckedChange={(checked) => {
+                setShowTestSites(Boolean(checked))
+                try {
+                  window.localStorage.setItem('ck-cockpit-show-test-sites', String(Boolean(checked)))
+                } catch {
+                  // A private browsing policy may deny storage; the session choice still works.
+                }
+              }}
+              data-testid="site-switcher-show-tests"
+            >
+              {t('site.showTests')}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
             <DropdownMenuRadioGroup value={site} onValueChange={setSite}>
-              {sites.map((candidate) => (
-                /*
-                 * Name over slug rather than name beside slug. Side by side, the
-                 * slug held a column the name was not allowed to use; stacked, the
-                 * name gets the full row and the slug — which is short, and which
-                 * the operator already knows — reads as the caption it is.
-                 *
-                 * A name too long even for that wraps rather than clamps, and this
-                 * is deliberate: UI-UX.md §6 says a cut name owes the reader a
-                 * `title`, §3 forbids a native `title` anywhere in the console, and
-                 * a menu row is the one place where honouring both is free — do not
-                 * cut. The `aria-label` keeps the slug from being read as part of
-                 * the name.
-                 */
-                <DropdownMenuRadioItem
-                  key={candidate.id}
-                  value={candidate.slug}
-                  data-testid={`site-switcher-option-${candidate.slug}`}
-                  aria-label={`${candidate.name} (${candidate.slug})`}
-                  className="flex-col items-start gap-0"
-                >
-                  <span className="break-words">{candidate.name}</span>
-                  <span className="text-xs text-muted-foreground">{candidate.slug}</span>
-                </DropdownMenuRadioItem>
-              ))}
+              {grouped.flatMap((group) =>
+                group.sites.length
+                  ? [
+                      <DropdownMenuLabel key={`${group.environment}-label`}>
+                        {t(`site.environment.${group.environment}` as TranslationKey)}
+                      </DropdownMenuLabel>,
+                      ...group.sites.map((candidate) => (
+                        /*
+                         * Name over slug rather than name beside slug. Side by side, the
+                         * slug held a column the name was not allowed to use; stacked, the
+                         * name gets the full row and the slug — which is short, and which
+                         * the operator already knows — reads as the caption it is.
+                         *
+                         * A name too long even for that wraps rather than clamps, and this
+                         * is deliberate: UI-UX.md §6 says a cut name owes the reader a
+                         * `title`, §3 forbids a native `title` anywhere in the console, and
+                         * a menu row is the one place where honouring both is free — do not
+                         * cut. The `aria-label` keeps the slug from being read as part of
+                         * the name.
+                         */
+                        <DropdownMenuRadioItem
+                          key={candidate.id}
+                          value={candidate.slug}
+                          data-testid={`site-switcher-option-${candidate.slug}`}
+                          aria-label={`${candidate.name} (${candidate.slug})`}
+                          className="flex-col items-start gap-0"
+                        >
+                          <span className="break-words">{candidate.name}</span>
+                          <span className="text-xs text-muted-foreground">{candidate.slug}</span>
+                        </DropdownMenuRadioItem>
+                      )),
+                    ]
+                  : [],
+              )}
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1229,7 +1375,11 @@ function useCrumbs(title: string): Crumb[] {
   // The name once the list has loaded, the slug meanwhile — never a blank crumb
   // where the site should be.
   const named = current?.name || site
-  return [{ label: t('site.context') }, { label: named || t('site.noneSelected'), placeholder: !named }, { label: title }]
+  return [
+    { label: t('site.context') },
+    { label: named || t('site.noneSelected'), placeholder: !named },
+    { label: title },
+  ]
 }
 
 export function Page({

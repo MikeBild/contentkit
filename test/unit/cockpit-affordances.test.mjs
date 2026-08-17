@@ -318,7 +318,7 @@ describe('cockpit affordances — one grammar for actions', () => {
     for (const file of FILES) {
       for (const confirm of elements(file.src, 'Confirm')) {
         if (!/^\s*destructive\s*$/m.test(confirm.tag)) continue
-        const trigger = elements(confirm.body, 'Button')[0]
+        const trigger = elements(confirm.body, 'Button')[0] ?? elements(confirm.body, 'DropdownMenuItem')[0]
         if (!trigger) continue
         checked += 1
         if (variant(trigger.tag) !== 'destructive') {
