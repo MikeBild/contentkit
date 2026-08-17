@@ -1964,6 +1964,22 @@ export function openApi(config) {
           responses: { 200: deletedResponse('Deleted'), 404: { description: 'Reader not found' } },
         },
       },
+      '/v1/sites/{site}/access/users/copy': {
+        post: {
+          operationId: 'accessUserCopy',
+          summary: 'Copy one reader credential from another administered site',
+          description:
+            'Copies the salted password hash internally so an existing personal reader can use the same credentials on another independently managed site. The password and hash are never returned. The caller must hold site:admin for both sites.',
+          security: secured,
+          parameters: [siteParameter],
+          requestBody: jsonBody(['source_site', 'username']),
+          responses: {
+            200: jsonResponse('Reader credential copied', ref('AccessUser')),
+            404: jsonResponse('Source site, target site or active source reader not found', ref('Error')),
+            422: jsonResponse('Source and target are the same or the username is missing', ref('Error')),
+          },
+        },
+      },
       '/v1/sites/{site}/access/users/{user}/revoke-sessions': {
         post: {
           operationId: 'accessUserRevokeSessions',

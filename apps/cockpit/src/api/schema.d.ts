@@ -361,6 +361,26 @@ export interface paths {
         patch: operations["accessUserUpdate"];
         trace?: never;
     };
+    "/v1/sites/{site}/access/users/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy one reader credential from another administered site
+         * @description Copies the salted password hash internally so an existing personal reader can use the same credentials on another independently managed site. The password and hash are never returned. The caller must hold site:admin for both sites.
+         */
+        post: operations["accessUserCopy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sites/{site}/access/users/{user}/revoke-sessions": {
         parameters: {
             query?: never;
@@ -3785,6 +3805,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    accessUserCopy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Reader credential copied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Source site, target site or active source reader not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Source and target are the same or the username is missing */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

@@ -375,6 +375,7 @@ export const API_ROUTES = [
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/jobs$/, methods: ['GET'] },
   { pattern: /^\/v1\/sites\/[^/]+\/audio\/jobs\/[^/]+\/retry$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/(users|groups|rules)$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/v1\/sites\/[^/]+\/access\/users\/copy$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/(users|groups|rules)\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/users\/[^/]+\/revoke-sessions$/, methods: ['POST'] },
   { pattern: /^\/v1\/sites\/[^/]+\/access\/groups\/[^/]+\/members$/, methods: ['PUT'] },
@@ -555,12 +556,27 @@ export function createRequestHandler(ctx) {
     })
     return reader
   }
+  // Browser readers use the site-scoped session above. Automated consumers
+  // (for example a release acceptance workflow) must not have to persist a
+  // personal password or manufacture a browser cookie, so an ordinary
+  // site-scoped `content:read` API key may read the same immutable protected
+  // release. The key remains a machine principal: it never becomes a reader
+  // session and it does not appear in /_contentkit/session.
+  const machineReaderFor = async (req, site) => {
+    if (!auth.authenticate || !auth.authorize) return null
+    const principal = await auth.authenticate(req.headers)
+    if (!principal || !auth.authorize(principal, 'content:read', site.id)) return null
+    markUsageContext(req, { siteId: site.id, actorId: `api:${principal.id}`, requestSource: 'gateway' })
+    return principal
+  }
   const accessFor = async (req, site, release, pathname) => {
     const entries = repo.releaseAccessEntries ? await repo.releaseAccessEntries(release.id) : []
     const entry = mostSpecificAccess(entries, cleanPath(pathname))
-    if (!entry) return { entry: null, reader: null, allowed: true }
+    if (!entry) return { entry: null, reader: null, machine: null, allowed: true }
+    const machine = await machineReaderFor(req, site)
+    if (machine) return { entry, reader: null, machine, allowed: true }
     const reader = await readerFor(req, site)
-    return { entry, reader, allowed: readerAllowed(entry, reader) }
+    return { entry, reader, machine: null, allowed: readerAllowed(entry, reader) }
   }
   const loginPage = (site, csrf, returnTo, error = '') =>
     `<!doctype html><html lang="${escapeHtml(site.default_locale || 'en')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Sign in · ${escapeHtml(site.name)}</title><style>body{font:16px ${contentkitFontFamily};margin:0;display:grid;min-height:100vh;place-items:center;background:#f6f7f9;color:#172033}.login{width:min(90%,24rem);background:white;padding:2rem;border:1px solid #dde1e8;border-radius:.75rem;box-shadow:0 1rem 3rem #17203318}label,input,button{display:block;width:100%;box-sizing:border-box}label{margin-top:1rem}input,button{font:inherit;padding:.75rem;margin-top:.35rem;border:1px solid #ccd2dc;border-radius:.5rem}button{margin-top:1.25rem;background:#172033;color:white;cursor:pointer}.error{color:#a21b1b}</style></head><body><main class="login"><h1>${escapeHtml(site.name)}</h1><p>Sign in to continue.</p>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}<form method="post" action="/_contentkit/login"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Sign in</button></form></main></body></html>`
@@ -1008,7 +1024,7 @@ export function createRequestHandler(ctx) {
       if (site?.active_release_id && repo.releaseAccessEntries) {
         const release = await repo.getRelease(site.active_release_id)
         const access = await accessFor(req, site, release, url.pathname)
-        if (access.entry && !access.reader) {
+        if (access.entry && !access.reader && !access.machine) {
           return sendJson(
             res,
             401,
@@ -1089,7 +1105,7 @@ export function createRequestHandler(ctx) {
     }
     const release = await repo.getRelease(site.active_release_id)
     const access = await accessFor(req, site, release, url.pathname)
-    if (access.entry && !access.reader) {
+    if (access.entry && !access.reader && !access.machine) {
       const returnTo = encodeURIComponent(`${url.pathname}${url.search}`)
       return send(res, 302, '', {
         location: `/_contentkit/login?return_to=${returnTo}`,
@@ -1465,6 +1481,20 @@ export function createRequestHandler(ctx) {
       if (!site) return sendJson(res, 404, { error: 'site not found' })
       if (!(await requireScope(req, res, 'site:admin', site.id))) return
       return sendJson(res, 200, await repo.revokeReaderSessions(site.id, accessRevoke[2]))
+    }
+    const accessCopy = path.match(/^\/v1\/sites\/([^/]+)\/access\/users\/copy$/)
+    if (accessCopy && req.method === 'POST') {
+      const target = await repo.getSite(accessCopy[1])
+      if (!target) return sendJson(res, 404, { error: 'target site not found' })
+      if (!(await requireScope(req, res, 'site:admin', target.id))) return
+      const input = parseJson(await bodyFor(req)) || {}
+      const source = await repo.getSite(input.source_site || '')
+      if (!source) return sendJson(res, 404, { error: 'source site not found' })
+      if (source.id === target.id) return sendJson(res, 422, { error: 'source and target site must differ' })
+      if (!(await requireScope(req, res, 'site:admin', source.id))) return
+      if (!input.username) return sendJson(res, 422, { error: 'username is required' })
+      const record = await repo.copyAccessUser(source.id, target.id, input)
+      return record ? sendJson(res, 200, record) : sendJson(res, 404, { error: 'active source reader not found' })
     }
     const accessMembers = path.match(/^\/v1\/sites\/([^/]+)\/access\/groups\/([^/]+)\/members$/)
     if (accessMembers && req.method === 'PUT') {

@@ -1456,6 +1456,60 @@ test('createAccessUser validates groups before inserting the account', async () 
   assert.ok(!calls.some(([operation]) => operation === 'insert'))
 })
 
+test('copyAccessUser reuses an internal password hash without returning it', async () => {
+  const inserted = []
+  const tx = {
+    async select(table, query) {
+      if (table === 'ck_access_users' && query.site_id === 'eq.source-site')
+        return [
+          {
+            id: 'source-user',
+            site_id: 'source-site',
+            username: 'mike.bild',
+            display_name: 'Mike Bild',
+            password_hash: 'scrypt$private-hash',
+            active: true,
+          },
+        ]
+      if (table === 'ck_access_users') return []
+      if (table === 'ck_access_groups') return [{ id: 'group-1', slug: 'radar-readers' }]
+      if (table === 'ck_access_group_members') return []
+      return []
+    },
+    async insert(table, rows) {
+      inserted.push([table, rows])
+      if (table === 'ck_access_users') return [{ id: 'target-user', ...rows }]
+      return []
+    },
+    async remove() {},
+  }
+  const repo = createRepository(
+    {},
+    {
+      async tx(fn) {
+        return fn(tx)
+      },
+    },
+    {},
+  )
+
+  const copied = await repo.copyAccessUser('source-site', 'target-site', {
+    username: 'mike.bild',
+    groups: ['radar-readers'],
+  })
+  assert.deepEqual(copied, {
+    id: 'target-user',
+    site_id: 'target-site',
+    username: 'mike.bild',
+    display_name: 'Mike Bild',
+    active: true,
+    groups: ['radar-readers'],
+  })
+  assert.equal(inserted[0][0], 'ck_access_users')
+  assert.equal(inserted[0][1].password_hash, 'scrypt$private-hash')
+  assert.doesNotMatch(JSON.stringify(copied), /password|scrypt|private-hash/)
+})
+
 test('updateAccessUser validates replacement groups before changing the account', async () => {
   const calls = []
   const tx = {

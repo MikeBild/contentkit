@@ -1006,6 +1006,56 @@ test('gateway redirects anonymous readers and serves protected pages only to an 
   })
 })
 
+test('a site-scoped content:read key can verify a protected release without becoming a reader session', async () => {
+  const repo = {
+    async getSiteByHost() {
+      return { id: 'site-1', name: 'Private radar', default_locale: 'de', active_release_id: 'release-1' }
+    },
+    async getRelease() {
+      return { id: 'release-1', storage_prefix: 'prefix' }
+    },
+    async releaseAccessEntries() {
+      return [{ match: 'prefix', path: '/', group_slugs: ['radar-readers'], user_ids: [] }]
+    },
+    async authenticateReader() {
+      return null
+    },
+  }
+  const storage = {
+    async download() {
+      return {
+        headers: new Map(),
+        async arrayBuffer() {
+          return Buffer.from('<h1>Private radar</h1>')
+        },
+      }
+    },
+  }
+  const auth = {
+    async authenticate(headers) {
+      return headers.get?.('x-api-key') === 'radar-read-key'
+        ? { id: 'radar-acceptance', scopes: ['content:read'], site_ids: ['site-1'] }
+        : null
+    },
+    authorize(principal, scope, siteId) {
+      return principal?.scopes.includes(scope) && principal.site_ids.includes(siteId)
+    },
+  }
+  await withApp({ repo, storage, auth }, async (request) => {
+    const machine = await request('/de/', { headers: { 'x-api-key': 'radar-read-key' } })
+    assert.equal(machine.status, 200)
+    assert.match(await machine.text(), /Private radar/)
+    assert.equal(machine.headers.get('cache-control'), 'private,no-store')
+
+    const anonymous = await request('/de/', { redirect: 'manual' })
+    assert.equal(anonymous.status, 302)
+    assert.match(anonymous.headers.get('location'), /^\/_contentkit\/login/)
+
+    const session = await request('/_contentkit/session', { headers: { 'x-api-key': 'radar-read-key' } })
+    assert.deepEqual(await session.json(), { authenticated: false, user: null, groups: [] })
+  })
+})
+
 test('site reader login sets a session cookie and validates the return path', async () => {
   const rateLimitKeys = []
   const authEvents = []
@@ -1139,6 +1189,52 @@ test('site:admin manages reader groups through the access API', async () => {
     assert.equal(created.status, 201)
     assert.deepEqual(calls, ['list', ['create', { slug: 'team', name: 'Team' }]])
   })
+})
+
+test('site:admin on both sites can copy an active reader credential without exposing it', async () => {
+  const calls = []
+  const repo = {
+    async getSite(slug) {
+      return {
+        'company-cockpit': { id: 'source-site', slug },
+        'oss-radar': { id: 'target-site', slug },
+      }[slug]
+    },
+    async copyAccessUser(sourceSiteId, targetSiteId, input) {
+      calls.push({ sourceSiteId, targetSiteId, input })
+      return {
+        id: 'reader-2',
+        site_id: targetSiteId,
+        username: input.username,
+        display_name: 'Mike Bild',
+        active: true,
+        groups: input.groups,
+      }
+    },
+  }
+  await withApp({ repo, auth: scopedAuth(['site:admin']) }, async (request) => {
+    const response = await request('/v1/sites/oss-radar/access/users/copy', {
+      method: 'POST',
+      headers: { 'x-api-key': 'valid', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        source_site: 'company-cockpit',
+        username: 'mike.bild',
+        groups: ['radar-readers'],
+      }),
+    })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.username, 'mike.bild')
+    assert.deepEqual(body.groups, ['radar-readers'])
+    assert.doesNotMatch(JSON.stringify(body), /password|hash/)
+  })
+  assert.deepEqual(calls, [
+    {
+      sourceSiteId: 'source-site',
+      targetSiteId: 'target-site',
+      input: { source_site: 'company-cockpit', username: 'mike.bild', groups: ['radar-readers'] },
+    },
+  ])
 })
 
 function webhookRepo(calls = []) {

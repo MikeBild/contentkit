@@ -1929,6 +1929,8 @@ only through the private JSON catalog endpoints.
 All management routes below require a site-scoped `site:admin` key:
 
 - `GET|POST /v1/sites/{site}/access/users`: list or create personal readers;
+- `POST /v1/sites/{site}/access/users/copy`: copy one active reader credential
+  internally from another administered site without exposing its password hash;
 - `PATCH|DELETE /v1/sites/{site}/access/users/{user}`: update, disable, reset a
   password or delete a reader;
 - `POST /v1/sites/{site}/access/users/{user}/revoke-sessions`: revoke every

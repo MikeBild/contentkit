@@ -20,6 +20,12 @@ text, navigation entry, sitemap entry, feed entry, `llms.txt` content, JSON-LD,
 or protected-only media. Opening the URL redirects to the site-branded login
 form.
 
+Automated readers may instead send a normal ContentKit API key carrying
+`content:read` and restricted to the target site. This grants read-only access
+to that site's protected immutable release without creating a browser reader
+session. It is intended for release acceptance, monitoring and other machine
+consumers; use a dedicated least-privilege key rather than a publisher key.
+
 Static HTML cannot vary per reader. When a home or content page is itself
 protected, ContentKit therefore pre-renders public pages plus only those
 protected pages whose group and user grants exactly match that page's grant.
@@ -55,6 +61,12 @@ Passwords must contain 12–256 characters. They are stored as salted scrypt
 hashes (`N=32768`, `r=8`, `p=1`, 64-byte output) and are never returned by the
 API. Changing a password, disabling a reader, or calling the session-revocation
 endpoint invalidates existing sessions.
+
+An administrator of two sites may copy an active reader credential with
+`POST /v1/sites/{target}/access/users/copy`. ContentKit copies only the internal
+salted hash and never reveals the password or hash. The target account remains
+site-scoped and receives its own target-site groups; a later password change on
+the source is synchronized only when the copy operation is repeated.
 
 ## Path rules
 

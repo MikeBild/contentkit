@@ -1055,6 +1055,53 @@ export function createRepository(config, db, storage) {
         return { ...publicReader(user), groups: wanted }
       })
     },
+    async copyAccessUser(sourceSiteId, targetSiteId, input) {
+      const username = normalizeUsername(input.username)
+      return db.tx(async (tx) => {
+        const [source] = await tx.select('ck_access_users', {
+          site_id: `eq.${sourceSiteId}`,
+          username: `eq.${username}`,
+          active: 'eq.true',
+          limit: '1',
+        })
+        if (!source) return null
+        const { selected, wanted } = await resolveAccessGroups(tx, targetSiteId, input.groups || [])
+        const [existing] = await tx.select('ck_access_users', {
+          site_id: `eq.${targetSiteId}`,
+          username: `eq.${username}`,
+          limit: '1',
+        })
+        let user
+        if (existing) {
+          ;[user] = await tx.update(
+            'ck_access_users',
+            { id: `eq.${existing.id}`, site_id: `eq.${targetSiteId}` },
+            {
+              display_name: String(input.display_name || source.display_name || username)
+                .trim()
+                .slice(0, 120),
+              password_hash: source.password_hash,
+              active: true,
+              updated_at: new Date().toISOString(),
+            },
+          )
+          if (existing.password_hash !== source.password_hash || existing.active !== true)
+            await revokeReaderSessions(tx, targetSiteId, existing.id)
+        } else {
+          ;[user] = await tx.insert('ck_access_users', {
+            site_id: targetSiteId,
+            username,
+            display_name: String(input.display_name || source.display_name || username)
+              .trim()
+              .slice(0, 120),
+            password_hash: source.password_hash,
+            active: true,
+          })
+        }
+        await replaceAccessUserGroups(tx, user.id, selected)
+        return { ...publicReader(user), groups: wanted }
+      })
+    },
     async updateAccessUser(siteId, id, input) {
       const passwordHash = input.password === undefined ? undefined : await hashReaderPassword(input.password)
       return db.tx(async (tx) => {
