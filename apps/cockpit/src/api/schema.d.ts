@@ -5371,7 +5371,10 @@ export interface operations {
     };
     previewInvitationOpen: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional absolute path inside this exact named preview. Invalid, cross-origin or different-preview targets fall back to the preview root. */
+                return_to?: string;
+            };
             header?: never;
             path: {
                 /** @description Secret invitation value returned once by the preview build endpoint. */
@@ -5405,7 +5408,10 @@ export interface operations {
     };
     previewInvitationRedeem: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional absolute path inside this exact named preview. Invalid, cross-origin or different-preview targets fall back to the preview root. */
+                return_to?: string;
+            };
             header?: never;
             path: {
                 /** @description Secret invitation value returned once by the preview build endpoint. */
