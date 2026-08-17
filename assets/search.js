@@ -28,6 +28,11 @@
   const page = document.querySelector('[data-search-results]')
 
   const lang = document.documentElement.lang || 'en'
+  // A named/legacy preview is already an isolated immutable snapshot. Its
+  // static index is rewritten into the preview prefix by the gateway; the
+  // reader-only endpoint lives on a published site host and would be both the
+  // wrong release and a guaranteed 404 on the API-hosted preview.
+  const previewPath = /^\/(?:previews|p)\/[^/]+\//.test(window.location.pathname)
   const copy = {
     empty: input.dataset.emptyText || 'No results.',
     one: input.dataset.countOne || '1 result',
@@ -58,9 +63,11 @@
       fetch(input.dataset.index, { credentials: 'same-origin' }).then((response) =>
         response.ok ? response.json() : Promise.reject(new Error('http')),
       ),
-      fetch(`/_contentkit/search-index.json?locale=${encodeURIComponent(lang)}`, { credentials: 'same-origin' })
-        .then((response) => (response.ok ? response.json() : []))
-        .catch(() => []),
+      previewPath
+        ? Promise.resolve([])
+        : fetch(`/_contentkit/search-index.json?locale=${encodeURIComponent(lang)}`, { credentials: 'same-origin' })
+            .then((response) => (response.ok ? response.json() : []))
+            .catch(() => []),
     ])
       .then(([publicData, protectedData]) => {
         // A poisoned index must not be able to produce javascript: hrefs.
