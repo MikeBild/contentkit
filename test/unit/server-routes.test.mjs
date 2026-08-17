@@ -423,6 +423,26 @@ test('preview invitation redirects directly, remains reusable and renders browse
       assert.equal(repeated.headers.get('location'), '/previews/article-review/')
       assert.equal(exchanges, 0)
 
+      const articlePath = '/previews/article-review/de/blog/publishing-with-agents/'
+      const targeted = await request(`/preview-invitations/secret-token?return_to=${encodeURIComponent(articlePath)}`, {
+        redirect: 'manual',
+      })
+      assert.equal(targeted.status, 303)
+      assert.equal(targeted.headers.get('location'), articlePath)
+
+      for (const unsafeTarget of [
+        '//evil.example/',
+        '/previews/another-review/de/blog/publishing-with-agents/',
+        '/previews/article-review/../another-review/',
+      ]) {
+        const refused = await request(
+          `/preview-invitations/secret-token?return_to=${encodeURIComponent(unsafeTarget)}`,
+          { redirect: 'manual' },
+        )
+        assert.equal(refused.status, 303)
+        assert.equal(refused.headers.get('location'), '/previews/article-review/')
+      }
+
       const missing = await request('/preview-invitations/missing', {
         headers: { 'accept-language': 'de-DE,de;q=0.9' },
       })

@@ -2916,6 +2916,14 @@ export function openApi(config) {
               schema: { type: 'string' },
               description: 'Secret invitation value returned once by the preview build endpoint.',
             },
+            {
+              name: 'return_to',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description:
+                'Optional absolute path inside this exact named preview. Invalid, cross-origin or different-preview targets fall back to the preview root.',
+            },
           ],
           responses: {
             303: {
@@ -2945,6 +2953,14 @@ export function openApi(config) {
               required: true,
               schema: { type: 'string' },
               description: 'Secret invitation value returned once by the preview build endpoint.',
+            },
+            {
+              name: 'return_to',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description:
+                'Optional absolute path inside this exact named preview. Invalid, cross-origin or different-preview targets fall back to the preview root.',
             },
           ],
           responses: {

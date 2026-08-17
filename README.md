@@ -284,6 +284,11 @@ The preview response separates access from navigation. Send the expiring
 session and redirects immediately to the memorable `preview_url`, for example
 `/previews/article-review/`. The invitation can be opened again until it
 expires, is revoked or is replaced by a newer preview with the same slug.
+To open a specific page after establishing the session, append a URL-encoded
+`return_to` path inside that exact preview, for example
+`?return_to=%2Fpreviews%2Farticle-review%2Fde%2Fblog%2Frelease-contract%2F`.
+Cross-origin paths, another preview slug and path traversal fall back to the
+preview root.
 The response also returns `release_id`, `manifest_sha256` and
 `base_publish_epoch`. After review, activate those exact rendered bytes without
 another build:

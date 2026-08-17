@@ -215,6 +215,20 @@ function previewUrl(value, previewBase) {
   return `${previewBase}${input}`
 }
 
+function previewInvitationLocation(url, slug) {
+  const previewRoot = `/previews/${encodeURIComponent(slug)}/`
+  const requested = validReturnTo(url.searchParams.get('return_to'), previewRoot)
+  try {
+    const target = new URL(requested, 'https://contentkit.invalid')
+    if (target.origin !== 'https://contentkit.invalid' || !target.pathname.startsWith(previewRoot)) {
+      return previewRoot
+    }
+    return `${target.pathname}${target.search}${target.hash}`
+  } catch {
+    return previewRoot
+  }
+}
+
 function previewSrcset(value, previewBase) {
   if (/^\s*data:/i.test(value)) return value
   return String(value)
@@ -1114,7 +1128,7 @@ export function createRequestHandler(ctx) {
       const maxAge = Math.max(1, Math.floor((new Date(access.expires_at).getTime() - Date.now()) / 1000))
       const secure = String(config.publicUrl || '').startsWith('https://')
       return send(res, 303, '', {
-        location: `/previews/${access.slug}/`,
+        location: previewInvitationLocation(url, access.slug),
         'cache-control': 'private,no-store',
         'set-cookie': previewSessionCookie(invitation[1], access.slug, { secure, maxAge }),
         'referrer-policy': 'no-referrer',

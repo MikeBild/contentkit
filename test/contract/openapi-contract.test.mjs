@@ -41,6 +41,11 @@ test('preview contract separates reusable invitation access from the memorable U
   assert.equal(response.properties.url, undefined)
   assert.ok(spec.paths['/preview-invitations/{token}'].get.responses[303])
   assert.ok(spec.paths['/preview-invitations/{token}'].post.responses[303])
+  assert.ok(
+    spec.paths['/preview-invitations/{token}'].get.parameters.some(
+      (parameter) => parameter.name === 'return_to' && parameter.in === 'query',
+    ),
+  )
   assert.equal(spec.paths['/preview-invitations/{token}'].post.deprecated, true)
 })
 
