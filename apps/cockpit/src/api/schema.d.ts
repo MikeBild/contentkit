@@ -3269,15 +3269,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Reader and group projection */
+            /** @description Authenticated reader projection or an anonymous session state */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not signed in */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
