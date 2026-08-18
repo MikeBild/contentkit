@@ -64,6 +64,17 @@ const FUNCTIONS = {
     ],
     result: () => null,
   },
+  ck_register_preview_access: {
+    sql: 'SELECT public.ck_register_preview_access($1, $2, $3, $4, $5)',
+    values: (body) => [
+      body.p_release_id,
+      body.p_slug,
+      body.p_invite_token_hash,
+      body.p_expires_at,
+      body.p_expected_epoch,
+    ],
+    result: () => null,
+  },
   ck_search_published: {
     sql: 'SELECT * FROM public.ck_search_published($1, $2, $3, $4, $5)',
     values: (body) => [body.p_site_id, body.p_query, body.p_locale ?? null, body.p_kind ?? null, body.p_limit],

@@ -72,6 +72,22 @@ test('rpc runs only whitelisted functions and returns their declared shape', asy
     values: ['rel-1', [], [], null],
   })
 
+  // Preview registration is an equally constrained transactional boundary.
+  assert.equal(
+    await postgres.db.rpc('ck_register_preview_access', {
+      p_release_id: 'preview-1',
+      p_slug: 'review-1',
+      p_invite_token_hash: 'invite-hash',
+      p_expires_at: '2026-08-18T17:00:00.000Z',
+      p_expected_epoch: 42,
+    }),
+    null,
+  )
+  assert.deepEqual(pool.calls[1], {
+    text: 'SELECT public.ck_register_preview_access($1, $2, $3, $4, $5)',
+    values: ['preview-1', 'review-1', 'invite-hash', '2026-08-18T17:00:00.000Z', 42],
+  })
+
   // ck_search_published forwards all five parameters and returns the rows.
   pool.rows = [{ item_id: 'item-1', rank: 0.5, headline: '<mark>Hallo</mark>' }]
   const rows = await postgres.db.rpc('ck_search_published', {
@@ -82,14 +98,14 @@ test('rpc runs only whitelisted functions and returns their declared shape', asy
     p_limit: 20,
   })
   assert.deepEqual(rows, [{ item_id: 'item-1', rank: 0.5, headline: '<mark>Hallo</mark>' }])
-  assert.deepEqual(pool.calls[1], {
+  assert.deepEqual(pool.calls[2], {
     text: 'SELECT * FROM public.ck_search_published($1, $2, $3, $4, $5)',
     values: ['site-1', 'hallo', 'de', 'post', 20],
   })
 
   // Absent optional filters are passed as SQL nulls, not undefined.
   await postgres.db.rpc('ck_search_published', { p_site_id: 'site-1', p_query: 'hallo', p_limit: 20 })
-  assert.deepEqual(pool.calls[2].values, ['site-1', 'hallo', null, null, 20])
+  assert.deepEqual(pool.calls[3].values, ['site-1', 'hallo', null, null, 20])
 
   await assert.rejects(() => postgres.db.rpc('pg_sleep'), /unknown Contentkit function: pg_sleep/)
 })

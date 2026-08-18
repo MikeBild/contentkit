@@ -428,9 +428,16 @@ Markdown rein, veröffentlichte HTML-Seite raus.
           }),
         }),
         201,
+        logs.join(''),
       )
       assert.equal(preview.preview_url, `${origin}/previews/local-release-review/`)
-      assert.match(preview.invitation_url, /\/preview-invitations\/[A-Za-z0-9_-]+$/)
+      const previewArticlePath = '/previews/local-release-review/de/blog/lokaler-e2e-beitrag/'
+      assert.equal(preview.review_targets[0].revision_id, ingested.revision.id)
+      assert.equal(preview.review_targets[0].preview_url, `${origin}${previewArticlePath}`)
+      assert.match(
+        preview.invitation_url,
+        /\/preview-invitations\/[A-Za-z0-9_-]+\?return_to=%2Fpreviews%2Flocal-release-review%2Fde%2Fblog%2Flokaler-e2e-beitrag%2F$/,
+      )
       const unauthenticatedPreview = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`)
       assert.equal(unauthenticatedPreview.status, 401)
       assert.match(unauthenticatedPreview.headers.get('content-type') || '', /^text\/html/)
@@ -439,12 +446,13 @@ Markdown rein, veröffentlichte HTML-Seite raus.
         redirect: 'manual',
       })
       assert.equal(invitation.status, 303)
-      assert.equal(invitation.headers.get('location'), '/previews/local-release-review/')
+      assert.equal(invitation.headers.get('location'), previewArticlePath)
       const previewCookie = invitation.headers.get('set-cookie')?.split(';')[0]
       assert.match(previewCookie || '', /^contentkit_preview=/)
-      const previewArticlePath = '/previews/local-release-review/de/blog/lokaler-e2e-beitrag/'
+      const invitationBase = new URL(preview.invitation_url)
+      invitationBase.search = ''
       const targetedInvitation = await fetch(
-        `${preview.invitation_url}?return_to=${encodeURIComponent(previewArticlePath)}`,
+        `${invitationBase}?return_to=${encodeURIComponent(previewArticlePath)}`,
         { redirect: 'manual' },
       )
       assert.equal(targetedInvitation.status, 303)
@@ -458,7 +466,7 @@ Markdown rein, veröffentlichte HTML-Seite raus.
         redirect: 'manual',
       })
       assert.equal(repeatedInvitation.status, 303)
-      assert.equal(repeatedInvitation.headers.get('location'), '/previews/local-release-review/')
+      assert.equal(repeatedInvitation.headers.get('location'), previewArticlePath)
       const legacyPreview = await fetch(`${origin}/p/legacy-token/de/blog/lokaler-e2e-beitrag/`)
       assert.equal(legacyPreview.status, 404)
       const previewPage = await fetch(`${preview.preview_url}de/blog/lokaler-e2e-beitrag/`, {
