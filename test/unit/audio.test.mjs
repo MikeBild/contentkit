@@ -319,6 +319,26 @@ test('a finished job schedules one debounced auto-rebuild with empty revision_id
   worker.stop()
 })
 
+test('an audio rebuild deferred by an exact preview is retried instead of lost', async () => {
+  const { worker } = fixture({ workerConfig: { ...config, audioRebuildDebounceMs: 10 } })
+  const attempts = []
+  worker.setPublisher(async (input) => {
+    attempts.push(input)
+    if (attempts.length === 1) {
+      throw Object.assign(new Error('derived release deferred: exact preview review is active'), {
+        previewProtected: true,
+      })
+    }
+    return { active: true }
+  })
+  await worker.enqueueAudioJobs({ siteId: 'site-1', revisionIds: ['rev-1'] })
+  await worker.tick()
+  await sleep(80)
+  assert.equal(attempts.length, 2, 'the protected attempt must be retried after the debounce window')
+  assert.deepEqual(attempts[1], { siteId: 'site-1', revisionIds: [], reason: 'audio auto-rebuild' })
+  worker.stop()
+})
+
 test('a burst of completed jobs collapses into a single rebuild per site', async () => {
   const { db, worker } = fixture({ workerConfig: { ...config, audioRebuildDebounceMs: 10 } })
   db.tables.ck_content_items.push({ id: 'item-2', site_id: 'site-1', kind: 'post', published_revision_id: 'rev-2' })

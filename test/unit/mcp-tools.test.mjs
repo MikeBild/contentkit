@@ -34,6 +34,57 @@ test('every tool inputSchema root is a flat object so strict clients accept the 
     'unpublish',
   ])
   assert.equal(publish.inputSchema.properties.manifest_sha256.pattern, '^[0-9a-f]{64}$')
+  assert.ok(publish.inputSchema.properties.retire_item_ids)
+  assert.match(publish.inputSchema.properties.retire_item_ids.description, /remove from the preview or live site/i)
+  assert.equal(publish.inputSchema.properties.item_ids, undefined)
+})
+
+test('MCP publishing names retirement explicitly while accepting the hidden legacy alias', async () => {
+  const tool = findTool(principal(['release:write']), 'contentkit_publish')
+  const calls = []
+  const deps = {
+    repo: {
+      async getSite() {
+        return { id: 'site-1', name: 'Site' }
+      },
+    },
+    auth: { authorize: () => true },
+    releases: {
+      async preview(input) {
+        calls.push(input)
+        return { release_id: `release-${calls.length}` }
+      },
+    },
+    audit: { async record() {} },
+  }
+  const retiredId = '11111111-1111-4111-8111-111111111111'
+  const preferred = tool.schema.parse({
+    action: 'preview',
+    site: 'site-1',
+    retire_item_ids: [retiredId],
+  })
+  await tool.execute(deps, principal(['release:write']), preferred, {})
+
+  const legacy = tool.schema.parse({
+    action: 'preview',
+    site: 'site-1',
+    item_ids: [retiredId],
+  })
+  await tool.execute(deps, principal(['release:write']), legacy, {})
+
+  assert.deepEqual(
+    calls.map((call) => call.retireItemIds),
+    [[retiredId], [retiredId]],
+  )
+  assert.equal(
+    tool.schema.safeParse({
+      action: 'preview',
+      site: 'site-1',
+      retire_item_ids: [retiredId],
+      item_ids: [retiredId],
+    }).success,
+    false,
+  )
 })
 
 test('MCP preview promotion confirms and forwards the exact immutable binding', async () => {

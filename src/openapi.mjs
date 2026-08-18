@@ -3165,11 +3165,25 @@ export function openApi(config) {
                       revision_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
                       retire_item_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
                       preview_url: { type: 'string', format: 'uri' },
+                      review_targets: {
+                        type: 'array',
+                        description:
+                          'Changed documents in requested revision order. The generated invitation enters the first target instead of the site home page.',
+                        items: {
+                          type: 'object',
+                          required: ['revision_id', 'title', 'preview_url'],
+                          properties: {
+                            revision_id: { type: 'string', format: 'uuid' },
+                            title: { type: 'string' },
+                            preview_url: { type: 'string', format: 'uri' },
+                          },
+                        },
+                      },
                       invitation_url: {
                         type: 'string',
                         format: 'uri',
                         description:
-                          'Secret expiring URL. It remains reusable until expiry, revocation or replacement; distribute it only to intended reviewers.',
+                          'Secret expiring URL. It enters the first changed document when available and remains reusable until expiry, revocation or replacement; distribute it only to intended reviewers.',
                       },
                       expires_in: { type: 'integer' },
                     },

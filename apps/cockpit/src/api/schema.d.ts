@@ -5936,9 +5936,17 @@ export interface operations {
                         retire_item_ids: string[];
                         /** Format: uri */
                         preview_url: string;
+                        /** @description Changed documents in requested revision order. The generated invitation enters the first target instead of the site home page. */
+                        review_targets?: {
+                            /** Format: uuid */
+                            revision_id: string;
+                            title: string;
+                            /** Format: uri */
+                            preview_url: string;
+                        }[];
                         /**
                          * Format: uri
-                         * @description Secret expiring URL. It remains reusable until expiry, revocation or replacement; distribute it only to intended reviewers.
+                         * @description Secret expiring URL. It enters the first changed document when available and remains reusable until expiry, revocation or replacement; distribute it only to intended reviewers.
                          */
                         invitation_url: string;
                         expires_in: number;

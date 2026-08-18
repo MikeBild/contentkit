@@ -74,6 +74,15 @@ function flattenUnionSchema(schema) {
 }
 
 function tool(definition) {
+  const inputSchema = flattenUnionSchema(toJsonSchemaCompat(definition.schema, { target: 'draft-2020-12' }))
+  // A renamed input may remain accepted at runtime for saved MCP workflows
+  // without advertising the ambiguous legacy name to new agents.
+  for (const property of definition.hiddenInputProperties || []) {
+    delete inputSchema.properties?.[property]
+    if (Array.isArray(inputSchema.required)) {
+      inputSchema.required = inputSchema.required.filter((name) => name !== property)
+    }
+  }
   return {
     annotations: {
       readOnlyHint: false,
@@ -83,7 +92,7 @@ function tool(definition) {
       ...definition.annotations,
     },
     ...definition,
-    inputSchema: flattenUnionSchema(toJsonSchemaCompat(definition.schema, { target: 'draft-2020-12' })),
+    inputSchema,
   }
 }
 
@@ -567,23 +576,46 @@ const TOOLS = [
     description:
       'Lifecycle boundary for immutable releases. Promote/publish/activate/unpublish require a human decision. Native form elicitation is primary; immutable promotion returns an exact ContentKit Cockpit review link when the calling client cannot render a live form.',
     scopes: ['release:preview', 'release:write'],
-    schema: z.object({
-      action: z.enum(['preview', 'promote', 'publish', 'activate', 'unpublish']),
-      site: siteRef,
-      revision_ids: z.array(uuid).max(200).default([]),
-      item_ids: z.array(uuid).max(200).default([]),
-      release_id: uuid.optional(),
-      manifest_sha256: z
-        .string()
-        .regex(/^[0-9a-f]{64}$/)
-        .optional(),
-      reason: z.string().max(500).default('MCP operation'),
-      preview_slug: z.string().max(80).optional(),
-      expires_in: z.number().int().min(60).max(604800).default(3600),
-      idempotency_key: z.string().min(8).max(128).optional(),
-    }),
+    schema: z
+      .object({
+        action: z.enum(['preview', 'promote', 'publish', 'activate', 'unpublish']),
+        site: siteRef,
+        revision_ids: z
+          .array(uuid)
+          .max(200)
+          .default([])
+          .describe('Immutable revision IDs to add or replace for preview/publish. Do not pass content item IDs.'),
+        retire_item_ids: z
+          .array(uuid)
+          .max(200)
+          .default([])
+          .describe('Content item IDs to remove from the preview or live site. Leave empty for additive publication.'),
+        // Backward compatibility for saved workflows authored before the field
+        // was named after its destructive meaning. It is hidden from tools/list.
+        item_ids: z.array(uuid).max(200).optional(),
+        release_id: uuid.optional(),
+        manifest_sha256: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/)
+          .optional(),
+        reason: z.string().max(500).default('MCP operation'),
+        preview_slug: z.string().max(80).optional(),
+        expires_in: z.number().int().min(60).max(604800).default(3600),
+        idempotency_key: z.string().min(8).max(128).optional(),
+      })
+      .superRefine((input, context) => {
+        if (input.item_ids !== undefined && input.retire_item_ids.length > 0) {
+          context.addIssue({
+            code: 'custom',
+            path: ['retire_item_ids'],
+            message: 'Use retire_item_ids only; do not combine it with the deprecated item_ids alias.',
+          })
+        }
+      }),
+    hiddenInputProperties: ['item_ids'],
     annotations: { destructiveHint: true },
     async execute(deps, principal, input, context) {
+      const retireItemIds = input.retire_item_ids?.length > 0 ? input.retire_item_ids : input.item_ids || []
       const site =
         input.action === 'preview'
           ? await resolveSiteAny(deps, principal, input.site, ['release:preview', 'release:write'])
@@ -592,7 +624,7 @@ const TOOLS = [
         const result = await deps.releases.preview({
           siteId: site.id,
           revisionIds: input.revision_ids,
-          retireItemIds: input.item_ids,
+          retireItemIds,
           expiresIn: input.expires_in,
           previewSlug: input.preview_slug,
           reason: input.reason,
@@ -693,7 +725,7 @@ const TOOLS = [
           : input.action === 'activate'
             ? `Activate release ${input.release_id} for ${site.name}? This changes the live site.`
             : input.action === 'unpublish'
-              ? `Unpublish ${input.item_ids.length} content item(s) from ${site.name}? This changes the live site.`
+              ? `Unpublish ${retireItemIds.length} content item(s) from ${site.name}? This changes the live site.`
               : `Publish ${input.revision_ids.length} revision(s) to ${site.name}? This changes the live site.`
       await confirm(context, summary, input.action === 'unpublish' ? 'Unpublish' : 'Change live site')
       if (input.action === 'promote') {
@@ -731,7 +763,7 @@ const TOOLS = [
         return deps.releases.publish({
           siteId: site.id,
           revisionIds: input.action === 'publish' ? input.revision_ids : [],
-          retireItemIds: input.action === 'unpublish' ? input.item_ids : [],
+          retireItemIds: input.action === 'unpublish' ? retireItemIds : [],
           reason: input.reason,
         })
       }

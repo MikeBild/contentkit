@@ -65,7 +65,14 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
       rebuildTimers.delete(site.id)
       if (!publishRelease) return
       Promise.resolve(publishRelease({ siteId: site.id, revisionIds: [], reason: 'audio auto-rebuild' })).catch(
-        (error) => logger.warn('audio auto-rebuild failed', { siteId: site.id, error: String(error.message || error) }),
+        (error) => {
+          if (error?.previewProtected) {
+            logger.info('audio auto-rebuild deferred for exact preview review', { siteId: site.id })
+            scheduleRebuild(site)
+            return
+          }
+          logger.warn('audio auto-rebuild failed', { siteId: site.id, error: String(error.message || error) })
+        },
       )
     }, config.audioRebuildDebounceMs ?? 60000)
     handle.unref?.()

@@ -378,7 +378,9 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           })
         } catch (error) {
           // Another publish activated between our snapshot and this activation.
-          if (/stale snapshot/.test(String(error.message || error))) error.stalePublish = true
+          const message = String(error.message || error)
+          if (/stale snapshot/.test(message)) error.staleSnapshot = true
+          if (/derived release deferred: exact preview review is active/.test(message)) error.previewProtected = true
           throw error
         }
       }
@@ -400,19 +402,24 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
         const slug = normalizePreviewSlug(previewSlug)
         const token = randomBytes(32).toString('base64url')
         const effectiveExpiresIn = Math.max(60, Math.min(Number(expiresIn) || 3600, 7 * 86400))
-        await db.insert(
-          'ck_preview_access',
-          {
-            release_id: releaseId,
-            slug,
-            invite_token_hash: sha256(`${config.previewSecret}:invite:${token}`),
-            expires_at: new Date(Date.now() + effectiveExpiresIn * 1000).toISOString(),
-            consumed_at: null,
-            session_token_hash: null,
-            revoked_at: null,
-          },
-          { upsert: true, onConflict: 'slug' },
-        )
+        const expiresAt = new Date(Date.now() + effectiveExpiresIn * 1000).toISOString()
+        try {
+          // Registration and a derived release activation take the same site
+          // lock. Whichever arrives second observes the first: a preview is
+          // either current and protected, or retried from a fresh snapshot.
+          await db.tx((tx) =>
+            tx.rpc('ck_register_preview_access', {
+              p_release_id: releaseId,
+              p_slug: slug,
+              p_invite_token_hash: sha256(`${config.previewSecret}:invite:${token}`),
+              p_expires_at: expiresAt,
+              p_expected_epoch: snapshot.site.publish_epoch ?? 0,
+            }),
+          )
+        } catch (error) {
+          if (/stale snapshot/.test(String(error.message || error))) error.staleSnapshot = true
+          throw error
+        }
         if (deckCount) {
           await db.insert(
             'ck_deck_build_events',
@@ -432,14 +439,34 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
             { returning: false },
           )
         }
+        const previewRoot = `/previews/${slug}/`
+        const contentByRevisionId = new Map(built.content.map((item) => [item.id, item]))
+        const reviewTargets = revisionIds.flatMap((revisionId) => {
+          const item = contentByRevisionId.get(revisionId)
+          if (!item?.url) return []
+          const publishedPath = new URL(item.url, config.publicUrl).pathname
+          const previewPath = `/previews/${slug}${publishedPath}`
+          return [
+            {
+              revision_id: revisionId,
+              title: item.title,
+              preview_url: `${config.publicUrl}${previewPath}`,
+            },
+          ]
+        })
+        const invitationBase = `${config.publicUrl}/preview-invitations/${token}`
+        const invitationUrl = reviewTargets[0]
+          ? `${invitationBase}?return_to=${encodeURIComponent(new URL(reviewTargets[0].preview_url).pathname)}`
+          : invitationBase
         return {
           release_id: releaseId,
           manifest_sha256: manifestSha256,
           base_publish_epoch: snapshot.site.publish_epoch ?? 0,
           revision_ids: revisionIds,
           retire_item_ids: retireItemIds,
-          preview_url: `${config.publicUrl}/previews/${slug}/`,
-          invitation_url: `${config.publicUrl}/preview-invitations/${token}`,
+          preview_url: `${config.publicUrl}${previewRoot}`,
+          invitation_url: invitationUrl,
+          review_targets: reviewTargets,
           expires_in: effectiveExpiresIn,
         }
       }
@@ -474,9 +501,10 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
           await storage.remove(uploadedPaths.slice(i, i + 100)).catch(() => {})
         }
       }
-      if (error?.stalePublish) {
-        // Not a real failure — a concurrent publish won the race. Discard this
-        // attempt quietly (publish() retries) and do NOT emit release.failed.
+      if (error?.staleSnapshot || error?.previewProtected) {
+        // Neither is a failed release: a concurrent publication won the epoch,
+        // or a derived rebuild yielded to a live exact-review lock. Discard the
+        // attempt quietly and do NOT emit release.failed.
         if (db.remove) await db.remove('ck_releases', { id: `eq.${releaseId}` }).catch(() => {})
         throw error
       }
@@ -525,9 +553,21 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     try {
       return await build({ ...input, kind: 'release' })
     } catch (error) {
-      if (error?.stalePublish && attempt < 1) {
+      if (error?.staleSnapshot && attempt < 1) {
         logger.warn?.('publish retrying after stale snapshot', { siteId: input.siteId })
         return publish(input, attempt + 1)
+      }
+      throw error
+    }
+  }
+
+  async function preview(input, attempt = 0) {
+    try {
+      return await build({ ...input, previewSlug: normalizePreviewSlug(input.previewSlug), kind: 'preview' })
+    } catch (error) {
+      if (error?.staleSnapshot && attempt < 1) {
+        logger.warn?.('preview retrying after stale snapshot', { siteId: input.siteId })
+        return preview(input, attempt + 1)
       }
       throw error
     }
@@ -540,8 +580,7 @@ export function createReleaseManager(config, repo, db, storage, logger, hooks = 
     // immediately instead of waiting out the idle timer.
     stop: () => builder.close?.(),
     publish,
-    preview: async (input) =>
-      build({ ...input, previewSlug: normalizePreviewSlug(input.previewSlug), kind: 'preview' }),
+    preview,
     async promote({ siteId, releaseId, manifestSha256, onActivated }) {
       if (typeof manifestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(manifestSha256)) {
         throw Object.assign(new Error('manifest_sha256 must be a lowercase SHA-256 digest'), { statusCode: 422 })

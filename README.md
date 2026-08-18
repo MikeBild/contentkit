@@ -281,8 +281,9 @@ curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases" \
 
 The preview response separates access from navigation. Send the expiring
 `invitation_url` to the reviewer. Opening it creates a path-scoped HttpOnly
-session and redirects immediately to the memorable `preview_url`, for example
-`/previews/article-review/`. The invitation can be opened again until it
+session and, when the preview changes content, redirects immediately to the
+first entry in `review_targets`; an empty overlay falls back to the memorable
+`preview_url`, for example `/previews/article-review/`. The invitation can be opened again until it
 expires, is revoked or is replaced by a newer preview with the same slug.
 To open a specific page after establishing the session, append a URL-encoded
 `return_to` path inside that exact preview, for example

@@ -83,6 +83,13 @@ Secrets must never be requested through form elicitation. Creating an API key or
 
 Draft ingest and read-only calls do not require confirmation. Preview is isolated, expiring and non-live, so it can be built directly. Publish/activate/unpublish accept bounded idempotency keys to prevent duplicate live operations.
 
+`contentkit_publish.revision_ids` contains immutable revision IDs to add or
+replace. `retire_item_ids` contains content item IDs to remove and stays empty
+for an additive preview or publication. The older ambiguous `item_ids` spelling
+is accepted only as a hidden compatibility alias for saved workflows; it is no
+longer advertised to new MCP clients, and it cannot be combined with
+`retire_item_ids`.
+
 ## Resources and prompts
 
 The server exposes code-versioned resources:

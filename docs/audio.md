@@ -39,7 +39,10 @@ publish release ──▶ ck_audio_jobs row (pending)
    results in one release, not one per post. Opt out with
    `settings.audio.auto_rebuild: false` and publish manually instead. There is
    no feedback loop: the enqueue hook only fires for releases that carry
-   revisions, and auto-rebuilds never do.
+   revisions, and auto-rebuilds never do. A current exact preview temporarily
+   holds derived activation at the database boundary; the worker retries after
+   promotion, rejection or expiry. Authored releases remain free to advance the
+   site and intentionally invalidate an older review.
 
 ## Site settings
 

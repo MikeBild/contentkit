@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.26.1 — 2026-08-18
+
+### Fixed
+
+- Rename the advertised `contentkit_publish` retirement input from ambiguous
+  `item_ids` to `retire_item_ids`, describe its destructive meaning in the MCP
+  schema, and keep the old spelling as a hidden compatibility alias for saved
+  workflows. Supplying both names is rejected.
+- Serialize exact-preview registration with release activation so a preview
+  cannot be returned already stale, and defer/retry derived audio rebuilds
+  while a current human review is open.
+- Point generated batch invitations at the first changed document and return
+  every changed document as an ordered `review_targets` entry instead of
+  dropping reviewers on the site home page.
+
 ## 4.25.0 — 2026-08-16
 
 ### Changed

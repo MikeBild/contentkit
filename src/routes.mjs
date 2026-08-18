@@ -1721,6 +1721,15 @@ export function createRequestHandler(ctx) {
           { id: `eq.${review.id}` },
           { status: 'rejected', reason, decided_at: now },
         )
+        // Rejection closes the exact-review window. Derived releases such as
+        // audio rebuilds may proceed again instead of waiting for the preview's
+        // original expiry time.
+        await tx.update(
+          'ck_preview_access',
+          { release_id: `eq.${review.release_id}`, revoked_at: 'is.null' },
+          { revoked_at: now },
+          { returning: false },
+        )
         await decideSource(tx, {
           siteId: site.id,
           kind: 'promotion',

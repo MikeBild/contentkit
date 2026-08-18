@@ -29,7 +29,7 @@ function makeSnapshot(overrides = {}) {
   }
 }
 
-function makeDb({ rpcError, selectRows = {} } = {}) {
+function makeDb({ rpcError, rpcErrorMessage = 'activation failed: stale snapshot', selectRows = {} } = {}) {
   let rpcFailures = rpcError ? 1 : 0
   const calls = { inserts: [], updates: [], rpcs: [], removed: [], selects: [] }
   return {
@@ -50,7 +50,7 @@ function makeDb({ rpcError, selectRows = {} } = {}) {
       calls.rpcs.push({ name, params })
       if (rpcFailures > 0) {
         rpcFailures--
-        throw new Error('activation failed: stale snapshot')
+        throw new Error(rpcErrorMessage)
       }
       return []
     },
@@ -193,13 +193,74 @@ test('preview returns a named URL plus an expiring invitation and stores only ha
   assert.deepEqual(result.revision_ids, [])
   assert.deepEqual(result.retire_item_ids, [])
   assert.match(result.invitation_url, new RegExp(`^${config.publicUrl}/preview-invitations/[A-Za-z0-9_-]+$`))
-  const token = result.invitation_url.split('/').at(-1)
-  const stored = db.calls.inserts.find((call) => call.table === 'ck_preview_access')
-  assert.equal(stored.body.slug, 'release-review')
-  assert.match(stored.body.invite_token_hash, /^[0-9a-f]{64}$/)
-  assert.ok(!stored.body.invite_token_hash.includes(token), 'raw invitation token must never be stored')
+  const token = new URL(result.invitation_url).pathname.split('/').at(-1)
+  const registration = db.calls.rpcs.find((call) => call.name === 'ck_register_preview_access')
+  assert.equal(registration.params.p_slug, 'release-review')
+  assert.equal(registration.params.p_expected_epoch, 3)
+  assert.match(registration.params.p_invite_token_hash, /^[0-9a-f]{64}$/)
+  assert.ok(!registration.params.p_invite_token_hash.includes(token), 'raw invitation token must never be stored')
   const noActivation = db.calls.rpcs.every((call) => call.name !== 'ck_activate_release')
   assert.ok(noActivation, 'previews must not activate a release')
+})
+
+test('preview retries registration from a fresh snapshot after a concurrent activation', async () => {
+  const db = makeDb({ rpcError: true })
+  const repo = makeRepo()
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  const result = await releases.preview({ siteId: 'site-1', revisionIds: [], previewSlug: 'retry-review' })
+  assert.equal(result.base_publish_epoch, 3)
+  assert.equal(repo.snapshots, 2, 'a stale preview must be rebuilt from a fresh snapshot')
+  assert.equal(db.calls.removed.length, 1, 'the stale preview release must be discarded')
+  assert.equal(repo.outbox.length, 0, 'a registration race is not a release failure')
+})
+
+test('derived release protection is deferred without a failure event', async () => {
+  const db = makeDb({
+    rpcError: true,
+    rpcErrorMessage: 'derived release deferred: exact preview review is active',
+  })
+  const repo = makeRepo()
+  const releases = createReleaseManager(config, repo, db, makeStorage(), logger)
+
+  await assert.rejects(
+    () => releases.publish({ siteId: 'site-1', revisionIds: [], reason: 'audio auto-rebuild' }),
+    (error) => error.previewProtected === true,
+  )
+  assert.equal(db.calls.removed.length, 1)
+  assert.equal(repo.outbox.length, 0)
+})
+
+test('generated batch invitation enters the first changed article and exposes every review target', async () => {
+  const revisionIds = ['rev-1', 'rev-2']
+  const snapshot = makeSnapshot({
+    revisions: revisionIds.map((id) => ({ id })),
+    overlay: revisionIds.map((id) => ({ id })),
+  })
+  const builder = makeBuilder(
+    [],
+    [
+      { id: 'rev-2', title: 'Zweiter Artikel', url: '/de/blog/zweiter-artikel/' },
+      { id: 'rev-1', title: 'Erster Artikel', url: '/de/blog/erster-artikel/' },
+    ],
+  )
+  const releases = createReleaseManager(config, makeRepo(snapshot), makeDb(), makeStorage(), logger, {
+    buildRunner: builder,
+  })
+
+  const result = await releases.preview({ siteId: 'site-1', revisionIds, previewSlug: 'batch-review' })
+  assert.equal(
+    new URL(result.invitation_url).searchParams.get('return_to'),
+    '/previews/batch-review/de/blog/erster-artikel/',
+  )
+  assert.deepEqual(
+    result.review_targets.map((target) => [target.revision_id, target.preview_url]),
+    [
+      ['rev-1', `${config.publicUrl}/previews/batch-review/de/blog/erster-artikel/`],
+      ['rev-2', `${config.publicUrl}/previews/batch-review/de/blog/zweiter-artikel/`],
+    ],
+    'targets preserve the requested revision order, not the site render order',
+  )
 })
 
 test('release manifest digest is canonical and changes with rendered bytes', () => {
@@ -535,10 +596,10 @@ test('a stale-epoch first attempt enqueues nothing; only the retry attempt emits
 
 // A controlled builder via the buildRunner hook: exact bytes in, so dedup
 // matches are deterministic instead of depending on real build output.
-function makeBuilder(files) {
+function makeBuilder(files, content = []) {
   return {
     async build() {
-      return { files: new Map(files), content: [], accessEntries: [], accessCatalog: [] }
+      return { files: new Map(files), content, accessEntries: [], accessCatalog: [] }
     },
     async close() {},
   }

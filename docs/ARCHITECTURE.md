@@ -39,6 +39,14 @@ build, the publication boundary. Deck pointer changes remain excluded from
 promotion until their source-addressed event metadata can be preserved without
 rerendering.
 
+Preview registration and activation serialize on the same site row. A preview
+therefore cannot become stale between its final render and invitation creation.
+While a non-expired exact preview exists at the current epoch, derived
+`audio auto-rebuild` releases yield and retry after the review closes; authored
+publications still take precedence and correctly make the preview stale. This
+keeps generated audio from invalidating a human content review without weakening
+the optimistic-concurrency boundary for real editorial changes.
+
 The read API (`GET /v1/sites/{site}/published` and
 `.../published/{kind}/{locale}/{slug}`) exposes the same published state as
 JSON. It lives on the management API behind `content:read` scoped keys —

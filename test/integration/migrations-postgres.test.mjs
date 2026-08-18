@@ -181,3 +181,93 @@ test(
     }
   },
 )
+
+test(
+  'exact preview registration and derived activation share one concurrency boundary',
+  {
+    skip: databaseUrl ? false : 'CONTENTKIT_TEST_DATABASE_URL is not set',
+    timeout: 30000,
+  },
+  async () => {
+    await waitForDatabase(databaseUrl)
+    await runMigrations({ databaseUrl }, logger)
+    const pool = new pg.Pool({ connectionString: databaseUrl })
+    let site
+    try {
+      const suffix = randomUUID().slice(0, 8)
+      site = (
+        await pool.query(
+          "insert into ck_sites (slug, name, base_url, default_locale) values ($1,'Review lock',$2,'de') returning id, publish_epoch",
+          [`review-lock-${suffix}`, `https://review-lock-${suffix}.test`],
+        )
+      ).rows[0]
+
+      // A normal authored release is allowed to win. Registration of a preview
+      // built against the old epoch must then fail instead of creating an
+      // immediately stale invitation.
+      const stalePreview = (
+        await pool.query(
+          "insert into ck_releases (site_id, kind, status, base_publish_epoch) values ($1,'preview','preview',$2) returning id",
+          [site.id, site.publish_epoch],
+        )
+      ).rows[0]
+      const authored = (
+        await pool.query(
+          "insert into ck_releases (site_id, kind, status, reason, base_publish_epoch) values ($1,'release','ready','authored',$2) returning id",
+          [site.id, site.publish_epoch],
+        )
+      ).rows[0]
+      await pool.query('select ck_activate_release($1, $2, $3, $4)', [authored.id, [], [], site.publish_epoch])
+      await assert.rejects(
+        pool.query("select ck_register_preview_access($1,$2,$3,now()+interval '1 hour',$4)", [
+          stalePreview.id,
+          `stale-${suffix}`,
+          `stale-hash-${suffix}`,
+          site.publish_epoch,
+        ]),
+        /stale snapshot/,
+      )
+
+      const currentEpoch = Number(
+        (await pool.query('select publish_epoch from ck_sites where id=$1', [site.id])).rows[0].publish_epoch,
+      )
+      const protectedPreview = (
+        await pool.query(
+          "insert into ck_releases (site_id, kind, status, base_publish_epoch) values ($1,'preview','preview',$2) returning id",
+          [site.id, currentEpoch],
+        )
+      ).rows[0]
+      await pool.query("select ck_register_preview_access($1,$2,$3,now()+interval '1 hour',$4)", [
+        protectedPreview.id,
+        `protected-${suffix}`,
+        `protected-hash-${suffix}`,
+        currentEpoch,
+      ])
+      const derived = (
+        await pool.query(
+          "insert into ck_releases (site_id, kind, status, reason, base_publish_epoch) values ($1,'release','ready','audio auto-rebuild',$2) returning id",
+          [site.id, currentEpoch],
+        )
+      ).rows[0]
+
+      await assert.rejects(
+        pool.query('select ck_activate_release($1, $2, $3, $4)', [derived.id, [], [], currentEpoch]),
+        /derived release deferred: exact preview review is active/,
+      )
+      const unchangedEpoch = Number(
+        (await pool.query('select publish_epoch from ck_sites where id=$1', [site.id])).rows[0].publish_epoch,
+      )
+      assert.equal(unchangedEpoch, currentEpoch, 'a deferred derived release must not move the site pointer')
+
+      await pool.query('update ck_preview_access set revoked_at=now() where release_id=$1', [protectedPreview.id])
+      await pool.query('select ck_activate_release($1, $2, $3, $4)', [derived.id, [], [], currentEpoch])
+      const advancedEpoch = Number(
+        (await pool.query('select publish_epoch from ck_sites where id=$1', [site.id])).rows[0].publish_epoch,
+      )
+      assert.equal(advancedEpoch, currentEpoch + 1, 'the derived release proceeds after review closure')
+    } finally {
+      if (site) await pool.query('DELETE FROM ck_sites WHERE id=$1', [site.id]).catch(() => {})
+      await pool.end()
+    }
+  },
+)

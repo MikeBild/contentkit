@@ -1200,12 +1200,13 @@ Preview details:
 - uploads complete static output under an immutable release prefix;
 - requires a human-readable, globally addressed `slug` of 3–80 lowercase
   letters, numbers or hyphens; reusing the slug replaces its previous preview;
-- returns an expiring `invitation_url` and a memorable `preview_url` under
-  `/previews/{slug}/`;
+- returns an expiring `invitation_url`, a memorable `preview_url` under
+  `/previews/{slug}/`, and ordered `review_targets` for changed documents;
 - stores hashes for invitation and legacy session tokens; raw secrets are never
   stored;
 - opens the invitation without a confirmation page, sets a path-scoped HttpOnly
-  cookie and redirects directly to the clean preview URL;
+  cookie and redirects to the first changed document when one exists instead of
+  dropping a batch reviewer on the site home page;
 - keeps the invitation usable until expiry, revocation or replacement by a
   newer preview with the same slug, so a first request cannot destroy the link;
 - caps expiration at seven days internally;
@@ -1227,8 +1228,12 @@ retained as the human-readable review address.
 
 The preview response also binds the exact snapshot through `release_id`,
 `manifest_sha256`, `base_publish_epoch`, `revision_ids` and
-`retire_item_ids`. After review, promote those already-rendered bytes without a
-second build:
+`retire_item_ids`. Registration shares the site's activation lock: a preview is
+either current when its invitation is returned or is rebuilt from a fresh
+snapshot. A current exact review defers derived audio auto-rebuilds, which retry
+after promotion, rejection or expiry; authored releases still invalidate the
+review. After review, promote those already-rendered bytes without a second
+build:
 
 ```bash
 curl -X POST "$CONTENTKIT_URL/v1/sites/<site-id>/releases/<preview-release-id>/promote" \
