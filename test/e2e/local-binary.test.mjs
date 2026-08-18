@@ -451,10 +451,9 @@ Markdown rein, veröffentlichte HTML-Seite raus.
       assert.match(previewCookie || '', /^contentkit_preview=/)
       const invitationBase = new URL(preview.invitation_url)
       invitationBase.search = ''
-      const targetedInvitation = await fetch(
-        `${invitationBase}?return_to=${encodeURIComponent(previewArticlePath)}`,
-        { redirect: 'manual' },
-      )
+      const targetedInvitation = await fetch(`${invitationBase}?return_to=${encodeURIComponent(previewArticlePath)}`, {
+        redirect: 'manual',
+      })
       assert.equal(targetedInvitation.status, 303)
       assert.equal(targetedInvitation.headers.get('location'), previewArticlePath)
       const previewRoot = await fetch(preview.preview_url, {
