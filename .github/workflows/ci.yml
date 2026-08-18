@@ -117,7 +117,12 @@ jobs:
       - run: npm ci
       # The only CI job that needs a browser binary. The three site validators in
       # `validate:visuals` need one too and run nowhere but a developer's machine.
-      - run: npx playwright install --with-deps chromium
+      # The hosted runner already carries the system libraries needed to launch
+      # Chromium. Installing them again makes this product gate depend on a
+      # live Ubuntu mirror before the browser test can even start (and has hung
+      # until the job timeout). Install the pinned browser only; the real launch
+      # below remains the authoritative dependency and behaviour check.
+      - run: npx playwright install chromium
       # assets/cockpit is gitignored build output, and the suite refuses to run
       # without it rather than validating a stale bundle. build-cockpit.sh
       # installs apps/cockpit's own dependencies if they are missing.
