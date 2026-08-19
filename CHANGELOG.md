@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.26.2 — 2026-08-19
+
+### Fixed
+
+- Stop retrying an upstream failure a retry cannot fix. A shared policy now
+  classifies by status: 4xx is terminal at once, except 408 and 429, and a
+  failure carrying no status stays retryable. Text-to-speech threw a bare
+  `Error` with the status only interpolated into the message, so four
+  narrations that answered `400 … sentences that are too long` were each sent
+  five times — about 195 000 characters billed for an outcome that could not
+  change. Webhook delivery had the same defect while already recording
+  `response_status`, and now shares the policy.
+- Read Markdown tables aloud as sentences. Headings and list items already
+  received a terminal stop; table rows did not, so the pipes survived, rows
+  joined on a single newline, and a whole table reached the provider as one
+  unpunctuated paragraph — the source of the 400 above.
+- Split on sentence length, not only chunk size. `chunkText` descended to
+  sentences only once a paragraph passed the chunk budget, but the provider
+  bounds the sentence; a 3000-byte unpunctuated run inside a 3800-byte budget
+  was passed through untouched. Hard-split fragments are now emitted alone,
+  because packing two of them behind a blank line rebuilds the very sentence
+  being avoided.
+- Arm the site-build timeout. `releases.mjs` read `config.buildTimeoutMs` and
+  `build-runner.mjs` enforces it by terminating the worker thread, but the
+  option did not exist, so it resolved to `0` and the enforcement never armed.
+  Build concurrency is 1 and the permit is held for the whole build, so a
+  client that gave up left the build running and the only permit taken.
+
 ## 4.26.1 — 2026-08-18
 
 ### Fixed
