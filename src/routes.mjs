@@ -315,8 +315,29 @@ export function validateNarrativePlan(value) {
 // probe them over the loopback or a pod IP, so the Host header never matches
 // publicUrl. Gating them would keep readiness permanently down. They also must
 // not depend on a database lookup, which rules out resolving the host to a site.
+/**
+ * The hostname out of a Host header, port removed, in the same spelling
+ * `new URL(...).hostname` produces — so the two can be compared at all.
+ *
+ * Not `split(':')[0]`: that is right for `example.com:4050` and wrong for every
+ * IPv6 literal. `::1` becomes the empty string and `[::1]:4050` becomes `[`.
+ * And WHATWG URL keeps the brackets (`[::1]`), so an address has to come back
+ * bracketed here too or the comparison fails on both spellings at once.
+ */
+function hostnameOf(header) {
+  const raw = String(header || '').trim()
+  if (raw.startsWith('[')) {
+    const close = raw.indexOf(']')
+    return close === -1 ? raw : raw.slice(0, close + 1)
+  }
+  // More than one colon and no brackets: a bare IPv6 address, which carries no
+  // port and which URL would render bracketed.
+  if ((raw.match(/:/g) || []).length > 1) return `[${raw}]`
+  return raw.split(':')[0]
+}
+
 export function isApiHost(req, config) {
-  return (req.headers.host || '').split(':')[0] === new URL(config.publicUrl).hostname
+  return hostnameOf(req.headers.host) === new URL(config.publicUrl).hostname
 }
 
 // The shared admin rules in oauth/policy.mjs throw; the MCP surface lets those
