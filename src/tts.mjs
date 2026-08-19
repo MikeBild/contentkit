@@ -12,11 +12,20 @@ const SAMPLE_RATE = 24000 // LINEAR16 mono, 16-bit → 48000 bytes per second
 // Google caps synthesize input at 5000 bytes; 3800 leaves headroom for the
 // JSON envelope and multi-byte characters that sit on a chunk boundary.
 const MAX_CHUNK_BYTES = 3800
-// A chunk may be 3800 bytes and still be refused: Chirp 3 HD bounds the SENTENCE,
-// not the request, and answers `400 … sentences that are too long`. The number
-// is empirical rather than documented — it is well under anything a narrator
-// would say in one breath, so it costs nothing to stay below it.
-const MAX_SENTENCE_BYTES = 900
+// A chunk may be 3800 bytes and still be refused: Chirp 3 HD bounds the
+// SENTENCE, not the request, and answers `400 … sentences that are too long`.
+//
+// The provider does not document the bound, so it is bracketed from production
+// instead: the largest sentence in a narration that SUCCEEDED is 423 bytes, and
+// the smallest one that FAILED is 702 — a Markdown table that reached the
+// provider as a single unpunctuated run. The true limit is somewhere in
+// between and only the lower end is evidence, so the cap sits just under the
+// known-good ceiling rather than in the untested band.
+//
+// Splitting a sentence that would have been accepted costs one extra request
+// and a pause the listener cannot hear. Not splitting one that is refused
+// costs the whole narration, five times over.
+const MAX_SENTENCE_BYTES = 420
 
 const utf8Bytes = (value) => Buffer.byteLength(value, 'utf8')
 

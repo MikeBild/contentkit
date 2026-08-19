@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.26.3 — 2026-08-19
+
+### Fixed
+
+- Calibrate the text-to-speech sentence cap against production instead of a
+  guess. 4.26.2 introduced it at 900 bytes, described as empirical; it was not.
+  Bracketing the four narrations that failed against the ones that succeeded
+  puts the provider's undocumented bound between 423 bytes (largest sentence in
+  a narration that worked) and 702 (the Markdown table that answered
+  `400 … sentences that are too long`). The cap now sits at 420, just under the
+  known-good ceiling rather than inside the untested band — a 900-byte cap
+  would not have split that 702-byte table at all.
+
 ## 4.26.2 — 2026-08-19
 
 ### Fixed

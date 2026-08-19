@@ -32,6 +32,20 @@ test('a Markdown table becomes one sentence per row, not one paragraph', () => {
   for (const row of rows) assert.match(row, /\.$/, `row is not a sentence: ${row}`)
 })
 
+test('the exact table that failed in production is now split below the cap', () => {
+  // 702 bytes as one unpunctuated run — the shape that answered 400 five times.
+  const table = [
+    '| Baustein | Verantwortete Daten | Geeignete Schnittstellen | Was dort nicht entschieden wird |',
+    '| --- | --- | --- | --- |',
+    '| WikiKit | Quellen und einzeln prüfbare Aussagen | Lesen, Vorschlagen, Freigeben | Wie ein Beitrag am Ende aussieht |',
+    '| ContentKit | Veröffentlichte Fassungen und Releases | Ingest, Release, Lesen | Woher eine Aussage stammt |',
+  ].join('\n')
+  const { text } = extractSpeechText(doc(table))
+  const longest = Math.max(...text.split(/(?<=[.!?…])\s+/).map((s) => Buffer.byteLength(s, 'utf8')))
+  // Bracketed from production: 423 bytes succeeded, 702 failed.
+  assert.ok(longest <= 420, `longest sentence is ${longest} bytes, above the cap`)
+})
+
 test('a long unpunctuated paragraph under the chunk budget is still split', () => {
   // 2000 bytes: comfortably inside MAX_CHUNK_BYTES, far past what the provider
   // accepts as one sentence. The old shape returned it untouched.
@@ -39,7 +53,7 @@ test('a long unpunctuated paragraph under the chunk budget is still split', () =
   assert.ok(Buffer.byteLength(run, 'utf8') < 3800)
   const chunks = chunkText(run)
   assert.ok(chunks.length > 1, 'expected the run to be split')
-  for (const chunk of chunks) assert.ok(Buffer.byteLength(chunk, 'utf8') <= 900, 'chunk exceeds the sentence cap')
+  for (const chunk of chunks) assert.ok(Buffer.byteLength(chunk, 'utf8') <= 420, 'chunk exceeds the sentence cap')
   // Splitting must not lose words.
   assert.equal(chunks.join(' ').split(/\s+/).length, run.split(/\s+/).length)
 })
