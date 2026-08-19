@@ -35,6 +35,7 @@
     "check:cockpit-api-drift": "npm run cockpit:gen-api && git diff --exit-code -- apps/cockpit/src/api/schema.d.ts",
     "validate:cockpit": "npm run cockpit:build && node scripts/validate-cockpit-browser.mjs",
     "validate:cockpit:browser": "node scripts/validate-cockpit-browser.mjs",
+    "konvention:check": "node scripts/konvention-check.mjs",
     "migrate:reports": "node scripts/migrate-report-compositions.mjs",
     "check:embedded-drift": "node --test test/unit/migrations-bundle.test.mjs",
     "check:docs-drift": "node --test test/unit/docs-drift.test.mjs",
