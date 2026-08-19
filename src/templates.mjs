@@ -44,6 +44,8 @@ const words = {
     allProjects: 'Alle Projekte',
     allDecks: 'Alle Präsentationen',
     published: 'Veröffentlicht',
+    authored: 'Artikel vom',
+    originallyPublished: 'Ursprünglich veröffentlicht',
     updated: 'Aktualisiert',
     searchPlaceholder: 'Website durchsuchen …',
     searchResults: 'Suchergebnisse',
@@ -146,6 +148,8 @@ const words = {
     allProjects: 'All projects',
     allDecks: 'All slide decks',
     published: 'Published',
+    authored: 'Article date',
+    originallyPublished: 'Originally published',
     updated: 'Updated',
     searchPlaceholder: 'Search this site …',
     searchResults: 'Search results',
@@ -235,7 +239,12 @@ const formatDate = (value, locale) => {
   if (!locale) throw new TypeError('formatDate requires an explicit locale')
   return new Date(value).toLocaleDateString(locale, { timeZone: 'UTC' })
 }
-const yearOf = (post) => (post.published_at ? String(post.published_at).slice(0, 4) : '')
+// A post has two independent clocks: its authored/original chronology and the
+// ContentKit release history. Public chronology — lists, archives, audio,
+// feeds and structured data — uses the former. The read API exposes the latter.
+const chronologyDate = (item) =>
+  item.chronology_at || item.originally_published_at || item.authored_at || item.first_published_at || item.published_at
+const yearOf = (post) => (chronologyDate(post) ? String(chronologyDate(post)).slice(0, 4) : '')
 
 // Tag frequency across posts, keyed by slug (the same key the tag pages use), so
 // spellings that slugify alike are counted once. Sorted by count desc, then label.
@@ -384,7 +393,7 @@ function latestReportLink(ctx) {
     .filter((page) => page.layout === 'composition' && page.composition?.format === 'report')
     .sort(
       (left, right) =>
-        compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
+        compareDateDesc(chronologyDate(left), chronologyDate(right)) ||
         String(right.title || '').localeCompare(String(left.title || '')),
     )[0]
   return report ? [ctx.t.latestReport, report.url] : null
@@ -409,7 +418,7 @@ function reportCadenceLabel(t, cadence) {
 
 function reportSort(left, right) {
   return (
-    compareDateDesc(left.published_at || left.updated_at, right.published_at || right.updated_at) ||
+    compareDateDesc(chronologyDate(left), chronologyDate(right)) ||
     cmp(String(right.title || ''), String(left.title || ''))
   )
 }
@@ -481,7 +490,7 @@ function reportDisplayTitle(item, site) {
 function reportCatalogCard(item, t, site) {
   const cadence = reportCadenceLabel(t, item.report_cadence)
   return `<article class="card report-catalog-card"><a href="${escapeHtml(item.url)}">
-<div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div>
+<div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${chronologyDate(item) ? `<time datetime="${escapeHtml(chronologyDate(item))}">${escapeHtml(formatDate(chronologyDate(item), item.locale))}</time>` : ''}</div>
 <h3>${escapeHtml(reportDisplayTitle(item, site))}</h3><p>${escapeHtml(item.narrative?.question || item.summary)}</p>
 </a></article>`
 }
@@ -503,7 +512,7 @@ function reportFeatureCard(item, ctx) {
   const cadence = reportCadenceLabel(ctx.t, item.report_cadence)
   const assessment = item.narrative?.conclusion || item.narrative?.thesis || item.summary
   const action = item.narrative?.action
-  return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${item.published_at ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(formatDate(item.published_at, item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p>${reportPrimaryMetrics(item)}</div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
+  return `<article class="report-feature-card"><div class="report-feature-main"><div class="report-catalog-card-meta"><span class="report-cadence-badge">${escapeHtml(cadence)}</span>${chronologyDate(item) ? `<time datetime="${escapeHtml(chronologyDate(item))}">${escapeHtml(formatDate(chronologyDate(item), item.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(item, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(item.narrative?.question || item.summary)}</p>${reportPrimaryMetrics(item)}</div><div class="report-feature-decision"><div><span>${escapeHtml(ctx.t.reportAssessment)}</span><p>${escapeHtml(assessment)}</p></div>${action ? `<div><span>${escapeHtml(ctx.t.reportNextStep)}</span><p>${escapeHtml(action)}</p></div>` : ''}<a class="button" href="${escapeHtml(item.url)}">${escapeHtml(ctx.t.reportOpen)}</a></div></article>`
 }
 
 function reportCurrentByCadence(reports) {
@@ -524,7 +533,7 @@ function reportSeriesSummary(series, reports, ctx) {
   }
   const assessment = lead.narrative?.conclusion || lead.narrative?.thesis || lead.summary
   const action = lead.narrative?.action
-  return `<article class="card report-catalog-card"><div class="report-catalog-card-meta"><span>${escapeHtml(series.label)}</span><span class="report-cadence-badge">${escapeHtml(reportCadenceLabel(ctx.t, lead.report_cadence))}</span>${lead.published_at ? `<time datetime="${escapeHtml(lead.published_at)}">${escapeHtml(formatDate(lead.published_at, lead.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(lead, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(lead.narrative?.question || lead.summary)}</p>${reportPrimaryMetrics(lead)}<p><strong>${escapeHtml(ctx.t.reportAssessment)}:</strong> ${escapeHtml(assessment)}</p>${action ? `<p><strong>${escapeHtml(ctx.t.reportNextStep)}:</strong> ${escapeHtml(action)}</p>` : ''}<p><a class="button" href="${escapeHtml(seriesUrl)}">${escapeHtml(ctx.t.reportSeriesOpen)}</a> · <a href="${escapeHtml(lead.url)}">${escapeHtml(ctx.t.reportOpen)}</a></p></article>`
+  return `<article class="card report-catalog-card"><div class="report-catalog-card-meta"><span>${escapeHtml(series.label)}</span><span class="report-cadence-badge">${escapeHtml(reportCadenceLabel(ctx.t, lead.report_cadence))}</span>${chronologyDate(lead) ? `<time datetime="${escapeHtml(chronologyDate(lead))}">${escapeHtml(formatDate(chronologyDate(lead), lead.locale))}</time>` : ''}</div><h3>${escapeHtml(reportDisplayTitle(lead, ctx.site))}</h3><p class="report-feature-question">${escapeHtml(lead.narrative?.question || lead.summary)}</p>${reportPrimaryMetrics(lead)}<p><strong>${escapeHtml(ctx.t.reportAssessment)}:</strong> ${escapeHtml(assessment)}</p>${action ? `<p><strong>${escapeHtml(ctx.t.reportNextStep)}:</strong> ${escapeHtml(action)}</p>` : ''}<p><a class="button" href="${escapeHtml(seriesUrl)}">${escapeHtml(ctx.t.reportSeriesOpen)}</a> · <a href="${escapeHtml(lead.url)}">${escapeHtml(ctx.t.reportOpen)}</a></p></article>`
 }
 
 function reportSeriesOverviewBody(ctx, title, visible) {
@@ -944,7 +953,7 @@ ${siteFooter(ctx)}
 // project's tags would link into 404s. Projects carry `technologies` for the
 // same job, and that is not rendered here either.
 export function card(item) {
-  const stamp = item.updated_at || item.published_at
+  const stamp = chronologyDate(item)
   const label = item.category || ''
   return `<article class="card"><a href="${escapeHtml(item.url)}">
 <div class="meta">${label ? `<span class="card-category">${escapeHtml(label)}</span>` : ''}${stamp ? `<time datetime="${escapeHtml(stamp)}">${escapeHtml(formatDate(stamp, item.locale))}</time>` : ''}</div>
@@ -982,7 +991,7 @@ export function presetHomeBody(ctx) {
   const visible = [...(ctx.pages || []), ...(ctx.decks || [])].sort(
     (a, b) =>
       (a.nav_order ?? 1000) - (b.nav_order ?? 1000) ||
-      compareDateDesc(a.published_at || a.updated_at, b.published_at || b.updated_at) ||
+      compareDateDesc(chronologyDate(a), chronologyDate(b)) ||
       String(b.title || '').localeCompare(String(a.title || '')),
   )
   if (preset === 'product' && reportSeriesSettings(ctx.site).length) {
@@ -1102,7 +1111,7 @@ export function archiveBody(ctx) {
     if (!groups.has(year)) groups.set(year, [])
     groups.get(year).push(post)
   }
-  // `posts` is published_at DESC. Undated posts (year '') sort last.
+  // `posts` is author-chronology DESC. Undated posts (year '') sort last.
   const years = [...groups.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : cmp(b, a)))
   const dated = years.filter(Boolean)
   const range = dated.length ? (dated[0] === dated.at(-1) ? dated[0] : `${dated.at(-1)}–${dated[0]}`) : ''
@@ -1125,7 +1134,8 @@ export function archiveBody(ctx) {
   const entry = (post) => {
     const slugs = [...new Set((post.tags || []).map(slugify).filter(Boolean))].join(' ')
     const haystack = `${post.title} ${post.summary} ${(post.tags || []).join(' ')}`.toLocaleLowerCase(locale)
-    return `<li data-tags="${escapeHtml(slugs)}" data-search="${escapeHtml(haystack)}"><time datetime="${escapeHtml(post.published_at || '')}">${post.published_at ? escapeHtml(formatDate(post.published_at, locale)) : ''}</time><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></li>`
+    const stamp = chronologyDate(post)
+    return `<li data-tags="${escapeHtml(slugs)}" data-search="${escapeHtml(haystack)}"><time datetime="${escapeHtml(stamp || '')}">${stamp ? escapeHtml(formatDate(stamp, locale)) : ''}</time><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></li>`
   }
 
   const sections = years
@@ -1164,12 +1174,12 @@ export function tagsBody(ctx, tags) {
 // a search engine.
 const POST_AGE_DAYS = 1095
 
-// `updated_at` is the evergreen suppressor, and the only one. Touching
-// `updatedAt` in the frontmatter buys another three years. A dedicated
+// Only an explicitly authored editorial update suppresses the age notice.
+// Activating a release must not make a historical article look new. A dedicated
 // `evergreen` tag would surface on the tag index, the tag pages, the per-tag
 // feeds, article:tag meta and the search index — a nonsense tag, publicly.
 function postAgeNotice(item, ctx) {
-  const stamp = item.updated_at || item.published_at
+  const stamp = item.authored_updated_at || chronologyDate(item)
   if (!stamp) return ''
   const now = ctx.now ?? new Date()
   const days = (now.valueOf() - new Date(stamp).valueOf()) / 86_400_000
@@ -1275,7 +1285,7 @@ export function blogcastPage(ctx, audioPosts) {
     .map(
       (post) => `<article class="blogcast-episode">
 <h2 class="blogcast-episode-title"><a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a></h2>
-<div class="meta blogcast-episode-meta">${post.published_at ? `<time datetime="${escapeHtml(post.published_at)}">${escapeHtml(formatDate(post.published_at, locale))}</time>` : ''}<span class="blogcast-episode-duration">${escapeHtml(fill(t.durationMinutes, { n: Math.max(1, Math.round(Number(post.audio?.duration_secs || 0) / 60)) }))}</span></div>
+<div class="meta blogcast-episode-meta">${chronologyDate(post) ? `<time datetime="${escapeHtml(chronologyDate(post))}">${escapeHtml(formatDate(chronologyDate(post), locale))}</time>` : ''}<span class="blogcast-episode-duration">${escapeHtml(fill(t.durationMinutes, { n: Math.max(1, Math.round(Number(post.audio?.duration_secs || 0) / 60)) }))}</span></div>
 ${post.summary ? `<p class="blogcast-episode-summary">${escapeHtml(post.summary)}</p>` : ''}
 ${audioPlayer(post, ctx, { label: false })}
 </article>`,
@@ -1439,11 +1449,22 @@ export function contentBody(item, ctx, comments = []) {
   const isReport = item.layout === 'composition' && item.composition?.format === 'report'
   const isComposition = item.layout === 'composition'
   const locale = item.locale || ctx.locale
-  const updated = item.updated_at && (!item.published_at || item.updated_at > item.published_at) ? item.updated_at : ''
+  const authored = item.originally_published_at || item.authored_at || ''
+  const authoredLabel = item.originally_published_at ? ctx.t.originallyPublished : ctx.t.authored
+  const firstPublished = item.first_published_at || item.published_at || ''
+  // Direct template consumers predating the split only carry updated_at. New
+  // build items always carry the publication-history keys, so their technical
+  // last activation can never leak into the authored update label.
+  const authoredUpdated =
+    item.authored_updated_at ||
+    (!Object.hasOwn(item, 'first_published_at') && !Object.hasOwn(item, 'last_published_at') ? item.updated_at : '')
+  const updated = authoredUpdated && (!authored || authoredUpdated > authored) ? authoredUpdated : ''
   const meta = [
-    item.published_at
-      ? `<time datetime="${escapeHtml(item.published_at)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(formatDate(item.published_at, locale))}</time>`
-      : '',
+    authored
+      ? `<time datetime="${escapeHtml(authored)}">${escapeHtml(authoredLabel)}: ${escapeHtml(formatDate(authored, locale))}</time>`
+      : firstPublished
+        ? `<time datetime="${escapeHtml(firstPublished)}">${escapeHtml(ctx.t.published)}: ${escapeHtml(formatDate(firstPublished, locale))}</time>`
+        : '',
     updated
       ? `<time datetime="${escapeHtml(updated)}">${escapeHtml(ctx.t.updated)}: ${escapeHtml(formatDate(updated, locale))}</time>`
       : '',

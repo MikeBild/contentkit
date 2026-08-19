@@ -202,6 +202,8 @@ const RELEASE_CONTENT_TYPES = [
   ['.md', 'text/markdown; charset=utf-8'],
 ]
 
+const RELEASE_REDIRECT_CONTENT_TYPE = 'application/vnd.contentkit.redirect+json'
+
 export function releaseContentType(releasePath) {
   return RELEASE_CONTENT_TYPES.find(([suffix]) => releasePath.endsWith(suffix))?.[1]
 }
@@ -1000,6 +1002,7 @@ export function createRequestHandler(ctx) {
     previewBase = '',
     analytics = null,
     privateAccess = false,
+    requestSearch = '',
   ) {
     const releasePath = canonicalRequestPath(requestPath)
     // A deduplicated release can serve an object owned by an earlier release,
@@ -1010,16 +1013,38 @@ export function createRequestHandler(ctx) {
     const objectPath = entry?.storage_path || `${release.storage_prefix}/${releasePath}`
     let response
     try {
-      response = await storage.download(objectPath, { head: method === 'HEAD' })
+      response = await storage.download(objectPath, {
+        head: method === 'HEAD' && !String(entry?.content_type || '').startsWith(RELEASE_REDIRECT_CONTENT_TYPE),
+      })
     } catch (error) {
       if (error.status === 404 && requestPath !== '/404.html') {
-        return serveRelease(res, release, '/404.html', preview, method, previewBase, analytics)
+        return serveRelease(res, release, '/404.html', preview, method, previewBase, analytics, privateAccess)
       }
       throw error
     }
     let body = method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
     const contentType =
-      releaseContentType(releasePath) || response.headers.get('content-type') || 'application/octet-stream'
+      entry?.content_type ||
+      releaseContentType(releasePath) ||
+      response.headers.get('content-type') ||
+      'application/octet-stream'
+    if (contentType.startsWith(RELEASE_REDIRECT_CONTENT_TYPE)) {
+      let redirect
+      try {
+        redirect = JSON.parse(body.toString('utf8'))
+      } catch {
+        throw Object.assign(new Error(`invalid release redirect at ${releasePath}`), { statusCode: 500 })
+      }
+      const target = String(redirect?.to || '')
+      if (!target.startsWith('/') || target.startsWith('//') || redirect?.status !== 301) {
+        throw Object.assign(new Error(`unsafe release redirect at ${releasePath}`), { statusCode: 500 })
+      }
+      return send(res, 301, '', {
+        location: `${preview ? previewUrl(target, previewBase) : target}${requestSearch}`,
+        'cache-control': preview || privateAccess ? 'private,no-store' : 'public,max-age=300,must-revalidate',
+        ...(preview ? { 'x-robots-tag': 'noindex,nofollow,noarchive' } : {}),
+      })
+    }
     const isDeck = contentType.includes('html') && /(?:^|\/)slides\/[^/]+\/index\.html$/.test(releasePath)
     const cacheControl =
       preview || privateAccess
@@ -1059,7 +1084,17 @@ export function createRequestHandler(ctx) {
       const release = await repo.getRelease(access.release_id)
       if (!release) return send(res, 404, browserErrorPage(req, 'missing'), browserErrorHeaders)
       markUsageContext(req, { siteId: release.site_id, sessionId: sessionToken, requestSource: 'gateway' })
-      await serveRelease(res, release, cleanPath(preview[2] || '/'), true, req.method, `/previews/${preview[1]}`)
+      await serveRelease(
+        res,
+        release,
+        cleanPath(preview[2] || '/'),
+        true,
+        req.method,
+        `/previews/${preview[1]}`,
+        null,
+        false,
+        url.search,
+      )
       return true
     }
     const site = await repo.getSiteByHost(req.headers.host || '')
@@ -1167,6 +1202,7 @@ export function createRequestHandler(ctx) {
       '',
       site.settings?.analytics,
       Boolean(access.entry),
+      url.search,
     )
     return true
   }

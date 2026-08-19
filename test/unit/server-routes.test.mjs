@@ -953,6 +953,25 @@ test('gateway serves an existing page normally', async () => {
   })
 })
 
+test('gateway serves release-bound redirects with query preservation', async () => {
+  const { repo, storage } = gatewayFixture({
+    'redirect-object': JSON.stringify({ to: '/en/blog/alpha/', status: 301 }),
+  })
+  repo.getReleaseEntry = async (_releaseId, path) =>
+    path === 'legacy/index.html'
+      ? {
+          storage_path: 'redirect-object',
+          content_type: 'application/vnd.contentkit.redirect+json; charset=utf-8',
+        }
+      : null
+  await withApp({ repo, storage }, async (request) => {
+    const response = await request('/legacy/?utm_source=old', { redirect: 'manual' })
+    assert.equal(response.status, 301)
+    assert.equal(response.headers.get('location'), '/en/blog/alpha/?utm_source=old')
+    assert.equal(response.headers.get('cache-control'), 'public,max-age=300,must-revalidate')
+  })
+})
+
 test("a served page's CSP widens to the site's analytics provider (GA4)", async () => {
   const { repo, storage } = gatewayFixture(
     { 'prefix/de/blog/index.html': '<h1>Blog</h1>' },

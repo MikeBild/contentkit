@@ -1617,6 +1617,12 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
   if (reportSeries && composition?.format !== 'report') {
     throw Object.assign(new Error('frontmatter reportSeries requires composition.format: report'), { statusCode: 422 })
   }
+  // `date` and the older `publishedAt` spelling are author chronology, not a
+  // database publication event. The release activation owns that event. Keep
+  // `published_at` as a compatibility projection for integrations reading the
+  // parsed metadata, while the builder consumes the explicit authored field.
+  const authoredAt = parseIsoDate(data.authoredAt || data.date || data.publishedAt, 'authoredAt')
+  const originallyPublishedAt = parseIsoDate(data.originallyPublishedAt, 'originallyPublishedAt')
   const meta = {
     kind,
     title,
@@ -1630,7 +1636,9 @@ function validateFrontmatter(data, { lenient = false, warnings = [] } = {}) {
     // remains authoritative.
     summary: String(data.summary || data.description || '').trim(),
     tags,
-    published_at: parseIsoDate(data.date || data.publishedAt, 'date'),
+    authored_at: authoredAt,
+    originally_published_at: originallyPublishedAt,
+    published_at: authoredAt,
     scheduled_at: parseIsoDate(data.scheduledAt, 'scheduledAt'),
     updated_at: parseIsoDate(data.updatedAt, 'updatedAt'),
     cover: data.cover || data.image ? String(data.cover || data.image) : null,

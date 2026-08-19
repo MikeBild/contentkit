@@ -22,6 +22,7 @@ function post({ slug, title, tags = [], noindex = false, date = '2026-06-01', bo
     kind: 'post',
     locale: 'en',
     translation_key: slug,
+    published_at: new Date(date),
     markdown: `---\nkind: post\ntitle: ${title}\nlocale: en\nslug: ${slug}\ntranslationKey: ${slug}\nsummary: About ${title}\ndate: ${date}\ntags: [${tags.join(', ')}]\n${noindex ? 'noindex: true\n' : ''}${extra}---\n# ${title}\n\n${body}`,
   }
 }
@@ -87,6 +88,39 @@ test('a tag with two posts is indexable, sitemapped and carries its own feed', a
   const links = page.match(/<link rel="alternate" type="application\/rss\+xml"[^>]*>/g) || []
   assert.equal(links.length, 1)
   assert.match(links[0], /href="\/en\/tags\/react\/feed\.xml"/)
+})
+
+test('tag pages can be kept crawlable but uniformly noindex by site policy', async () => {
+  const result = await build({
+    site: { ...site, settings: { content: { tag_pages_indexable: false } } },
+    revisions: [post({ slug: 'a', title: 'A', tags: ['React'] }), post({ slug: 'b', title: 'B', tags: ['React'] })],
+  })
+  const page = result.files.get('en/tags/react/index.html').body.toString()
+  assert.match(page, /<meta name="robots" content="noindex,follow">/)
+  assert.ok(!result.files.has('en/tags/react/feed.xml'))
+  assert.doesNotMatch(result.files.get('sitemap.xml').body.toString(), /\/en\/tags\/react\//)
+})
+
+test('same-site redirects are immutable release files and cannot shadow or target missing routes', async () => {
+  const result = await build({
+    site: { ...site, settings: { redirects: [{ from: '/old-alpha/', to: '/en/blog/alpha/', status: 301 }] } },
+    revisions: [post({ slug: 'alpha', title: 'Alpha' })],
+  })
+  const redirect = result.files.get('old-alpha/index.html')
+  assert.equal(redirect.contentType, 'application/vnd.contentkit.redirect+json; charset=utf-8')
+  assert.deepEqual(JSON.parse(redirect.body.toString()), { to: '/en/blog/alpha/', status: 301 })
+
+  await assert.rejects(
+    build({
+      site: { ...site, settings: { redirects: [{ from: '/en/blog/alpha/', to: '/en/', status: 301 }] } },
+      revisions: [post({ slug: 'alpha', title: 'Alpha' })],
+    }),
+    /collides with generated route/,
+  )
+  await assert.rejects(
+    build({ site: { ...site, settings: { redirects: [{ from: '/old/', to: '/missing/', status: 301 }] } } }),
+    /target does not exist/,
+  )
 })
 
 test('the tag index exists, counts each tag and carries hreflang alternates', async () => {
@@ -553,6 +587,36 @@ test('post JSON-LD carries the posting details, breadcrumbs and the authored FAQ
   assert.equal(breadcrumbs.itemListElement[1].item, 'https://example.test/en/blog/')
   assert.equal(faq.mainEntity[0].name, 'What is Alpha?')
   assert.equal(faq.mainEntity[0].acceptedAnswer.text, 'A test post.')
+})
+
+test('author chronology stays separate from technical publication history', async () => {
+  const revision = post({
+    slug: 'history',
+    title: 'History',
+    date: '2018-04-12',
+    extra: 'originallyPublishedAt: 2018-04-10\nupdatedAt: 2025-11-03\n',
+  })
+  revision.first_published_at = '2026-08-01T12:00:00.000Z'
+  revision.last_published_at = '2026-08-19T09:30:00.000Z'
+  const result = await build({
+    site: { ...site, settings: { author: { name: 'Mike Example', url: '/en/profile/' } } },
+    revisions: [revision],
+  })
+  const html = result.files.get('en/blog/history/index.html').body.toString()
+  const structured = JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1])[0]
+  assert.equal(structured.datePublished, '2018-04-10T00:00:00.000Z')
+  assert.equal(structured.dateModified, '2025-11-03T00:00:00.000Z')
+  assert.deepEqual(structured.author, {
+    '@type': 'Person',
+    name: 'Mike Example',
+    url: 'https://example.test/en/profile/',
+  })
+  assert.match(html, /Originally published: .*2018/)
+  assert.match(html, /Updated: .*2025/)
+  assert.doesNotMatch(html, /Online since:/, 'technical activation must not replace the authored date in the header')
+  const archive = result.files.get('en/archive/index.html').body.toString()
+  assert.match(archive, /data-year-group="2018"/)
+  assert.match(result.files.get('en/feed.xml').body.toString(), /<pubDate>Tue, 10 Apr 2018 00:00:00 GMT<\/pubDate>/)
 })
 
 test('the AI share row offers markdown, copy and deep links, and honours the per-site opt-out', async () => {

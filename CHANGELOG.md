@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.27.0 — 2026-08-19
+
+### Added
+
+- Persist `first_published_at` and `last_published_at` on content items and
+  expose both through the published-content read API. Frontmatter `date`,
+  `authoredAt` and `originallyPublishedAt` remain editorial chronology and can
+  no longer overwrite the technical activation history.
+- Compile same-site 301 redirects into the immutable release manifest. Preview
+  and live delivery now serve the exact reviewed redirect set, preserve query
+  strings and reject missing targets, route collisions and redirect cycles.
+- Allow sites to configure an explicit `Person` name and URL for article
+  structured data, and to keep all tag pages available to readers while
+  excluding them from indexing, feeds and the sitemap.
+
+### Changed
+
+- Order archives, lists, feeds, audio episodes and related content by authored
+  or original chronology. JSON-LD and sitemap metadata use the same content
+  clock, while ContentKit's read API retains the separate first/last live
+  timestamps.
+
 ## 4.26.3 — 2026-08-19
 
 ### Fixed

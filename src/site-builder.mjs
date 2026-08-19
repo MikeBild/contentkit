@@ -32,7 +32,16 @@ import {
   tagsBody,
   structuredContentBody,
 } from './templates.mjs'
-import { compareDateDesc, escapeHtml, escapeXml, excerpt, json, readingTime, slugify } from './utils.mjs'
+import {
+  canonicalRequestPath,
+  compareDateDesc,
+  escapeHtml,
+  escapeXml,
+  excerpt,
+  json,
+  readingTime,
+  slugify,
+} from './utils.mjs'
 
 const text = (body, contentType = 'text/html; charset=utf-8', cacheControl = 'public,max-age=60,must-revalidate') => ({
   body: Buffer.from(body),
@@ -134,6 +143,9 @@ function absolute(site, path) {
   return `${site.base_url.replace(/\/$/, '')}${path}`
 }
 
+const chronologyDate = (item) =>
+  item.chronology_at || item.originally_published_at || item.authored_at || item.first_published_at || item.published_at
+
 // First-party assets carry `immutable` cache headers, so their URLs must be
 // content-hashed — otherwise a returning visitor keeps a stale cached copy
 // after a release (e.g. an old forms.js against new HTML). The build emits each
@@ -223,7 +235,7 @@ function rss(site, locale, posts, { selfUrl = `/${locale}/feed.xml`, title = sit
     .slice(0, 50)
     .map(
       (post) =>
-        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${(post.tags || []).map((tag) => `<category>${escapeXml(tag)}</category>`).join('')}${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}</item>`,
+        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${(post.tags || []).map((tag) => `<category>${escapeXml(tag)}</category>`).join('')}${chronologyDate(post) ? `<pubDate>${new Date(chronologyDate(post)).toUTCString()}</pubDate>` : ''}</item>`,
     )
     .join('')
   return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, selfUrl))}"/><description>${escapeXml(site.description || '')}</description><language>${escapeXml(locale)}</language>${items}</channel></rss>`
@@ -250,7 +262,7 @@ function blogcastRss(site, locale, posts) {
     .slice(0, 50)
     .map(
       (post) =>
-        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${post.published_at ? `<pubDate>${new Date(post.published_at).toUTCString()}</pubDate>` : ''}<enclosure url="${escapeXml(absolute(site, post.audio.url))}" type="${escapeXml(post.audio.content_type || 'audio/mpeg')}" length="${Number(post.audio.byte_size) || 0}"/><itunes:duration>${Number(post.audio.duration_secs) || 0}</itunes:duration></item>`,
+        `<item><title>${escapeXml(post.title)}</title><link>${escapeXml(post.canonical)}</link><guid>${escapeXml(post.canonical)}</guid><description>${escapeXml(post.summary)}</description>${chronologyDate(post) ? `<pubDate>${new Date(chronologyDate(post)).toUTCString()}</pubDate>` : ''}<enclosure url="${escapeXml(absolute(site, post.audio.url))}" type="${escapeXml(post.audio.content_type || 'audio/mpeg')}" length="${Number(post.audio.byte_size) || 0}"/><itunes:duration>${Number(post.audio.duration_secs) || 0}</itunes:duration></item>`,
     )
     .join('')
   return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>${escapeXml(title)}</title><link>${escapeXml(absolute(site, `/${locale}/`))}</link><atom:link rel="self" type="application/rss+xml" href="${escapeXml(absolute(site, `/${locale}/blogcast.xml`))}"/><description>${escapeXml(description)}</description><language>${escapeXml(locale)}</language><itunes:author>${escapeXml(settings.author || site.name)}</itunes:author>${image}${category}${items}</channel></rss>`
@@ -308,7 +320,7 @@ export function relatedPosts(post, posts, idf, limit = 3) {
   scored.sort(
     (a, b) =>
       b.score - a.score ||
-      cmp(String(b.post.published_at), String(a.post.published_at)) || // newer first
+      cmp(String(chronologyDate(b.post)), String(chronologyDate(a.post))) || // newer first
       cmp(a.post.slug, b.post.slug), // unique per locale+kind
   )
   return scored.slice(0, limit).map((entry) => entry.post)
@@ -414,15 +426,19 @@ function postStructured(site, item, t) {
     headline: item.title,
     description: item.summary,
     ...(item.tldr?.length ? { abstract: item.tldr.join(' ') } : {}),
-    datePublished: item.published_at,
-    dateModified: item.updated_at || item.published_at,
+    datePublished: chronologyDate(item),
+    dateModified: item.content_updated_at || item.authored_updated_at || chronologyDate(item),
     url: item.canonical,
     mainEntityOfPage: item.canonical,
     inLanguage: item.locale,
     ...(item.tags?.length ? { keywords: item.tags.join(', ') } : {}),
     ...(image ? { image } : {}),
     ...(item.reading_minutes ? { timeRequired: `PT${item.reading_minutes}M` } : {}),
-    author: { '@type': 'Person', name: site.name },
+    author: {
+      '@type': 'Person',
+      name: site.settings?.author?.name || site.name,
+      url: absolute(site, site.settings?.author?.url || '/'),
+    },
     ...(item.audio
       ? {
           audio: {
@@ -561,12 +577,42 @@ export async function buildSite({
       composition: result.composition || result.meta.composition,
       diagnostics: result.diagnostics,
       accessible_text: result.accessible_text || null,
-      // An authored reporting/content date is semantic and therefore wins over
-      // the database activation time. Older documents without one must retain
-      // their repository timestamps instead of having the parser's null
-      // defaults erase them.
-      published_at: result.meta.published_at ?? revision.published_at ?? null,
-      updated_at: result.meta.updated_at ?? revision.updated_at ?? null,
+      // Author chronology and ContentKit publication history are different
+      // facts. Public editorial surfaces (archive/listing order, JSON-LD, RSS
+      // and sitemap) follow the former so a preview can be built immutably
+      // before activation. The database/read API retains the exact first and
+      // last live activation timestamps. The old frontmatter `date` spelling
+      // is parsed as authored_at and cannot falsify that technical history.
+      authored_at: result.meta.authored_at ?? result.meta.published_at ?? null,
+      authored_updated_at: result.meta.updated_at ?? null,
+      originally_published_at: result.meta.originally_published_at ?? null,
+      first_published_at: revision.first_published_at ?? revision.published_at ?? null,
+      last_published_at: revision.last_published_at ?? revision.published_at ?? revision.updated_at ?? null,
+      chronology_at:
+        result.meta.originally_published_at ??
+        result.meta.authored_at ??
+        result.meta.published_at ??
+        revision.first_published_at ??
+        revision.published_at ??
+        null,
+      revision_updated_at: revision.updated_at ?? null,
+      content_updated_at:
+        result.meta.updated_at ??
+        revision.updated_at ??
+        result.meta.originally_published_at ??
+        result.meta.authored_at ??
+        result.meta.published_at ??
+        null,
+      published_at: revision.first_published_at ?? revision.published_at ?? null,
+      // Sitemap lastmod describes the content artifact, not when a pointer was
+      // activated. Technical release history remains available separately.
+      updated_at:
+        result.meta.updated_at ??
+        revision.updated_at ??
+        result.meta.originally_published_at ??
+        result.meta.authored_at ??
+        result.meta.published_at ??
+        null,
       // Derived, not frontmatter: renderMarkdown's `meta` is the authored
       // contract and must not grow fields the author never wrote.
       reading_minutes: result.meta.kind === 'post' ? readingTime(result.source) : 0,
@@ -650,7 +696,7 @@ export async function buildSite({
       .map((entry) => ({ locale: entry.locale, canonical: absolute(site, entry.pathname) }))
   const lastUpdated = (items) =>
     items
-      .map((item) => item.updated_at || item.published_at)
+      .map((item) => item.content_updated_at || item.updated_at || chronologyDate(item))
       .filter(Boolean)
       .sort()
       .pop()
@@ -665,7 +711,7 @@ export async function buildSite({
     // arrays, and a draft has no business being syndicated or recommended.
     const posts = publicLocal
       .filter((item) => item.kind === 'post' && !item.noindex)
-      .sort((a, b) => compareDateDesc(a.published_at, b.published_at))
+      .sort((a, b) => compareDateDesc(chronologyDate(a), chronologyDate(b)))
     const projects = publicLocal
       .filter((item) => item.kind === 'project' && !item.noindex)
       .sort((a, b) => Number(b.featured) - Number(a.featured))
@@ -1158,7 +1204,7 @@ export async function buildSite({
       // dilutes crawl budget. Keep the page (cards link to it; it must not 404),
       // but noindex it — with `follow`, never `nofollow`, so link equity still
       // reaches the post it lists. No sitemap entry, and no feed nobody would read.
-      const thin = items.length < 2
+      const thin = items.length < 2 || site.settings?.content?.tag_pages_indexable === false
       const feedUrl = thin ? undefined : `${url}feed.xml`
       files.set(
         `${locale}/tags/${tagSlug}/index.html`,
@@ -1238,8 +1284,8 @@ export async function buildSite({
                   imageAlt: item.cover_alt,
                   noindex: item.noindex || item.protected,
                   robots: archivedDocs ? 'noindex,follow' : undefined,
-                  publishedTime: item.published_at,
-                  modifiedTime: item.updated_at || item.published_at,
+                  publishedTime: chronologyDate(item),
+                  modifiedTime: item.content_updated_at || chronologyDate(item),
                   articleTags: item.kind === 'post' ? item.tags : [],
                   markdownUrl,
                 },
@@ -1334,6 +1380,32 @@ export async function buildSite({
       ),
     ),
   )
+
+  // Redirects are release artifacts, not mutable gateway configuration. Their
+  // bytes and destinations therefore belong to the manifest, preview exactly
+  // like the rest of the site, and cannot change underneath a reviewed release.
+  for (const redirect of site.settings?.redirects || []) {
+    const from = canonicalRequestPath(redirect.from)
+    const to = canonicalRequestPath(redirect.to)
+    if (files.has(from)) {
+      throw Object.assign(new Error(`redirect source collides with generated route ${redirect.from}`), {
+        statusCode: 422,
+      })
+    }
+    if (!files.has(to)) {
+      throw Object.assign(new Error(`redirect target does not exist in this release: ${redirect.to}`), {
+        statusCode: 422,
+      })
+    }
+    files.set(
+      from,
+      text(
+        `${JSON.stringify({ to: redirect.to, status: 301 })}\n`,
+        'application/vnd.contentkit.redirect+json; charset=utf-8',
+        'public,max-age=300,must-revalidate',
+      ),
+    )
+  }
 
   const accessEntries = accessRules.flatMap((rule) => {
     const entry = {

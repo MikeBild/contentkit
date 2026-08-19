@@ -660,11 +660,56 @@ export function openApi(config) {
             },
           },
         },
+        SiteAuthorSettings: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name', 'url'],
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 200 },
+            url: {
+              type: 'string',
+              maxLength: 2048,
+              description: 'HTTPS URL or same-site absolute path used as the Article author identity.',
+            },
+          },
+        },
+        SiteRedirectSetting: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['from', 'to'],
+          properties: {
+            from: { type: 'string', pattern: '^/(?!/)(?!.*(?:[?#]|(?:^|/)\\.\\.(?:/|$))).*$' },
+            to: { type: 'string', pattern: '^/(?!/)(?!.*(?:[?#]|(?:^|/)\\.\\.(?:/|$))).*$' },
+            status: { type: 'integer', enum: [301], default: 301 },
+          },
+          description:
+            'Same-site permanent redirect. The builder rejects cycles, route collisions and targets absent from the exact release.',
+        },
         SiteSettings: {
           type: 'object',
           additionalProperties: true,
           properties: {
             presentation: { $ref: '#/components/schemas/SitePresentationSettings' },
+            author: { $ref: '#/components/schemas/SiteAuthorSettings' },
+            content: {
+              type: 'object',
+              additionalProperties: true,
+              properties: {
+                show_extra: { type: 'boolean' },
+                tag_pages_indexable: {
+                  type: 'boolean',
+                  description:
+                    'Set false to keep tag routes crawlable with noindex,follow and remove their feeds/sitemap rows.',
+                },
+              },
+            },
+            redirects: {
+              type: 'array',
+              maxItems: 512,
+              items: { $ref: '#/components/schemas/SiteRedirectSetting' },
+              description:
+                'Release-bound redirects. They are emitted into the immutable release manifest rather than read as mutable gateway state.',
+            },
           },
           description:
             'Site configuration stored as one object. Unknown settings are preserved; builder-owned settings are validated on write.',
@@ -832,6 +877,8 @@ export function openApi(config) {
             locale: { type: 'string' },
             translation_key: { type: 'string' },
             published_revision_id: { type: ['string', 'null'], format: 'uuid' },
+            first_published_at: { type: ['string', 'null'], format: 'date-time' },
+            last_published_at: { type: ['string', 'null'], format: 'date-time' },
             title: { type: ['string', 'null'] },
             slug: { type: ['string', 'null'] },
             summary: { type: ['string', 'null'] },
@@ -862,6 +909,8 @@ export function openApi(config) {
             'report_series',
             'revision_id',
             'published_at',
+            'first_published_at',
+            'last_published_at',
             'updated_at',
           ],
           properties: {
@@ -890,7 +939,13 @@ export function openApi(config) {
               description:
                 'Immutable source hash exposed by published list entries for privacy-bounded inventory consumers; omitted from single-document responses.',
             },
-            published_at: { type: ['string', 'null'], format: 'date-time' },
+            published_at: {
+              type: ['string', 'null'],
+              format: 'date-time',
+              description: 'Compatibility alias of first_published_at; never derived from frontmatter chronology.',
+            },
+            first_published_at: { type: ['string', 'null'], format: 'date-time' },
+            last_published_at: { type: ['string', 'null'], format: 'date-time' },
             updated_at: { type: 'string', format: 'date-time' },
           },
         },
@@ -1875,7 +1930,7 @@ export function openApi(config) {
           operationId: 'siteUpdate',
           summary: 'Update site metadata, settings and domains',
           description:
-            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`, and `settings.content.show_extra` must be a boolean. Optional `If-Match` with the ETag from `GET` makes the update conditional: a site written by someone else in the meantime answers 412 instead of dropping their change. `locales` is not part of this body. `default_locale` is validated against the stored locale rows, and the rows themselves are read with `GET /v1/sites/{site}/locales` and changed one at a time through `POST /v1/sites/{site}/locales` and `DELETE /v1/sites/{site}/locales/{locale}`, so each removal is refused on its own grounds — the locale that still has published or scheduled content is named, and the rest of the set is untouched. `POST /v1/sites` does accept the whole list at once, because a site being created has no content to orphan. `default_locale` and the locale rows are one invariant across two tables: this write and the locale writes take the same row lock, so a concurrent `PATCH {default_locale}` and `DELETE .../locales/{locale}` cannot both succeed.',
+            'Replaces `settings` in full — read the site first and merge, or unlisted keys are dropped. `domains` follows the same contract: an array replaces every hostname mapping (empty array removes all); omit it to leave the mappings alone. `settings.presentation.preset` accepts `portfolio`, `product-docs`, `wiki`, `knowledge-base`, `product` or `changelog`; product docs require 1–32 unique version IDs, labels up to 120 characters and exactly one current version. Optional `settings.presentation.report_series` is an array of up to 32 unique `ReportSeriesSetting` objects (`id`, `label`, integer `nav_order`, `lead_cadence`). Builder-read settings are validated on write and reject the whole PATCH with 422. Theme tokens accept only the documented allowlist, including `chart_1` through `chart_5` for report SVGs; scalar and `{ light, dark }` values apply to both the page and server-rendered charts. `settings.theme.custom_css` is limited to 8192 bytes without `</style`; `settings.content.show_extra` and `settings.content.tag_pages_indexable` are booleans. `settings.author` supplies the Person name and same-site/HTTPS identity URL used in Article JSON-LD. `settings.redirects` accepts at most 512 same-site permanent redirects; the builder stores them in the immutable release, rejects cycles and collisions, and requires every destination to exist in that exact release. Optional `If-Match` with the ETag from `GET` makes the update conditional: a site written by someone else in the meantime answers 412 instead of dropping their change. `locales` is not part of this body. `default_locale` is validated against the stored locale rows, and the rows themselves are read with `GET /v1/sites/{site}/locales` and changed one at a time through `POST /v1/sites/{site}/locales` and `DELETE /v1/sites/{site}/locales/{locale}`, so each removal is refused on its own grounds — the locale that still has published or scheduled content is named, and the rest of the set is untouched. `POST /v1/sites` does accept the whole list at once, because a site being created has no content to orphan. `default_locale` and the locale rows are one invariant across two tables: this write and the locale writes take the same row lock, so a concurrent `PATCH {default_locale}` and `DELETE .../locales/{locale}` cannot both succeed.',
           security: secured,
           parameters: [
             siteParameter,
@@ -2388,7 +2443,7 @@ export function openApi(config) {
           operationId: 'contentCreate',
           summary: 'Create content and its first draft revision',
           description:
-            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` and may select a configured series with `reportSeries`. `reportSeries` is invalid on non-report compositions; a preview or release rejects IDs absent from `settings.presentation.report_series`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references. The document's `locale` must be one the site builds (`GET /v1/sites/{site}/locales`, field `builds`): a document in any other locale is refused with 422, because no release emits a page tree for it — the item would be storable, publishable and permanently a 404 on the site.",
+            "Frontmatter supports the controlled layouts `standard`, `docs`, `wiki`, `knowledge`, `landing`, `changelog`, `composition` and `deck`; `report` remains a compatibility alias for report compositions. `date`, `publishedAt` and the clearer `authoredAt` describe author chronology used for listings and archives; `originallyPublishedAt` records a known earlier publication and `updatedAt` an actual editorial update. None of these fields can overwrite ContentKit's technical `first_published_at` or `last_published_at`, which are set only by release activation. `kind: deck` requires `layout: deck` and accepts bounded `deck.template`, `deck.theme`, `deck.visualScheme`, `deck.maxSlides` and `deck.firstSlide`; selected templates validate explicit per-slide `deckRole` narrative slots before rendering. Semantic directives become SVG/PNG-enhanced self-contained Slidev output at preview/release time. Normal articles and pages may embed selected semantic directives as responsive HTML information islands (`semantic.presentation: embedded`) without turning the entire document into a visual composition or implicitly producing SVG/PNG. Full visual compositions use a versioned Semantic AST plus declarative repository-owned Pattern Packages and render responsive HTML, standalone light/dark SVG and PNG (`semantic.presentation: document`). Documents without semantic directives report `semantic.presentation: prose`. `composition.format` is `infographic` or `report`; reports may use `reportCadence` with `hourly`, `daily`, `weekly`, `monthly`, `quarterly` or `yearly` and may select a configured series with `reportSeries`. `reportSeries` is invalid on non-report compositions; a preview or release rejects IDs absent from `settings.presentation.report_series`. Document narrative fields are `audience`, `question`, `goal`, `thesis`, `conclusion`, `action`, bounded `limitations` and `disclosure`. Semantic directives are `hero`, `metric`, `process`, `comparison`, `timeline`, `hierarchy`, `relationship`, `chart`, `progress`, `badge`, `card`, `group`, `faq`, `question`, `code-example`, `variant`, `pricing`, `plan`, `gallery`, `figure`, `data-table`, `dashboard-section`, `application-shell` and `region`. Authors may request a pattern but cannot provide geometry, CSS, executable code or renderer specifications. Charts remain table-driven: `type` supports `bar`, `line`, `area` and `donut`, while optional `shape` declares a validated information form such as range, change, diverging, Likert, XY, boxplot, matrix, waterfall, hierarchy, flow, uncertainty, calendar, geographic point/region or samples. Optional `question`, `insight`, `action` and `limitation` attributes preserve the chart instance's communication intent. Mermaid fences are classified as process, sequence, state, data-model or architecture evidence and may use the same quoted narrative metadata after the fence language. Hierarchical pages use `docKey`, `docsVersion`, `parent`, `navTitle` and `navOrder`; a document can grant reader groups with `access`. It may also carry an author-owned `extra:` map and `related: [slug, ...]` references. The document's `locale` must be one the site builds (`GET /v1/sites/{site}/locales`, field `builds`): a document in any other locale is refused with 422, because no release emits a page tree for it — the item would be storable, publishable and permanently a 404 on the site.",
           security: secured,
           parameters: [siteParameter],
           requestBody: markdownBody,
@@ -2727,7 +2782,7 @@ export function openApi(config) {
           operationId: 'publishedList',
           summary: 'List published content as JSON (read API)',
           description:
-            'Headless read access to everything currently published. Entries carry the item identity, the published revision fields, top-level `report_series` (null for legacy/unassigned content), and the revision `metadata` verbatim — the full frontmatter contract including author-owned `extra` fields. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.',
+            'Headless read access to everything currently published. Entries carry the item identity, the published revision fields, immutable `first_published_at`, current `last_published_at`, top-level `report_series` (null for legacy/unassigned content), and the revision `metadata` verbatim — including separate authored chronology. Sorted by `updated_at` descending with keyset pagination: pass `next_cursor` back as `cursor` (opaque). Responds with a weak ETag over the site publish epoch and honours `If-None-Match` with 304.',
           security: secured,
           parameters: [
             siteParameter,

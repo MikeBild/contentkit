@@ -333,6 +333,38 @@ test('createSite always stores the default locale, even for an empty locales lis
   assert.deepEqual(locales, [['de'], ['de'], ['de', 'en']])
 })
 
+test('site settings reject unsafe editorial metadata before any row is written', async () => {
+  const db = {
+    async insert() {
+      throw new Error('invalid settings must fail before insert')
+    },
+    async select() {
+      return []
+    },
+  }
+  const create = (settings) =>
+    createRepository({}, db, {}).createSite({
+      slug: 'settings-probe',
+      name: 'Settings probe',
+      base_url: 'https://settings.invalid',
+      default_locale: 'de',
+      settings,
+    })
+  await assert.rejects(() => create({ content: { tag_pages_indexable: 'no' } }), /tag_pages_indexable/)
+  await assert.rejects(() => create({ author: { name: 'Mike', url: 'http://insecure.example' } }), /settings.author/)
+  await assert.rejects(
+    () =>
+      create({
+        redirects: [
+          { from: '/a/', to: '/b/', status: 301 },
+          { from: '/b/', to: '/a/', status: 301 },
+        ],
+      }),
+    /cycle/,
+  )
+  await assert.rejects(() => create({ redirects: [{ from: '//external.example/', to: '/de/' }] }), /settings.redirects/)
+})
+
 // createSite wrote the locale rows once and nothing could change them
 // afterwards, so a second language was impossible to add through any door. The
 // five tests below pin the invariants that make the two writes safe.
@@ -1280,6 +1312,8 @@ test('listPublished merges items with their published revisions and skips drafts
     revision_id: 'rev-1',
     revision_sha256: 'sha-rev-1',
     published_at: '2026-07-01T00:00:00.000Z',
+    first_published_at: '2026-07-01T00:00:00.000Z',
+    last_published_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-03T10:00:00.000Z',
   })
 })

@@ -271,3 +271,97 @@ test(
     }
   },
 )
+
+test(
+  'content publication history keeps first activation immutable and retirement preserves both dates',
+  {
+    skip: databaseUrl ? false : 'CONTENTKIT_TEST_DATABASE_URL is not set',
+    timeout: 30000,
+  },
+  async () => {
+    await waitForDatabase(databaseUrl)
+    await runMigrations({ databaseUrl }, logger)
+    const pool = new pg.Pool({ connectionString: databaseUrl })
+    let siteId
+    try {
+      const suffix = randomUUID().slice(0, 8)
+      const site = (
+        await pool.query(
+          "insert into ck_sites (slug,name,base_url,default_locale) values ($1,'Dates',$2,'de') returning id,publish_epoch",
+          [`date-history-${suffix}`, `https://date-history-${suffix}.test`],
+        )
+      ).rows[0]
+      siteId = site.id
+      const item = (
+        await pool.query(
+          "insert into ck_content_items (site_id,kind,locale,translation_key) values ($1,'post','de','history') returning id",
+          [site.id],
+        )
+      ).rows[0]
+      const revision = async (hash) =>
+        (
+          await pool.query(
+            "insert into ck_content_revisions (item_id,status,markdown,source_sha256,slug,title) values ($1,'draft',$2,$3,'history','History') returning id",
+            [item.id, hash, hash],
+          )
+        ).rows[0]
+      const release = async (epoch) =>
+        (
+          await pool.query(
+            "insert into ck_releases (site_id,kind,status,base_publish_epoch) values ($1,'release','ready',$2) returning id",
+            [site.id, epoch],
+          )
+        ).rows[0]
+
+      const firstRevision = await revision('first')
+      const firstRelease = await release(site.publish_epoch)
+      await pool.query('select ck_activate_release($1,$2,$3,$4)', [
+        firstRelease.id,
+        [firstRevision.id],
+        [],
+        site.publish_epoch,
+      ])
+      const firstState = (
+        await pool.query('select first_published_at,last_published_at from ck_content_items where id=$1', [item.id])
+      ).rows[0]
+      assert.ok(firstState.first_published_at)
+      assert.equal(firstState.first_published_at.toISOString(), firstState.last_published_at.toISOString())
+
+      await pool.query('select pg_sleep(0.01)')
+      const secondEpoch = Number(
+        (await pool.query('select publish_epoch from ck_sites where id=$1', [site.id])).rows[0].publish_epoch,
+      )
+      const secondRevision = await revision('second')
+      const secondRelease = await release(secondEpoch)
+      await pool.query('select ck_activate_release($1,$2,$3,$4)', [
+        secondRelease.id,
+        [secondRevision.id],
+        [],
+        secondEpoch,
+      ])
+      const secondState = (
+        await pool.query('select first_published_at,last_published_at from ck_content_items where id=$1', [item.id])
+      ).rows[0]
+      assert.equal(secondState.first_published_at.toISOString(), firstState.first_published_at.toISOString())
+      assert.ok(secondState.last_published_at > firstState.last_published_at)
+
+      const retireEpoch = Number(
+        (await pool.query('select publish_epoch from ck_sites where id=$1', [site.id])).rows[0].publish_epoch,
+      )
+      const retireRelease = await release(retireEpoch)
+      await pool.query('select ck_activate_release($1,$2,$3,$4)', [retireRelease.id, [], [item.id], retireEpoch])
+      const retired = (
+        await pool.query(
+          'select published_revision_id,first_published_at,last_published_at from ck_content_items where id=$1',
+          [item.id],
+        )
+      ).rows[0]
+      assert.equal(retired.published_revision_id, null)
+      assert.equal(retired.first_published_at.toISOString(), secondState.first_published_at.toISOString())
+      assert.equal(retired.last_published_at.toISOString(), secondState.last_published_at.toISOString())
+    } finally {
+      if (siteId) await pool.query('delete from ck_sites where id=$1', [siteId]).catch(() => {})
+      await pool.end()
+    }
+  },
+)

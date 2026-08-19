@@ -148,8 +148,10 @@ function publishedEntry(item, revision) {
     report_series: revision.metadata?.report_series ?? null,
     revision_id: revision.id,
     revision_sha256: revision.source_sha256,
-    published_at: revision.published_at,
-    updated_at: item.updated_at,
+    published_at: item.first_published_at || revision.published_at,
+    first_published_at: item.first_published_at || revision.published_at,
+    last_published_at: item.last_published_at || revision.published_at,
+    updated_at: item.last_published_at || item.updated_at,
   }
 }
 
@@ -224,9 +226,91 @@ const REPORT_CADENCES = new Set(['hourly', 'daily', 'weekly', 'monthly', 'quarte
 // A failure rejects the whole write; nothing is dropped or partially applied.
 function validateSiteSettings(settings) {
   if (settings == null) return
+  if (typeof settings !== 'object' || Array.isArray(settings)) {
+    throw Object.assign(new Error('settings must be an object'), { statusCode: 422 })
+  }
+  if (
+    settings.content !== undefined &&
+    (!settings.content || typeof settings.content !== 'object' || Array.isArray(settings.content))
+  ) {
+    throw Object.assign(new Error('settings.content must be an object'), { statusCode: 422 })
+  }
   const showExtra = settings.content?.show_extra
   if (showExtra !== undefined && typeof showExtra !== 'boolean') {
     throw Object.assign(new Error('settings.content.show_extra must be a boolean'), { statusCode: 422 })
+  }
+  const tagPagesIndexable = settings.content?.tag_pages_indexable
+  if (tagPagesIndexable !== undefined && typeof tagPagesIndexable !== 'boolean') {
+    throw Object.assign(new Error('settings.content.tag_pages_indexable must be a boolean'), { statusCode: 422 })
+  }
+  const author = settings.author
+  if (author !== undefined) {
+    const allowed = new Set(['name', 'url'])
+    const url = String(author?.url || '')
+    if (
+      !author ||
+      typeof author !== 'object' ||
+      Array.isArray(author) ||
+      Object.keys(author).some((key) => !allowed.has(key)) ||
+      typeof author.name !== 'string' ||
+      !author.name.trim() ||
+      author.name.trim().length > 200 ||
+      typeof author.url !== 'string' ||
+      url.length > 2048 ||
+      !(
+        (url.startsWith('/') && !url.startsWith('//') && !url.includes('#') && !url.includes('?')) ||
+        /^https:\/\/[^\s]+$/i.test(url)
+      )
+    ) {
+      throw Object.assign(new Error('settings.author needs a name and a relative or HTTPS url'), { statusCode: 422 })
+    }
+  }
+  const redirects = settings.redirects
+  if (redirects !== undefined) {
+    const allowed = new Set(['from', 'to', 'status'])
+    const validPath = (value) =>
+      typeof value === 'string' &&
+      value.startsWith('/') &&
+      !value.startsWith('//') &&
+      !value.includes('?') &&
+      !value.includes('#') &&
+      !value.includes('\\') &&
+      !value.split('/').includes('..')
+    if (
+      !Array.isArray(redirects) ||
+      redirects.length > 512 ||
+      redirects.some(
+        (entry) =>
+          !entry ||
+          typeof entry !== 'object' ||
+          Array.isArray(entry) ||
+          Object.keys(entry).some((key) => !allowed.has(key)) ||
+          !validPath(entry.from) ||
+          !validPath(entry.to) ||
+          entry.from === entry.to ||
+          (entry.status !== undefined && entry.status !== 301),
+      ) ||
+      new Set(redirects.map((entry) => entry.from)).size !== redirects.length
+    ) {
+      throw Object.assign(
+        new Error('settings.redirects needs at most 512 unique same-site { from, to, status: 301 } entries'),
+        {
+          statusCode: 422,
+        },
+      )
+    }
+    const targets = new Map(redirects.map((entry) => [entry.from, entry.to]))
+    for (const start of targets.keys()) {
+      const seen = new Set()
+      let cursor = start
+      while (targets.has(cursor)) {
+        if (seen.has(cursor)) {
+          throw Object.assign(new Error(`settings.redirects contains a cycle at ${cursor}`), { statusCode: 422 })
+        }
+        seen.add(cursor)
+        cursor = targets.get(cursor)
+      }
+    }
   }
   const presentation = settings.presentation
   if (presentation !== undefined) {
@@ -1657,6 +1741,8 @@ export function createRepository(config, db, storage) {
                 kind: item.kind,
                 locale: item.locale,
                 translation_key: item.translation_key,
+                first_published_at: item.first_published_at || revision.published_at,
+                last_published_at: item.last_published_at || revision.published_at,
               }
             : null
         })
