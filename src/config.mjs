@@ -228,6 +228,23 @@ export function loadConfig() {
     trustProxy: bool('CONTENTKIT_TRUST_PROXY', false),
     maxBodyBytes: integer('CONTENTKIT_MAX_BODY_BYTES', 25 * 1024 * 1024, { min: 1024, max: 250 * 1024 * 1024 }),
     buildConcurrency: integer('CONTENTKIT_BUILD_CONCURRENCY', 1, { min: 1, max: 8 }),
+    // Read by releases.mjs and enforced by build-runner.mjs, which kills the
+    // worker thread and rejects the job. Both existed; the option did not, so
+    // timeoutMs resolved to 0 and the enforcement never armed.
+    //
+    // WHY that mattered more than a slow build: buildConcurrency is 1 and the
+    // permit is held for the whole build. A client that gave up after its own
+    // timeout left the build running and the single permit taken, so the next
+    // hourly publish queued behind a request nobody was waiting for any more.
+    // Measured on 2026-08-13: 24 of 24 hourly runs lost that way.
+    //
+    // The default sits below the caller's timeout on purpose — the server has
+    // to be the one that gives up first, or the failure lands on whoever is
+    // least able to explain it. Worst observed build: 384 s.
+    buildTimeoutMs: integer('CONTENTKIT_BUILD_TIMEOUT_MS', 540000, { min: 0, max: 3600000 }),
+    // Also read via ?? in releases.mjs with the same default; spelled out here
+    // so it is configurable rather than accidentally constant.
+    buildWorkerIdleMs: integer('CONTENTKIT_BUILD_WORKER_IDLE_MS', 60000, { min: 0, max: 3600000 }),
     uploadConcurrency: integer('CONTENTKIT_UPLOAD_CONCURRENCY', 8, { min: 1, max: 32 }),
     deckBuildConcurrency: integer('CONTENTKIT_DECK_BUILD_CONCURRENCY', 1, { min: 1, max: 4 }),
     deckBuildQueueMax: integer('CONTENTKIT_DECK_BUILD_QUEUE_MAX', 8, { min: 0, max: 64 }),

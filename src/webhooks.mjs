@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { decryptSecret } from './secrets.mjs'
+import { backoffSeconds, isRetryable } from './retry.mjs'
 
 // Standard Webhooks signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">.
 function signature(secret, id, timestamp, body) {
@@ -7,12 +8,7 @@ function signature(secret, id, timestamp, body) {
   return `v1,${digest}`
 }
 
-// Exponential backoff (base 10s, doubling, capped 30min) with ±15% jitter so a
-// fleet of due deliveries doesn't retry in lockstep against a recovering endpoint.
-function nextDelaySeconds(attempts) {
-  const base = Math.min(10 * 2 ** Math.min(attempts - 1, 8), 1800)
-  return base * (0.85 + Math.random() * 0.3)
-}
+const nextDelaySeconds = (attempts) => backoffSeconds(attempts, { baseSeconds: 10, capSeconds: 1800, doublings: 8 })
 
 export function createOutboxWorker(config, db, logger, fetchImpl = fetch) {
   let timer
@@ -95,7 +91,10 @@ export function createOutboxWorker(config, db, logger, fetchImpl = fetch) {
 
   async function onFailure(delivery, error) {
     const attempts = Number(delivery.attempts || 0) + 1
-    const terminal = attempts >= config.webhookMaxAttempts
+    // `responseStatus` was already recorded here and never consulted: a 400 was
+    // retried exactly like a 503. An endpoint that rejects the payload will
+    // reject it again, so that is terminal at once.
+    const terminal = attempts >= config.webhookMaxAttempts || !isRetryable(error)
     await db
       .update(
         'ck_webhook_deliveries',

@@ -12,6 +12,11 @@ const SAMPLE_RATE = 24000 // LINEAR16 mono, 16-bit → 48000 bytes per second
 // Google caps synthesize input at 5000 bytes; 3800 leaves headroom for the
 // JSON envelope and multi-byte characters that sit on a chunk boundary.
 const MAX_CHUNK_BYTES = 3800
+// A chunk may be 3800 bytes and still be refused: Chirp 3 HD bounds the SENTENCE,
+// not the request, and answers `400 … sentences that are too long`. The number
+// is empirical rather than documented — it is well under anything a narrator
+// would say in one breath, so it costs nothing to stay below it.
+const MAX_SENTENCE_BYTES = 900
 
 const utf8Bytes = (value) => Buffer.byteLength(value, 'utf8')
 
@@ -19,40 +24,53 @@ const utf8Bytes = (value) => Buffer.byteLength(value, 'utf8')
 // exceeds the budget is split at sentence boundaries; a sentence that still
 // exceeds it (degenerate, e.g. a table row) is hard-split. Chunk boundaries
 // always fall on whitespace the voice would pause at anyway.
-export function chunkText(text, maxBytes = MAX_CHUNK_BYTES) {
+export function chunkText(text, maxBytes = MAX_CHUNK_BYTES, maxSentenceBytes = MAX_SENTENCE_BYTES) {
+  const cap = Math.min(maxBytes, maxSentenceBytes)
   const pieces = []
   for (const paragraph of String(text).split(/\n{2,}/)) {
     const trimmed = paragraph.trim()
     if (!trimmed) continue
-    if (utf8Bytes(trimmed) <= maxBytes) {
-      pieces.push(trimmed)
+    const sentences = trimmed.split(/(?<=[.!?…])\s+/)
+    // The paragraph budget alone is not enough: a paragraph well under maxBytes
+    // that is one long unpunctuated run is exactly what the provider refuses,
+    // and the old shape never reached the sentence split for it.
+    if (utf8Bytes(trimmed) <= maxBytes && sentences.every((unit) => utf8Bytes(unit) <= cap)) {
+      pieces.push({ text: trimmed, standalone: false })
       continue
     }
-    for (const unit of trimmed.split(/(?<=[.!?…])\s+/)) {
-      if (utf8Bytes(unit) <= maxBytes) {
-        pieces.push(unit)
+    for (const unit of sentences) {
+      if (utf8Bytes(unit) <= cap) {
+        pieces.push({ text: unit, standalone: false })
         continue
       }
+      // A hard-split fragment has no terminal punctuation, so it must not be
+      // packed together with anything else: two fragments joined by a blank
+      // line still read as one sentence to the provider, which is the very
+      // thing being avoided here. `standalone` marks them for the packer.
       let rest = unit
-      while (utf8Bytes(rest) > maxBytes) {
-        const slice = Buffer.from(rest, 'utf8').subarray(0, maxBytes).toString('utf8')
+      while (utf8Bytes(rest) > cap) {
+        const slice = Buffer.from(rest, 'utf8').subarray(0, cap).toString('utf8')
         const cut = slice.lastIndexOf(' ')
         const head = cut > 0 ? slice.slice(0, cut) : slice.replace(/�+$/, '')
-        pieces.push(head)
+        pieces.push({ text: head, standalone: true })
         rest = rest.slice(head.length).trim()
       }
-      if (rest) pieces.push(rest)
+      if (rest) pieces.push({ text: rest, standalone: true })
     }
   }
   const chunks = []
   let current = ''
   for (const piece of pieces) {
-    const candidate = current ? `${current}\n\n${piece}` : piece
-    if (utf8Bytes(candidate) <= maxBytes) {
+    const candidate = current ? `${current}\n\n${piece.text}` : piece.text
+    if (piece.standalone) {
+      if (current) chunks.push(current)
+      chunks.push(piece.text)
+      current = ''
+    } else if (utf8Bytes(candidate) <= maxBytes) {
       current = candidate
     } else {
       if (current) chunks.push(current)
-      current = piece
+      current = piece.text
     }
   }
   if (current) chunks.push(current)
@@ -141,7 +159,12 @@ function googleProvider(config, fetchImpl = fetch) {
         })
         if (!response.ok) {
           const body = await response.text().catch(() => '')
-          throw new Error(`TTS synthesize failed (${response.status}): ${body.slice(0, 300)}`)
+          // The status travels as a property, not only inside the message: the
+          // retry policy has to tell a 400 from a 503, and parsing it back out
+          // of prose is not a contract. Same shape as webhooks.mjs.
+          throw Object.assign(new Error(`TTS synthesize failed (${response.status}): ${body.slice(0, 300)}`), {
+            responseStatus: response.status,
+          })
         }
         const { audioContent } = await response.json()
         if (!audioContent) throw new Error('TTS synthesize returned no audioContent')

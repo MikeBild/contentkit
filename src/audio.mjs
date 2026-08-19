@@ -1,5 +1,6 @@
 import { extractSpeechText } from './speech-text.mjs'
 import { createTtsProvider } from './tts.mjs'
+import { backoffSeconds, isRetryable } from './retry.mjs'
 import { compareDateDesc, sha256 } from './utils.mjs'
 
 // Read-aloud audio ("Vorlesen") after the outbox blueprint: publishing enqueues
@@ -23,10 +24,7 @@ const PROCESSING_LEASE_MS = 15 * 60 * 1000
 // Exponential backoff (base 60s, doubling, capped 1h) with ±15% jitter, same
 // shape as webhook deliveries but slower: TTS failures are usually quota or
 // upstream outages, not blips.
-function nextDelaySeconds(attempts) {
-  const base = Math.min(60 * 2 ** Math.min(attempts - 1, 6), 3600)
-  return base * (0.85 + Math.random() * 0.3)
-}
+const nextDelaySeconds = (attempts) => backoffSeconds(attempts, { baseSeconds: 60, capSeconds: 3600, doublings: 6 })
 
 const isUniqueViolation = (error) => /duplicate key|unique constraint/i.test(String(error.message || error))
 
@@ -459,7 +457,10 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
 
   async function onFailure(job, error) {
     const attempts = Number(job.attempts || 0) + 1
-    const terminal = attempts >= config.audioMaxAttempts
+    // Attempts left is not the only reason to stop. A 400 will answer 400 again,
+    // and every repeat is billed by the provider, so an unretryable failure is
+    // terminal on the first one.
+    const terminal = attempts >= config.audioMaxAttempts || !isRetryable(error)
     await db
       .update(
         'ck_audio_jobs',
@@ -474,7 +475,14 @@ export function createAudioWorker(config, db, repo, storage, logger, ttsFactory 
         { returning: false },
       )
       .catch(() => {})
-    logger.warn('audio job failed', { jobId: job.id, attempts, terminal, error: String(error.message || error) })
+    logger.warn('audio job failed', {
+      jobId: job.id,
+      attempts,
+      terminal,
+      retryable: isRetryable(error),
+      responseStatus: error.responseStatus ?? null,
+      error: String(error.message || error),
+    })
   }
 
   async function tick() {

@@ -96,6 +96,23 @@ export function extractSpeechText(markdown, { title = '' } = {}) {
     // Headings and list items become sentences of their own.
     .replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, (match, heading) => sentence(heading))
     .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(.+)$/gm, (match, item) => sentence(item))
+    // Table rows are clauses in a grid, not prose. The separator row is
+    // punctuation for the eye and says nothing aloud. Every other row becomes a
+    // sentence of its own with its cells joined by commas — without this the
+    // pipes survive, consecutive rows join on a single newline, and the whole
+    // table arrives as ONE unpunctuated paragraph. Chirp 3 HD rejects that with
+    // `400 … sentences that are too long`, which is what took four narrations
+    // out in July and August; the retry loop then paid for it five times each.
+    .replace(/^[ \t]*\|[ \t]*:?-{2,}[-|: \t]*\|?[ \t]*$/gm, ' ')
+    .replace(/^[ \t]*\|(.+)\|[ \t]*$/gm, (match, row) =>
+      sentence(
+        row
+          .split('|')
+          .map((cell) => cell.trim())
+          .filter(Boolean)
+          .join(', '),
+      ),
+    )
     // Inline code keeps its content (usually a single identifier), loses the
     // backticks; bold/italic keep the words, lose the markers.
     .replace(/`([^`\n]*)`/g, '$1')
