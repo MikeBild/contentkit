@@ -28,21 +28,85 @@
  *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
- * It does not soften. Red is a legitimate answer here — this file was written
- * before the console was brought to the convention, and an assertion relaxed to
- * make the output green is the one change that makes it worthless. Every rule
+ * It does not soften. Red is a legitimate answer here, and an assertion relaxed
+ * to make the output green is the one change that makes this file worthless —
+ * the more so now that it is a gate stage, because a gate is a standing
+ * temptation to argue with the assertion instead of with the console. Every rule
  * below quotes the paragraph it comes from, so a disagreement is settled against
  * COCKPIT-KONVENTION.md rather than against this script.
  *
- * It is also not wired into `verify`, `test`, `validate:*` or any CI workflow,
- * and must not be. It reports where the console stands against the family
- * convention; the repo's own gates report whether the repo is sound. Mixing the
- * two turns a roadmap into a broken build.
+ * WHY IT IS A GATE STAGE NOW, AND WHY IT WAS NOT
  *
- * Run it with `npm run konvention:check` (build the console first if
- * `assets/cockpit` is stale: `npm run cockpit:build`).
+ * Until 20.08.2026 this header said the opposite in this very place: "not wired
+ * into `verify`, `test`, `validate:*` or any CI workflow, and must not be. It
+ * reports where the console stands against the family convention; the repo's own
+ * gates report whether the repo is sound. Mixing the two turns a roadmap into a
+ * broken build."
+ *
+ * That was correct for the state it described, and it is worth keeping the
+ * reasoning rather than deleting it. This file landed in fa8e45f BEFORE the
+ * console had been brought to the convention, so it was deliberately RED — a
+ * backlog measured against COCKPIT-KONVENTION.md, not a verdict about the repo.
+ * A red check cannot be a gate: it blocks every commit over the defects it
+ * exists to enumerate, and the only way out is to weaken an assertion, which
+ * deletes exactly the information this file carries.
+ *
+ * That state ended on 20.08.2026. LOCAL-CK-TITEL, -WORTMARKE, -APPICON,
+ * -ART-UNBEKANNT, -DETAILROUTEN, -FAVICON-BASEPFAD and -KONVENTION-V15 closed
+ * the backlog one commit at a time, and the run has reported `conform: true`
+ * since. With the last violation the reason not to gate lapsed — and nobody
+ * noticed, because a reason that lapses leaves no trace anywhere. It took a
+ * sweep across all six products to find it (BEFUND-CHECK-LAEUFT-NIRGENDS): the
+ * check ran in no gate, no CI workflow and no hook in any of them. A guarantee
+ * that is never asked for is a comment, and a check that has been green for a
+ * day while nothing calls it is the largest comment in the repository.
+ *
+ * So since LOCAL-CK-CHECK-INS-GATE it is asked: the last stage of
+ * `npm run verify`, after the fast ones and after `validate:cockpit`, which is
+ * what builds the bundle it reads; and a step of the `cockpit-e2e` job in
+ * .github/workflows/ci.yml, the one CI job that already has a browser and a
+ * fresh build. Both, because `verify` is not what CI runs — putting it only in
+ * `verify` would leave AK-CK-G.1's "Prüfweg: CI-Gate" claiming more than is
+ * held, which is the same defect one level up.
+ *
+ * WHAT A GATE STAGE OWES, AND WHAT HAD TO CHANGE FIRST
+ *
+ * A gate hangs on an exit code, so a check that reports red and returns 0 is
+ * worse as a mandatory stage than no stage at all. Three things were measured
+ * and, where they did not hold, repaired before this file was allowed to carry
+ * one (LOCAL-CK-CHECK-INS-GATE):
+ *
+ * - Every class of violation exits non-zero. It always did; re-measured against
+ *   a broken wordmark, a broken tab title and a favicon pointing nowhere.
+ * - A run that could not MEASURE is no longer green. `nichtGeprueft` used to be
+ *   printed ABOVE a `conform: true` and an exit code of 0 — the report said "I
+ *   did not look here" while the gate read "sound", which is the §12 failure the
+ *   list was built to end. An unmeasured place now ends the run red and no
+ *   `conform: true` is written while one exists. It is still not counted as a
+ *   violation: "unchecked" is its own answer, and a gate has to refuse it just
+ *   as firmly as a breach. Two sibling products were carrying the same illness
+ *   on the same day.
+ * - A crash reports what was already found. Rule 15 is measured before the
+ *   fixture starts, so a missing or unusable `assets/cockpit` used to end the
+ *   run in a stacktrace and take that finding with it. The stand is now started
+ *   inside the same try as the sweep, and a stand that cannot be built is an
+ *   unmeasured entry with a sentence, not a stack trace where the report goes.
+ *
+ * AND THE TRAP THAT IS SPECIFIC TO THIS PRODUCT
+ *
+ * This check measures the BUILT `assets/cockpit`, not the source (the siblings
+ * measure a dev server or `vite preview`). As a mandatory stage that is the
+ * likeliest way to be lied to: with a stale bundle it certifies a state that is
+ * not the source, in green, at speed. Measured rather than assumed — with
+ * `app.name` set to "CONTENTKIT" in the catalogue and no rebuild, the run
+ * reported `conform: true` and exit 0 over a §6 breach sitting in the source.
+ * So the age of the bundle is now part of the measurement: sources newer than
+ * `assets/cockpit/index.html` end the run as unmeasured, red, naming the file.
+ *
+ * Run it with `npm run konvention:check`; build the console first, or it will
+ * tell you to: `npm run cockpit:build`.
  */
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -1029,10 +1093,71 @@ if (
   })
 }
 
-const fixture = await startFixture()
-const browser = await chromium.launch({ headless: true })
+/**
+ * Whether `assets/cockpit` is older than the sources it was built from.
+ *
+ * The one precondition that is specific to ContentKit. Every rule below except
+ * 15 is read off the BUILT console, so a bundle that predates a source change is
+ * a checker measuring a build nobody is shipping — and answering green about it,
+ * fast, which is the most convincing way to be wrong. The header records the
+ * measurement: a §6 breach written into the catalogue and left unbuilt passed
+ * this check without a word.
+ *
+ * Modification times rather than a content stamp, deliberately. A stamp means
+ * scripts/build-cockpit.sh has to write one and every path that produces a
+ * bundle has to remember to — a second thing to keep in sync, for a question
+ * that has a cheap conservative answer. This one errs towards a rebuild: a file
+ * restored to its identical content still counts as newer. That is a minute of
+ * `npm run cockpit:build`, against a green verdict about the wrong bytes.
+ *
+ * `apps/cockpit/node_modules` and `dist` are excluded because they are not
+ * sources, and dotted entries because `.vite` is a build cache that is written
+ * DURING the build and would make every bundle stale the moment it was made.
+ */
+async function bundleOlderThanSource() {
+  const built = await stat(join(root, 'assets', 'cockpit', 'index.html')).catch(() => null)
+  // No bundle at all is a different sentence, and cockpit-fixture.mjs already
+  // says it better than a second one here would.
+  if (!built) return null
+
+  const app = join(root, 'apps', 'cockpit')
+  const skipped = new Set(['node_modules', 'dist'])
+  let newest = null
+  const walk = async (directory) => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || skipped.has(entry.name)) continue
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        await walk(path)
+        continue
+      }
+      const info = await stat(path)
+      if (!newest || info.mtimeMs > newest.mtimeMs) newest = { path, mtimeMs: info.mtimeMs }
+    }
+  }
+  await walk(app)
+
+  if (!newest || newest.mtimeMs <= built.mtimeMs) return null
+  const minutes = Math.round((newest.mtimeMs - built.mtimeMs) / 60_000)
+  return (
+    `assets/cockpit/index.html was built at ${new Date(built.mtimeMs).toISOString()}, but ` +
+    `${newest.path.slice(root.length + 1)} changed ${minutes} minute(s) later. Every rule but 15 is read off ` +
+    `the built console, so this run would report on a bundle that is not the source. Build it: npm run cockpit:build`
+  )
+}
+
+let fixture = null
+let browser = null
+/** The stand could not be built or fell over mid-run; reported, never thrown away. */
+let standFailure = null
 
 try {
+  const stale = await bundleOlderThanSource()
+  if (stale) throw new Error(stale)
+
+  fixture = await startFixture()
+  browser = await chromium.launch({ headless: true })
+
   // ───────────────────────────────────────────────────────────────────────────
   // With a gate open: the shell's labels, the banner, the queue and the counter.
   // ───────────────────────────────────────────────────────────────────────────
@@ -1686,9 +1811,20 @@ try {
     }
     await stranger.context.close()
   }
+} catch (error) {
+  // Caught rather than allowed to escape, because rule 15 has already been
+  // measured by this point and an escaping error prints a stack trace where the
+  // report belongs — taking every finding collected before it with it. A sibling
+  // lost a real finding exactly this way on the same day the check became
+  // mandatory here. The run still ends red; it ends red WITH its report.
+  standFailure = error
+  unmeasured(
+    'the test stand',
+    `it could not be built or did not survive the run, so nothing below rule 15 was measured — ${error instanceof Error ? error.message : String(error)}`,
+  )
 } finally {
-  await browser.close().catch(() => {})
-  await fixture.close().catch(() => {})
+  await browser?.close().catch(() => {})
+  await fixture?.close().catch(() => {})
 }
 
 // A page that rendered against a 501 rendered against nothing, and every
@@ -1696,11 +1832,51 @@ try {
 // script scripts/validate-cockpit-browser.mjs has asserted this for a while;
 // this one used to let it pass in silence, which is the §12 failure in its
 // purest form — the check was quietest exactly where it saw least.
-for (const entry of [...new Set(fixture.unanswered)]) {
+for (const entry of [...new Set(fixture?.unanswered ?? [])]) {
   unmeasured('the fixture', `the console asked for ${entry}, so some surface rendered against nothing`)
 }
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The gap that is not a gap in the run, but in the file.
+//
+// `nichtGeprueft` above lists what this run TRIED and failed to reach — a hung
+// skeleton, a handle that would not click, a fixture that answered 501. Those
+// are accidents of one run and they go away when the cause does. This is a
+// different animal: LOCALE is fixed to 'de', so the English catalogue is never
+// measured at all, by construction, in every run there has ever been. It cannot
+// go in the same list — a permanent gap parked among transient ones is a
+// permanent gap nobody ever sees again (LOCAL-CK-EINE-SPRACHE-GEPRUEFT).
+//
+// It matters more now than it did yesterday: as a mandatory stage this report is
+// read as a certificate, and a certificate has to name what it did not examine.
+//
+// The numbers below are measured, not estimated. Running this same file with
+// LOCALE = 'en' on 20.08.2026 produced 5 violations across four rules, all of
+// them false: those four compare against German literals, so on the English
+// catalogue they do not fall silent, they report the wrong thing. Fixing that —
+// teaching the rules which catalogue they are reading — is
+// LOCAL-CK-ABRUFSATZ-ROUTENTIEFE's neighbour and is deliberately not done here.
+// This sentence only ends the state where the gap did not appear as one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STRUCTURALLY_NOT_MEASURED = [
+  `Katalog en — dieser Lauf misst nur ${LOCALE} (LOCALE ist fest verdrahtet). Gemessen mit LOCALE = 'en': ` +
+    '5 Verstöße über vier Regeln — 3 (§8.1, „Entscheidungen" → „Decisions"), 6 (§8.2, „Liegt schon länger" → ' +
+    '„Waiting longer"), 10 (§8.6, beide Sätze des geleerten Zustands) und 12 (§2/§5, „Art nicht ermittelbar" → ' +
+    '„Kind not determinable"). Diese vier vergleichen gegen deutsche Literale und schlagen auf en falsch an — ' +
+    'sie schweigen nicht, sie melden Falsches. Die übrigen elf Regeln blieben dabei grün, sind auf en aber ' +
+    'ebenso ungemessen wie diese vier. Das ist eine dauerhafte strukturelle Lücke, kein gescheiterter ' +
+    'Messversuch, und steht deshalb nicht in nichtGeprueft.',
+]
+
+// Standing, in both outcomes, above the run's own gaps and above the verdict —
+// for the same reason `nichtGeprueft` is printed there: a certificate has to
+// carry what it did not look at where the eye lands, not only in its JSON.
+console.error(`ℹ nicht gemessen — ${STRUCTURALLY_NOT_MEASURED.length} dauerhafte Lücke(n) dieses Prüfskripts:`)
+for (const entry of STRUCTURALLY_NOT_MEASURED) console.error(`    ${entry}`)
+console.error('')
 
 // Printed before the verdict and in both outcomes. A gap reported underneath a
 // green "conform: true" is a gap nobody reads; §12 wants it where the eye lands
@@ -1711,16 +1887,30 @@ if (notMeasured.length > 0) {
   console.error('  Diese Stellen sind weder konform noch nicht-konform. Sie sind ungeprüft.\n')
 }
 
-if (violations.length > 0) {
+// A run that could not look is not a run that found nothing. Both endings are
+// red and they are kept apart in the wording, because "the console breaches §6"
+// and "this run never saw the console" call for opposite next steps: fix the
+// console, or fix the stand and run again.
+if (violations.length > 0 || notMeasured.length > 0) {
   for (const entry of violations) {
     console.error(`✗ Regel ${entry.rule} · ${entry.paragraph} · ${entry.where}`)
     console.error(`    erwartet: ${entry.expected}`)
     console.error(`    ist:      ${entry.found}`)
   }
-  console.error(`\nKonvention-Check failed: ${violations.length} violation(s) against ${CONVENTION} in ${seconds}s.`)
-  console.error(
-    'These are findings, not a broken build. Fix the console — never the assertion — and never wire this check into a gate.',
-  )
+  if (violations.length > 0) {
+    console.error(`\nKonvention-Check failed: ${violations.length} violation(s) against ${CONVENTION} in ${seconds}s.`)
+    console.error('Fix the console — never the assertion. Every rule quotes the paragraph it comes from.')
+  }
+  if (notMeasured.length > 0) {
+    console.error(
+      `\nKonvention-Check inconclusive: ${notMeasured.length} place(s) went unmeasured against ${CONVENTION} in ${seconds}s.`,
+    )
+    console.error(
+      standFailure
+        ? 'The test stand never carried a measurement; nothing below rule 15 was looked at. Repair the stand and run again — this is not a verdict about the console.'
+        : 'A gate cannot pass on "unchecked". Repair what could not be reached and run again — this is not a verdict about the console.',
+    )
+  }
   process.exitCode = 1
 } else {
   process.stdout.write(
@@ -1730,6 +1920,7 @@ if (violations.length > 0) {
         convention: CONVENTION,
         seconds: Number(seconds),
         locale: LOCALE,
+        nichtGemessen: STRUCTURALLY_NOT_MEASURED,
         routes: ROUTES.length,
         detailflaechen: DETAILS.map((entry) => `${entry.collection} (${entry.route})`),
         ohneDetailflaeche: WITHOUT_DETAIL.map((entry) => `${entry.collection} (${entry.route}) — ${entry.why}`),
