@@ -69,6 +69,44 @@ const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The version of the standard, twice — once as a label, once as a claim.
+//
+// These look redundant and are not, and getting them confused is how this file
+// spent a day reporting against a document that no longer existed.
+//
+// The LABEL is every line this file prints: "measured against v1.5". Until this
+// commit it was a literal in two places at the bottom and it went stale exactly
+// the way a literal does — the repo's copy moved on, the report kept announcing
+// the old number, green. A verdict that misnames its standard is not a weaker
+// verdict, it is a different one. So the label is read out of the copy's header
+// line and cannot be forgotten.
+//
+// But a label read out of the file can never CONTRADICT the file. Leave a v1.3
+// copy lying in this repo and the run cheerfully says "measured against v1.3"
+// and passes; it cannot notice that it is measuring against a superseded
+// agreement, because the two agree by construction. §7 makes the per-repo copy
+// the mechanism against drift, and a mechanism that cannot disagree is
+// decoration. WikiKit found this in AK-WI-G.1 — an acceptance criterion naming
+// "v1.4" in prose would have been satisfied by an outdated copy.
+//
+// So the CLAIM sits beside it: the version this checker was written against,
+// typed out by hand, and asserted against the header (rule 15). Hand-typed on
+// purpose — derive it and the assert proves nothing. This file rose from v1.4
+// to v1.5 by hand and the places that said "v1.4" were found by grep; that is
+// the drift a machine should catch. Construction copied from CodeKit's
+// `checkKonventionVersion`, in this file's own idiom — not imported.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The version this checker was written against. Typed, never derived. */
+const KONVENTION_VERSION = '1.5'
+
+const conventionSource = await readFile(join(root, 'COCKPIT-KONVENTION.md'), 'utf8')
+const CONVENTION_HEADER = /^Version (\d+\.\d+) · /m.exec(conventionSource)?.[1] ?? null
+const CONVENTION = CONVENTION_HEADER
+  ? `COCKPIT-KONVENTION.md v${CONVENTION_HEADER}`
+  : 'COCKPIT-KONVENTION.md (Kopfzeile ohne lesbare Version)'
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The routes, read from the router rather than written down.
 //
 // Rules 4, 7 and 8 are prohibitions ("nowhere", "no visible button", "no UUID"),
@@ -963,6 +1001,34 @@ async function contextFor(browser, payload) {
 }
 
 const started = Date.now()
+
+// ── Rule 15 (§7). The copy in this repo and this checker name the same version.
+//
+//    The only rule here that needs neither a browser nor a server, and the only
+//    one about the checker itself, so it is measured first: everything below it
+//    is worth reading only if this holds. §7 makes the versioned copy per repo
+//    the mechanism against drift — a copy that has moved on while this file
+//    still quotes the previous number ends the run with "no violations against
+//    v1.4" and reads like a clean bill of health for an agreement that is no
+//    longer in force.
+if (
+  check(CONVENTION_HEADER !== null, {
+    rule: 15,
+    paragraph: '§7',
+    where: 'COCKPIT-KONVENTION.md › header line',
+    expected: 'a header line reading "Version x.y · …"',
+    found: `the copy in the repository root begins "${conventionSource.split('\n').slice(0, 3).join(' ').trim().slice(0, 80)}"`,
+  })
+) {
+  check(CONVENTION_HEADER === KONVENTION_VERSION, {
+    rule: 15,
+    paragraph: '§7',
+    where: 'COCKPIT-KONVENTION.md › header line',
+    expected: `version ${KONVENTION_VERSION}, the one this checker was written against`,
+    found: `version ${CONVENTION_HEADER} — one of the two moved without the other; read the diff before touching either number`,
+  })
+}
+
 const fixture = await startFixture()
 const browser = await chromium.launch({ headless: true })
 
@@ -1201,11 +1267,22 @@ try {
         found: `base ${base ? `"${base}"` : 'not found'}, source href ${sourceHref ? `"${sourceHref}"` : 'not found'}`,
       })
     ) {
-      check(appIcon.authored === `${base.replace(/\/$/, '')}${sourceHref}`, {
+      //    The arithmetic below only means anything for an absolute source href.
+      //    A relative one ("./favicon.svg") is a third failure mode with its own
+      //    sentence — Vite leaves it alone, so the built document carries it
+      //    verbatim and it resolves against whatever route is open: right on
+      //    /cockpit/, dead on every deeper path. Reporting it as "expected
+      //    /cockpit./favicon.svg" would be a correct verdict wrapped in a
+      //    nonsense instruction. `test/contract/cockpit-bundle.test.mjs` refuses
+      //    the relative spelling at the source; this says the same thing about
+      //    the served document.
+      check(sourceHref.startsWith('/') && appIcon.authored === `${base.replace(/\/$/, '')}${sourceHref}`, {
         rule: 11,
         paragraph: '§6',
         where: 'the served document › <link rel="icon"> › href',
-        expected: `"${base.replace(/\/$/, '')}${sourceHref}" — the base from vite.config.ts, prepended by the build to the source href`,
+        expected: sourceHref.startsWith('/')
+          ? `"${base.replace(/\/$/, '')}${sourceHref}" — the base from vite.config.ts, prepended by the build to the source href`
+          : 'an href written from the site root, so the build can prepend the base to it — a relative one resolves against the open route and is dead on every path below /cockpit/',
         found: `"${appIcon.authored}" (source "${sourceHref}", base "${base}")`,
       })
     }
@@ -1640,9 +1717,7 @@ if (violations.length > 0) {
     console.error(`    erwartet: ${entry.expected}`)
     console.error(`    ist:      ${entry.found}`)
   }
-  console.error(
-    `\nKonvention-Check failed: ${violations.length} violation(s) against COCKPIT-KONVENTION.md v1.4 in ${seconds}s.`,
-  )
+  console.error(`\nKonvention-Check failed: ${violations.length} violation(s) against ${CONVENTION} in ${seconds}s.`)
   console.error(
     'These are findings, not a broken build. Fix the console — never the assertion — and never wire this check into a gate.',
   )
@@ -1652,7 +1727,7 @@ if (violations.length > 0) {
     `${JSON.stringify(
       {
         conform: true,
-        convention: 'COCKPIT-KONVENTION.md v1.4',
+        convention: CONVENTION,
         seconds: Number(seconds),
         locale: LOCALE,
         routes: ROUTES.length,
@@ -1674,6 +1749,7 @@ if (violations.length > 0) {
           '12 · §2/§4 — a decision of a kind this build cannot name degrades to its own badge ("Art nicht ermittelbar" plus the raw value) and never unmounts the page',
           '13 · §4 — no route and no detail surface answers with an error screen; a page that threw is not a page that passed',
           '14 · §5 — no catalogue key is rendered as if it were a sentence; the key list is the catalogue itself, so the rule needs no word list',
+          `15 · §7 — the convention copy in the repository root is version ${KONVENTION_VERSION}, the one this checker was written against`,
         ],
       },
       null,
