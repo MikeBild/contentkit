@@ -33,6 +33,9 @@ const source = (...parts) => readFileSync(join(cockpit, ...parts), 'utf8')
 const chainSource = source('components', 'ui', 'release-chain.tsx')
 const chainLogic = source('lib', 'release-chain.ts')
 const overview = source('pages', 'overview.tsx')
+// The statistics moved out of the Overview to Installation → System (§1). The
+// rules below did not move with them; they follow the code.
+const statisticsSource = source('components', 'statistics.tsx')
 const releasesPage = source('pages', 'releases.tsx')
 const shell = source('app', 'shell.tsx')
 
@@ -1393,25 +1396,33 @@ describe('the release chain, on screen', () => {
     )
   })
 
-  test('the overview draws no missing product total as a zero either', () => {
+  test('the statistics draw no missing product total as a zero either', () => {
     // The same class of lie, one file over: `Number(totals[name] ?? 0)` answered a
     // total the payload never sent with the one number an operator reads as "this
     // happened, nought times" — in the same function whose next three lines
     // already refuse to do that to the points.
-    const statistics = stripComments(overview).slice(0, stripComments(overview).indexOf('function DecisionZone'))
-    assert.doesNotMatch(statistics, /\?\? 0/)
-    assert.match(overview, /typeof totals\[name\] === 'number' \? totals\[name\] : null/)
+    const readers = stripComments(statisticsSource).slice(
+      0,
+      stripComments(statisticsSource).indexOf('function StatisticsSection'),
+    )
+    assert.doesNotMatch(readers, /\?\? 0/)
+    assert.match(statisticsSource, /typeof totals\[name\] === 'number' \? totals\[name\] : null/)
+    // And the page that kept the §4 sentence must not have grown its own reader
+    // on the way out: one classification, or the two surfaces start disagreeing
+    // about what an empty statistic means.
+    assert.doesNotMatch(stripComments(overview), /readProductStats|readUsageStats|totals\[name\]/)
+    assert.match(overview, /useStatTiles\(site\)/)
   })
 
-  test('the overview still refuses to draw a missing statistic as zero', () => {
+  test('the statistics still refuse to draw a missing statistic as zero', () => {
     // The contract this page already had. A chain added above the tiles must not
-    // cost it: `missing` stays null all the way into the sparkline. Both halves
-    // are named, because the totals and the buckets are two separate reads and
-    // the totals one is what the tile prints.
-    assert.match(overview, /metric\.value_state === 'missing' \? null/, 'a missing usage total is null, not 0')
-    assert.match(overview, /point\.value_state === 'missing' \? null : point\.value/)
-    assert.match(overview, /if \(metric\.total === null\) return '—'/, 'and null prints as an em dash')
-    assert.match(overview, /value === null/, 'the sparkline breaks the line at a gap rather than bridging it')
+    // cost it, and neither may the move to System: `missing` stays null all the
+    // way into the sparkline. Both halves are named, because the totals and the
+    // buckets are two separate reads and the totals one is what the tile prints.
+    assert.match(statisticsSource, /metric\.value_state === 'missing' \? null/, 'a missing usage total is null, not 0')
+    assert.match(statisticsSource, /point\.value_state === 'missing' \? null : point\.value/)
+    assert.match(statisticsSource, /if \(metric\.total === null\) return '—'/, 'and null prints as an em dash')
+    assert.match(statisticsSource, /value === null/, 'the sparkline breaks the line at a gap rather than bridging it')
   })
 
   test('the page declares the two paths it now reaches', () => {

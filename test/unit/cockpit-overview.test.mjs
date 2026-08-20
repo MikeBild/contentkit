@@ -27,7 +27,19 @@ import { fileURLToPath } from 'node:url'
 
 const here = fileURLToPath(import.meta.url)
 const root = dirname(dirname(dirname(here)))
-const overview = readFileSync(join(root, 'apps', 'cockpit', 'src', 'pages', 'overview.tsx'), 'utf8')
+const cockpit = join(root, 'apps', 'cockpit', 'src')
+const overview = readFileSync(join(cockpit, 'pages', 'overview.tsx'), 'utf8')
+const system = readFileSync(join(cockpit, 'pages', 'system.tsx'), 'utf8')
+/**
+ * The tiles moved. §1 puts operational numbers under Installation → System, and
+ * durations and success ratios are operational numbers whatever the tile is
+ * called, so the reading, the classification and the three renderers now live in
+ * `components/statistics.tsx` and are rendered from System. Everything this file
+ * asserted about them is asserted about them still — the rules did not move, the
+ * code did, and a rule that quietly stopped applying because its file was
+ * renamed is the failure this file exists to prevent.
+ */
+const statistics = readFileSync(join(cockpit, 'components', 'statistics.tsx'), 'utf8')
 
 /** Comments first: this page documents the defects it fixed, quoting them. */
 const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
@@ -47,7 +59,7 @@ function braceGroup(text, from) {
   assert.fail('unbalanced braces')
 }
 
-const record = (name) => new Function(`return (${braceGroup(overview, overview.indexOf(`const ${name} =`))})`)()
+const record = (name) => new Function(`return (${braceGroup(statistics, statistics.indexOf(`const ${name} =`))})`)()
 
 describe('the Overview says "nothing measured" once, and still says which nothing it is', () => {
   test('a measured zero and a value nobody recorded never share a word', () => {
@@ -86,28 +98,28 @@ describe('the Overview says "nothing measured" once, and still says which nothin
   })
 
   test('the emptiness comes from the module that owns it, not from a second rule here', () => {
-    assert.match(overview, /from '@\/lib\/stat-tile'/)
-    assert.match(overview, /tileEmptiness\(metrics\)/, 'the tile is classified by the module the tests can call')
-    assert.match(overview, /visibleMetrics\(metrics\)/)
+    assert.match(statistics, /from '@\/lib\/stat-tile'/)
+    assert.match(statistics, /tileEmptiness\(metrics\)/, 'the tile is classified by the module the tests can call')
+    assert.match(statistics, /visibleMetrics\(metrics\)/)
     // The classification is what the page groups by, so it has to reach the DOM
     // for a browser test as well as this one.
-    assert.match(overview, /data-emptiness=\{tile\.emptiness\}/)
+    assert.match(statistics, /data-emptiness=\{tile\.emptiness\}/)
   })
 
   test('the empty state and the refusal are one per surface, not one per tile', () => {
     // One of each in the whole file. Nine tiles with nothing to plot is one
     // sentence about this window; nine tiles that answered 403 is one sentence
     // about this operator's scope.
-    const clean = stripComments(overview)
+    const clean = stripComments(statistics)
     const quiet = clean.slice(clean.indexOf('function QuietStats'), clean.indexOf('function StatCard'))
     const unreadable = clean.slice(clean.indexOf('function UnreadableStats'), clean.indexOf('function QuietStats'))
     assert.equal([...quiet.matchAll(/<Empty\b/g)].length, 1, 'one quiet state serves the whole statistics surface')
     assert.equal([...unreadable.matchAll(/<Alert\b/g)].length, 1, 'one refusal serves the whole statistics surface')
     // Both must sit outside the card, or the count above is satisfied by a card
     // that renders the only one.
-    const card = stripComments(overview).indexOf('function StatCard')
+    const card = stripComments(statistics).indexOf('function StatCard')
     assert.ok(card > 0, 'StatCard must exist')
-    const inCard = stripComments(overview).slice(card)
+    const inCard = stripComments(statistics).slice(card)
     assert.doesNotMatch(inCard, /<Empty\b/, 'the tile must not carry an empty state of its own')
     assert.doesNotMatch(inCard, /<Alert\b/, 'nor a refusal of its own')
   })
@@ -115,30 +127,55 @@ describe('the Overview says "nothing measured" once, and still says which nothin
   test('the surface-level empty and the surface-level refusal are still two different things', () => {
     // UI-UX.md §5: an empty result and a failed request must never look the
     // same. Grouping them was the change; merging them would be the defect.
-    assert.match(overview, /<Empty[\s\S]{0,400}?data-testid="ck-overview-quiet"/)
-    assert.match(overview, /<Alert variant="destructive"[\s\S]{0,200}?data-testid="ck-overview-unreadable"/)
+    assert.match(statistics, /<Empty[\s\S]{0,400}?data-testid="ck-overview-quiet"/)
+    assert.match(statistics, /<Alert variant="destructive"[\s\S]{0,200}?data-testid="ck-overview-unreadable"/)
   })
 
   test('a refusal keeps the server’s own words, grouped rather than rewritten', () => {
     // A 403 and a 500 on one page are two problems, and a refusal that names
     // counts loses them the moment it is summarised into one sentence.
-    assert.match(overview, /grouped\.set\(message/, 'the message is what the kinds are grouped by')
-    assert.match(overview, /error instanceof Error \? tile\.result\.error\.message/, 'verbatim, not paraphrased')
+    assert.match(statistics, /grouped\.set\(message/, 'the message is what the kinds are grouped by')
+    assert.match(statistics, /error instanceof Error \? tile\.result\.error\.message/, 'verbatim, not paraphrased')
   })
 
-  test('the release chain is the page’s first answer and the tiles are the reference under it', () => {
+  test('the release chain is the page’s first answer and the §4 sentence is the reference under it', () => {
     const body = overview.slice(overview.indexOf('export function OverviewPage'))
     const chain = body.indexOf('<ReleaseChain')
-    const statistics = body.indexOf('data-testid="ck-overview-statistics"')
-    const grid = body.indexOf('<StatCard')
+    const section = body.indexOf('data-testid="ck-overview-statistics"')
     assert.ok(chain > 0, 'the chain must be on the page')
-    assert.ok(statistics > chain, 'the chain is the thing an operator acts on, so it comes first')
-    assert.ok(grid > statistics, 'and the tiles are reference material, under their own heading')
+    assert.ok(section > chain, 'the chain is the thing an operator acts on, so it comes first')
     assert.match(
       body,
       /<h2[^>]*>\{t\('overview\.statistics'\)\}<\/h2>/,
       'the reference half needs a heading to be a half rather than more tiles',
     )
+  })
+
+  test('the tiles moved to Installation → System, and the measured zero stayed', () => {
+    // §1, verbatim: "Betriebsmetriken (HTTP, p95, Calls) wohnen unter
+    // Installation → System, nie auf dem Startscreen." The eight product tiles
+    // carried durations and success ratios, which is that class of number under
+    // a different name — so the grid and the refusal render from System now.
+    const clean = stripComments(overview)
+    assert.doesNotMatch(clean, /<StatCard\b/, 'no statistic tile renders on the first screen')
+    assert.doesNotMatch(clean, /<UnreadableStats\b/, 'nor the refusal that belongs beside them')
+    assert.doesNotMatch(
+      clean,
+      /'duration'|'ratio'|'percentage'|'data-size'/,
+      'nor the unit formatting that only operational numbers need',
+    )
+    assert.match(stripComments(system), /<StatisticsSection\b/, 'System renders the surface they moved to')
+    assert.match(stripComments(statistics), /<StatCard\b/, 'and the tiles live in the module both pages read')
+
+    // The one exception, and the reason it is one: ContentKit is the family's
+    // reference for §4's "gemessene Null". "5 von 8 haben nichts darzustellen"
+    // is a measurement about all eight, which is why the page still READS all
+    // eight while rendering none of them.
+    assert.match(clean, /<QuietStats\b/, 'the "gemessene Null" card is what stayed on the Overview')
+    assert.match(clean, /useStatTiles\(site\)/, 'and it is still measured over every statistic, not over one')
+    // §1 again: "Kein Zähler ohne Link." The count is on the Overview and the
+    // things counted are on System, so the way between them has to exist.
+    assert.match(clean, /to="\/system"/, 'the count links to the tiles it counts')
   })
 
   test('the page description says what the page is for, not how the numbers are computed', () => {
@@ -149,7 +186,8 @@ describe('the Overview says "nothing measured" once, and still says which nothin
       /bucket|aggregate|UTC/i,
       'the window is a fact about the numbers and belongs beside them, not in the page’s purpose',
     )
-    // Moved, not deleted: the window is still stated where the numbers are.
-    assert.match(overview, /t\('overview\.statisticsWindow'\)/)
+    // Moved, not deleted: the window is still stated where the numbers are —
+    // which is now the statistics surface itself, under Installation → System.
+    assert.match(statistics, /t\('overview\.statisticsWindow'\)/)
   })
 })

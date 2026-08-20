@@ -5,6 +5,7 @@ import { useNow } from '@/hooks/use-now'
 import { Page } from '@/app/shell'
 import { useI18n } from '@/lib/i18n-context'
 import { Confirm } from '@/components/confirm'
+import { StatisticsSection, useStatTiles } from '@/components/statistics'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SkeletonFields } from '@/components/ui/skeleton'
@@ -102,6 +103,7 @@ export function SystemPage() {
     enabled: Boolean(site) && can('stats:read'),
     retry: false,
   })
+  const stats = useStatTiles(site)
   const now = useNow()
 
   // /ready answers 503 while draining, which the client turns into an error —
@@ -236,6 +238,16 @@ export function SystemPage() {
             ) : null}
           </CardContent>
         </Card>
+
+        {/*
+          §1: "Betriebsmetriken (HTTP, p95, Calls) wohnen unter Installation →
+          System, nie auf dem Startscreen." The eight product statistics carried
+          durations and success ratios on the Overview, which is the same class
+          of number under a different name, so they live here now. The Overview
+          keeps only the §4 sentence about how many of them have nothing to
+          show — a measurement, and the one statistic a first screen earns.
+        */}
+        {site && can('stats:read') ? <StatisticsSection stats={stats} /> : null}
 
         {can('release:write') ? (
           <Card>

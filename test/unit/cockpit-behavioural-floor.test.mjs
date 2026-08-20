@@ -1031,7 +1031,7 @@ const UNCOVERED = [
   {
     id: 'ui/derived-readouts',
     missing:
-      'Relative time, the release chain, the stat tiles, the audit phrasing, the audio budget and a tab strip’s count badge: each turns a machine value into a sentence an operator trusts, and each is checked only by unit tests over the mapping, never over what is rendered. lib/audit-action.ts is graded by test/unit/cockpit-audit-action.test.mjs, which drives every action the server can write — but nothing renders the row it produces. The tab count is the newest and the one with a rule worth rendering — a known zero and an unknown must both draw nothing, and nothing is exactly what a jsdom assertion about an absent badge cannot tell apart from a page that failed to render. It is graded instead by scripts/validate-cockpit-browser.mjs, which reads the badge and then opens the panel it counts.',
+      'Relative time, the release chain, the stat tiles, the audit phrasing, the audio budget and a tab strip’s count badge: each turns a machine value into a sentence an operator trusts, and each is checked only by unit tests over the mapping, never over what is rendered. lib/audit-action.ts is graded by test/unit/cockpit-audit-action.test.mjs, which drives every action the server can write — but nothing renders the row it produces. components/statistics.tsx is the same shape one level up: test/unit/cockpit-overview.test.mjs reads its two emptiness records and its one-Empty-per-surface rule as source, and no test mounts a tile. The tab count is the newest and the one with a rule worth rendering — a known zero and an unknown must both draw nothing, and nothing is exactly what a jsdom assertion about an absent badge cannot tell apart from a page that failed to render. It is graded instead by scripts/validate-cockpit-browser.mjs, which reads the badge and then opens the panel it counts.',
     where: [
       'components/ui/relative-time.tsx',
       'components/ui/release-chain.tsx',
@@ -1040,6 +1040,7 @@ const UNCOVERED = [
       'lib/relative-time.ts',
       'lib/release-chain.ts',
       'lib/stat-tile.ts',
+      'components/statistics.tsx',
       'lib/audit-action.ts',
       'lib/audio-budget.ts',
       'lib/reported.ts',
