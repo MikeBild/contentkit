@@ -21,7 +21,7 @@
     "test:load": "node --test test/load/*.test.mjs",
     "test:e2e:local": "bash scripts/test-e2e-local.sh",
     "benchmark": "node scripts/benchmark.mjs",
-    "verify": "npm run lint && npm test && npm run test:contract && npm run test:integration && npm run test:smoke && npm run check:cockpit-api-drift && npm run validate:visuals && npm run validate:cockpit && npm run check:embedded-drift && npm run check:docs-drift",
+    "verify": "npm run lint && npm test && npm run test:contract && npm run test:integration && npm run test:smoke && npm run check:cockpit-api-drift && npm run validate:visuals && npm run validate:cockpit && npm run check:embedded-drift && npm run check:docs-drift && npm run konvention:check",
     "build:binary": "bash build-binary.sh",
     "db:gen-embedded": "node scripts/gen-embedded-migrations.mjs",
     "docs:gen-openapi": "node scripts/gen-openapi-doc.mjs && node scripts/gen-cockpit-contracts.mjs",

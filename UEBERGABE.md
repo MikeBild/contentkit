@@ -137,9 +137,22 @@ Familienfassung — **welche** es ist, sagt ihre eigene Kopfzeile, und
 Bericht; Regel 15 hält diese Kopfzeile gegen die Fassung, gegen die das
 Prüfskript geschrieben wurde, und meldet jede Seite, die ohne die andere
 weiterzieht. Die englische Lesehilfe in `docs/` nennt Version und SHA-256
-derselben Kopie; `check:docs-drift` rechnet beides nach. `UI-UX.md`
-aktualisiert; alle Repo-Gates grün.
+derselben Kopie; `check:docs-drift` rechnet beides nach. `konvention:check`
+selbst ist Pflichtstufe — letzte Stufe von `npm run verify` und ein Schritt des
+Jobs `cockpit-e2e` in `.github/workflows/ci.yml`. `UI-UX.md` aktualisiert; alle
+Repo-Gates grün.
 Prüfweg: CI-Gate.
+
+> Bis 20.08.2026 stand über diesem Kriterium „Prüfweg: CI-Gate", während von
+> den drei genannten Ankern nur `check:docs-drift` wirklich in CI lag
+> (`ci.yml:34`). Regel 15 und das Etikett im Bericht leben in
+> `konvention:check`, und der lief in keinem Gate, keiner CI und keinem Hook —
+> in keinem der sechs Produkte (BEFUND-CHECK-LAEUFT-NIRGENDS). Der
+> Kriteriumstext stimmte; die Prüfweg-Zeile darunter behauptete als einzige
+> mehr, als gehalten wurde. Mit LOCAL-CK-CHECK-INS-GATE ist der Check
+> verdrahtet, und zwar an beiden Orten, weil `npm run verify` gerade **nicht**
+> das ist, was CI ausführt: der Job `test` ruft die schnellen Stufen einzeln
+> auf. Nur in `verify` gehängt bliebe „CI-Gate" weiter eine Behauptung.
 
 > Bis 20.08.2026 trug dieses Kriterium eine Versionsnummer im Text
 > („Konventions-Kopie v1.4", dann „v1.5"). Eine Nummer im Kriteriumstext ist
