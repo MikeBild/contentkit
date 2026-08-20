@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run gen:css && tsc --noEmit && vite build",
+    "build": "npm run gen:css && tsc --noEmit && vite build && node ../../scripts/cockpit-build-stamp.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

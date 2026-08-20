@@ -17,4 +17,7 @@ examples/composition-patterns.json
 
 # Reproducible build output. Regenerate with `bash scripts/build-cockpit.sh`.
 assets/cockpit/
+# The hash of that build's inputs, written beside it rather than inside it: the
+# bundle is served unauthenticated, the file listing behind it is not.
+assets/cockpit-build-stamp.json
 apps/*/node_modules/

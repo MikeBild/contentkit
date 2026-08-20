@@ -100,16 +100,22 @@
  * not the source, in green, at speed. Measured rather than assumed — with
  * `app.name` set to "CONTENTKIT" in the catalogue and no rebuild, the run
  * reported `conform: true` and exit 0 over a §6 breach sitting in the source.
- * So the age of the bundle is now part of the measurement: sources newer than
- * `assets/cockpit/index.html` end the run as unmeasured, red, naming the file.
+ * So what the bundle was built FROM is now part of the measurement: the build
+ * hashes its inputs into `assets/cockpit-build-stamp.json`, this run recomputes
+ * that hash, and a difference ends the run as unmeasured, red, naming the files
+ * that moved. The first version of the guard compared modification times and had
+ * three ways to say "fresh" over a changed source — the reasoning, and why a
+ * content stamp is both stricter and cheaper, is in
+ * scripts/cockpit-build-stamp.mjs.
  *
  * Run it with `npm run konvention:check`; build the console first, or it will
  * tell you to: `npm run cockpit:build`.
  */
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { bundleStaleReason, readStamp } from './cockpit-build-stamp.mjs'
 import { startFixture } from './cockpit-fixture.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -1093,67 +1099,39 @@ if (
   })
 }
 
-/**
- * Whether `assets/cockpit` is older than the sources it was built from.
- *
- * The one precondition that is specific to ContentKit. Every rule below except
- * 15 is read off the BUILT console, so a bundle that predates a source change is
- * a checker measuring a build nobody is shipping — and answering green about it,
- * fast, which is the most convincing way to be wrong. The header records the
- * measurement: a §6 breach written into the catalogue and left unbuilt passed
- * this check without a word.
- *
- * Modification times rather than a content stamp, deliberately. A stamp means
- * scripts/build-cockpit.sh has to write one and every path that produces a
- * bundle has to remember to — a second thing to keep in sync, for a question
- * that has a cheap conservative answer. This one errs towards a rebuild: a file
- * restored to its identical content still counts as newer. That is a minute of
- * `npm run cockpit:build`, against a green verdict about the wrong bytes.
- *
- * `apps/cockpit/node_modules` and `dist` are excluded because they are not
- * sources, and dotted entries because `.vite` is a build cache that is written
- * DURING the build and would make every bundle stale the moment it was made.
- */
-async function bundleOlderThanSource() {
-  const built = await stat(join(root, 'assets', 'cockpit', 'index.html')).catch(() => null)
-  // No bundle at all is a different sentence, and cockpit-fixture.mjs already
-  // says it better than a second one here would.
-  if (!built) return null
-
-  const app = join(root, 'apps', 'cockpit')
-  const skipped = new Set(['node_modules', 'dist'])
-  let newest = null
-  const walk = async (directory) => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') || skipped.has(entry.name)) continue
-      const path = join(directory, entry.name)
-      if (entry.isDirectory()) {
-        await walk(path)
-        continue
-      }
-      const info = await stat(path)
-      if (!newest || info.mtimeMs > newest.mtimeMs) newest = { path, mtimeMs: info.mtimeMs }
-    }
-  }
-  await walk(app)
-
-  if (!newest || newest.mtimeMs <= built.mtimeMs) return null
-  const minutes = Math.round((newest.mtimeMs - built.mtimeMs) / 60_000)
-  return (
-    `assets/cockpit/index.html was built at ${new Date(built.mtimeMs).toISOString()}, but ` +
-    `${newest.path.slice(root.length + 1)} changed ${minutes} minute(s) later. Every rule but 15 is read off ` +
-    `the built console, so this run would report on a bundle that is not the source. Build it: npm run cockpit:build`
-  )
-}
-
 let fixture = null
 let browser = null
 /** The stand could not be built or fell over mid-run; reported, never thrown away. */
 let standFailure = null
 
+/** The digest of the bundle this run measured; printed so the report names its subject. */
+let bundleDigest = null
+
 try {
-  const stale = await bundleOlderThanSource()
+  /**
+   * Whether `assets/cockpit` was built from the sources as they stand.
+   *
+   * The one precondition that is specific to ContentKit. Every rule below except
+   * 15 is read off the BUILT console, so a bundle that predates a source change is
+   * a checker measuring a build nobody is shipping — and answering green about it,
+   * fast, which is the most convincing way to be wrong. The header records the
+   * measurement: a §6 breach written into the catalogue and left unbuilt passed
+   * this check without a word.
+   *
+   * The first version of this guard compared modification times, and mtimes
+   * answered a different question than the one being asked — a restore that keeps
+   * timestamps (`cp -p`, `rsync -a`, `tar -x`, every CI cache restore) hands it a
+   * changed source that looks older than the bundle, and it said `conform: true`
+   * over a measured §6 breach. Content answers the actual question, costs 20 ms
+   * for 189 inputs, and covers the two blind spots the mtime walk also had: the
+   * dotted entries it skipped wholesale (`.env.production`, whose `VITE_*` values
+   * Vite bakes into the bundle) and the build inputs outside apps/cockpit
+   * (`contract/cockpit-ui.css`, `assets/site.css`). The reasoning, the exclusions
+   * and the failure direction are in scripts/cockpit-build-stamp.mjs.
+   */
+  const stale = await bundleStaleReason(root)
   if (stale) throw new Error(stale)
+  bundleDigest = (await readStamp(root)).stamp?.digest ?? null
 
   fixture = await startFixture()
   browser = await chromium.launch({ headless: true })
@@ -1920,6 +1898,9 @@ if (violations.length > 0 || notMeasured.length > 0) {
         convention: CONVENTION,
         seconds: Number(seconds),
         locale: LOCALE,
+        // Which bundle this verdict is about. A certificate that does not name
+        // its subject is a certificate for whatever was lying around.
+        bundle: bundleDigest,
         nichtGemessen: STRUCTURALLY_NOT_MEASURED,
         routes: ROUTES.length,
         detailflaechen: DETAILS.map((entry) => `${entry.collection} (${entry.route})`),
