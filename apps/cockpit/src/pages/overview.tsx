@@ -1,9 +1,10 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ChartNoAxesColumn, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
-import { ck, usageStatsKinds, type Decision, type StatsKind } from '@/api/ck'
+import { ck, usageStatsKinds, type AuditEvent, type Decision, type StatsKind } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
 import { AppLink } from '@/components/app-link'
+import { auditPhrase } from '@/lib/audit-action'
 import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -307,17 +308,7 @@ export function OverviewPage() {
               ) : activity.data?.length ? (
                 <ul className="divide-y divide-border">
                   {activity.data.map((event, index) => (
-                    <li
-                      key={event.id}
-                      className="flex items-baseline justify-between gap-4 px-(--card-spacing) py-2.5 text-sm"
-                    >
-                      <span>{event.action}</span>
-                      <RelativeTime
-                        value={event.created_at}
-                        className="shrink-0 text-xs text-muted-foreground"
-                        data-testid={`overview-activity-age-${index}`}
-                      />
-                    </li>
+                    <ActivityRow key={event.id} event={event} index={index} />
                   ))}
                 </ul>
               ) : (
@@ -362,6 +353,50 @@ export function OverviewPage() {
         </section>
       </div>
     </Page>
+  )
+}
+
+/**
+ * One thing that happened, said in words, with the machine value beside it.
+ *
+ * Zone C used to print `event.action` — "release.promote" — which is §5's rule
+ * broken at its plainest: German on the top level, the API's own vocabulary only
+ * once somebody goes looking for it. The sentence comes first now and the raw
+ * action stays, in mono and dimmed, because it is the string an operator filters
+ * the audit trail by and greps a log for; deleting it would trade one kind of
+ * unreadable for another.
+ *
+ * An action `lib/audit-action.ts` cannot name keeps only the machine value. A
+ * plausible German sentence over an event nobody mapped is a worse row than the
+ * raw string, because the raw string admits what it is.
+ */
+function ActivityRow({ event, index }: { event: AuditEvent; index: number }) {
+  const { t } = useI18n()
+  const phrase = auditPhrase(event.action)
+  const label = event.resource_label
+  const sentence = phrase
+    ? label
+      ? t('overview.eventNamed', { subject: t(phrase.subject), label, verb: t(phrase.verb) })
+      : t('overview.event', { subject: t(phrase.subject), verb: t(phrase.verb) })
+    : null
+
+  return (
+    <li className="flex items-baseline justify-between gap-4 px-(--card-spacing) py-2.5 text-sm">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+        {sentence ? <span className="min-w-0 truncate">{sentence}</span> : null}
+        <code
+          data-testid={`overview-activity-action-${index}`}
+          className="font-mono text-xs break-all text-muted-foreground"
+        >
+          {event.action}
+        </code>
+      </span>
+      <RelativeTime
+        value={event.created_at}
+        className="shrink-0 text-xs text-muted-foreground"
+        data-testid={`overview-activity-age-${index}`}
+      />
+    </li>
   )
 }
 
