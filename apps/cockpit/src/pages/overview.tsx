@@ -246,6 +246,13 @@ export function OverviewPage() {
   const reporting = tiles.filter((tile) => !tile.result?.isPending && !tile.result?.error && tile.shown.length > 0)
   const quiet = tiles.filter((tile) => !tile.result?.isPending && !tile.result?.error && tile.shown.length === 0)
 
+  // A decision is overdue when its 72-hour deadline has passed (src/decisions.mjs
+  // sets `due_at` to opened_at + 72h), which is what makes this the "Frist
+  // gerissen" of §8.7 rather than a second, softer reading of the same queue.
+  // Undefined while the queue is unread, and deliberately not defaulted to 0: a
+  // queue nobody has answered yet is not a queue known to be on time.
+  const overdue = decisions.data?.counts.overdue
+
   if (!site) {
     return (
       <Page title={t('page.overview.title')}>
@@ -259,6 +266,23 @@ export function OverviewPage() {
     // are measured over is a fact about the numbers, so it sits with them.
     <Page title={t('page.overview.title')} description={t('page.overview.description', { site })}>
       <div className="flex flex-col gap-6">
+        {/*
+          §8.7, and its two load-bearing halves are position and exit.
+
+          The banner used to live inside the "Wartet auf dich" card, which read
+          the same to a person and was wrong twice over: a nested alert is
+          announced *after* whatever the card says above it, and a reader who
+          scrolls past the card has scrolled past the incident. The paragraph is
+          a statement about document order — "oberhalb aller Kacheln" — so the
+          banner is the first block of the page and belongs to no card.
+
+          The second half is the link. A red banner that names a number and
+          offers no way to the thing it counts is the "kein Rot ohne Weg zur
+          Ursache" defect of §1 in its purest form. Exactly one link, and it goes
+          to the decision page — a second one would make the way ambiguous.
+        */}
+        {overdue ? <OverdueBanner site={site} count={overdue} /> : null}
+
         {canReadDecisions ? <DecisionZone site={site} result={decisions.data} loading={decisions.isPending} /> : null}
 
         {/*
@@ -341,6 +365,36 @@ export function OverviewPage() {
   )
 }
 
+/**
+ * The incident banner of §8.7: not dismissable, first on the page, one way out.
+ *
+ * It carries the number rather than a mood — "3 Entscheidungen warten länger als
+ * drei Tage" is a fact an operator can check against the queue, "Es gibt
+ * überfällige Entscheidungen" is not — and the singular is its own sentence,
+ * because "1 Entscheidungen" is the smallest way for a console to look
+ * unattended.
+ *
+ * There is no close control on purpose. A banner an operator can dismiss is a
+ * banner that stops being true without anything having been decided; the way to
+ * make it go away is the link.
+ */
+function OverdueBanner({ site, count }: { site: string; count: number }) {
+  const { t } = useI18n()
+  return (
+    <Alert variant="destructive" data-testid="ck-overview-overdue" data-count={count}>
+      <TriangleAlert />
+      <AlertTitle>
+        {count === 1 ? t('overview.overdueDecisionOne') : t('overview.overdueDecisions', { count })}
+      </AlertTitle>
+      <AlertDescription>
+        <AppLink data-testid="overview-overdue-link" to="/decisions" search={{ site } as never}>
+          {t('overview.overdueLink')}
+        </AppLink>
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 function DecisionZone({
   site,
   result,
@@ -352,7 +406,6 @@ function DecisionZone({
 }) {
   const { t } = useI18n()
   const count = result?.counts.open ?? 0
-  const overdue = result?.counts.overdue ?? 0
   return (
     <Card className={count ? 'border-warning/40' : undefined} data-testid="ck-overview-decisions">
       <CardHeader>
@@ -370,14 +423,6 @@ function DecisionZone({
           </Button>
         </CardAction>
       </CardHeader>
-      {overdue ? (
-        <CardContent className="pb-3">
-          <Alert variant="destructive">
-            <TriangleAlert />
-            <AlertTitle>{t('overview.overdueDecisions', { count: overdue })}</AlertTitle>
-          </Alert>
-        </CardContent>
-      ) : null}
       {result?.items.length ? (
         <CardContent className="px-0">
           <ul className="divide-y divide-border">
