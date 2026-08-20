@@ -63,10 +63,20 @@ export const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
  * a list of every source file in the console and a sha256 of each. Inside the
  * output directory it would be `GET /cockpit/build-stamp.json` to anybody, and
  * the day an `.env.production` appears that becomes a hash of secrets, offered
- * over the internet to be brute-forced. One directory up it is unreachable —
- * serveCockpit() normalises the path first and rejects anything that leaves
- * COCKPIT_DIR — while still travelling with the bundle in build-binary.sh's
- * `assets` tar entry.
+ * over the internet to be brute-forced. One directory up it is not addressable
+ * from a URL at all, while still travelling with the bundle in
+ * build-binary.sh's `assets` tar entry.
+ *
+ * WHAT ACTUALLY KEEPS IT OUT OF REACH, named precisely, because the wrong
+ * answer here is worse than none: `cleanPath()` in src/utils.mjs, called on
+ * every request at src/routes.mjs:1233, throws 400 on any path with a `..`
+ * segment. That is what stops `/cockpit/../cockpit-build-stamp.json` — not
+ * serveCockpit(), which until this file existed answered that exact path with
+ * 200 and all 21769 bytes, because its prefix check was a string prefix rather
+ * than a path prefix and this file's NAME happens to begin with the bundle
+ * directory's name. That is now `dir + sep` and has a test, so both layers
+ * hold; but the name being a near-miss for the served directory was luck, and
+ * luck is not a reason to put a file somewhere.
  */
 export const STAMP_PATH = join('assets', 'cockpit-build-stamp.json')
 

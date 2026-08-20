@@ -194,12 +194,29 @@ test('`verify` builds the console before it measures it, and generates before it
     '`konvention:check` must run after `validate:cockpit`, which is what builds the bundle it measures',
   )
 
-  // check:cockpit-api-drift REWRITES apps/cockpit/src/api/schema.d.ts and then
-  // refuses a diff. Before the build that is harmless — the rewrite is either a
-  // no-op or an immediate red. Moved behind the build it would change a build
-  // input after the bundle was made, so konvention:check would report a stale
-  // bundle on every run: red, mandatory, and for entirely the wrong reason.
-  // That is how a stage gets muted (LOCAL-CK-DRIFT-VOR-BUILD).
+  // check:cockpit-api-drift REWRITES apps/cockpit/src/api/schema.d.ts before it
+  // refuses a diff, and a stage that rewrites a build input belongs in front of
+  // the build that reads it.
+  //
+  // Under the mtime guard that was not a preference but a requirement: the
+  // rewrite always pushed the file's mtime past the bundle's, so behind the
+  // build konvention:check reported a stale bundle on EVERY run — red,
+  // mandatory, and for entirely the wrong reason, which is how a stage gets
+  // muted. Measured after the fact: with the mtime predicate, `gen-api` leaves
+  // the tree STALE; with the content stamp it does not move the digest at all.
+  //
+  // 61d4cfc removed that consequence, and the first version of this comment
+  // claimed it anyway — written the same hour, against a measurement its own
+  // predecessor commit had already invalidated. Measured: `gen-api` moves the
+  // mtime and leaves the CONTENT identical (md5 unchanged), the digest does not
+  // move, konvention:check exits 0. It could not go red that way in any case —
+  // if the generator's output really differed, `git diff --exit-code` in this
+  // same stage fails and the `&&` chain never reaches konvention:check
+  // (measured: a probe in docs/openapi.json, exit 1 at this stage).
+  //
+  // The order therefore stands on the plain argument, not on the vanished
+  // symptom: a build input has to be final before the build reads it
+  // (LOCAL-CK-DRIFT-VOR-BUILD).
   assert.ok(
     at('check:cockpit-api-drift') < at('validate:cockpit'),
     '`check:cockpit-api-drift` regenerates a build input, so it must run before the build, not after it',

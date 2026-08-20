@@ -1,9 +1,9 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serveCockpit } from '../../src/cockpit.mjs'
 
@@ -86,6 +86,30 @@ describe('ContentKit Cockpit static serving', () => {
       assert.equal(response.status, 200, path)
       // Falls back to the shell rather than leaking anything above the root.
       assert.match(response.body, /ContentKit Cockpit/)
+    }
+  })
+
+  test('a sibling whose name merely starts with the bundle directory is not inside it', () => {
+    // The prefix check used to be a STRING prefix, so every sibling beginning
+    // with this directory's name satisfied it. Measured against the real tree:
+    // /cockpit/../cockpit-build-stamp.json answered 200 with all 21769 bytes of
+    // assets/cockpit-build-stamp.json — the file listing of the console with a
+    // sha256 per source, from a route that is deliberately unauthenticated.
+    //
+    // cleanPath() rejects a `..` segment with 400 before routing, so the HTTP
+    // server never let it through. That defence is one layer up and in another
+    // file (src/utils.mjs, called at src/routes.mjs:1233), and this function is
+    // reachable on its own — a guard that only holds because of somebody else
+    // is one refactor from holding for nobody.
+    const sibling = `${dir}-build-stamp.json`
+    writeFileSync(sibling, '{"secret":"must not be served"}')
+    try {
+      const response = request(`/cockpit/../${basename(sibling)}`, { dir })
+      assert.equal(response.status, 200)
+      assert.doesNotMatch(response.body, /must not be served/)
+      assert.match(response.body, /ContentKit Cockpit/)
+    } finally {
+      rmSync(sibling, { force: true })
     }
   })
 

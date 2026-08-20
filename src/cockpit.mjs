@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from 'node:fs'
-import { dirname, join, normalize } from 'node:path'
+import { dirname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { send } from './http.mjs'
 import { sha256 } from './utils.mjs'
@@ -79,8 +79,18 @@ export function serveCockpit(req, res, path, dir = COCKPIT_DIR) {
   const relative = path.slice(COCKPIT_PREFIX.length).replace(/^\/+/, '')
   // normalize() collapses any ../ before the prefix check, so a traversal
   // attempt lands outside COCKPIT_DIR and is rejected rather than served.
+  //
+  // The separator is not decoration. A bare `startsWith(dir)` is a STRING
+  // prefix, not a path prefix, so every sibling whose name begins with this
+  // directory's name satisfies it: `/cockpit/../cockpit-build-stamp.json`
+  // normalises to `<root>/assets/cockpit-build-stamp.json`, which starts with
+  // `<root>/assets/cockpit` and was served — 200, 21769 bytes, measured. The
+  // request never reaches here through the HTTP server, because cleanPath() in
+  // src/utils.mjs rejects a `..` segment with 400 before routing (src/routes
+  // .mjs:1233). That is one layer up and in another file; this function is
+  // reachable on its own and has to hold on its own.
   const target = normalize(join(dir, relative))
-  const asset = target.startsWith(dir) && relative ? read(target) : null
+  const asset = target.startsWith(dir + sep) && relative ? read(target) : null
 
   const isAsset = Boolean(asset)
   const entry = asset || read(join(dir, 'index.html'))
