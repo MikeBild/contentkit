@@ -1,19 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="ContentKit">
   <!--
-    The ContentKit Cockpit app icon — the same motif the sidebar wordmark draws,
-    so the browser tab and the console agree on one sign.
+    The ContentKit Cockpit app icon: the same motif the sidebar wordmark draws,
+    so the browser tab and the console carry one sign between them.
 
     Machart per COCKPIT-KONVENTION §6: lucide's `newspaper` glyph in the
     contrast colour on a filled square with soft corners. The two fills are the
-    console's own `--primary` / `--primary-foreground` pair from
-    contract/cockpit-ui.css, written literally because a favicon is rendered by
-    the browser chrome and never sees the console's stylesheet. The media query
-    swaps them exactly as the console's dark block does — a near-black square is
-    invisible on a dark tab strip, which is how an icon becomes no icon.
+    console's own primary pair from contract/cockpit-ui.css, written literally
+    because a favicon is drawn by the browser chrome and never sees the
+    console's stylesheet. The media query swaps them exactly as the console's
+    dark block does; a near black square is invisible on a dark tab strip, and
+    that is how an icon becomes no icon.
+
+    No CSS custom property is NAMED in this comment, and that is deliberate: an
+    XML comment may not contain two hyphens in a row, so writing the tokens out
+    made the whole file unparseable. It still answered 200 with
+    `image/svg+xml`, so status and content type both said yes while every tab
+    showed a broken image. Hence the third condition in the convention check:
+    the browser has to be able to decode it.
 
     apps/cockpit/public is Vite's static directory, so `npm run cockpit:build`
-    copies this file next to index.html in assets/cockpit (which is gitignored —
-    the checked-in source is this file).
+    copies this file next to index.html in assets/cockpit (which is gitignored;
+    the checked in source is this file).
   -->
   <style>
     .plate { fill: #0f172a }

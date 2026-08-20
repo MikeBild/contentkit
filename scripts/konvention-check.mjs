@@ -737,6 +737,14 @@ try {
   //    read the status would be green over a blank tab. Hence the content type:
   //    an icon is bytes, not markup.
   //
+  //    And hence the third condition, which cost a screenshot to learn: the
+  //    browser has to be able to DECODE those bytes. The first version of this
+  //    favicon carried the token names in an XML comment, two hyphens in a row
+  //    made the document unparseable, and it still answered 200 with
+  //    `image/svg+xml` — status and content type both saying yes over a broken
+  //    image in every tab. `Image.decode()` is the only one of the three that
+  //    asks the question an operator asks.
+  //
   //    The href is resolved against the document's own base rather than pasted
   //    together, because this console is served under /cockpit/ and the base path
   //    is exactly what a favicon reference gets wrong.
@@ -761,15 +769,27 @@ try {
       }),
       (error) => ({ status: 0, type: '', body: String(error) }),
     )
-    check(answer.status === 200 && /^image\//.test(answer.type), {
+    const drawn = await page.evaluate(
+      (href) =>
+        new Promise((done) => {
+          const image = new window.Image()
+          image.addEventListener('load', () => done({ ok: image.naturalWidth > 0, width: image.naturalWidth }))
+          image.addEventListener('error', () => done({ ok: false, width: 0 }))
+          image.src = href
+        }),
+      appIcon.href,
+    )
+    check(answer.status === 200 && /^image\//.test(answer.type) && drawn.ok, {
       rule: 11,
       paragraph: '§6',
       where: `the app icon at ${appIcon.href}`,
-      expected: '200, and an image behind it',
+      expected: '200, an image behind it, and a browser able to draw it',
       found:
         answer.status !== 200
           ? `${answer.status || 'the request failed'} — ${answer.body}`
-          : `200 but content-type "${answer.type}" — the file was never built, the server answered with the console itself, and the tab shows nothing: "${answer.body}"`,
+          : !/^image\//.test(answer.type)
+            ? `200 but content-type "${answer.type}" — the file was never built, the server answered with the console itself, and the tab shows nothing: "${answer.body}"`
+            : `200 and ${answer.type}, but the browser could not decode it — the tab draws a broken image: "${answer.body}"`,
     })
   }
 
