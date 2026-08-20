@@ -15,6 +15,7 @@ import {
   Library,
   LogOut,
   MessagesSquare,
+  Newspaper,
   UserRound,
   Palette,
   Presentation,
@@ -779,13 +780,65 @@ export function Shell() {
         <Sidebar collapsible="icon" data-testid="sidebar">
           <SidebarHeader>
             {/*
-             * The team-switcher position: first thing in the sidebar, naming the
-             * thing the console is pointed at. It used to sit inside the site
-             * group so that what it governed was what appeared beneath it; with
-             * the site's pages in four blocks and INSTALLATION below them that
-             * arrangement is gone, so the words below carry the claim instead —
-             * and a block that renders nothing can no longer take the switcher
-             * off screen with it.
+             * The wordmark — COCKPIT-KONVENTION §6. Until now this console was
+             * the one product in the family that never said its own name: the
+             * header opened with the site switcher, so a screenshot of
+             * ContentKit and a screenshot of a sibling were told apart by their
+             * navigation and by nothing else.
+             *
+             * The name comes from the catalogue (`app.name`, identical in EN and
+             * DE because it is a proper noun) rather than from a literal here, so
+             * there is exactly one place in the product where it is spelled — and
+             * it is drawn with neither `.toUpperCase()` nor `uppercase`, because
+             * "CONTENTKIT" loses the capital that is part of the name.
+             *
+             * Unconditional, unlike everything below it: a session whose scopes
+             * hide every block still has to be able to see which product it is
+             * signed in to.
+             */}
+            {/*
+             * `p-2` expanded, none collapsed — the same pair `SidebarMenuButton`
+             * uses, and both halves are measured rather than chosen. Expanded it
+             * puts the icon square on the same left edge as the switcher's glyph
+             * one line below. Collapsed the rail is `--sidebar-width-icon` (3rem)
+             * and SidebarHeader's own `p-2` already spends 1rem of it, leaving
+             * exactly the 2rem this square is wide; a second padding here would
+             * push it out of the rail.
+             */}
+            <div
+              data-testid="cockpit-wordmark"
+              className="flex items-center gap-2 overflow-hidden p-2 group-data-[collapsible=icon]:p-0!"
+            >
+              <span
+                data-testid="cockpit-wordmark-icon"
+                className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
+              >
+                {/*
+                 * `newspaper`: ContentKit's subject is the published edition —
+                 * documents that become a release and go out. The nav glyphs
+                 * were the other candidates and each is worse here, because each
+                 * is already spoken for one block below: FileText is Documents,
+                 * Library is Compositions, Rocket is Releases. A wordmark
+                 * wearing a navigation entry's glyph reads as that entry.
+                 */}
+                <Newspaper data-icon="inline-start" aria-hidden="true" />
+              </span>
+              <span className="truncate font-semibold group-data-[collapsible=icon]:hidden">{t('app.name')}</span>
+            </div>
+            {/*
+             * The site switcher, directly beneath the wordmark and still above
+             * every block. It used to be the first thing in the sidebar; it now
+             * sits second, because the two answer different questions — the line
+             * above says which product this is, this one says what the console is
+             * currently pointed at — and §6 puts the name on top.
+             *
+             * What made it header chrome in the first place is unchanged and is
+             * the reason it did not move down into the site group: it used to
+             * live inside that group so that what it governed was what appeared
+             * beneath it, and with the site's pages in four blocks and
+             * INSTALLATION below them that arrangement is gone. The words below
+             * carry the claim instead — and up here a block that renders nothing
+             * for want of a scope cannot take the switcher off screen with it.
              */}
             {switcherUsed ? (
               <div

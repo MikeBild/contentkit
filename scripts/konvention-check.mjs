@@ -270,6 +270,70 @@ const readShell = () => {
 }
 
 /**
+ * §6's wordmark, read the way an operator sees it.
+ *
+ * The name is read as RENDERED, not as authored. `textContent` on its own cannot
+ * see `text-transform: uppercase`: the DOM keeps saying "ContentKit" while the
+ * sidebar draws "CONTENTKIT", and those are different words — the capital in the
+ * middle is part of the name, not styling. So the computed transform is applied
+ * here and the string handed back is the string on screen. Without this half the
+ * cheapest way to break §6 is also the one way to break it invisibly.
+ *
+ * The name element is found structurally — "the deepest element inside the mark
+ * that owns text of its own" — rather than by a handle of its own. §6 fixes ONE
+ * handle for the family, `cockpit-wordmark` on the container; inventing a second
+ * one here would make this check pass or fail on a detail the convention never
+ * settled, and the next product would spell it differently.
+ *
+ * The icon is reported apart from the name, with its own box and its own
+ * position, because "an icon stands beside the name" is a claim about two
+ * visible things and about their order.
+ */
+const readWordmark = () => {
+  const shown = (element) => {
+    if (!element) return false
+    const style = getComputedStyle(element)
+    if (style.display === 'none' || style.visibility === 'hidden') return false
+    const box = element.getBoundingClientRect()
+    return box.width > 0 && box.height > 0
+  }
+
+  const mark = document.querySelector('[data-testid="cockpit-wordmark"]')
+  if (!mark) {
+    const header = document.querySelector('[data-slot="sidebar-header"]')
+    return { present: false, header: (header?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) }
+  }
+
+  const holders = [mark, ...mark.querySelectorAll('*')].filter((element) =>
+    [...element.childNodes].some((node) => node.nodeType === 3 && (node.textContent ?? '').trim()),
+  )
+  const named = holders[holders.length - 1] ?? null
+  const authored = (named?.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const transform = named ? getComputedStyle(named).textTransform : 'none'
+  const rendered =
+    transform === 'uppercase'
+      ? authored.toUpperCase()
+      : transform === 'lowercase'
+        ? authored.toLowerCase()
+        : transform === 'capitalize'
+          ? authored.replace(/(^|\s)(\S)/g, (all, lead, first) => `${lead}${first.toUpperCase()}`)
+          : authored
+
+  const glyph = mark.querySelector('svg')
+  return {
+    present: true,
+    authored,
+    rendered,
+    transform,
+    nameVisible: shown(named),
+    glyphPresent: Boolean(glyph),
+    glyphVisible: shown(glyph),
+    // Node.DOCUMENT_POSITION_FOLLOWING — the name comes after the icon.
+    glyphBeforeName: Boolean(glyph && named && glyph.compareDocumentPosition(named) & 4),
+  }
+}
+
+/**
  * §8.7 read as a position, not as a presence.
  *
  * "oberhalb aller Kacheln" is a statement about document order, so the page's
@@ -586,6 +650,61 @@ try {
     })
   }
 
+  // ── Rule 11 (§6). The console says which product it is.
+  //
+  //    Three assertions on the sidebar rather than one, because they fail for
+  //    three unrelated reasons and a single verdict would hide two of them: a
+  //    wrong spelling, a shouted one, and a wordmark with nothing to look at.
+  const wordmark = await page.evaluate(readWordmark)
+  if (
+    check(wordmark.present, {
+      rule: 11,
+      paragraph: '§6',
+      where: 'Sidebar › [data-testid="cockpit-wordmark"] (route /)',
+      expected: 'a wordmark naming the product',
+      found: `no wordmark in the sidebar header — it reads "${wordmark.header}"`,
+    })
+  ) {
+    // The name, character for character, and on screen while it says it.
+    check(wordmark.rendered === 'ContentKit' && wordmark.nameVisible, {
+      rule: 11,
+      paragraph: '§6',
+      where: 'Sidebar › [data-testid="cockpit-wordmark"] › name (route /)',
+      expected: '"ContentKit", spelled exactly so',
+      found: wordmark.nameVisible
+        ? `"${wordmark.rendered}"${wordmark.transform === 'none' ? '' : ` (text-transform: ${wordmark.transform}, authored "${wordmark.authored}")`}`
+        : `"${wordmark.rendered}" — but none of it has a visible box`,
+    })
+
+    // …and it is neither shouted nor whispered. Kept apart from the comparison
+    // above so a transformed name reports the transform rather than a mismatched
+    // string, and so the rule survives a future rename it should not care about.
+    const letters = wordmark.rendered.replace(/[^A-Za-zÄÖÜäöüß]/g, '')
+    check(letters.length > 0 && letters !== letters.toUpperCase() && letters !== letters.toLowerCase(), {
+      rule: 11,
+      paragraph: '§6',
+      where: 'Sidebar › [data-testid="cockpit-wordmark"] › name (route /)',
+      expected: 'mixed case — the capital inside the name is part of the name',
+      found:
+        letters.length === 0
+          ? 'the wordmark renders no letters at all'
+          : `"${wordmark.rendered}" is written entirely in ${letters === letters.toUpperCase() ? 'capitals' : 'lower case'}${wordmark.transform === 'none' ? '' : `, by text-transform: ${wordmark.transform}`}`,
+    })
+
+    // An icon stands beside the name, before it, and can actually be seen.
+    check(wordmark.glyphVisible && wordmark.glyphBeforeName, {
+      rule: 11,
+      paragraph: '§6',
+      where: 'Sidebar › [data-testid="cockpit-wordmark"] › icon (route /)',
+      expected: 'a visible icon standing before the name',
+      found: !wordmark.glyphPresent
+        ? 'the wordmark contains no icon at all'
+        : !wordmark.glyphVisible
+          ? 'the icon is in the markup but has no visible box'
+          : 'the icon is drawn after the name rather than before it',
+    })
+  }
+
   // ── Rule 11 (§6). The browser tab names the product.
   //
   //    Read off the SERVED document rather than out of apps/cockpit/index.html,
@@ -857,7 +976,7 @@ if (violations.length > 0) {
           '8 · §5 — no identifier-shaped text is visible',
           '9 · §1/§8.1 — the counter equals the number of positions in the queue',
           '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
-          '11 · §6 — the browser tab reads "ContentKit Cockpit"',
+          '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, and the browser tab reads "ContentKit Cockpit"',
         ],
       },
       null,
