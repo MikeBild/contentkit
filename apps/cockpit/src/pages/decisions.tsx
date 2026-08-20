@@ -32,10 +32,66 @@ import { useSite } from '@/lib/site'
 type QueueState = 'open' | 'deferred' | 'dismissed' | 'decided'
 type QueueKind = 'all' | Decision['kind']
 
-const KINDS: Decision['kind'][] = ['draft_capture', 'comment', 'contact', 'feedback', 'promotion']
+/**
+ * The kinds this build can name, and the label for each.
+ *
+ * WHY THIS IS A TABLE AND NOT A TEMPLATE STRING
+ *
+ * It used to be `\`decisions.kind.${kind}\` as TranslationKey`. The cast is the
+ * whole defect: it told the compiler the key exists, so a kind the catalogue
+ * never got a label for compiled cleanly, and `translate()` then called
+ * `.replace()` on `undefined` and took the entire Entscheidungen page down with
+ * it — no sidebar, no way back (LOCAL-CK-ART-UNBEKANNT). A type assertion that
+ * disables the only check standing between a server enum and a blank page is not
+ * a convenience, it is the bug.
+ *
+ * `satisfies Record<Decision['kind'], TranslationKey>` puts the check back and
+ * points it at the right moment: the day the server grows a sixth kind,
+ * `src/api/schema.d.ts` grows it too and THIS FILE STOPS COMPILING until someone
+ * writes the label. That is the guard CK-R1 needs — introducing a kind server-side
+ * must not be able to reach an older console as a crash.
+ */
+const KIND_KEYS = {
+  draft_capture: 'decisions.kind.draft_capture',
+  comment: 'decisions.kind.comment',
+  contact: 'decisions.kind.contact',
+  feedback: 'decisions.kind.feedback',
+  promotion: 'decisions.kind.promotion',
+} as const satisfies Record<Decision['kind'], TranslationKey>
 
-function keyForKind(kind: Decision['kind']): TranslationKey {
-  return `decisions.kind.${kind}` as TranslationKey
+const KINDS = Object.keys(KIND_KEYS) as Decision['kind'][]
+
+/**
+ * The label key for a kind, or `null` when this build has no name for it.
+ *
+ * The parameter is `string`, not `Decision['kind']`: the value arrives over the
+ * wire from a server that may be newer than this bundle, and typing it as the
+ * enum would be the same lie the cast told. Compile-time exhaustiveness above,
+ * runtime honesty here — the two halves answer two different failures.
+ */
+function keyForKind(kind: string): TranslationKey | null {
+  return KIND_KEYS[kind as Decision['kind']] ?? null
+}
+
+/**
+ * The kind of one position, degraded to a single badge when it cannot be named.
+ *
+ * §2/§4: a kind this build does not know costs its own badge and nothing more.
+ * The raw value stays, in mono beside the honest words, for the same reason the
+ * overview keeps `release.promote` beside its sentence (CK-F3) — it is the string
+ * an operator greps the server log for, and dropping it would trade a crash for
+ * a shrug.
+ */
+function KindBadge({ kind, testId }: { kind: string; testId: string }) {
+  const { t } = useI18n()
+  const key = keyForKind(kind)
+  if (key) return <Badge variant="secondary" data-testid={testId}>{t(key)}</Badge>
+  return (
+    <Badge variant="outline" data-testid={testId} data-kind-unnamed="true" className="gap-1.5">
+      {t('decisions.kind.unnamed')}
+      <code className="font-mono text-[0.9em] break-all opacity-80">{kind}</code>
+    </Badge>
+  )
 }
 
 const STATE_KEYS: Record<QueueState, TranslationKey> = {
@@ -301,7 +357,7 @@ function DecisionCard({
     <Card data-testid={testId}>
       <CardHeader>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge variant="secondary">{t(keyForKind(decision.kind))}</Badge>
+          <KindBadge kind={decision.kind} testId={`${testId}-kind`} />
           {overdue ? <Badge variant="destructive">{t('decisions.overdue')}</Badge> : null}
           <RelativeTime
             value={decision.opened_at}
@@ -485,7 +541,7 @@ export function DecisionsPage() {
   const filtered = state !== 'open' || kind !== 'all'
   const filterLabel = [
     state === 'open' ? null : t(STATE_KEYS[state]),
-    kind === 'all' ? null : t(keyForKind(kind)),
+    kind === 'all' ? null : t(KIND_KEYS[kind]),
   ].filter((entry): entry is string => Boolean(entry))
   const split = Date.now() - 3 * 24 * 60 * 60 * 1000
   const waitingLonger = state === 'open' ? items.filter((item) => Date.parse(item.opened_at) <= split) : []
@@ -529,7 +585,7 @@ export function DecisionsPage() {
           </ToggleGroupItem>
           {KINDS.map((entry) => (
             <ToggleGroupItem data-testid={`decisions-kind-${entry.replaceAll('_', '-')}`} key={entry} value={entry}>
-              {t(keyForKind(entry))}
+              {t(KIND_KEYS[entry])}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>

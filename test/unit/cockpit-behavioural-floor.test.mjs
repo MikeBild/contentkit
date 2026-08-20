@@ -790,6 +790,19 @@ const I18N_CONTRACTS = [
     min: 1,
   },
   {
+    id: 'i18n/a-missing-key-degrades-rather-than-throws',
+    promise:
+      'A key the catalog does not carry returns the key instead of throwing, so one unnameable label cannot unmount the page around it.',
+    // It exists because it already happened: `keyForKind()` cast a composed
+    // string to TranslationKey, `translate()` called `.replace()` on the
+    // resulting `undefined`, and the whole Entscheidungen route was replaced by
+    // an English, unstyled error screen with no way back.
+    incident: 'LOCAL-CK-ART-UNBEKANNT — one decision of an unknown kind took down the entire decision queue.',
+    title: /degrades a key the catalog does not carry/i,
+    asserts: [/not\.toThrow/, /translate\(/],
+    min: 1,
+  },
+  {
     id: 'i18n/manual-and-cross-tab-choice',
     promise: 'Manual locale selection persists and storage changes from another tab are applied.',
     title: /auto detection, manual choice and external storage changes/i,
@@ -880,6 +893,12 @@ const UNCOVERED = [
     missing:
       'That both session clocks count down against one shared tick; that the held and not-held scope lists are complements over PRODUCT_SCOPES; and that a profile remains useful when the session has neither a display name nor an email. The account-menu structure, safe fallback and route are pinned by cockpit-navigation.test.mjs.',
     where: ['pages/profile.tsx', 'hooks/use-now.ts'],
+  },
+  {
+    id: 'errors/the-screen-a-thrown-page-leaves-behind',
+    missing:
+      'That `reset` re-renders the route rather than reloading the document; that the way back to the overview keeps `?site=`; that the technical detail starts folded and that the toggle says which state it is in. The screen replaced the router default (English, unstyled, no way out) and is currently graded by the browser convention check, not by a rendering test.',
+    where: ['app/crash.tsx'],
   },
   {
     id: 'forms/unsaved-changes-guard',

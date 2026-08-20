@@ -61,6 +61,16 @@ describe('cockpit i18n', () => {
     expect(translate('de', 'page.overview.description', { site: 'Beispiel' })).toContain('Beispiel')
   })
 
+  it('degrades a key the catalog does not carry instead of throwing', () => {
+    // The catalogs are complete and TranslationKey is derived from EN, so this
+    // can only be reached through a cast — which is precisely how the console
+    // lost the whole Entscheidungen page once (LOCAL-CK-ART-UNBEKANNT). §2 lets
+    // the console admit what it does not know; it does not let it leave.
+    const missing = 'decisions.kind.spam_review' as keyof typeof CATALOGS.en
+    expect(() => translate('de', missing)).not.toThrow()
+    expect(translate('de', missing)).toBe(missing)
+  })
+
   it('resolves supported browser languages and falls back to English', () => {
     expect(resolveLocale(['fr-FR', 'de-DE'])).toBe('de')
     expect(resolveLocale(['fr-FR'])).toBe('en')

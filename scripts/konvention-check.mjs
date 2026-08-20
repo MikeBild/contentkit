@@ -185,6 +185,50 @@ function openQueue(now = Date.now()) {
 /** The other half of §8.7: nothing is waiting, so nothing may be announced. */
 const QUIET_QUEUE = { items: [], next_cursor: null, counts: { open: 0, overdue: 0, by_kind: {} } }
 
+/**
+ * The kind this build has no name for.
+ *
+ * Deliberately not one of the five. `docs/openapi.json` fixes the enum at five
+ * kinds, so nothing in the fixture can produce a sixth by accident — and a sixth
+ * is exactly the thing CK-R1 will ship: a new kind is introduced server-side and
+ * every console already in a browser meets it before it meets a new bundle.
+ * `spam_review` is a plausible next one rather than nonsense, because the rule is
+ * about the console's behaviour towards a newer server, not towards a corrupted
+ * response.
+ */
+const UNNAMED_KIND = 'spam_review'
+
+/**
+ * A queue with one position of a kind this build cannot name.
+ *
+ * Built from the coherent queue rather than beside it, so the assertion below
+ * reads "one unknown position among eight known ones" — which is the shape of
+ * the failure. The whole page came down over that one position; the point of the
+ * rule is that eight of nine still stand.
+ */
+function queueWithUnnamedKind(now = Date.now()) {
+  const base = openQueue(now)
+  const stranger = {
+    ...base.items[0],
+    id: 'd9900000-0000-4000-8000-000000009900',
+    source_id: '59900000-0000-4000-8000-000000009950',
+    kind: UNNAMED_KIND,
+    opened_at: new Date(now - 11 * MINUTE).toISOString(),
+    due_at: new Date(now + 3 * DAY).toISOString(),
+    title: 'Ein Vorgang einer Art, die diese Fassung nicht kennt',
+    summary: 'Der Server hat eine Art gemeldet, für die dieses Bundle kein Wort hat.',
+    source: { note: 'Der Server ist neuer als diese Konsole.' },
+  }
+  const items = [...base.items, stranger]
+  const byKind = {}
+  for (const item of items) byKind[item.kind] = (byKind[item.kind] ?? 0) + 1
+  return {
+    items,
+    next_cursor: null,
+    counts: { open: items.length, overdue: base.counts.overdue, by_kind: byKind },
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Reporting.
 //
@@ -405,6 +449,46 @@ const readDecisionEmpty = () => {
     filteredText: label(filtered),
     filteredHeight: filtered ? Math.round(filtered.getBoundingClientRect().height) : 0,
     resetPresent: Boolean(page.querySelector('[data-testid="decisions-reset-filter"]')),
+  }
+}
+
+/**
+ * What a position of an unnameable kind does to the page around it.
+ *
+ * Read as three separate facts, because "the page is fine" is not one:
+ *
+ * - the page frame exists at all — the failure this rule is about replaced the
+ *   whole route with the router's default error screen, so `[data-testid="page"]`
+ *   being absent IS the defect;
+ * - the console's own crash screen is not up either. It is a better screen than
+ *   the router's, and a rule that only banned the English one would be satisfied
+ *   by a German page that still lost the queue;
+ * - the queue below it is complete. A console that "survived" by dropping the
+ *   position it could not name would pass a mere "did it render" check and would
+ *   be lying about the queue (§1) — the count is what makes the difference
+ *   between degrading and hiding.
+ *
+ * The badge is read by handle rather than by scanning for the words, so a second
+ * element somewhere else on the page carrying the same phrase cannot make this
+ * rule pass for the wrong position.
+ */
+const readUnnamedKind = () => {
+  const label = (element) => (element?.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const rows = [...document.querySelectorAll('[data-testid^="decision-"]')].filter((element) =>
+    /^decision-(current|waiting)-\d+$/.test(element.getAttribute('data-testid') ?? ''),
+  )
+  const badges = rows.map((row) => row.querySelector('[data-testid$="-kind"]')).filter((badge) => badge !== null)
+  const unnamed = badges.filter((badge) => badge.getAttribute('data-kind-unnamed') === 'true')
+  return {
+    pagePresent: Boolean(document.querySelector('[data-testid="page"]')),
+    crashPresent: Boolean(document.querySelector('[data-testid="route-error"]')),
+    // The router's own screen has no handle of its own; its words are the handle.
+    routerErrorPresent: /Something went wrong!/.test(document.body.textContent ?? ''),
+    cards: rows.length,
+    badges: badges.length,
+    unnamedCount: unnamed.length,
+    unnamedText: unnamed.map(label),
+    namedTexts: badges.filter((badge) => badge.getAttribute('data-kind-unnamed') !== 'true').map(label),
   }
 }
 
@@ -1002,6 +1086,77 @@ try {
     }
     await narrowed.context.close()
   }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Rule 12 (§2 / §4 / §5). A kind this build cannot name costs its own badge
+  // and nothing else.
+  //
+  // This is the assertion for LOCAL-CK-ART-UNBEKANNT, and it is written as a
+  // property of the PAGE rather than of the label: the defect it stands against
+  // was not a wrong word, it was the Entscheidungen route unmounting into an
+  // English, unstyled `Something went wrong!` with no sidebar and no way back —
+  // over one position out of nine. §2 asks the console to say what it does not
+  // know; leaving is not one of the permitted answers.
+  //
+  // It matters beyond the label because it is a delivery rule: CK-R1 introduces a
+  // new decision kind on the server, and every console already open in a browser
+  // meets that kind before it meets a new bundle.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const stranger = await contextFor(browser, queueWithUnnamedKind())
+    await open(stranger.page, '/decisions', fixture.origin)
+    const seenStranger = await stranger.page.evaluate(readUnnamedKind)
+
+    check(seenStranger.pagePresent && !seenStranger.routerErrorPresent && !seenStranger.crashPresent, {
+      rule: 12,
+      paragraph: '§2 / §4',
+      where: `Entscheidungen (route /decisions) with one position of kind "${UNNAMED_KIND}"`,
+      expected: 'the page still stands — an unnameable kind may not unmount the route',
+      found: seenStranger.routerErrorPresent
+        ? 'the router\'s own English error screen ("Something went wrong!") replaced the page'
+        : seenStranger.crashPresent
+          ? "the console's crash screen replaced the page; the queue was lost over one position"
+          : 'no [data-testid="page"] rendered at all',
+    })
+
+    check(seenStranger.cards === 9 && seenStranger.badges === 9, {
+      rule: 12,
+      paragraph: '§1 / §2',
+      where: 'Entscheidungen › the queue below the unnameable position',
+      expected: 'all nine positions are listed, each with a kind badge — degrade the row, never drop it',
+      found: `${seenStranger.cards} position(s), ${seenStranger.badges} kind badge(s)`,
+    })
+
+    if (
+      check(seenStranger.unnamedCount === 1, {
+        rule: 12,
+        paragraph: '§2',
+        where: 'Entscheidungen › the badge of the unnameable position',
+        expected: 'exactly one badge marks itself as unnameable ([data-kind-unnamed="true"])',
+        found: `${seenStranger.unnamedCount} such badge(s); the named ones read ${seenStranger.namedTexts.map((entry) => `"${entry}"`).join(', ')}`,
+      })
+    ) {
+      const text = seenStranger.unnamedText[0]
+      check(/Art nicht ermittelbar/.test(text), {
+        rule: 12,
+        paragraph: '§2 / §5',
+        where: 'Entscheidungen › [data-kind-unnamed="true"]',
+        expected: '"Art nicht ermittelbar" — German, and honest about what is missing',
+        found: `"${text}"`,
+      })
+      // The machine value stays beside the words for the same reason the overview
+      // keeps `release.promote` beside its sentence (CK-F3): it is the string an
+      // operator greps the server log for.
+      check(text.includes(UNNAMED_KIND), {
+        rule: 12,
+        paragraph: '§5',
+        where: 'Entscheidungen › [data-kind-unnamed="true"]',
+        expected: `the raw kind "${UNNAMED_KIND}" stays visible beside the words`,
+        found: `"${text}"`,
+      })
+    }
+    await stranger.context.close()
+  }
 } finally {
   await browser.close().catch(() => {})
   await fixture.close().catch(() => {})
@@ -1043,6 +1198,7 @@ if (violations.length > 0) {
           '9 · §1/§8.1 — the counter equals the number of positions in the queue',
           '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
           '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, the browser tab reads "ContentKit Cockpit", and the declared app icon actually loads',
+          '12 · §2/§4 — a decision of a kind this build cannot name degrades to its own badge ("Art nicht ermittelbar" plus the raw value) and never unmounts the page',
         ],
       },
       null,

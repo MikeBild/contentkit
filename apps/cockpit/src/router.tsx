@@ -1,4 +1,5 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { RouteError } from '@/app/crash'
 import { Shell } from '@/app/shell'
 import { ToastProvider } from '@/components/ui/toast'
 import { SiteProvider } from '@/lib/site'
@@ -87,7 +88,12 @@ const routeTree = rootRoute.addChildren(
 
 // ContentKit serves the bundle under /cockpit/ and falls back to index.html for
 // unknown paths there, so the router owns everything below that prefix.
-export const router = createRouter({ routeTree, basepath: '/cockpit' })
+// A thrown render is caught at every level and answered by the console's own
+// screen rather than by the router's built-in one — English, unstyled, and
+// without a way back (see app/crash.tsx and LOCAL-CK-ART-UNBEKANNT). This is the
+// net, not the fix: a page that throws is still a defect, and the fix belongs
+// where it throws.
+export const router = createRouter({ routeTree, basepath: '/cockpit', defaultErrorComponent: RouteError })
 
 declare module '@tanstack/react-router' {
   interface Register {

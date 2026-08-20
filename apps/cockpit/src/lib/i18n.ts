@@ -94,6 +94,11 @@ const EN = {
   'session.signIn': 'Sign in',
   'session.failed': 'Sign-in failed',
   'session.unreachable': 'The cockpit could not reach the session endpoint.',
+  'crash.title': 'This page could not be displayed',
+  'crash.description': 'The console hit a fault while building this page. Nothing was changed, and the rest of the console is still usable.',
+  'crash.retry': 'Load the page again',
+  'crash.home': 'Back to the overview',
+  'crash.detail': 'Technical detail',
   'common.none': 'None',
   'common.all': 'All',
   'common.error': 'Something went wrong.',
@@ -128,6 +133,7 @@ const EN = {
   'decisions.kind.contact': 'Contact',
   'decisions.kind.feedback': 'Feedback',
   'decisions.kind.promotion': 'Promotion',
+  'decisions.kind.unnamed': 'Kind not determinable',
   'decisions.approve': 'Approve',
   'decisions.reject': 'Reject',
   'decisions.markRead': 'Mark read',
@@ -2094,6 +2100,11 @@ const DE: Catalog = {
   'session.signIn': 'Anmelden',
   'session.failed': 'Anmeldung fehlgeschlagen',
   'session.unreachable': 'Das Cockpit konnte den Sitzungsendpunkt nicht erreichen.',
+  'crash.title': 'Diese Seite konnte nicht dargestellt werden',
+  'crash.description': 'Beim Aufbau dieser Seite ist ein Fehler aufgetreten. Es wurde nichts verändert, und der Rest des Cockpits ist weiter benutzbar.',
+  'crash.retry': 'Seite erneut laden',
+  'crash.home': 'Zurück zur Übersicht',
+  'crash.detail': 'Technische Einzelheit',
   'common.none': 'Keine',
   'common.all': 'Alle',
   'common.error': 'Etwas ist schiefgelaufen.',
@@ -2128,6 +2139,7 @@ const DE: Catalog = {
   'decisions.kind.contact': 'Kontakt',
   'decisions.kind.feedback': 'Feedback',
   'decisions.kind.promotion': 'Promotion',
+  'decisions.kind.unnamed': 'Art nicht ermittelbar',
   'decisions.approve': 'Freigeben',
   'decisions.reject': 'Ablehnen',
   'decisions.markRead': 'Als gelesen markieren',
@@ -4047,12 +4059,31 @@ const DE: Catalog = {
 
 export const CATALOGS: Record<Locale, Catalog> = { en: EN, de: DE }
 
+/**
+ * One catalogue entry, filled in.
+ *
+ * WHY THERE IS A FALLBACK AT ALL
+ *
+ * `TranslationKey` is `keyof typeof EN`, so in a well-typed call site there is
+ * no missing key and this net is dead code. It exists because a single
+ * `as TranslationKey` anywhere in the console re-opens the hole, and what came
+ * through it was not a missing label but a blank browser tab: `undefined.replace`
+ * throws, React unmounts the whole route, and the operator gets an error screen
+ * instead of a page (LOCAL-CK-ART-UNBEKANNT). §2 says the console admits what it
+ * does not know; it does not say the console may leave.
+ *
+ * So a key the catalogue does not carry degrades in two steps — the English
+ * entry, then the key itself. The key on screen is ugly on purpose: it is
+ * visible, greppable, and reports the defect to whoever sees it, which a silent
+ * empty string would not.
+ */
 export function translate(
   locale: Locale,
   key: TranslationKey,
   values: Readonly<Record<string, string | number>> = {},
 ): string {
-  return CATALOGS[locale][key].replace(/\{([A-Za-z0-9_]+)\}/g, (match, name: string) =>
+  const template = CATALOGS[locale][key] ?? CATALOGS.en[key] ?? key
+  return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, name: string) =>
     Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match,
   )
 }
