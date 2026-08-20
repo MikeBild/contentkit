@@ -470,6 +470,7 @@ signed following the Standard Webhooks specification.
 - [docs/REPORTS.md](docs/REPORTS.md) — Markdown reports, dashboard components and static charts
 - [docs/ACCESS_CONTROL.md](docs/ACCESS_CONTROL.md) — reader accounts, groups and protected areas
 - [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — reproducible corpus and CI budgets
+- [docs/COCKPIT_CONVENTION_EN.md](docs/COCKPIT_CONVENTION_EN.md) — shortened English translation of the Cockpit convention for operators; the standard is [COCKPIT-KONVENTION.md](COCKPIT-KONVENTION.md)
 
 ## Versioning and license
 

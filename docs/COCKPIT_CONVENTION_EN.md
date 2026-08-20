@@ -2,7 +2,7 @@
 
 Version 1.4 · 2026-08-17 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
 
-This is ContentKit's English, tenant-neutral copy of the family convention. The reviewed German source is `cockpit-konvention-v1.4.md`, SHA-256 `c4652ff5e2fcfe8b5819e3c8c81e84865450cdb44c90949f3dbff4e4600f7031`. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.4, SHA-256 `c4652ff5e2fcfe8b5819e3c8c81e84865450cdb44c90949f3dbff4e4600f7031`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
 
 ## 1. Home-screen contract
 

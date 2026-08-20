@@ -15,9 +15,12 @@ the real work, and stating an absolute the console breaks forty-four times. A st
 guide that is wrong about itself is worse than none, so the marking matters as much as
 the rules.
 
-The family-level behaviour contract is [Cockpit Convention 1.4](../../contract/COCKPIT-CONVENTION.md).
-It complements this product-specific component and layout guide. In ContentKit it
-means, concretely:
+The family-level behaviour contract is [Cockpit Convention 1.4](../../COCKPIT-KONVENTION.md),
+the German source in the repository root. It complements this product-specific
+component and layout guide. A shortened English translation for operators is
+[docs/COCKPIT_CONVENTION_EN.md](../../docs/COCKPIT_CONVENTION_EN.md) — a reading aid,
+not the standard; where the two differ, the German source wins. In ContentKit the
+convention means, concretely:
 
 - Overview is ordered as Decisions, Release Chain, Recent Activity; HTTP, MCP and
   p95 live on System.
