@@ -3,7 +3,7 @@
 **Für:** Claude Code auf dem Mac, Repo `~/Projects/AI/contentkit`
 **Referenz-Grundlage dieses Produkts:** **Keine externe Referenz.** Die
 Wiedererkennung für den Endnutzer kommt aus den Familienmustern der
-Cockpit-Konvention v1.4, mit benannten Vorbildern je Muster: **WorkKit**
+Cockpit-Konvention v1.5, mit benannten Vorbildern je Muster: **WorkKit**
 für die Entscheidungs-Grammatik (§8), **SubKit** für Diff-Freigabe,
 Sammlungs-Listen und Verbindungs-Status (§9–§11), **WikiKit** für Capture
 und Lesepfad (§4/§5). Wer eines der drei Produkte kennt, findet sich hier
@@ -131,6 +131,6 @@ in den Assistenten mit vorbereitetem Prompt.
 Prüfweg: E2E.
 
 **AK-CK-G.1 · Gates**
-Dann: Konventions-Kopie v1.4 im Repo; `UI-UX.md` aktualisiert; alle
+Dann: Konventions-Kopie v1.5 im Repo; `UI-UX.md` aktualisiert; alle
 Repo-Gates grün.
 Prüfweg: CI-Gate.

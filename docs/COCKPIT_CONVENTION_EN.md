@@ -1,8 +1,8 @@
 # Cockpit Convention
 
-Version 1.4 · 2026-08-17 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
+Version 1.5 · 2026-08-20 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
 
-**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.4, SHA-256 `c4652ff5e2fcfe8b5819e3c8c81e84865450cdb44c90949f3dbff4e4600f7031`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.5, SHA-256 `57d47c606c9fb1e6efb7ebd4dab77a0b5901e09cd9f995b6f2632f4f7dcf70a2`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
 
 ## 1. Home-screen contract
 
@@ -37,6 +37,8 @@ Every named object carries a one- or two-sentence summary, and collection lists 
 The left sidebar contains a wordmark, grouped navigation and the account at the bottom. Installation contains at least System, Settings, Credentials, Notifications and Audit. Deep links work, and unknown routes provide a designed way back. The site switcher separates Production, Canary and Test, sorts sites within those groups, and lets the operator hide Test.
 
 Shared group names are canonical: **Installation**, not Administration; **Decisions** is ungrouped directly below Overview; the role name is **Administrator**. Product-specific groups use normal, localized language. ContentKit groups Compositions and Presentations as **Tools**, separate from content collections.
+
+The wordmark sits at the top of the sidebar: the product icon beside the product name in its canonical spelling — WorkKit, SubKit, WikiKit, ContentKit, CodeKit, WatchKit. That spelling is fixed. No capitalisation transform (neither `toUpperCase()` in code nor `text-transform` in a stylesheet), no lower-casing, no hard-coded text: the name comes from the translation catalogue (`app.name`), so it is spelled in exactly one place. Every product has an app icon and it appears twice — as the favicon in the browser tab and beside the wordmark. The anatomy is the same across the family, a glyph on the product colour, square with soft corners; the motif is product-specific. The browser title reads `<Product> Cockpit`. A console that does not name its product, or spells it differently from its siblings, is inconsistent at the place it is read first.
 
 ## 7. Drift control without shared code
 

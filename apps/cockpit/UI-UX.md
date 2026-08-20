@@ -15,7 +15,7 @@ the real work, and stating an absolute the console breaks forty-four times. A st
 guide that is wrong about itself is worse than none, so the marking matters as much as
 the rules.
 
-The family-level behaviour contract is [Cockpit Convention 1.4](../../COCKPIT-KONVENTION.md),
+The family-level behaviour contract is [Cockpit Convention 1.5](../../COCKPIT-KONVENTION.md),
 the German source in the repository root. It complements this product-specific
 component and layout guide. A shortened English translation for operators is
 [docs/COCKPIT_CONVENTION_EN.md](../../docs/COCKPIT_CONVENTION_EN.md) — a reading aid,
@@ -331,7 +331,7 @@ print an opaque identifier as a fallback.
 
 ## 12. Entscheidungs-Grammatik
 
-Wortgleiche Kopie von §8 der Cockpit-Konvention v1.4 (`COCKPIT-KONVENTION.md` im Repo-Root). Sie steht hier, weil die Entscheidungs-Seite dieses Produkts an ihr gemessen wird; der Maßstab hat eine Quelle und keine abweichenden Kopien (§13).
+Wortgleiche Kopie von §8 der Cockpit-Konvention v1.5 (`COCKPIT-KONVENTION.md` im Repo-Root). Sie steht hier, weil die Entscheidungs-Seite dieses Produkts an ihr gemessen wird; der Maßstab hat eine Quelle und keine abweichenden Kopien (§13).
 
 ### 8. Entscheidungs-Grammatik
 
