@@ -10,12 +10,30 @@
          same line for the same reason. -->
     <meta name="color-scheme" content="light dark" />
     <title>ContentKit Cockpit</title>
-    <!-- The app icon, same motif as the sidebar wordmark. The href is written
-         absolute from the site root and rewritten by Vite to the real base
-         (`/cockpit/`), because this document is also served for deep routes
-         such as /cockpit/releases/42 — a relative href would resolve against
-         those and point at a file that is not there. A favicon that 404s looks
-         like compliance and is not. -->
+    <!-- The app icon, same motif as the sidebar wordmark.
+
+         The href is written absolute from the site root and left to Vite, which
+         prepends the real base (`/cockpit/`) on the way through the build. Two
+         spellings are wrong here and each fails differently:
+
+         A RELATIVE href resolves against the open URL, and this document is
+         also served for deep routes such as /cockpit/releases/42 — so it would
+         point at a file that is not there.
+
+         Writing the base in BY HAND (`/cockpit/favicon.svg`) is the subtler
+         one. Measured against this build it happens to work, because Vite
+         leaves a path it cannot resolve to a public file untouched and that
+         literal is exactly what the server ends up serving. It is right by
+         coincidence, not by construction: it agrees with `base` in
+         vite.config.ts without being derived from it, so the day that value
+         changes this line keeps pointing at the old prefix and nothing says so.
+         A sibling console produced /cockpit/cockpit/favicon.svg this way.
+
+         Either way the failure is quiet — the cockpit handler answers anything
+         that is not a file with the SPA shell, so a favicon pointing nowhere
+         comes back 200 and the tab simply stays blank. A reference into the
+         void looks like compliance and is not; scripts/konvention-check.mjs
+         rule 11 is what refuses to take the status code for an answer. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       // Applied before first paint so a dark-mode reload never flashes light.
