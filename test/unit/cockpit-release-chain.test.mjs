@@ -1326,6 +1326,54 @@ describe('the release chain, on screen', () => {
     assert.match(overview, /isLoading=\{chainLoading\}/)
   })
 
+  test('the chain is drawn as a chain: four links, three lines, in both variants', () => {
+    // CK-F5. What stood here was the character "▸" — a separator in a text run,
+    // rendered in the card only above 1280px and between the strip's words
+    // otherwise. Below that width the card was four boxes in a square with
+    // nothing joining them, which is the shape of a dashboard, not of a chain.
+    assert.doesNotMatch(stripComments(chainSource), /▸/, 'a chain is drawn, not punctuated')
+    assert.doesNotMatch(stripComments(chainSource), /function Arrow\b/, 'the glyph is gone, not merely unused')
+
+    // Three connectors, one per joint, in each variant: `index > 0` is what makes
+    // it a joint rather than a decoration in front of every link.
+    const connectors = [...stripComments(chainSource).matchAll(/index > 0 \? <Connector /g)]
+    assert.equal(connectors.length, 2, 'both variants join their links')
+    assert.match(
+      stripComments(chainSource),
+      /<Connector tone=\{step\.tone\} testId=\{`\$\{testId\}-link-\$\{step\.id\}`\}/,
+      'the line takes the state of the link it hands over to, and is addressable in the browser',
+    )
+
+    // A line, not a character: the connector renders a coloured rule, and its
+    // tone comes from the same five-value vocabulary the dots and the text use.
+    assert.match(stripComments(chainSource), /const LINE: Record<ChainTone, string> =/)
+    const clean = stripComments(chainSource)
+    const from = clean.indexOf('{', clean.indexOf('const LINE: Record<ChainTone, string> ='))
+    let depth = 0
+    let to = from
+    for (; to < clean.length; to += 1) {
+      if (clean[to] === '{') depth += 1
+      else if (clean[to] === '}' && --depth === 0) break
+    }
+    const line = new Function(`return (${clean.slice(from, to + 1)})`)
+    assert.deepEqual(
+      Object.keys(line()).sort(),
+      ['attention', 'blocked', 'done', 'idle', 'unknown'],
+      'the connector answers every tone the derivation can produce',
+    )
+    // Colour is never the only telling (§2): the connector is hidden from the
+    // accessibility tree precisely because the step beside it says the same
+    // state in words.
+    assert.match(
+      stripComments(chainSource),
+      /function Connector\([\s\S]{0,900}?aria-hidden="true"/,
+      'the line is decoration beside the word, never instead of it',
+    )
+    // And the card's links run in one line at every width rather than wrapping
+    // into a grid that the connector cannot cross.
+    assert.doesNotMatch(stripComments(chainSource), /grid gap-2 sm:grid-cols-2/, 'the four links are a run, not a grid')
+  })
+
   test('a missing count is never drawn as a zero', () => {
     // The UsageStats contract this page already keeps, applied to the chain.
     assert.match(

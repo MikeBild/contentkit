@@ -50,6 +50,27 @@ const TEXT: Record<ChainTone, string> = {
   blocked: 'text-destructive',
 }
 
+/**
+ * The line between two links, coloured by the link it leads INTO.
+ *
+ * A chain is drawn, not punctuated. What stood here was the character "▸",
+ * rendered at one breakpoint in the card and between every chip in the strip,
+ * and a glyph in a text run is a separator: it says "and then" and it cannot say
+ * anything else. A line can — it is where the handing-over happens, so it takes
+ * the state of the step it hands over to, and a chain that is stuck somewhere is
+ * visibly stuck at the joint rather than only at the box after it.
+ *
+ * Never louder than the link it points at: the tones are damped, because the
+ * connector is the evidence and the step is the statement.
+ */
+const LINE: Record<ChainTone, string> = {
+  done: 'bg-border',
+  idle: 'bg-border',
+  unknown: 'bg-muted-foreground/40',
+  attention: 'bg-warning/60',
+  blocked: 'bg-destructive/60',
+}
+
 export interface ReleaseChainProps {
   chain: ReleaseChainState
   /** 'card' is the overview's own block; 'compact' is the strip for a page header. */
@@ -94,15 +115,26 @@ export function ReleaseChain({
         data-calm={shownChain.calm}
         className={cn('flex items-center gap-2 text-xs', className)}
       >
-        <ol className="flex items-center gap-1.5">
+        <ol className="flex flex-wrap items-center gap-y-1">
           {shownChain.steps.map((step, index) => (
-            <li key={step.id} className="flex items-center gap-1.5">
-              {index > 0 ? <Arrow /> : null}
+            <li key={step.id} className="flex items-center">
+              {index > 0 ? <Connector tone={step.tone} testId={`${testId}-link-${step.id}`} compact /> : null}
               <span
                 data-testid={`${testId}-step-${step.id}`}
                 data-state={step.state}
                 data-tone={step.tone}
-                className={cn('flex items-center gap-1', TEXT[step.tone])}
+                className={cn(
+                  // A link, not a word with a dot in front of it: the outline is
+                  // what makes four labels in a row read as four things joined
+                  // rather than as one sentence with bullets in it.
+                  'flex items-center gap-1 rounded-full border px-2 py-0.5',
+                  step.tone === 'blocked'
+                    ? 'border-destructive/40 bg-destructive/5'
+                    : step.tone === 'attention'
+                      ? 'border-warning/40 bg-warning/5'
+                      : 'border-border',
+                  TEXT[step.tone],
+                )}
               >
                 <Dot tone={step.tone} testId={`${testId}-dot-${step.id}`} />
                 {/*
@@ -185,10 +217,16 @@ export function ReleaseChain({
         </p>
       </header>
 
-      <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      {/*
+        Four links and three lines, in one run at every width. The grid this
+        replaced wrapped to two columns below 1280px and drew its connector only
+        above it, so on most screens the chain was four boxes in a square with
+        nothing joining them — the shape of a dashboard, not of a chain.
+      */}
+      <ol className="flex flex-col sm:flex-row sm:items-stretch">
         {shownChain.steps.map((step, index) => (
-          <li key={step.id} className="flex items-stretch gap-2">
-            {index > 0 ? <Arrow className="hidden self-center xl:block" /> : null}
+          <li key={step.id} className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center">
+            {index > 0 ? <Connector tone={step.tone} testId={`${testId}-link-${step.id}`} /> : null}
             <Step step={step} testId={testId} />
           </li>
         ))}
@@ -356,11 +394,37 @@ function Dot({ tone, testId }: { tone: ChainTone; testId: string }) {
   )
 }
 
-/** The connector. It carries no information, so it is hidden from the accessibility tree. */
-function Arrow({ className }: { className?: string }) {
+/**
+ * One line between two links.
+ *
+ * Hidden from the accessibility tree: an ordered list already says these four
+ * are a sequence, and a screen reader that also heard three connectors would
+ * hear the ordering twice. The tone is redundant on purpose — the step it points
+ * at carries the same state in words, so the colour is confirmation and never
+ * the only telling (§2).
+ *
+ * Stacked below `sm`, in a row from `sm` up, and the vertical form is indented
+ * to sit under the status dot of the link above it so the run reads as one line
+ * rather than as three unrelated ticks.
+ */
+function Connector({ tone, testId, compact = false }: { tone: ChainTone; testId: string; compact?: boolean }) {
   return (
-    <span aria-hidden="true" className={cn('select-none text-xs text-border', className)}>
-      ▸
+    <span
+      data-testid={testId}
+      data-tone={tone}
+      aria-hidden="true"
+      className={cn(
+        'flex shrink-0 items-center',
+        compact ? 'justify-center' : 'justify-start pl-[0.9rem] sm:justify-center sm:pl-0',
+      )}
+    >
+      <span
+        className={cn(
+          'rounded-full',
+          compact ? 'mx-1.5 h-px w-3' : 'my-1 h-4 w-0.5 sm:mx-2 sm:my-0 sm:h-0.5 sm:w-6',
+          LINE[tone],
+        )}
+      />
     </span>
   )
 }
