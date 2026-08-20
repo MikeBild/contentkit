@@ -131,6 +131,25 @@ in den Assistenten mit vorbereitetem Prompt.
 Prüfweg: E2E.
 
 **AK-CK-G.1 · Gates**
-Dann: Konventions-Kopie v1.5 im Repo; `UI-UX.md` aktualisiert; alle
-Repo-Gates grün.
+Dann: eine Konventions-Kopie liegt im Repo-Root und ist die unveränderte
+Familienfassung — **welche** es ist, sagt ihre eigene Kopfzeile, und
+`scripts/konvention-check.mjs` liest sie von dort und nennt sie in seinem
+Bericht; Regel 15 hält diese Kopfzeile gegen die Fassung, gegen die das
+Prüfskript geschrieben wurde, und meldet jede Seite, die ohne die andere
+weiterzieht. Die englische Lesehilfe in `docs/` nennt Version und SHA-256
+derselben Kopie; `check:docs-drift` rechnet beides nach. `UI-UX.md`
+aktualisiert; alle Repo-Gates grün.
 Prüfweg: CI-Gate.
+
+> Bis 20.08.2026 trug dieses Kriterium eine Versionsnummer im Text
+> („Konventions-Kopie v1.4", dann „v1.5"). Eine Nummer im Kriteriumstext ist
+> auch von einer veralteten Kopie erfüllt, sobald die Familie weiterzieht: das
+> Kriterium fragt dann nach einer Zahl statt nach Identität mit der
+> Familienfassung. Und beim Heben dreht man die Zahl mit, statt den Fehler zu
+> bemerken — hier zweimal geschehen. Das Kriterium nennt deshalb keine Nummer
+> mehr, sondern fordert die unveränderte Fassung und zeigt auf die Stellen, an
+> denen eine Maschine die Nummer hält. Dass die Kopie byte-identisch mit der
+> Familienfassung ist, kann kein Repo-Gate beweisen — die Quelle liegt
+> außerhalb des Repos; das bleibt Sache dessen, der sie kopiert. Prüfbar
+> gemacht ist der Teil, der prüfbar ist: dass Kopie, Prüfskript und englische
+> Lesehilfe nicht auseinanderlaufen. Muster von WikiKits AK-WI-G.1 übernommen.
