@@ -546,8 +546,43 @@ function violate({ rule, paragraph, where, expected, found }) {
 }
 
 function check(condition, entry) {
+  checksRun += 1
   if (!condition) violate(entry)
   return Boolean(condition)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// How far the run actually got.
+//
+// The sweep below runs inside one `try`, and its `catch` used to say the same
+// fixed sentence whichever way the run ended: "nothing below rule 15 was
+// measured". That is true when the stand never came up, and false the moment it
+// falls over mid-sweep — the LOCAL-CK-CHECK-INSTABIL case, where a TimeoutError
+// in open() arrives long after the sidebar, the banner, the queue and the
+// wordmark have all been read. Measured: a broken <title> plus an injected
+// failure just before the route loop printed the rule 11 violation and claimed
+// two lines further down that nothing had been measured.
+//
+// That is the same disease as the one the catch was written to cure, pointed
+// the other way: a report asserting more than it knows. So the run keeps a
+// count of the assertions it has carried and the name of the section it is in,
+// and the failure sentence is built from those instead of being a constant.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let checksRun = 0
+/** Sections of the sweep that ran to their end. */
+const sectionsMeasured = []
+/** The section that was running — null before the first and after the last. */
+let sectionInFlight = null
+
+function section(name) {
+  if (sectionInFlight) sectionsMeasured.push(sectionInFlight)
+  sectionInFlight = name
+}
+
+function sectionsDone() {
+  if (sectionInFlight) sectionsMeasured.push(sectionInFlight)
+  sectionInFlight = null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1099,6 +1134,29 @@ if (
   })
 }
 
+/**
+ * Whether `assets/cockpit` was built from the sources as they stand.
+ *
+ * The one precondition that is specific to ContentKit. Every rule below except
+ * 15 is read off the BUILT console, so a bundle that predates a source change is
+ * a checker measuring a build nobody is shipping — and answering green about it,
+ * fast, which is the most convincing way to be wrong. The header records the
+ * measurement: a §6 breach written into the catalogue and left unbuilt passed
+ * this check without a word.
+ *
+ * The first version of this guard compared modification times, and mtimes
+ * answered a different question than the one being asked — a restore that keeps
+ * timestamps (`cp -p`, `rsync -a`, `tar -x`, every CI cache restore) hands it a
+ * changed source that looks older than the bundle, and it said `conform: true`
+ * over a measured §6 breach. Content answers the actual question, costs 20 ms
+ * for 189 inputs, and covers the two blind spots the mtime walk also had: the
+ * dotted entries it skipped wholesale (`.env.production`, whose `VITE_*` values
+ * Vite bakes into the bundle) and the build inputs outside apps/cockpit
+ * (`contract/cockpit-ui.css`, `assets/site.css`). The reasoning, the exclusions
+ * and the failure direction are in scripts/cockpit-build-stamp.mjs.
+ */
+const BUNDLE_PRECONDITION = 'assets/cockpit was built from the sources as they stand'
+
 let fixture = null
 let browser = null
 /** The stand could not be built or fell over mid-run; reported, never thrown away. */
@@ -1107,38 +1165,23 @@ let standFailure = null
 /** The digest of the bundle this run measured; printed so the report names its subject. */
 let bundleDigest = null
 
+/** The assertions carried before the built console was involved — rule 15's. */
+const checksBeforeTheStand = checksRun
+
 try {
-  /**
-   * Whether `assets/cockpit` was built from the sources as they stand.
-   *
-   * The one precondition that is specific to ContentKit. Every rule below except
-   * 15 is read off the BUILT console, so a bundle that predates a source change is
-   * a checker measuring a build nobody is shipping — and answering green about it,
-   * fast, which is the most convincing way to be wrong. The header records the
-   * measurement: a §6 breach written into the catalogue and left unbuilt passed
-   * this check without a word.
-   *
-   * The first version of this guard compared modification times, and mtimes
-   * answered a different question than the one being asked — a restore that keeps
-   * timestamps (`cp -p`, `rsync -a`, `tar -x`, every CI cache restore) hands it a
-   * changed source that looks older than the bundle, and it said `conform: true`
-   * over a measured §6 breach. Content answers the actual question, costs 20 ms
-   * for 189 inputs, and covers the two blind spots the mtime walk also had: the
-   * dotted entries it skipped wholesale (`.env.production`, whose `VITE_*` values
-   * Vite bakes into the bundle) and the build inputs outside apps/cockpit
-   * (`contract/cockpit-ui.css`, `assets/site.css`). The reasoning, the exclusions
-   * and the failure direction are in scripts/cockpit-build-stamp.mjs.
-   */
+  section(BUNDLE_PRECONDITION)
   const stale = await bundleStaleReason(root)
   if (stale) throw new Error(stale)
   bundleDigest = (await readStamp(root)).stamp?.digest ?? null
 
+  section('starting the test stand (fixture and browser)')
   fixture = await startFixture()
   browser = await chromium.launch({ headless: true })
 
   // ───────────────────────────────────────────────────────────────────────────
   // With a gate open: the shell's labels, the banner, the queue and the counter.
   // ───────────────────────────────────────────────────────────────────────────
+  section('the shell with a gate open — rules 1, 2, 3, 5a, 6, 9, 11')
   const queue = openQueue()
   const { context, page } = await contextFor(browser, queue)
 
@@ -1487,6 +1530,7 @@ try {
   })
 
   // ── Rules 4, 7 and 8 (§2, §8.3, §5) — prohibitions, so every route.
+  section(`the prohibition sweep over ${ROUTES.length} route(s) — rules 4, 7, 8, 13, 14`)
   for (const route of ROUTES) {
     await open(page, route, fixture.origin)
     const found = await page.evaluate(readProhibitions, CATALOGUE_KEYS)
@@ -1547,6 +1591,7 @@ try {
   // detail surfaces their own rule numbers would invite the reading that the
   // list pages are held to one standard and the detail views to another.
   // Only `where` changes, so a violation says which surface it was read on.
+  section(`the prohibition sweep over ${DETAILS.length} detail surface(s) — rules 4, 7, 8, 13, 14`)
   for (const entry of DETAILS) {
     if (!(await openDetail(page, entry, fixture.origin))) continue
     const seen = await page.evaluate(readProhibitions, CATALOGUE_KEYS)
@@ -1609,6 +1654,7 @@ try {
   // Asserted separately because "no banner yet" and "no banner ever" look
   // identical on one screenshot, and only one of them is the convention.
   // ───────────────────────────────────────────────────────────────────────────
+  section('the quiet and the filtered decision queue — rules 5b, 10')
   {
     const quiet = await contextFor(browser, QUIET_QUEUE)
     await open(quiet.page, '/', fixture.origin)
@@ -1734,6 +1780,7 @@ try {
   // new decision kind on the server, and every console already open in a browser
   // meets that kind before it meets a new bundle.
   // ───────────────────────────────────────────────────────────────────────────
+  section('the unnameable decision kind — rule 12')
   {
     const stranger = await contextFor(browser, queueWithUnnamedKind())
     await open(stranger.page, '/decisions', fixture.origin)
@@ -1789,16 +1836,32 @@ try {
     }
     await stranger.context.close()
   }
+
+  // Every section ran to its end; nothing is left in flight.
+  sectionsDone()
 } catch (error) {
   // Caught rather than allowed to escape, because rule 15 has already been
   // measured by this point and an escaping error prints a stack trace where the
   // report belongs — taking every finding collected before it with it. A sibling
   // lost a real finding exactly this way on the same day the check became
   // mandatory here. The run still ends red; it ends red WITH its report.
+  //
+  // What it says depends on how far it got. `sectionsMeasured` holds the
+  // sections that ran to their end and `sectionInFlight` the one that did not,
+  // so "the stand never came up" and "the stand fell over after 23 assertions"
+  // are two different sentences — which they have to be, because the first is a
+  // report about nothing and the second is a report about most of the console.
   standFailure = error
+  const carried = checksRun - checksBeforeTheStand
+  const because = error instanceof Error ? error.message : String(error)
   unmeasured(
     'the test stand',
-    `it could not be built or did not survive the run, so nothing below rule 15 was measured — ${error instanceof Error ? error.message : String(error)}`,
+    carried === 0
+      ? `it did not get as far as its first assertion — it failed at "${sectionInFlight ?? 'an unnamed step'}", so ` +
+          `nothing below rule 15 was measured — ${because}`
+      : `it carried ${carried} assertion(s) and then failed at "${sectionInFlight ?? 'an unnamed step'}". ` +
+          `Measured before the failure: ${sectionsMeasured.join('; ')}. Everything after that point — including ` +
+          `whatever the failing section had not reached — is unmeasured — ${because}`,
   )
 } finally {
   await browser?.close().catch(() => {})
@@ -1885,7 +1948,11 @@ if (violations.length > 0 || notMeasured.length > 0) {
     )
     console.error(
       standFailure
-        ? 'The test stand never carried a measurement; nothing below rule 15 was looked at. Repair the stand and run again — this is not a verdict about the console.'
+        ? checksRun - checksBeforeTheStand === 0
+          ? 'The test stand never carried a measurement; nothing below rule 15 was looked at. Repair the stand and run again — this is not a verdict about the console.'
+          : `The test stand carried ${checksRun - checksBeforeTheStand} assertion(s) and then failed at ` +
+            `"${sectionInFlight ?? 'an unnamed step'}". What stands above is a verdict about what it did reach; ` +
+            'everything after that point is unmeasured. Repair the stand and run again.'
         : 'A gate cannot pass on "unchecked". Repair what could not be reached and run again — this is not a verdict about the console.',
     )
   }
