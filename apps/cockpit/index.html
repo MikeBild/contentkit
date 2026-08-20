@@ -33,7 +33,19 @@
          that is not a file with the SPA shell, so a favicon pointing nowhere
          comes back 200 and the tab simply stays blank. A reference into the
          void looks like compliance and is not; scripts/konvention-check.mjs
-         rule 11 is what refuses to take the status code for an answer. -->
+         rule 11 is what refuses to take the status code for an answer.
+
+         This paragraph is no longer the only thing holding the line, which is
+         what it was between 8502ec4 and LOCAL-CK-FAVICON-BASEPFAD. Two asserts
+         hold it now, and neither repeats the prefix — both read `base` out of
+         vite.config.ts:
+
+           test/contract/cockpit-bundle.test.mjs — the href BELOW must not begin
+           with `base`. That is the spelling this file argues against, and the
+           one that used to pass every check.
+
+           scripts/konvention-check.mjs rule 11 — the href in the SERVED document
+           must be exactly `base` plus the href below. That is the doubling. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       // Applied before first paint so a dark-mode reload never flashes light.

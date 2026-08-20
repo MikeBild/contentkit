@@ -1153,7 +1153,15 @@ try {
   //    is exactly what a favicon reference gets wrong.
   const appIcon = await page.evaluate(() => {
     const link = document.querySelector('link[rel~="icon"]')
-    return link ? { href: new URL(link.getAttribute('href') ?? '', document.baseURI).href } : null
+    return link
+      ? {
+          href: new URL(link.getAttribute('href') ?? '', document.baseURI).href,
+          // The attribute as WRITTEN, beside the resolved URL. The rule below is
+          // about the string in the document, and `new URL()` has already thrown
+          // that string away.
+          authored: link.getAttribute('href') ?? '',
+        }
+      : null
   })
   if (
     check(appIcon !== null, {
@@ -1164,6 +1172,44 @@ try {
       found: 'no <link rel="icon"> — the tab falls back to a blank sheet',
     })
   ) {
+    // ── Rule 11 (§6). The built href is exactly `base` + the source href.
+    //
+    //    The other half of the same rule; `test/contract/cockpit-bundle.test.mjs`
+    //    holds the first, which is that the SOURCE href must not already carry the
+    //    base. Together the two catch both ways this has gone wrong in the family
+    //    with one construction: doubling the prefix (a sibling built
+    //    /cockpit/cockpit/favicon.svg) and accepting a hand-written one in
+    //    silence (here — Vite leaves an unresolvable path alone, so the prefixed
+    //    spelling builds to the identical string and looks correct while being
+    //    uncoupled from `base`).
+    //
+    //    This half lives here because it needs the BUILT document, which only
+    //    exists after `npm run cockpit:build`; the contract test may not depend on
+    //    build output that is not in the repository. Nothing is repeated between
+    //    them: `base` is read out of vite.config.ts in both places rather than
+    //    written down in either.
+    const viteConfig = await readFile(join(root, 'apps/cockpit/vite.config.ts'), 'utf8')
+    const base = /^\s*base: '([^']+)',/m.exec(viteConfig)?.[1]
+    const indexHtml = await readFile(join(root, 'apps/cockpit/index.html'), 'utf8')
+    const sourceHref = /<link[^>]+rel="icon"[^>]+href="([^"]+)"/.exec(indexHtml)?.[1]
+    if (
+      check(Boolean(base) && Boolean(sourceHref), {
+        rule: 11,
+        paragraph: '§6',
+        where: 'apps/cockpit/vite.config.ts › base, apps/cockpit/index.html › <link rel="icon">',
+        expected: 'both a declared base and a declared icon href to compare',
+        found: `base ${base ? `"${base}"` : 'not found'}, source href ${sourceHref ? `"${sourceHref}"` : 'not found'}`,
+      })
+    ) {
+      check(appIcon.authored === `${base.replace(/\/$/, '')}${sourceHref}`, {
+        rule: 11,
+        paragraph: '§6',
+        where: 'the served document › <link rel="icon"> › href',
+        expected: `"${base.replace(/\/$/, '')}${sourceHref}" — the base from vite.config.ts, prepended by the build to the source href`,
+        found: `"${appIcon.authored}" (source "${sourceHref}", base "${base}")`,
+      })
+    }
+
     const answer = await fetch(appIcon.href).then(
       async (response) => ({
         status: response.status,
@@ -1624,7 +1670,7 @@ if (violations.length > 0) {
           '8 · §5 — no identifier-shaped text is visible',
           '9 · §1/§8.1 — the counter equals the number of positions in the queue',
           '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
-          '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, the browser tab reads "ContentKit Cockpit", and the declared app icon actually loads',
+          '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, the browser tab reads "ContentKit Cockpit", the declared app icon actually loads, and its href in the served document is exactly `base` + the href in apps/cockpit/index.html',
           '12 · §2/§4 — a decision of a kind this build cannot name degrades to its own badge ("Art nicht ermittelbar" plus the raw value) and never unmounts the page',
           '13 · §4 — no route and no detail surface answers with an error screen; a page that threw is not a page that passed',
           '14 · §5 — no catalogue key is rendered as if it were a sentence; the key list is the catalogue itself, so the rule needs no word list',
