@@ -10,6 +10,13 @@
          same line for the same reason. -->
     <meta name="color-scheme" content="light dark" />
     <title>ContentKit Cockpit</title>
+    <!-- The app icon, same motif as the sidebar wordmark. The href is written
+         absolute from the site root and rewritten by Vite to the real base
+         (`/cockpit/`), because this document is also served for deep routes
+         such as /cockpit/releases/42 — a relative href would resolve against
+         those and point at a file that is not there. A favicon that 404s looks
+         like compliance and is not. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       // Applied before first paint so a dark-mode reload never flashes light.
       try {

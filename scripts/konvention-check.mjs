@@ -727,6 +727,52 @@ try {
     found: `"${title}"`,
   })
 
+  // ── Rule 11 (§6). The app icon is declared, and the file behind it exists.
+  //
+  //    Two assertions, and the second is the one that matters. §6: "ein Verweis
+  //    ins Leere ist schlimmer als keiner, weil er wie Erfüllung aussieht." This
+  //    fixture makes that failure mode concrete — it answers every unmatched path
+  //    under /cockpit/ with index.html, so a <link rel="icon"> pointing at a file
+  //    nobody built comes back 200 with a web page in it, and a check that only
+  //    read the status would be green over a blank tab. Hence the content type:
+  //    an icon is bytes, not markup.
+  //
+  //    The href is resolved against the document's own base rather than pasted
+  //    together, because this console is served under /cockpit/ and the base path
+  //    is exactly what a favicon reference gets wrong.
+  const appIcon = await page.evaluate(() => {
+    const link = document.querySelector('link[rel~="icon"]')
+    return link ? { href: new URL(link.getAttribute('href') ?? '', document.baseURI).href } : null
+  })
+  if (
+    check(appIcon !== null, {
+      rule: 11,
+      paragraph: '§6',
+      where: 'the served document › <link rel="icon"> (route /)',
+      expected: 'the document declares an app icon',
+      found: 'no <link rel="icon"> — the tab falls back to a blank sheet',
+    })
+  ) {
+    const answer = await fetch(appIcon.href).then(
+      async (response) => ({
+        status: response.status,
+        type: response.headers.get('content-type') ?? '',
+        body: (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 120),
+      }),
+      (error) => ({ status: 0, type: '', body: String(error) }),
+    )
+    check(answer.status === 200 && /^image\//.test(answer.type), {
+      rule: 11,
+      paragraph: '§6',
+      where: `the app icon at ${appIcon.href}`,
+      expected: '200, and an image behind it',
+      found:
+        answer.status !== 200
+          ? `${answer.status || 'the request failed'} — ${answer.body}`
+          : `200 but content-type "${answer.type}" — the file was never built, the server answered with the console itself, and the tab shows nothing: "${answer.body}"`,
+    })
+  }
+
   // ── Rule 5a (§8.7). A gate is open, so the overview carries the banner —
   //    above every tile, with exactly one link, and that link is the queue.
   const banner = await page.evaluate(readOverviewBanner)
@@ -976,7 +1022,7 @@ if (violations.length > 0) {
           '8 · §5 — no identifier-shaped text is visible',
           '9 · §1/§8.1 — the counter equals the number of positions in the queue',
           '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
-          '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, and the browser tab reads "ContentKit Cockpit"',
+          '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, the browser tab reads "ContentKit Cockpit", and the declared app icon actually loads',
         ],
       },
       null,

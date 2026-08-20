@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="ContentKit">
+  <!--
+    The ContentKit Cockpit app icon — the same motif the sidebar wordmark draws,
+    so the browser tab and the console agree on one sign.
+
+    Machart per COCKPIT-KONVENTION §6: lucide's `newspaper` glyph in the
+    contrast colour on a filled square with soft corners. The two fills are the
+    console's own `--primary` / `--primary-foreground` pair from
+    contract/cockpit-ui.css, written literally because a favicon is rendered by
+    the browser chrome and never sees the console's stylesheet. The media query
+    swaps them exactly as the console's dark block does — a near-black square is
+    invisible on a dark tab strip, which is how an icon becomes no icon.
+
+    apps/cockpit/public is Vite's static directory, so `npm run cockpit:build`
+    copies this file next to index.html in assets/cockpit (which is gitignored —
+    the checked-in source is this file).
+  -->
+  <style>
+    .plate { fill: #0f172a }
+    .mark  { stroke: #f8fafc }
+    @media (prefers-color-scheme: dark) {
+      .plate { fill: #f8fafc }
+      .mark  { stroke: #0f172a }
+    }
+  </style>
+  <rect class="plate" width="32" height="32" rx="7" />
+  <g class="mark" transform="translate(5 5) scale(0.9167)" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15 18h-5" />
+    <path d="M18 14h-8" />
+    <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2" />
+    <rect width="8" height="4" x="10" y="6" rx="1" />
+  </g>
+</svg>
