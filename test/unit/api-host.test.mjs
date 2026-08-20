@@ -27,7 +27,7 @@ test('the configured API hostname is the API surface, with or without a port', (
 
 test('a published site host is not', () => {
   assert.equal(isApiHost(req('blog.reader.example'), config), false)
-  assert.equal(isApiHost(req('www.mikebild.dev'), config), false)
+  assert.equal(isApiHost(req('www.publisher.example'), config), false)
   assert.equal(isApiHost(req('127.0.0.1:4050'), config), false)
 })
 

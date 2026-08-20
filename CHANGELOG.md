@@ -6,6 +6,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.28.0 — 2026-08-20
+
+### Added — the assistant's model spend is counted
+
+`POST /v1/assistant/messages` has called a model on every turn since it shipped,
+with a production API key, and the exposition mentioned none of it. Fourteen
+metric families and not one named a model — while five sibling products already
+counted theirs. The tokens were spent, billed by the provider, and findable only
+by holding an invoice against nothing.
+
+Five families, recorded once per completed turn however many model steps it took:
+
+- `contentkit_llm_calls_total{model,outcome}`
+- `contentkit_llm_tokens_total{model,direction}` — `input` and `output` only
+- `contentkit_llm_cached_tokens_total{model,kind}` — cache reads and writes
+- `contentkit_llm_reasoning_tokens_total{model}`
+- `contentkit_llm_call_duration_milliseconds_total{model}`
+
+The last three are deliberately separate families rather than more `direction`
+labels, and their HELP text says why: the provider reports cache counts as part
+of input tokens and reasoning as part of output tokens. Folding them into one
+label set makes a sum over that label over-report every turn that cached or
+reasoned — silently, and only for those turns. The first draft did exactly that;
+the test suite now pins the arithmetic rather than the plumbing.
+
+A failed turn is counted under `outcome="error"`. It still consumed input tokens
+the provider bills, and counting only successes is how a failing assistant comes
+to look free.
+
+Recording never throws outward. The answer has already been streamed to the
+operator by the time the hook fires, and losing a delivered turn because a
+counter would not increment is a strictly worse trade than a missing sample.
+
+### Added — process gauges
+
+`contentkit_process_memory_heap_used_bytes`, `_heap_total_bytes`, `_rss_bytes`
+and `contentkit_process_uptime_seconds`. Every sibling product exposed these;
+this one exposed none, so "is the process healthy" was unanswerable from its own
+exposition. Read inside `render()` rather than plumbed through a call site —
+that function has exactly one caller and the numbers are ambient.
+
+No `auth_failures_total` was added: `metrics.request()` is called centrally with
+the response status, so authentication failures are already counted per route
+under `contentkit_requests_total{status="401"}`. A second family would restate
+the same fact with less context.
+
+### Fixed — a production domain in a test tripped the tenant-neutrality gate
+
+`test/unit/api-host.test.mjs` named a real published hostname, which
+`no-prod-references` forbids in tracked files. Introduced in 4.27.0 and unnoticed
+because the gate was not run on that commit; `main` has been red since. Replaced
+with a neutral example, which serves the test's purpose exactly as well.
+
 ## 4.27.0 — 2026-08-19
 
 ### Added

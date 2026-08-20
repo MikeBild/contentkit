@@ -279,6 +279,7 @@ export function createAssistant(config, deps, fetchImpl = fetch) {
             },
           }
 
+          const turnStartedAt = Date.now()
           const result = streamText({
             model,
             instructions: site ? `${INSTRUCTIONS}\n\nThe operator is working on the site \`${site}\`.` : INSTRUCTIONS,
@@ -289,8 +290,47 @@ export function createAssistant(config, deps, fetchImpl = fetch) {
             tools: toolsFor(principal, context),
             stopWhen: stepCountIs(MAX_STEPS),
             abortSignal: signal,
-            onError: ({ error }) =>
-              deps.logger?.warn?.('assistant turn failed', { error: String(error?.message || error) }),
+            // The turn pays a provider, so the turn has to say so.
+            //
+            // `onEnd`, not `onFinish`: the latter is a deprecated alias in
+            // ai@7, and its `totalUsage` field is deprecated in favour of
+            // `usage`. What arrives here is already aggregated across every
+            // step the run took, which is what makes one record per TURN the
+            // honest unit — MAX_STEPS means a turn can be several model calls,
+            // and a record per call would make "how many turns" unanswerable.
+            //
+            // Never throws outward: the answer has already been streamed to the
+            // operator by the time this fires, and losing a delivered turn
+            // because a counter would not increment is a strictly worse trade
+            // than a missing sample.
+            onEnd: ({ usage, finishReason }) => {
+              try {
+                deps.metrics?.llm?.({
+                  model: config.assistantModel,
+                  outcome: finishReason === 'stop' || finishReason === 'tool-calls' ? 'success' : String(finishReason),
+                  durationMs: Date.now() - turnStartedAt,
+                  usage,
+                })
+              } catch (error) {
+                deps.logger?.warn?.('assistant usage not recorded', { error: String(error?.message || error) })
+              }
+            },
+            onError: ({ error }) => {
+              // A failed turn still consumed input tokens the provider will
+              // bill. No usage is available on this path, so it is counted as a
+              // call and nothing else — an outcome label that never appears is
+              // how a failing assistant comes to look free.
+              try {
+                deps.metrics?.llm?.({
+                  model: config.assistantModel,
+                  outcome: 'error',
+                  durationMs: Date.now() - turnStartedAt,
+                })
+              } catch {
+                /* the warning below is the report that matters */
+              }
+              deps.logger?.warn?.('assistant turn failed', { error: String(error?.message || error) })
+            },
           })
 
           writer.merge(result.toUIMessageStream({ sendReasoning: false }))

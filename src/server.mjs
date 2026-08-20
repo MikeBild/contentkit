@@ -97,6 +97,7 @@ export function createApp(config = loadConfig(), dependencies = {}) {
       audit,
       logger,
       usage: mcpUsage,
+      metrics,
       deckRenderer,
       deckJobs,
       secretHandoffs,
