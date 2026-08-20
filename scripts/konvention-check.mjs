@@ -586,6 +586,28 @@ try {
     })
   }
 
+  // ── Rule 11 (§6). The browser tab names the product.
+  //
+  //    Read off the SERVED document rather than out of apps/cockpit/index.html,
+  //    which is the whole reason this rule lives here and not in a unit test: the
+  //    file is a template, `transformIndexHtml` plugins rewrite it on the way
+  //    through the build, and a router that sets a per-route title would overwrite
+  //    it again in the browser. What an operator reads on the tab is the last of
+  //    those, and that is what §6 fixes: "<Produktname> Cockpit", exactly.
+  //
+  //    Compared character for character, and deliberately not case-insensitively —
+  //    "Contentkit Cockpit" and "CONTENTKIT COCKPIT" are precisely the two spellings
+  //    the paragraph exists to rule out, and a loose comparison would wave both
+  //    through.
+  const title = await page.evaluate(() => document.title)
+  check(title === 'ContentKit Cockpit', {
+    rule: 11,
+    paragraph: '§6',
+    where: 'the served document › <title> (route /)',
+    expected: '"ContentKit Cockpit"',
+    found: `"${title}"`,
+  })
+
   // ── Rule 5a (§8.7). A gate is open, so the overview carries the banner —
   //    above every tile, with exactly one link, and that link is the queue.
   const banner = await page.evaluate(readOverviewBanner)
@@ -835,6 +857,7 @@ if (violations.length > 0) {
           '8 · §5 — no identifier-shaped text is visible',
           '9 · §1/§8.1 — the counter equals the number of positions in the queue',
           '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
+          '11 · §6 — the browser tab reads "ContentKit Cockpit"',
         ],
       },
       null,
