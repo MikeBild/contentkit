@@ -86,6 +86,198 @@ if (ROUTES.length < 16) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// …and checked against the navigation, which is a DIFFERENT list.
+//
+// The obvious mistake — and a sibling console made it — is to derive the sweep
+// from the navigation instead. The navigation is not the console: `/profile`
+// here is a full route reached from the account menu and is not in `NAV` at all,
+// and ContentKit's navigation is additionally SCOPE-FILTERED, so an entry an
+// operator lacks the permission for is not in the DOM to be derived from. Either
+// way a page would be structurally invisible to this file while being one click
+// away for an operator.
+//
+// So the router stays the source and the navigation is only asserted AGAINST it:
+// every navigation target must be a route. That catches the other direction — a
+// menu entry pointing at a path the router does not serve — which the router
+// list alone cannot see.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const shellSource = await readFile(join(root, 'apps/cockpit/src/app/shell.tsx'), 'utf8')
+const NAV_TARGETS = [...shellSource.matchAll(/^\s*to: '(\/[^']*)',\s*$/gm)].map((entry) => entry[1])
+if (NAV_TARGETS.length < 16) {
+  throw new Error(
+    `Read ${NAV_TARGETS.length} navigation targets out of apps/cockpit/src/app/shell.tsx; NAV has more than that. The constant's shape changed and this parser has to change with it.`,
+  )
+}
+const ORPHAN_NAV = [...new Set(NAV_TARGETS)].filter((target) => !ROUTES.includes(target))
+if (ORPHAN_NAV.length > 0) {
+  throw new Error(
+    `NAV in apps/cockpit/src/app/shell.tsx points at ${ORPHAN_NAV.join(', ')}, which router.tsx does not serve.`,
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The catalogue's own keys, so a key on screen can be recognised as one.
+//
+// WHY A CHECK LIKE THIS EXISTS AT ALL
+//
+// A sibling console shipped three buttons in English that already had German
+// catalogue entries: its translation helper only descended into a single string
+// child, and putting an icon beside the word turned the children into an array
+// it walked past. ContentKit cannot fail that way — `t()` takes a key and returns
+// a string, so nothing about a component's children can reach it — but it has a
+// failure of the same SHAPE, and this run created it deliberately: `translate()`
+// degrades a key it cannot resolve to the key itself rather than throwing
+// (LOCAL-CK-ART-UNBEKANNT). That is the right trade and a silent one, because a
+// dotted identifier in a table cell looks like data.
+//
+// So the rule is the sibling's rule in this console's spelling: a catalogue key
+// visible on screen PROVES the sentence never came out of the catalogue. It needs
+// no word list — the catalogue is the list — and it catches every future
+// occurrence of the class rather than the one that was noticed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const i18nSource = await readFile(join(root, 'apps/cockpit/src/lib/i18n.ts'), 'utf8')
+const englishCatalogue = i18nSource.slice(
+  i18nSource.indexOf('const EN = {'),
+  i18nSource.indexOf('\nexport type TranslationKey'),
+)
+const CATALOGUE_KEYS = [...englishCatalogue.matchAll(/^\s{2}'([a-zA-Z][\w.]*)':/gm)].map((entry) => entry[1])
+if (CATALOGUE_KEYS.length < 500) {
+  throw new Error(
+    `Read ${CATALOGUE_KEYS.length} keys out of the EN catalogue in apps/cockpit/src/lib/i18n.ts; it holds far more. The catalogue's shape changed and this parser has to change with it.`,
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The detail surfaces — the half of the console this file could not see.
+//
+// WHY THIS EXISTS
+//
+// The sweep below used to visit the eighteen ROUTES and stop there, and the
+// prohibitions it carries — no visible UUID, no bare "OK", no "Unbekannt" — were
+// therefore statements about list pages only. Every surface that shows ONE
+// record was structurally out of reach, and in this family that is exactly where
+// the breaches were found: a sibling console had a full field table in English
+// with an undisguised UUID on a detail page, and another had a whole English
+// services page, and both were found by a human looking at a screenshot rather
+// than by a check (LOCAL-CK-DETAILROUTEN).
+//
+// WHY IT IS A TABLE OF CLICKS AND NOT A LIST OF ROUTES
+//
+// Because ContentKit's console has NO detail routes. `router.tsx` is eighteen
+// static paths and not one `$id` among them: a document, a published entry, a
+// pattern, a webhook endpoint, an audit event and a contact submission are all
+// opened WITHIN their list page, as a dialog, an expanding row or a full-page
+// swap that never moves the URL. "Visit the detail route" is not a thing that
+// can be done here; opening the surface is. So each entry names the collection,
+// the route it lives on, the handles to click in order, and the handle the
+// surface itself carries — and the surface has to actually appear, or the entry
+// is reported as unmeasured rather than passed over.
+//
+// Index-based handles (`content-row-0-open`) are used deliberately: every row
+// trigger in this console is templated on the row INDEX, not on the record id,
+// so `-0-` means "the first row, whatever it is" and survives a fixture whose
+// ids change.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DETAILS = [
+  { collection: 'Dokument', route: '/content', steps: ['content-row-0-open'], surface: 'content-tabs' },
+  {
+    collection: 'Dokument › Fassungen',
+    route: '/content',
+    steps: ['content-row-0-open', 'content-tabs-revisions'],
+    surface: 'content-tab-revisions',
+  },
+  {
+    collection: 'Veröffentlichtes',
+    route: '/published',
+    steps: ['published-row-0-inspect'],
+    surface: 'published-dialog',
+  },
+  {
+    collection: 'Komposition › Muster',
+    route: '/compositions',
+    steps: ['composition-tabs-patterns', 'pattern-0-open'],
+    surface: 'pattern-dialog',
+  },
+  {
+    collection: 'Komposition › Leitfaden',
+    route: '/compositions',
+    steps: ['composition-tabs-guides', 'guide-0-open'],
+    surface: 'guide-dialog',
+  },
+  { collection: 'Webhook › Endpunkt', route: '/webhooks', steps: ['ck-webhook-0-edit'], surface: 'ck-webhook-dialog' },
+  {
+    collection: 'Webhook › Zustellung',
+    route: '/webhooks',
+    steps: ['ck-webhook-tabs-deliveries', 'ck-delivery-0-expand'],
+    surface: 'ck-delivery-0-detail',
+  },
+  { collection: 'Audit-Ereignis', route: '/audit', steps: ['ck-audit-row-0-expand'], surface: 'ck-audit-detail-0' },
+  { collection: 'Zugang › Leser', route: '/access', steps: ['ck-reader-0-edit'], surface: 'ck-reader-dialog' },
+  { collection: 'Zugang › Pfadregel', route: '/access', steps: ['ck-rule-0-edit'], surface: 'ck-rule-dialog' },
+  { collection: 'Zugang › Gruppe', route: '/access', steps: ['ck-group-0-edit'], surface: 'ck-group-dialog' },
+  {
+    collection: 'Zugangsdaten › Identität',
+    route: '/credentials',
+    steps: ['ck-credentials-tabs-grants', ['ck-grant-0-edit', 'ck-grant-0-restore']],
+    surface: 'ck-grant-dialog',
+  },
+  {
+    collection: 'Zugangsdaten › API-Schlüssel',
+    route: '/credentials',
+    steps: ['ck-api-key-new'],
+    surface: 'ck-api-key-dialog',
+  },
+  {
+    collection: 'Moderation › Kontaktanfrage',
+    route: '/moderation',
+    steps: ['ck-moderation-tabs-contact', 'ck-contact-0-expand'],
+    surface: 'ck-contact-0-body',
+  },
+  {
+    collection: 'Website › Abschnitt',
+    route: '/settings',
+    steps: ['ck-site-sections-identity'],
+    surface: 'ck-site-sections',
+  },
+  { collection: 'Website › Anlegen', route: '/sites', steps: ['site-new'], surface: 'ck-site-wizard' },
+  { collection: 'Release › Vorschau', route: '/releases', steps: ['ck-preview-new'], surface: 'ck-preview-dialog' },
+]
+
+/**
+ * The collections that have NO detail surface, written down rather than omitted.
+ *
+ * §12 again: an empty row in the table above and a collection that genuinely has
+ * nothing to open look identical from the outside, and only one of them is a
+ * gap in this file. Naming them costs three lines and turns "we did not check
+ * Präsentationen" into "there is nothing there to check".
+ */
+const WITHOUT_DETAIL = [
+  {
+    collection: 'Präsentation',
+    route: '/decks',
+    why: 'one editor and a registry of chips; a deck has no per-record surface',
+  },
+  { collection: 'Audio', route: '/audio', why: 'the job rows carry a retry and nothing to open' },
+  {
+    collection: 'Release',
+    route: '/releases',
+    why: 'a release row has an action menu, not a detail; the promotion review arrives by ?promotion_review= and is driven by scripts/validate-cockpit-browser.mjs',
+  },
+  {
+    collection: 'Website',
+    route: '/sites',
+    why: 'the row LINKS to /settings, which is a swept route in its own right',
+  },
+  { collection: 'System', route: '/system', why: 'read-only status rows with nothing below them' },
+  { collection: 'Übersicht', route: '/', why: 'every item is a link to another page' },
+  { collection: 'Profil', route: '/profile', why: "the page is one record already — the operator's own session" },
+  { collection: 'Assistent', route: '/assistant', why: 'a conversation, not a collection' },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The decision queue, made coherent.
 //
 // The shape is DecisionList from docs/openapi.json, so nothing here can describe
@@ -544,7 +736,7 @@ const readQueue = () => {
  * both are read from visible text only; a hidden dialog's markup is not a label
  * anybody is shown.
  */
-const readProhibitions = () => {
+const readProhibitions = (catalogueKeys) => {
   const visible = (element) => {
     const style = getComputedStyle(element)
     if (style.display === 'none' || style.visibility === 'hidden') return false
@@ -560,6 +752,28 @@ const readProhibitions = () => {
     const value = `${element.getAttribute('aria-label') ?? ''} ${element.getAttribute('title') ?? ''}`
     if (/Unbekannt\b/.test(value)) unknownState.push(value.trim().slice(0, 80))
   }
+
+  /*
+   * A cell that reads "undefined" — the shape a missed table lookup takes once
+   * `translate()` stops throwing over one.
+   *
+   * The net under the compiler (lib/i18n.ts) turns a page-killing crash into a
+   * visible wrong word, which is the right trade and a WORSE thing to leave
+   * unasserted: a crash announces itself, "undefined" in the role column of a
+   * table does not. §2 is about the console admitting what it does not know, and
+   * a JavaScript sentinel printed at an operator admits nothing. Read as whole
+   * words so that prose containing them is not caught.
+   */
+  const sentinels = lines.filter((line) => /\b(undefined|null|NaN|\[object Object\])\b/.test(line)).slice(0, 6)
+
+  // A key is only a defect when it is ON SCREEN, so the search is over the same
+  // rendered lines as everything else here, and `Set` membership is exact: a
+  // sentence that merely mentions a dotted word is not a key, and a key is never
+  // a substring of a longer word because the line is split on whitespace first.
+  const catalogue = new Set(catalogueKeys)
+  const rawKeys = [
+    ...new Set(lines.flatMap((line) => line.split(/[\s|,;()[\]"']+/)).filter((word) => catalogue.has(word))),
+  ].slice(0, 6)
 
   const identifiers = []
   for (const line of lines) {
@@ -577,8 +791,19 @@ const readProhibitions = () => {
 
   return {
     unknownState: [...new Set(unknownState)].slice(0, 6),
+    sentinels: [...new Set(sentinels)].slice(0, 6),
+    rawKeys,
     identifiers: [...new Set(identifiers)].slice(0, 6),
     bareButtons: bareButtons.slice(0, 6),
+    // A page that threw is not a page with no violations on it, and until this
+    // was read the two were indistinguishable here: `readProhibitions` scans the
+    // body, an error screen has no "Unbekannt", no bare "OK" and no UUID on it,
+    // and every prohibition therefore PASSED on a route that had unmounted. The
+    // Zugangsdaten page was in exactly that state for as long as the fixture
+    // session held `identity:admin`.
+    pagePresent: Boolean(document.querySelector('[data-testid="page"]')),
+    crashPresent: Boolean(document.querySelector('[data-testid="route-error"]')),
+    routerErrorPresent: /Something went wrong!/.test(text),
   }
 }
 
@@ -615,6 +840,21 @@ async function mockQueue(page, payload) {
   })
 }
 
+/**
+ * Everything this run could not measure, and why.
+ *
+ * §12: a gap has to appear as a gap. Two things used to disappear into a
+ * `.catch(() => {})` here — a skeleton that never resolved, and a surface with
+ * no fixture behind it — and both came out the far end as a clean report. A
+ * route measured while it was still loading is not a route that passed; it is a
+ * route nobody looked at, and saying so is the only honest answer.
+ */
+const notMeasured = []
+
+function unmeasured(where, why) {
+  notMeasured.push({ where, why })
+}
+
 /** Opens a route and waits for it to have rendered — never on a fixed delay. */
 async function open(page, route, origin) {
   const path = route === '/' ? '/cockpit/' : `/cockpit${route}`
@@ -625,12 +865,91 @@ async function open(page, route, origin) {
   // A skeleton on screen means a query is still in flight, and a label that has
   // not arrived yet is not a label that is wrong. Absence of one is the
   // condition, not a duration.
-  await page
+  //
+  // The timeout used to be swallowed whole. It is reported now: if the skeletons
+  // are still up after fifteen seconds, every prohibition below was read off a
+  // loading state and the answer "no violations on this route" means nothing.
+  const settled = await page
     .waitForFunction(() => !document.querySelector('[data-slot="skeleton"]'), null, { timeout: 15_000 })
-    .catch(() => {})
+    .then(() => true)
+    .catch(() => false)
+  if (!settled) {
+    unmeasured(
+      `route ${route}`,
+      'skeletons were still on screen after 15s, so this route was read while it was still loading',
+    )
+  }
   await page.evaluate(
     () => new Promise((done) => window.requestAnimationFrame(() => window.requestAnimationFrame(done))),
   )
+  return settled
+}
+
+/**
+ * Opens one detail surface and says whether it is really on screen.
+ *
+ * Returns `false` — and files an unmeasured entry naming the exact step that
+ * failed — rather than throwing or, worse, quietly carrying on. A step that
+ * cannot be clicked usually means the fixture produced no rows for that list or
+ * the fixture session lacks the scope that reveals the tab, and either way the
+ * prohibitions below would then be measured against the list page a second time
+ * and reported as a clean detail surface. That is the §12 failure this whole
+ * table exists to end, so it is the one thing this function may not do.
+ */
+async function openDetail(page, entry, origin) {
+  await open(page, entry.route, origin)
+  for (const step of entry.steps) {
+    // A step may name several handles. That is not a fallback for a handle that
+    // was renamed — it is for a row that legitimately wears one of two openers
+    // depending on its own state: a live identity grant carries `-edit`, a
+    // revoked one carries `-restore`, and both open the same dialog. Naming only
+    // one would make the sweep's reach depend on which rows the fixture happened
+    // to synthesize.
+    const handles = Array.isArray(step) ? step : [step]
+    let clicked = false
+    for (const handle of handles) {
+      clicked = await page
+        .locator(`[data-testid="${handle}"]`)
+        .first()
+        .click({ timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false)
+      if (clicked) break
+    }
+    if (!clicked) {
+      unmeasured(
+        `${entry.collection} (route ${entry.route})`,
+        `none of ${handles.map((handle) => `"${handle}"`).join(' / ')} could be clicked — no row, no tab, or no permission to reveal it, so the detail surface was never reached`,
+      )
+      return false
+    }
+    // Radix animates dialogs and accordions in; a click on the next handle in a
+    // chain has to land after the previous surface exists.
+    await page.waitForTimeout(250)
+  }
+  const shown = await page
+    .waitForSelector(`[data-testid="${entry.surface}"]`, { state: 'visible', timeout: 8_000 })
+    .then(() => true)
+    .catch(() => false)
+  if (!shown) {
+    unmeasured(
+      `${entry.collection} (route ${entry.route})`,
+      `the handles were clicked but [data-testid="${entry.surface}"] never became visible`,
+    )
+    return false
+  }
+  await page
+    .waitForFunction(() => !document.querySelector('[data-slot="skeleton"]'), null, { timeout: 10_000 })
+    .catch(() =>
+      unmeasured(
+        `${entry.collection} (route ${entry.route})`,
+        'the detail surface was still loading after 10s, so it was read as a skeleton',
+      ),
+    )
+  await page.evaluate(
+    () => new Promise((done) => window.requestAnimationFrame(() => window.requestAnimationFrame(done))),
+  )
+  return true
 }
 
 async function contextFor(browser, payload) {
@@ -944,8 +1263,19 @@ try {
   // ── Rules 4, 7 and 8 (§2, §8.3, §5) — prohibitions, so every route.
   for (const route of ROUTES) {
     await open(page, route, fixture.origin)
-    const found = await page.evaluate(readProhibitions)
+    const found = await page.evaluate(readProhibitions, CATALOGUE_KEYS)
 
+    check(found.pagePresent && !found.crashPresent && !found.routerErrorPresent, {
+      rule: 13,
+      paragraph: '§4',
+      where: `route ${route}`,
+      expected: 'the route renders its page — a console that throws has no convention to measure',
+      found: found.routerErrorPresent
+        ? 'the router\'s own English error screen ("Something went wrong!") is on screen'
+        : found.crashPresent
+          ? "the console's crash screen is on screen; this route threw while rendering"
+          : 'no [data-testid="page"] rendered at all',
+    })
     check(found.unknownState.length === 0, {
       rule: 4,
       paragraph: '§2',
@@ -953,6 +1283,20 @@ try {
       expected:
         '"Unbekannt" appears nowhere — a state is resolved, or it says "nicht ermittelbar seit X" with a reason',
       found: found.unknownState.map((entry) => `"${entry}"`).join(' | '),
+    })
+    check(found.rawKeys.length === 0, {
+      rule: 14,
+      paragraph: '§5',
+      where: `route ${route}`,
+      expected: 'no catalogue key is visible — a key on screen proves the sentence never came out of the catalogue',
+      found: found.rawKeys.map((key) => `"${key}"`).join(', '),
+    })
+    check(found.sentinels.length === 0, {
+      rule: 4,
+      paragraph: '§2',
+      where: `route ${route}`,
+      expected: 'no JavaScript sentinel ("undefined", "null", "NaN") is printed at an operator',
+      found: found.sentinels.map((line) => `"${line}"`).join(' | '),
     })
     check(found.bareButtons.length === 0, {
       rule: 7,
@@ -969,6 +1313,68 @@ try {
       found: found.identifiers.map((entry) => `…${entry.trim()}…`).join(' | '),
     })
   }
+
+  // ── Rules 4, 7 and 8 again, on the surfaces a list page hides.
+  //
+  // Same three prohibitions, deliberately not a fourth rule of their own: §2,
+  // §8.3 and §5 do not stop applying because a record was opened, and giving the
+  // detail surfaces their own rule numbers would invite the reading that the
+  // list pages are held to one standard and the detail views to another.
+  // Only `where` changes, so a violation says which surface it was read on.
+  for (const entry of DETAILS) {
+    if (!(await openDetail(page, entry, fixture.origin))) continue
+    const seen = await page.evaluate(readProhibitions, CATALOGUE_KEYS)
+    const where = `${entry.collection} › [data-testid="${entry.surface}"] (route ${entry.route})`
+
+    check(seen.pagePresent && !seen.crashPresent && !seen.routerErrorPresent, {
+      rule: 13,
+      paragraph: '§4',
+      where,
+      expected: 'opening the record leaves the page standing',
+      found: seen.routerErrorPresent
+        ? 'the router\'s own English error screen ("Something went wrong!") is on screen'
+        : seen.crashPresent
+          ? "the console's crash screen is on screen; this surface threw while rendering"
+          : 'no [data-testid="page"] rendered at all',
+    })
+    check(seen.unknownState.length === 0, {
+      rule: 4,
+      paragraph: '§2',
+      where,
+      expected:
+        '"Unbekannt" appears nowhere — a state is resolved, or it says "nicht ermittelbar seit X" with a reason',
+      found: seen.unknownState.map((line) => `"${line}"`).join(' | '),
+    })
+    check(seen.rawKeys.length === 0, {
+      rule: 14,
+      paragraph: '§5',
+      where,
+      expected: 'no catalogue key is visible — a key on screen proves the sentence never came out of the catalogue',
+      found: seen.rawKeys.map((key) => `"${key}"`).join(', '),
+    })
+    check(seen.sentinels.length === 0, {
+      rule: 4,
+      paragraph: '§2',
+      where,
+      expected: 'no JavaScript sentinel ("undefined", "null", "NaN") is printed at an operator',
+      found: seen.sentinels.map((line) => `"${line}"`).join(' | '),
+    })
+    check(seen.bareButtons.length === 0, {
+      rule: 7,
+      paragraph: '§8.3',
+      where,
+      expected: 'every button names the action it performs',
+      found: seen.bareButtons.map((button) => `"${button.text}" (${button.testId ?? 'no data-testid'})`).join(', '),
+    })
+    check(seen.identifiers.length === 0, {
+      rule: 8,
+      paragraph: '§5',
+      where,
+      expected: 'no identifier-shaped text is visible to the operator',
+      found: seen.identifiers.map((line) => `…${line.trim()}…`).join(' | '),
+    })
+  }
+
   await context.close()
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1162,7 +1568,25 @@ try {
   await fixture.close().catch(() => {})
 }
 
+// A page that rendered against a 501 rendered against nothing, and every
+// prohibition read off it is a prohibition read off an empty screen. The sibling
+// script scripts/validate-cockpit-browser.mjs has asserted this for a while;
+// this one used to let it pass in silence, which is the §12 failure in its
+// purest form — the check was quietest exactly where it saw least.
+for (const entry of [...new Set(fixture.unanswered)]) {
+  unmeasured('the fixture', `the console asked for ${entry}, so some surface rendered against nothing`)
+}
+
 const seconds = ((Date.now() - started) / 1000).toFixed(1)
+
+// Printed before the verdict and in both outcomes. A gap reported underneath a
+// green "conform: true" is a gap nobody reads; §12 wants it where the eye lands
+// first, and the JSON below carries it too so a machine sees the same thing.
+if (notMeasured.length > 0) {
+  console.error(`⚠ nicht geprüft — ${notMeasured.length} Stelle(n), die dieser Lauf NICHT gemessen hat:`)
+  for (const entry of notMeasured) console.error(`    ${entry.where}: ${entry.why}`)
+  console.error('  Diese Stellen sind weder konform noch nicht-konform. Sie sind ungeprüft.\n')
+}
 
 if (violations.length > 0) {
   for (const entry of violations) {
@@ -1186,11 +1610,14 @@ if (violations.length > 0) {
         seconds: Number(seconds),
         locale: LOCALE,
         routes: ROUTES.length,
+        detailflaechen: DETAILS.map((entry) => `${entry.collection} (${entry.route})`),
+        ohneDetailflaeche: WITHOUT_DETAIL.map((entry) => `${entry.collection} (${entry.route}) — ${entry.why}`),
+        nichtGeprueft: notMeasured,
         rules: [
           '1 · §5/§6 — the account block spells the role "Administrator"',
           '2 · §6 — the admin navigation block is called "Installation"',
           '3 · §8.1 — "Entscheidungen" stands ungrouped under the overview and carries a counter',
-          '4 · §2 — "Unbekannt" is nowhere in the console',
+          '4 · §2 — neither "Unbekannt" nor a JavaScript sentinel ("undefined", "null", "NaN") is anywhere in the console',
           '5 · §8.7 — an open gate puts one banner with one link above all tiles, and a quiet queue puts none',
           '6 · §8.2 — the aging section of the queue is called "Liegt schon länger"',
           '7 · §8.3 — no visible button is labelled "OK" or "Submit"',
@@ -1199,6 +1626,8 @@ if (violations.length > 0) {
           '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
           '11 · §6 — the sidebar draws "ContentKit" beside a visible icon, the browser tab reads "ContentKit Cockpit", and the declared app icon actually loads',
           '12 · §2/§4 — a decision of a kind this build cannot name degrades to its own badge ("Art nicht ermittelbar" plus the raw value) and never unmounts the page',
+          '13 · §4 — no route and no detail surface answers with an error screen; a page that threw is not a page that passed',
+          '14 · §5 — no catalogue key is rendered as if it were a sentence; the key list is the catalogue itself, so the rule needs no word list',
         ],
       },
       null,

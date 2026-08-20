@@ -1,5 +1,6 @@
 import { Check, ChevronDown, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { visibleLabel } from '@/lib/opaque'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n-context'
 import { Chip } from './chip'
@@ -284,16 +285,35 @@ export function MultiCombobox({
   return (
     <div ref={root} className={cn('relative', className)} data-testid={testId}>
       <div className={cn(SHELL, 'flex-wrap py-1')} aria-invalid={aria['aria-invalid']}>
-        {value.map((entry, index) => (
-          <Chip
-            key={entry}
-            data-testid={`${testId}-chip-${index}`}
-            removeLabel={t('tag.remove', { value: entry })}
-            onRemove={disabled ? undefined : () => toggle(entry)}
-          >
-            {options.find((option) => option.value === entry)?.label ?? entry}
-          </Chip>
-        ))}
+        {value.map((entry, index) => {
+          /*
+           * A selected value whose option is gone used to fall back to the value
+           * itself — and in this console those values are UUIDs, so a path rule
+           * pointing at a deleted reader group printed two raw identifiers into
+           * the dialog and a third into the error line beneath it (§5, found by
+           * the detail sweep of LOCAL-CK-DETAILROUTEN).
+           *
+           * `visibleLabel` is the console's existing answer to "is this string
+           * something a person may read": it returns the value unless the value
+           * is an opaque identifier. So a human-readable value still shows
+           * itself, and an id degrades to the honest words instead — which is
+           * also what the chip needs to say, because the operator's next move is
+           * to remove it.
+           */
+          const named = options.find((option) => option.value === entry)?.label ?? visibleLabel(entry)
+          const label = named ?? t('common.missingEntry')
+          return (
+            <Chip
+              key={entry}
+              data-testid={`${testId}-chip-${index}`}
+              data-missing={named ? undefined : 'true'}
+              removeLabel={t('tag.remove', { value: label })}
+              onRemove={disabled ? undefined : () => toggle(entry)}
+            >
+              {label}
+            </Chip>
+          )
+        })}
         <input
           id={aria.id}
           aria-describedby={aria['aria-describedby']}

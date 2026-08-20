@@ -262,8 +262,11 @@ export function EntityMultiSelect({
   const { t } = useI18n()
   const stale =
     isLoading || optionsError ? [] : value.filter((entry) => !options.some((option) => option.value === entry))
-  const fieldError =
-    shell.error ?? (stale.length ? t('validation.staleEntity', { value: stale.join(', ') }) : undefined)
+  // The message names no values on purpose. They are opaque ids here, §5 keeps
+  // those off the screen, and it no longer needs to name them: the combobox marks
+  // every chip whose option is gone with the same words, so "the marked entries"
+  // points at something the operator can actually see and remove.
+  const fieldError = shell.error ?? (stale.length ? t('validation.staleEntity') : undefined)
 
   return (
     <FieldShell {...shell} error={fieldError}>

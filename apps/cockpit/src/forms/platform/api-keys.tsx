@@ -281,7 +281,7 @@ export function ApiKeysCard() {
                       {key.site_ids?.length
                         ? list(
                             key.site_ids.map(
-                              (id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite'),
+                              (id) => sites.find((site) => site.id === id)?.slug ?? t('common.siteUnresolved'),
                             ),
                           )
                         : t('identity.everySite')}

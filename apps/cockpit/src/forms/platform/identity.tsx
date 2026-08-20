@@ -211,7 +211,7 @@ function GrantDialog({
                 placeholder={providers.isPending ? t('common.loading') : t('identity.chooseProvider')}
                 options={options.map((provider) => ({
                   value: provider.id,
-                  label: visibleLabel(provider.label) ?? t('common.unknown'),
+                  label: visibleLabel(provider.label) ?? t('common.providerUnresolved'),
                 }))}
                 error={
                   providers.error
@@ -444,11 +444,25 @@ export function IdentityGrantsCard() {
                     ) : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {visibleLabel(grant.provider_id) ?? t('common.unknown')}
+                    {visibleLabel(grant.provider_id) ?? t('common.providerUnresolved')}
                   </TableCell>
                   <TableCell>
+                    {/*
+                      The `in` guard is not decoration. `grant.role` is whatever
+                      the server wrote, and an unguarded `ROLE_LABEL_KEYS[…]`
+                      handed `undefined` to `t()`, which took the entire
+                      Zugangsdaten page down — the same defect as
+                      LOCAL-CK-ART-UNBEKANNT, in a second place, found by the
+                      detail sweep. The scope cell one row down had the guard all
+                      along; this one is now written the same way, and a role
+                      nobody named keeps its raw value rather than a crash.
+                    */}
                     <StatusBadge tone={grant.role === 'admin' ? 'warning' : 'info'}>
-                      {grant.role ? t(ROLE_LABEL_KEYS[grant.role as OperatorRole]) : '—'}
+                      {grant.role
+                        ? grant.role in ROLE_LABEL_KEYS
+                          ? t(ROLE_LABEL_KEYS[grant.role as OperatorRole])
+                          : grant.role
+                        : '—'}
                     </StatusBadge>
                   </TableCell>
                   <TableCell className="max-w-[18rem] text-xs text-muted-foreground">
@@ -462,7 +476,7 @@ export function IdentityGrantsCard() {
                     {grant.site_ids?.length
                       ? list(
                           grant.site_ids.map(
-                            (id) => sites.find((site) => site.id === id)?.slug ?? t('common.unknownSite'),
+                            (id) => sites.find((site) => site.id === id)?.slug ?? t('common.siteUnresolved'),
                           ),
                         )
                       : t('identity.everySite')}

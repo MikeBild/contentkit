@@ -102,9 +102,9 @@ const EN = {
   'common.none': 'None',
   'common.all': 'All',
   'common.error': 'Something went wrong.',
-  'common.unknown': 'Unknown',
+  'common.providerUnresolved': 'Provider not resolvable',
   'common.unavailableDocument': 'Unavailable document',
-  'common.unknownSite': 'Unknown site',
+  'common.siteUnresolved': 'Site not resolvable',
   'common.columns': 'Columns',
   'common.hidden': '{count} hidden',
   'common.always': 'always',
@@ -201,7 +201,8 @@ const EN = {
   'validation.locale': 'A language tag like “de” or “de-at”',
   'validation.maximum': 'At most {count}',
   'validation.duplicate': 'Duplicate',
-  'validation.staleEntity': 'No longer exists: {value} — remove it before saving',
+  'validation.staleEntity': 'The marked entries no longer exist — remove them before saving',
+  'common.missingEntry': 'No longer exists',
   'save.problem': '{count} problem to fix',
   'save.problemsMany': '{count} problems to fix',
   'save.saving': 'Saving…',
@@ -2108,9 +2109,9 @@ const DE: Catalog = {
   'common.none': 'Keine',
   'common.all': 'Alle',
   'common.error': 'Etwas ist schiefgelaufen.',
-  'common.unknown': 'Unbekannt',
+  'common.providerUnresolved': 'Anbieter nicht ermittelbar',
   'common.unavailableDocument': 'Nicht verfügbares Dokument',
-  'common.unknownSite': 'Unbekannte Website',
+  'common.siteUnresolved': 'Website nicht ermittelbar',
   'common.columns': 'Spalten',
   'common.hidden': '{count} ausgeblendet',
   'common.always': 'immer',
@@ -2207,7 +2208,8 @@ const DE: Catalog = {
   'validation.locale': 'Ein Sprach-Tag wie „de“ oder „de-at“',
   'validation.maximum': 'Höchstens {count}',
   'validation.duplicate': 'Doppelt vorhanden',
-  'validation.staleEntity': 'Nicht mehr vorhanden: {value} — vor dem Speichern entfernen',
+  'validation.staleEntity': 'Die markierten Einträge sind nicht mehr vorhanden — vor dem Speichern entfernen',
+  'common.missingEntry': 'Nicht mehr vorhanden',
   'save.problem': '{count} Problem beheben',
   'save.problemsMany': '{count} Probleme beheben',
   'save.saving': 'Wird gespeichert…',
@@ -4076,13 +4078,20 @@ export const CATALOGS: Record<Locale, Catalog> = { en: EN, de: DE }
  * entry, then the key itself. The key on screen is ugly on purpose: it is
  * visible, greppable, and reports the defect to whoever sees it, which a silent
  * empty string would not.
+ *
+ * `String(key)` rather than `key`, because the caller that fails here is usually
+ * a table lookup that MISSED — `ROLE_LABEL_KEYS[whatever the server wrote]` — and
+ * hands over `undefined`, not a key. `undefined ?? undefined ?? undefined` is
+ * still `undefined`, and `.replace` on it throws exactly as before. That second
+ * shape cost the Zugangsdaten page while this comment already stood over the
+ * first one.
  */
 export function translate(
   locale: Locale,
   key: TranslationKey,
   values: Readonly<Record<string, string | number>> = {},
 ): string {
-  const template = CATALOGS[locale][key] ?? CATALOGS.en[key] ?? key
+  const template = CATALOGS[locale][key] ?? CATALOGS.en[key] ?? String(key)
   return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, name: string) =>
     Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match,
   )

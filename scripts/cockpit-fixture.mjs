@@ -72,8 +72,16 @@ export const SITES = [
 /**
  * The scopes needed to expose every navigation entry plus the release actions
  * whose confirmation geometry the browser suite drives explicitly.
+ *
+ * `identity:admin` is here for a subtler reason than the rest: it does not open a
+ * navigation entry, it opens a TAB. Without it the Zugangsdaten page renders the
+ * API-key card alone — no strip, no grants panel — so the grant editor behind it
+ * was not merely unchecked, it was unreachable, and a sweep over that page would
+ * have reported a clean result for a surface it could not have seen
+ * (LOCAL-CK-DETAILROUTEN).
  */
 export const OPERATOR_SCOPES = [
+  'identity:admin',
   'stats:read',
   'content:read',
   'content:write',
@@ -292,9 +300,31 @@ function responseSchema(operation) {
     const content = responses[status]?.content
     const schema = content?.['application/json']?.schema
     if (schema) return { status: Number(status), schema }
-    if (content) return { status: Number(status), schema: null }
+    if (content) return { status: Number(status), schema: null, content }
   }
   return null
+}
+
+/**
+ * The documented answers that are not JSON.
+ *
+ * `GET …/composition.svg` declares `image/svg+xml` and nothing else, so the JSON
+ * path above finds no schema and the fixture used to answer 501 — which the
+ * published detail dialog renders as a broken `<img>`, and which the console's
+ * own suite could not see because it never opened that dialog
+ * (LOCAL-CK-DETAILROUTEN). The body below is deliberately the smallest thing
+ * that is a real document of its type: nothing here should ever be mistaken for
+ * a rendering fixture, it exists so that a documented endpoint answers what it
+ * says it answers instead of an error the caller cannot distinguish from a
+ * missing route.
+ */
+const NON_JSON_BODIES = {
+  'image/svg+xml':
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" role="img" aria-label="Fixture-Komposition">' +
+    '<title>Fixture-Komposition</title><rect width="240" height="120" fill="#e2e8f0"/></svg>',
+  'text/plain': 'fixture',
+  'text/markdown': '# Fixture\n',
+  'text/html': '<!doctype html><title>Fixture</title>',
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -432,6 +462,12 @@ function apiResponse(method, pathname, query) {
 
   const shape = responseSchema(found.operation)
   if (!shape) return { status: 204, body: '' }
+  if (!shape.schema && shape.content) {
+    const type = Object.keys(shape.content).find((candidate) => candidate in NON_JSON_BODIES)
+    if (type) {
+      return { status: shape.status, body: NON_JSON_BODIES[type], headers: { 'content-type': type } }
+    }
+  }
   if (!shape.schema) {
     return {
       status: 501,
