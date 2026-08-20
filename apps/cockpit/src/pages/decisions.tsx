@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, ListChecks, MoreHorizontal, TriangleAlert } from 'lucide-react'
+import { CircleCheck, ExternalLink, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { ck, type Decision, type PromotionReview } from '@/api/ck'
 import { NoSite, Page } from '@/app/shell'
@@ -36,6 +36,65 @@ const KINDS: Decision['kind'][] = ['draft_capture', 'comment', 'contact', 'feedb
 
 function keyForKind(kind: Decision['kind']): TranslationKey {
   return `decisions.kind.${kind}` as TranslationKey
+}
+
+const STATE_KEYS: Record<QueueState, TranslationKey> = {
+  open: 'decisions.open',
+  deferred: 'decisions.deferred',
+  dismissed: 'decisions.dismissed',
+  decided: 'decisions.decided',
+}
+
+/**
+ * Nothing is open — §8.6's first half, and the only place in this console where
+ * an empty list is good news.
+ *
+ * The green ring is the point. Every other empty state in the console is a muted
+ * grey square meaning "there is nothing here"; this one means "there is nothing
+ * left", which is a different sentence and has to look like one. The word is
+ * still what carries it — the tick is decoration beside "Alles erledigt", never
+ * instead of it (CUI-A11Y-5).
+ */
+function QueueCleared() {
+  const { t } = useI18n()
+  return (
+    <Empty className="border" data-testid="decisions-empty-cleared">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="size-10 rounded-full bg-success/10 text-success">
+          <CircleCheck className="size-5" />
+        </EmptyMedia>
+        <EmptyTitle>{t('decisions.emptyCleared')}</EmptyTitle>
+        <EmptyDescription>{t('decisions.emptyClearedDescription')}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  )
+}
+
+/**
+ * Nothing matches — §8.6's second half, and §10's rule for a filtered list.
+ *
+ * Deliberately smaller than the one above: no ring, no icon plate, one line. The
+ * emptiness here says nothing about the work, only about the filter, so it gets
+ * the weight of a status line rather than of an announcement. It names the
+ * filter that is hiding the queue and carries the way back, because a dead end
+ * an operator has to un-click by guesswork is the defect §10 is about.
+ */
+function FilteredEmpty({ label, onReset }: { label: string[]; onReset: () => void }) {
+  const { t, list } = useI18n()
+  return (
+    <div
+      data-testid="decisions-empty-filtered"
+      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-dashed px-4 py-3 text-sm"
+    >
+      <p className="text-muted-foreground">
+        {t('decisions.emptyFiltered')}{' '}
+        <span className="text-foreground">{t('decisions.activeFilter', { filter: list(label) })}</span>
+      </p>
+      <Button data-testid="decisions-reset-filter" variant="outline" size="sm" onClick={onReset}>
+        {t('decisions.showAll')}
+      </Button>
+    </div>
+  )
 }
 
 function slug(value: string) {
@@ -418,6 +477,16 @@ export function DecisionsPage() {
     enabled: Boolean(site),
   })
   const items = useMemo(() => query.data?.items ?? [], [query.data])
+  // §8.6 asks for two empty states, and the thing that separates them is whether
+  // the operator narrowed the view. An untouched queue that is empty is the good
+  // news; the same emptiness behind a shelf or a kind chip is a fact about the
+  // filter, and saying "Alles erledigt" over it would be a console congratulating
+  // itself for something it was told not to look at.
+  const filtered = state !== 'open' || kind !== 'all'
+  const filterLabel = [
+    state === 'open' ? null : t(STATE_KEYS[state]),
+    kind === 'all' ? null : t(keyForKind(kind)),
+  ].filter((entry): entry is string => Boolean(entry))
   const split = Date.now() - 3 * 24 * 60 * 60 * 1000
   const waitingLonger = state === 'open' ? items.filter((item) => Date.parse(item.opened_at) <= split) : []
   const currentItems = state === 'open' ? items.filter((item) => Date.parse(item.opened_at) > split) : items
@@ -473,15 +542,17 @@ export function DecisionsPage() {
         ) : query.isPending ? (
           <SkeletonText lines={8} data-testid="decisions-skeleton" />
         ) : items.length === 0 ? (
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <ListChecks />
-              </EmptyMedia>
-              <EmptyTitle>{kind === 'all' ? t('decisions.empty') : t('decisions.emptyFiltered')}</EmptyTitle>
-              <EmptyDescription>{t('decisions.description')}</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          filtered ? (
+            <FilteredEmpty
+              label={filterLabel}
+              onReset={() => {
+                setState('open')
+                setKind('all')
+              }}
+            />
+          ) : (
+            <QueueCleared />
+          )
         ) : (
           <>
             {currentItems.map((decision, index) => (

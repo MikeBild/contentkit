@@ -308,6 +308,43 @@ const readOverviewBanner = () => {
 }
 
 /**
+ * §8.6, read as two surfaces rather than as one sentence with a ternary in it.
+ *
+ * The paragraph asks for a *pair*: "nothing is open" is good news and gets the
+ * green tick, "everything is filtered away" is a fact about the filter and gets
+ * a smaller, self-explaining line with the way back. The cheapest way to satisfy
+ * the words and lose the rule is one empty state that swaps its title, which is
+ * why both are read by their own handle, why the colour of the tick is measured
+ * rather than assumed, and why the two heights are compared: "kompakter" is a
+ * measurement, and a check that only counts elements cannot see it.
+ */
+const readDecisionEmpty = () => {
+  const page = document.querySelector('[data-testid="page"]')
+  if (!page) return null
+  const label = (element) => (element?.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const cleared = page.querySelector('[data-testid="decisions-empty-cleared"]')
+  const filtered = page.querySelector('[data-testid="decisions-empty-filtered"]')
+  const glyph = cleared?.querySelector('[data-slot="empty-icon"]') ?? null
+  const colour = glyph ? getComputedStyle(glyph).color : null
+  const channels = colour ? (colour.match(/\d+(?:\.\d+)?/g) ?? []).slice(0, 3).map(Number) : null
+
+  return {
+    clearedPresent: Boolean(cleared),
+    clearedText: label(cleared),
+    clearedHeight: cleared ? Math.round(cleared.getBoundingClientRect().height) : 0,
+    // The tick is decoration beside the word, never instead of it (§2), so both
+    // halves are reported and both are asserted.
+    tickPresent: Boolean(glyph?.querySelector('svg')),
+    tickColour: colour,
+    tickIsGreen: Boolean(channels && channels.length === 3 && channels[1] > channels[0] && channels[1] > channels[2]),
+    filteredPresent: Boolean(filtered),
+    filteredText: label(filtered),
+    filteredHeight: filtered ? Math.round(filtered.getBoundingClientRect().height) : 0,
+    resetPresent: Boolean(page.querySelector('[data-testid="decisions-reset-filter"]')),
+  }
+}
+
+/**
  * §8.2's aging rubric, and §8.1's counter measured against the queue under it.
  *
  * A position is its card and nothing else. Every control inside a card carries a
@@ -411,12 +448,21 @@ const readProhibitions = () => {
 async function mockQueue(page, payload) {
   await page.route('**/v1/sites/*/decisions*', async (route) => {
     const request = route.request()
-    const { pathname } = new URL(request.url())
-    if (request.method() !== 'GET' || !/^\/v1\/sites\/[^/]+\/decisions$/.test(pathname)) return route.fallback()
+    const url = new URL(request.url())
+    if (request.method() !== 'GET' || !/^\/v1\/sites\/[^/]+\/decisions$/.test(url.pathname)) return route.fallback()
+    // The page narrows by state and by kind, and §8.6's second empty state only
+    // exists behind a narrowing that matches nothing. A mock that answered the
+    // same body to every query could not produce it, so the two parameters the
+    // console actually sends are honoured here. `counts` deliberately is not
+    // narrowed: rule 9 reads the sidebar counter against the UNFILTERED queue,
+    // which is what §8.1 says a counter is.
+    const state = url.searchParams.get('state') ?? 'open'
+    const kind = url.searchParams.get('kind')
+    const items = payload.items.filter((item) => item.state === state && (!kind || item.kind === kind))
     await route.fulfill({
       status: 200,
       contentType: 'application/json; charset=utf-8',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, items }),
     })
   })
 }
@@ -652,7 +698,102 @@ try {
       found:
         calm === null ? 'the page did not render' : `${calm.bannerCount} banner(s); first reads "${calm.bannerText}"`,
     })
+    // ── Rule 10a (§8.6). Nothing is open, so the queue says so as good news.
+    await open(quiet.page, '/decisions', fixture.origin)
+    const cleared = await quiet.page.evaluate(readDecisionEmpty)
+    if (
+      check(cleared !== null && cleared.clearedPresent, {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen (route /decisions) with an empty, unfiltered queue',
+        expected: 'the "nothing is open" empty state [data-testid="decisions-empty-cleared"]',
+        found: cleared === null ? 'the page did not render' : `filtered state present: ${cleared.filteredPresent}`,
+      })
+    ) {
+      check(/Alles erledigt/.test(cleared.clearedText), {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen › [data-testid="decisions-empty-cleared"] › title',
+        expected: '"Alles erledigt"',
+        found: `"${cleared.clearedText}"`,
+      })
+      check(/Gerade wartet keine Entscheidung auf dich\./.test(cleared.clearedText), {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen › [data-testid="decisions-empty-cleared"] › description',
+        expected: '"Gerade wartet keine Entscheidung auf dich."',
+        found: `"${cleared.clearedText}"`,
+      })
+      check(cleared.tickPresent && cleared.tickIsGreen, {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen › [data-testid="decisions-empty-cleared"] › [data-slot="empty-icon"]',
+        expected: 'a green check glyph beside the words',
+        found: cleared.tickPresent ? `a glyph coloured ${cleared.tickColour}, which is not green` : 'no glyph at all',
+      })
+      check(!cleared.filteredPresent, {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen (route /decisions) with an empty, unfiltered queue',
+        expected: 'only the "nothing is open" state — the filtered message belongs to a filter',
+        found: `"${cleared.filteredText}"`,
+      })
+    }
     await quiet.context.close()
+
+    // ── Rule 10b (§8.6 / §10). The same emptiness behind a filter is a different
+    //    surface: compacter, naming the filter, carrying the way back.
+    const narrowed = await contextFor(browser, queue)
+    await open(narrowed.page, '/decisions', fixture.origin)
+    // "Feedback" is the one kind the fixture's eight positions do not contain, so
+    // the chip narrows a full queue to nothing without emptying it.
+    await narrowed.page.click('[data-testid="decisions-kind-feedback"]').catch(() => {})
+    await narrowed.page.waitForSelector('[data-testid="decisions-empty-filtered"]', { timeout: 10_000 }).catch(() => {})
+    const filtered = await narrowed.page.evaluate(readDecisionEmpty)
+    if (
+      check(filtered !== null && filtered.filteredPresent, {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen (route /decisions) with the "Feedback" kind chip active',
+        expected: 'the filtered empty state [data-testid="decisions-empty-filtered"]',
+        found:
+          filtered === null
+            ? 'the page did not render'
+            : filtered.clearedPresent
+              ? `the "Alles erledigt" state — a console congratulating itself for what the filter hid: "${filtered.clearedText}"`
+              : 'neither empty state is on screen',
+      })
+    ) {
+      check(!filtered.clearedPresent, {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen (route /decisions) with the "Feedback" kind chip active',
+        expected: 'no "Alles erledigt" — nothing was decided, something was hidden',
+        found: `"${filtered.clearedText}"`,
+      })
+      check(/Feedback/.test(filtered.filteredText), {
+        rule: 10,
+        paragraph: '§10',
+        where: 'Entscheidungen › [data-testid="decisions-empty-filtered"]',
+        expected: 'the active filter is named',
+        found: `"${filtered.filteredText}"`,
+      })
+      check(filtered.resetPresent, {
+        rule: 10,
+        paragraph: '§10',
+        where: 'Entscheidungen › [data-testid="decisions-reset-filter"]',
+        expected: 'a way back to the unfiltered queue',
+        found: 'no reset control beside the filtered message',
+      })
+      check(cleared !== null && filtered.filteredHeight < cleared.clearedHeight, {
+        rule: 10,
+        paragraph: '§8.6',
+        where: 'Entscheidungen › the two empty states, measured',
+        expected: 'the filtered message is the compacter of the two',
+        found: `filtered ${filtered.filteredHeight}px vs. cleared ${cleared?.clearedHeight ?? 0}px`,
+      })
+    }
+    await narrowed.context.close()
   }
 } finally {
   await browser.close().catch(() => {})
@@ -693,6 +834,7 @@ if (violations.length > 0) {
           '7 · §8.3 — no visible button is labelled "OK" or "Submit"',
           '8 · §5 — no identifier-shaped text is visible',
           '9 · §1/§8.1 — the counter equals the number of positions in the queue',
+          '10 · §8.6/§10 — an empty queue is a green "Alles erledigt", a filtered-away queue is a compacter line that names the filter and offers the way back',
         ],
       },
       null,
