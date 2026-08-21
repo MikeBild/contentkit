@@ -24,9 +24,11 @@ Queue-Quellen: wartende Entwürfe (mit Alter) · Moderationsfälle
 Nav-Eintrag „Entscheidungen" mit Zähler unter der Übersicht; die
 Overview-Karte „Wartet auf dich" (Zone A) zeigt die Top-Positionen und
 verlinkt dorthin. Moderation bleibt als Detailseite bestehen; ihr
-Pending-Anteil lebt zusätzlich in der Queue. Aging-Rubrik, Regale,
-Zero-States nach §8; Moderations-Erledigtes verschwindet aus der Queue
-(Zustand), das Audit behält alles (Geschichte, §8.5).
+Pending-Anteil lebt zusätzlich in der Queue. Aging-Rubrik und
+Zero-States nach §8; Erledigtes verschwindet aus der Queue (Zustand),
+das Audit behält alles (Geschichte, §8.5). Regale unter der Queue gibt
+es seit Konvention v1.6 nicht mehr: die Seite zeigt nur, was wartet,
+und genau ein Verweis führt ins Audit-Protokoll.
 
 ## Stufe 2 — Diff-Freigabe (§9, Vorbild SubKit)
 
