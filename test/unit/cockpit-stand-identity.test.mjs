@@ -59,13 +59,22 @@ describe('the run knows whose console it measured', () => {
     // (LOCAL-CK-ZERTIFIKAT-NENNT-FREMDES-PRODUKT). The unit test above catches
     // that in the tree; this catches it where the certificate is issued.
     assert.ok(
-      code.includes("JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name.toLowerCase()"),
+      code.includes("JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))"),
       'the checker reads the repository name rather than trusting the marker alone',
+    )
+    // Read where it is used, not at import time: on the top level a manifest
+    // without a `name` ended the run in an uncaught TypeError — exit 1 with no
+    // report at all, because the throw landed before the try block that turns a
+    // failure into an unmeasured stand (LOCAL-CK-KONVENTION-CHECK-OHNE-BERICHT).
+    assert.match(
+      code,
+      /function repositoryName\(\)[\s\S]*?throw new Error\(/,
+      'a package.json without a name is refused in a sentence, not by a TypeError on the top level',
     )
     const start = code.indexOf('function assertStandIdentity(html, origin)')
     const body = code.slice(start, code.indexOf('\n}\n', start))
     assert.ok(
-      body.includes('REPOSITORY_NAME'),
+      body.includes('repositoryName()'),
       'the identity assertion compares the derived value with the repository it belongs to',
     )
   })

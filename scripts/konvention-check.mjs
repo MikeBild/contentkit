@@ -1060,8 +1060,29 @@ const IDENTITY_META = 'cockpit-product'
 /** The definition site — the only place the value is written down. */
 const IDENTITY_SOURCE = 'apps/cockpit/index.html'
 
-/** The repository the derived identity has to belong to. */
-const REPOSITORY_NAME = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name.toLowerCase()
+/**
+ * The repository the derived identity has to belong to.
+ *
+ * Read where it is used rather than at import time, and refused in words rather
+ * than by a TypeError. A `package.json` without a `name` used to end this run on
+ * this line: exit 1, which is the right colour, and NO REPORT AT ALL — the throw
+ * landed before the try block that turns a failure into an unmeasured stand, so
+ * every finding the run would have printed went with it. That is the same §12
+ * failure the catch below exists to prevent, one screen higher up. Now the
+ * refusal is a sentence naming the file and what it lacks, thrown from inside
+ * `assertStandIdentity`, and the run ends red WITH its report.
+ */
+function repositoryName() {
+  const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  if (typeof manifest.name !== 'string' || manifest.name === '') {
+    throw new Error(
+      'package.json carries no "name", so this assertion has nothing to hold the console’s derived identity ' +
+        'against and cannot say whose console answered. That is a finding about THIS repository, not a statement ' +
+        'about whatever is serving the fixture.',
+    )
+  }
+  return manifest.name.toLowerCase()
+}
 
 /** A document's marker, or `null` if it carries none. */
 function markerIn(html) {
@@ -1078,6 +1099,7 @@ function markerIn(html) {
  * and red" and "never measured".
  */
 function assertStandIdentity(html, origin) {
+  const repository = repositoryName()
   const expected = markerIn(readFileSync(join(root, IDENTITY_SOURCE), 'utf8'))
   if (expected === null) {
     throw new Error(
@@ -1089,10 +1111,10 @@ function assertStandIdentity(html, origin) {
   // The derived value against the repository it is supposed to describe. Without
   // it, a sibling's index.html copied in here would make marker and bundle agree
   // and the certificate would name a foreign product next to `conform: true`.
-  if (expected.toLowerCase() !== REPOSITORY_NAME) {
+  if (expected.toLowerCase() !== repository) {
     throw new Error(
       `${IDENTITY_SOURCE} declares <meta name="${IDENTITY_META}" content="${expected}">, but this repository is ` +
-        `"${REPOSITORY_NAME}" (package.json). A sibling's document is in this repo, so both the expected value and ` +
+        `"${repository}" (package.json). A sibling's document is in this repo, so both the expected value and ` +
         'the bundle would name the wrong product and agree with each other. Nothing was measured.',
     )
   }
