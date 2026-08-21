@@ -254,6 +254,20 @@ test('the stamp is written beside the served bundle, never inside it', () => {
  * `npx vite --mode production build`, because a flag between the two words
  * tears `/\bvite build\b/` apart. A hand-written list of files and a regex over
  * a word sequence are the same mistake twice: modelling commands as prose.
+ *
+ * The replacement then lost in the other direction, and the honest way to find
+ * that out was to run both over the same corpus rather than to reason about it.
+ * 50 mutations, one unstamped build each, in a .sh file, in a package.json and
+ * in a workflow: the text version caught 44, the command version 21. 25 of the
+ * 26 the command version gave up were real — quoting, grouping punctuation,
+ * shell wrappers, substitutions, and four places a command can sit that
+ * `scripts` and `run:` do not cover. The 26th was a false red the text version
+ * produced by insisting on one exact spelling of the build script.
+ *
+ * Both halves are kept: the command model answers what a process does, and its
+ * reach is now the text version's reach. The corpus is above, as the two tests
+ * that call themselves the specification; the numbers are 50 of 50 caught, and
+ * the one legitimate spelling stays green.
  */
 async function commandSources() {
   const skipped = new Set(['node_modules', '.git', 'dist', '.vite', 'coverage'])
@@ -281,12 +295,127 @@ async function commandSources() {
   return found.sort()
 }
 
+/**
+ * A shell string, cut into the commands it actually runs.
+ *
+ * `split(/&&|\|\||;|\n/)` is the obvious version and it was this file's, and it
+ * loses four things — every one of them a spelling the TEXT version in f6e0f81
+ * caught, so each is a regression this file wrote for itself:
+ *
+ *   - It cuts inside quotes. `sh -c "vite build; echo done"` is one argument;
+ *     cutting at the semicolon leaves `sh -c "vite build`.
+ *   - It leaves the punctuation that groups commands attached.
+ *     `(cd apps/cockpit && npx vite build)` becomes `vite build)`, and
+ *     `build)` is not `build`. This is not an exotic spelling: line 27 of
+ *     scripts/build-cockpit.sh is `(cd "$APP" && npm run build)`, so the
+ *     subshell parenthesis is the HOUSE spelling for exactly this operation.
+ *   - It stops at a shell that was handed a script. `bash -lc 'vite build'`
+ *     runs a build and its own tokens say `bash`.
+ *   - It stops at a command substitution, `$(…)` and backticks alike.
+ *
+ * So the split respects quoting, the grouping punctuation is opened, and
+ * anything that is itself a script — a wrapper's `-c` argument, a substitution
+ * — is asked the same question again rather than treated as a word.
+ */
+function splitOutsideQuotes(text) {
+  const parts = []
+  let current = ''
+  let quote = null
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]
+    if (quote) {
+      current += character
+      if (character === quote && text[index - 1] !== '\\') quote = null
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      current += character
+      continue
+    }
+    if (character === '\n' || character === ';') {
+      parts.push(current)
+      current = ''
+      continue
+    }
+    if (character === '&' && text[index + 1] === '&') {
+      parts.push(current)
+      current = ''
+      index += 1
+      continue
+    }
+    if (character === '|') {
+      if (text[index + 1] === '|') index += 1
+      parts.push(current)
+      current = ''
+      continue
+    }
+    current += character
+  }
+  parts.push(current)
+  return parts
+}
+
+/** The shells that take a script as an argument, and the flag that says so. */
+const SHELL_WRAPPER = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:env\s+)?(?:\S*[/\\])?(?:sh|bash|zsh|dash|ash|ksh)\s+/
+
+/**
+ * The script a shell wrapper was handed, or `null` if this is not one.
+ *
+ * `-c`, `-lc`, `-ec`, `-eu -c`: the flag that matters is the one carrying a
+ * `c`, and it can be bundled with any others. What comes after it is a script,
+ * quoted or not, and the caller asks the whole question about it again.
+ */
+function shellWrapperBody(command) {
+  const head = SHELL_WRAPPER.exec(command)
+  if (!head) return null
+  let rest = command.slice(head[0].length).trim()
+  let carriesC = false
+  while (rest.startsWith('-')) {
+    const end = rest.search(/\s/)
+    const flag = end === -1 ? rest : rest.slice(0, end)
+    if (flag.includes('c')) carriesC = true
+    rest = end === -1 ? '' : rest.slice(end).trim()
+  }
+  if (!carriesC || !rest) return null
+  const quoted = /^(['"])([\s\S]*?)\1/.exec(rest)
+  return quoted ? quoted[2] : rest
+}
+
 /** Every command in a shell string, cut at the operators that end one. */
-function commands(text) {
-  return String(text)
-    .split(/\n|&&|\|\||;|\|/)
-    .map((part) => part.trim())
-    .filter(Boolean)
+function commands(text, depth = 0) {
+  // A backslash before a newline is not two commands, it is one written over
+  // two lines. Neither the text version nor the first command version saw a
+  // build spelled that way.
+  const joined = String(text).replace(/\\\r?\n[ \t]*/g, ' ')
+  const found = []
+  for (const raw of splitOutsideQuotes(joined)) {
+    let part = raw
+    // Substitutions first, innermost outwards, and BEFORE the grouping strip —
+    // otherwise the strip eats the closing parenthesis of `echo $(vite build)`
+    // and there is nothing left to recognise.
+    for (let round = 0; round < 4; round += 1) {
+      const substitutions = [...part.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)]
+      if (substitutions.length === 0) break
+      for (const match of substitutions) {
+        const inner = (match[1] ?? match[2]).trim()
+        if (inner && depth < 4) found.push(...commands(inner, depth + 1))
+        part = part.replace(match[0], ' ')
+      }
+    }
+    part = part
+      .replace(/^[({\s]+/, '')
+      .replace(/[)}\s]+$/, '')
+      .trim()
+    if (!part) continue
+    const body = shellWrapperBody(part)
+    if (body !== null && depth < 4) {
+      found.push(...commands(body, depth + 1))
+      continue
+    }
+    found.push(part)
+  }
+  return found
 }
 
 /**
@@ -296,18 +425,49 @@ function commands(text) {
  * build; `vite preview` and `vitest run` are not; `node_modules/.bin/vite
  * build` is. The question a guard has to ask is what the process does, not what
  * the text looks like.
+ *
+ * Punctuation is stripped off a token before it is compared. `commands()` above
+ * already opens the groupings it knows, and this is the second line of defence
+ * for the spelling it does not: `(vite` has to be `vite` and `build)` has to be
+ * `build`, or the guard is back to reading prose.
  */
 function isViteBuild(command) {
-  const tokens = command.split(/\s+/).filter(Boolean)
+  const tokens = command
+    .split(/\s+/)
+    .map((token) => token.replace(/^[('"`{]+/, '').replace(/[)'"`};,]+$/, ''))
+    .filter(Boolean)
   const vite = tokens.findIndex((token) => token === 'vite' || /[/\\]vite$/.test(token))
   if (vite === -1) return false
   return tokens.slice(vite + 1).includes('build')
 }
 
-/** The command strings a file carries: script bodies, workflow `run:` steps, shell lines. */
-async function commandsIn(file) {
-  const source = await readFile(join(root, file), 'utf8')
-  if (file.endsWith('package.json')) return Object.values(JSON.parse(source).scripts ?? {})
+/** Every string a JSON document carries, at any depth. */
+function stringsIn(value, into = []) {
+  if (typeof value === 'string') into.push(value)
+  else if (Array.isArray(value)) for (const entry of value) stringsIn(entry, into)
+  else if (value && typeof value === 'object') for (const entry of Object.values(value)) stringsIn(entry, into)
+  return into
+}
+
+/**
+ * The command strings a file carries.
+ *
+ * Wider than "the places a command is supposed to be", and that is the point:
+ * the text version this replaced read every LINE of six files, and reading only
+ * `scripts` and only `run:` silently gave that reach back. Measured on a corpus,
+ * four classes went missing — `lint-staged` and `husky` entries in a
+ * package.json, a `with: args:` handed to a container action, a `BUILD_CMD:`
+ * in `env:` that a `run:` then expands, and a commented-out step. Only the last
+ * of those runs nothing today, and a commented-out build is one keystroke from
+ * running.
+ *
+ * So a package.json contributes every string it holds, and a workflow is read
+ * TWICE: as raw text, which is what gives back the reach above, and as a parsed
+ * tree, which resolves anchors and block scalars that text alone would tear at
+ * the wrong place. Whichever sees it first, the same command model judges it.
+ */
+function commandsInSource(file, source) {
+  if (file.endsWith('package.json')) return stringsIn(JSON.parse(source))
   if (file.endsWith('.sh')) return [source]
   // Collected wherever `run:` stands, at any depth: a step, a composite action,
   // a `defaults` block or a shape GitHub has not invented yet.
@@ -321,7 +481,16 @@ async function commandsIn(file) {
     }
   }
   visit(parse(source))
-  return runs
+  return [source, ...runs]
+}
+
+async function commandsIn(file) {
+  return commandsInSource(file, await readFile(join(root, file), 'utf8'))
+}
+
+/** Does this text, read as shell, carry an unstamped Vite build? */
+function carriesViteBuild(chain) {
+  return commands(chain).some(isViteBuild)
 }
 
 test('the command model recognises a Vite build by what it does, not by how it reads', () => {
@@ -335,6 +504,10 @@ test('the command model recognises a Vite build by what it does, not by how it r
     'npx --yes vite --config vite.config.ts build',
     'node_modules/.bin/vite build',
     'bunx --bun vite build',
+    // Punctuation, at the token level: `commands()` normally takes these apart
+    // first, and this is the half of the defence that does not depend on it.
+    '(vite build)',
+    '(cd apps/cockpit && npx vite build)'.split('&&')[1],
   ]) {
     assert.equal(isViteBuild(command), true, command)
   }
@@ -346,12 +519,84 @@ test('the command model recognises a Vite build by what it does, not by how it r
     'npm --prefix apps/cockpit run build',
     'node ../../scripts/cockpit-build-stamp.mjs',
     'echo build',
+    '(npm run build)',
   ]) {
     assert.equal(isViteBuild(command), false, command)
   }
 
+  // And the whole pipeline, because the six spellings that got past this file
+  // after 39acb3d all got past `commands()`, not `isViteBuild()`. The verifier
+  // found four; a corpus over the same class found these.
+  for (const chain of [
+    '(cd apps/cockpit && npx vite build)',
+    '(vite build)',
+    '{ vite build; }',
+    'sh -c "npx vite build"',
+    "bash -lc 'vite build'",
+    'sh -c "vite build; echo done"',
+    '/bin/sh -ec "cd apps/cockpit && vite build"',
+    'echo `vite build`',
+    'echo $(vite build)',
+    'npx vite \\\n  build',
+    'env NODE_ENV=production vite build',
+    'time vite build',
+    'npx vite build > /dev/null',
+  ]) {
+    assert.equal(carriesViteBuild(chain), true, chain)
+  }
+  for (const chain of [
+    'npm run build',
+    '(cd apps/cockpit && npm run build)',
+    'sh -c "npm run build"',
+    'echo $(vitest run)',
+    'echo "vite preview"',
+  ]) {
+    assert.equal(carriesViteBuild(chain), false, chain)
+  }
+
   // And the splitting, because a chain is where the writer has to come after.
   assert.deepEqual(commands('a && b || c ; d\ne | f'), ['a', 'b', 'c', 'd', 'e', 'f'])
+  assert.deepEqual(commands('(cd apps/cockpit && vite build)'), ['cd apps/cockpit', 'vite build'])
+  assert.deepEqual(commands('sh -c "a; b"'), ['a', 'b'])
+  // The writer still has to be SEEN as coming afterwards once the wrapper and
+  // the parenthesis are gone — an unwrap that loses the order would turn every
+  // one of the rows above into a false red.
+  const stamped = commands('(cd apps/cockpit && vite build && node ../../scripts/cockpit-build-stamp.mjs)')
+  const at = stamped.findIndex(isViteBuild)
+  assert.ok(at >= 0 && stamped.slice(at + 1).some((command) => /cockpit-build-stamp\.mjs/.test(command)))
+})
+
+test('a build is found wherever a file can carry one, not only where one is expected', () => {
+  const carries = (file, source) => commandsInSource(file, source).some(carriesViteBuild)
+
+  // npm scripts are not the only strings in a package.json that get executed.
+  assert.equal(
+    carries('package.json', JSON.stringify({ scripts: { build: 'tsc' }, 'lint-staged': { '*.ts': 'vite build' } })),
+    true,
+  )
+  // `run:` is not the only place a workflow names a command.
+  assert.equal(
+    carries(
+      '.github/workflows/x.yml',
+      'jobs:\n  a:\n    steps:\n      - uses: docker://node:22\n        with:\n          args: vite build\n',
+    ),
+    true,
+  )
+  assert.equal(
+    carries(
+      '.github/workflows/x.yml',
+      'jobs:\n  a:\n    env:\n      BUILD_CMD: vite build\n    steps:\n      - run: $BUILD_CMD\n',
+    ),
+    true,
+  )
+  assert.equal(carries('.github/workflows/x.yml', 'jobs:\n  a:\n    steps:\n      # - run: vite build\n'), true)
+  // …and a `run:` still arrives through the parsed tree.
+  assert.equal(
+    carries('.github/workflows/x.yml', 'jobs:\n  a:\n    steps:\n      - run: |\n          npx vite build\n'),
+    true,
+  )
+  // A file that names no build stays quiet, or the guard is a permanent red.
+  assert.equal(carries('.github/workflows/x.yml', 'jobs:\n  a:\n    steps:\n      - run: npm run build\n'), false)
 })
 
 test('every path that builds the bundle writes the stamp', async () => {
@@ -380,9 +625,15 @@ test('every path that builds the bundle writes the stamp', async () => {
 
   // Exactly one path, and it is the one this file's header describes. A second
   // would not be wrong by itself — it would have to be understood first.
+  //
+  // Deduplicated by file AND command, because a workflow is now read as text
+  // and as a parsed tree: one `run: vite build` would otherwise arrive twice
+  // and this list would report two paths where there is one. Two DIFFERENT
+  // builds in one file still count as two — the pair is the key, not the file.
+  const distinct = [...new Map(builds.map((entry) => [`${entry.file}\u0000${entry.command}`, entry])).values()]
   assert.deepEqual(
-    builds.map((entry) => entry.file),
+    distinct.map((entry) => entry.file),
     ['apps/cockpit/package.json'],
-    `Vite builds found at: ${builds.map((entry) => `${entry.file} (${entry.command})`).join(', ') || 'nowhere — the scan is broken'}`,
+    `Vite builds found at: ${distinct.map((entry) => `${entry.file} (${entry.command})`).join(', ') || 'nowhere — the scan is broken'}`,
   )
 })
