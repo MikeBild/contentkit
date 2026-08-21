@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, globSync as nodeGlobSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -805,6 +805,22 @@ const I18N_CONTRACTS = [
     min: 1,
   },
   {
+    id: 'i18n/the-surfaces-are-measured-under-the-grading-runner',
+    promise:
+      'The surfaces the probe claims are measured by the runner that grades the tree, against fixtures owned by ' +
+      'neither the probe nor its floor — so a probe that narrows itself only under vitest is red under vitest.',
+    // The floor lifts the probe and runs it under node:test, which is a
+    // different process with different globals. `const graded = typeof
+    // globalThis.__vitest_worker__ !== "undefined"` plus `if (!graded &&
+    // ts.isJsxText(node))` left the floor 15/15 and this suite 113/113 while
+    // JSX text was dead under the only runner that reads the real tree
+    // (BEFUND-SONDE-SIEHT-IHRE-VERENGUNG-NICHT). This case is the run that
+    // cannot be fooled that way, because it happens inside the grader.
+    title: /reads every surface it claims under the runner that grades the tree/i,
+    asserts: [/matrixFailures\(/, /drawnValues\(/, /toEqual\(\[\]\)/],
+    min: 1,
+  },
+  {
     id: 'i18n/dates-are-formatted-against-a-locale',
     promise:
       'No date, time or number is formatted against whatever locale the browser happens to run in: every ' +
@@ -1321,17 +1337,43 @@ describe('what is still graded by grep is written down', () => {
  * Both failures are the same one: a word about a surface is not the surface. So
  * this section lifts `drawnValues` out of i18n.test.ts verbatim — every top-level
  * declaration of the file, transpiled and called, never a re-implementation — and
- * runs it over fixtures THIS FILE owns. Each surface gets a fixture in which its
- * sentinel is reachable through that ONE surface and no other, and the assertion
- * names the surface (`hit.attribute`) as well as the value. Deleting a branch is
- * then red here whatever the probe's own case says, and moving a sentinel to
- * another surface means editing this file — a reviewable line in a diff.
+ * runs it over fixtures in which each sentinel is reachable through ONE surface
+ * and no other, with the check naming the surface (`attribute`) as well as the
+ * value. Deleting a branch is then red whatever the probe's own case says.
  *
- * The fixtures are deliberately not the probe's: sharing one would put the guard
- * back inside the thing it guards.
+ * A THIRD FAILURE OF THE SAME SHAPE, ONE LEVEL UP. This section runs the probe
+ * under node:test, and the tree is graded under vitest. A probe that recognises
+ * its grader is blind exactly where it counts and green everywhere else:
+ * measured, `if (!graded && ts.isJsxText(node))` left this file 15/15 and the
+ * cockpit's vitest 113/113 (BEFUND-SONDE-SIEHT-IHRE-VERENGUNG-NICHT). So the
+ * fixtures no longer live here — they live in apps/cockpit/test/i18n-surface-matrix.ts,
+ * which THIS file lifts and which src/lib/i18n.test.ts imports, so the same
+ * matrix is measured by both runners. They are still not the probe's own inline
+ * snippet: sharing one would put the guard back inside the thing it guards.
  * ────────────────────────────────────────────────────────────────────────── */
 
 const PROBE_FILE = join(cockpit, 'lib', 'i18n.test.ts')
+/** The surface matrix, owned by neither runner and run by both. */
+const MATRIX_FILE = join(root, 'apps', 'cockpit', 'test', 'i18n-surface-matrix.ts')
+/** Where the probe's own scan globs from — vitest's root for this package. */
+const PROBE_CWD = join(root, 'apps', 'cockpit')
+
+/** Every top-level declaration of a TS file, transpiled and made callable. */
+function lift(file, kind, exports, injected = {}) {
+  const source = readFileSync(file, 'utf8')
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
+  const declarations = parsed.statements
+    .filter((node) => !ts.isImportDeclaration(node) && !ts.isExportDeclaration(node) && !ts.isExpressionStatement(node))
+    // `export const X` is a declaration with a modifier, not an export
+    // declaration; the keyword has to go or `new Function` will not take it.
+    .map((node) => node.getText(parsed).replace(/^export\s+/, ''))
+    .join('\n\n')
+  const js = ts.transpileModule(declarations, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText
+  const names = Object.keys(injected)
+  return new Function(...names, `${js}\nreturn { ${exports.join(', ')} }`)(...names.map((name) => injected[name]))
+}
 
 /**
  * The shipped probe, made callable.
@@ -1342,85 +1384,27 @@ const PROBE_FILE = join(cockpit, 'lib', 'i18n.test.ts')
  * `drawnValues` is a red test rather than a skipped one.
  */
 function liftProbe() {
-  const source = readFileSync(PROBE_FILE, 'utf8')
-  const parsed = ts.createSourceFile(PROBE_FILE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-  const declarations = parsed.statements
-    .filter((node) => !ts.isImportDeclaration(node) && !ts.isExportDeclaration(node) && !ts.isExpressionStatement(node))
-    .map((node) => node.getText(parsed))
-    .join('\n\n')
-  const js = ts.transpileModule(declarations, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-  }).outputText
-  const make = new Function('ts', 'readFileSync', 'globSync', `${js}\nreturn { drawnValues, parse }`)
-  return make(ts, readFileSync, () => {
-    throw new Error('the lifted probe is handed its source; it must not glob the tree')
+  return lift(PROBE_FILE, ts.ScriptKind.TSX, ['drawnValues', 'parse'], {
+    ts,
+    readFileSync,
+    globSync: () => {
+      throw new Error('the lifted probe is handed its source; it must not glob the tree')
+    },
   })
 }
 
-/**
- * One fixture per surface. The sentinel of each reaches the screen through that
- * surface ALONE — no sentinel appears twice, and none of them is a substring of
- * another — so a surface that stops being read takes its sentinel with it and
- * nothing else can answer in its place.
- */
-const SURFACES = [
-  {
-    id: 'JSX text',
-    why: 'the narrowest of the three surfaces, and the one the mutation deleted while every expectation stayed.',
-    fixture: `
-      export function View() {
-        return <p>floor sentinel drawn as jsx text</p>
-      }
-    `,
-    expect: { text: 'floor sentinel drawn as jsx text', attribute: undefined },
-  },
-  {
-    id: 'JSX expression, five hops from its literal',
-    why: '`{releaseName(release)}` put an English label on the German console and no expression was looked at at all.',
-    fixture: `
-      const MIXED = [{ id: 'overview', reason: 'floor sentinel five hops away' }]
-      function note() {
-        return { reason: MIXED.find((entry) => entry.id === 'overview')?.reason }
-      }
-      export function View() {
-        return <p>{note().reason}</p>
-      }
-    `,
-    expect: { text: 'floor sentinel five hops away', attribute: undefined },
-  },
-  {
-    id: 'JSX attribute, by exclusion rather than by list',
-    why: '`label="extra"` was invisible to a four-name allowlist; the attribute below is on no list at all.',
-    fixture: `
-      export function View() {
-        return <Field unlisted="floor sentinel in an unlisted attribute" />
-      }
-    `,
-    expect: { text: 'floor sentinel in an unlisted attribute', attribute: 'unlisted' },
-  },
-]
+/** The surface matrix, made callable here the same way vitest imports it there. */
+function liftMatrix() {
+  return lift(MATRIX_FILE, ts.ScriptKind.TS, [
+    'SURFACES',
+    'NOT_SURFACES',
+    'surfaceFailure',
+    'notSurfaceFailure',
+    'sentinelOverlaps',
+  ])
+}
 
-/** What must NOT be drawn: reporting these would drown the copy that matters. */
-const NOT_SURFACES = [
-  {
-    id: 'a testid',
-    fixture: `
-      export function View() {
-        return <p data-testid="floor sentinel on a testid">x</p>
-      }
-    `,
-    sentinel: 'floor sentinel on a testid',
-  },
-  {
-    id: 'a class list',
-    fixture: `
-      export function View() {
-        return <p className="floor sentinel in a class list">x</p>
-      }
-    `,
-    sentinel: 'floor sentinel in a class list',
-  },
-]
+const MATRIX = liftMatrix()
 
 describe('the i18n probe reads the surfaces it claims — run, not read', () => {
   test('the probe can be lifted out of its test file and called', () => {
@@ -1429,52 +1413,238 @@ describe('the i18n probe reads the surfaces it claims — run, not read', () => 
     assert.equal(typeof probe.parse, 'function', 'i18n.test.ts no longer defines parse')
   })
 
-  for (const surface of SURFACES) {
+  for (const surface of MATRIX.SURFACES) {
     test(`${surface.id} reaches the report`, () => {
       const probe = liftProbe()
       const drawn = probe.drawnValues(probe.parse('floor-fixture.tsx', surface.fixture))
-      const hits = drawn.filter((hit) => hit.text.trim() === surface.expect.text)
-      assert.ok(
-        hits.length > 0,
-        `the probe drew nothing for the ${surface.id} surface.\n` +
-          `  it exists because: ${surface.why}\n` +
-          `  a surface the probe stops reading makes it find FEWER offenders, which is a subset of the empty\n` +
-          `  list it asserts against the real tree — so nothing else in this repository goes red for it.\n` +
-          `  drawn instead: ${JSON.stringify(drawn.map((hit) => `${hit.attribute ?? 'JSX'}: ${hit.text.trim()}`))}`,
-      )
-      assert.ok(
-        hits.some((hit) => hit.attribute === surface.expect.attribute),
-        `the ${surface.id} sentinel was reported, but through ${JSON.stringify(
-          hits.map((hit) => hit.attribute ?? '(a JSX child)'),
-        )} instead of ${surface.expect.attribute ? `the ${surface.expect.attribute} attribute` : 'a JSX child'}.\n` +
-          `  Which surface answered is the whole assertion: the value arriving by another route is exactly how a\n` +
-          `  deleted branch stayed green (LOCAL-CK-BODEN-BINDET-NICHT-DIE-FLAECHE).`,
-      )
+      assert.equal(MATRIX.surfaceFailure(surface, drawn), null)
     })
   }
 
-  for (const surface of NOT_SURFACES) {
+  for (const surface of MATRIX.NOT_SURFACES) {
     test(`${surface.id} is not drawn`, () => {
       const probe = liftProbe()
       const drawn = probe.drawnValues(probe.parse('floor-fixture.tsx', surface.fixture))
-      const wrong = drawn.filter((hit) => hit.text.includes(surface.sentinel))
-      assert.deepEqual(
-        wrong.map((hit) => `${hit.attribute ?? 'JSX'}: ${hit.text.trim()}`),
-        [],
-        `${surface.id} is now reported as copy; the offender list it feeds would drown the copy that is.`,
-      )
+      assert.equal(MATRIX.notSurfaceFailure(surface, drawn), null)
     })
   }
 
   test('the surfaces are told apart by their own sentinels', () => {
-    // The guard over the guard: if two fixtures shared a sentinel, or one
-    // sentinel contained another, a single surface could answer for two and the
-    // matrix above would go green on half a probe.
-    const sentinels = [...SURFACES.map((s) => s.expect.text), ...NOT_SURFACES.map((s) => s.sentinel)]
-    assert.equal(new Set(sentinels).size, sentinels.length, 'two fixtures share a sentinel')
-    for (const one of sentinels) {
-      const contained = sentinels.filter((other) => other !== one && other.includes(one))
-      assert.deepEqual(contained, [], `the sentinel "${one}" is a substring of ${JSON.stringify(contained)}`)
+    assert.deepEqual(MATRIX.sentinelOverlaps(), [])
+  })
+
+  test('the same matrix is run by the runner that grades the tree', () => {
+    // WHAT THIS ONE CANNOT DO, AND SAYS SO. Everything above runs the probe
+    // under node:test — a different process, different globals. A probe that
+    // recognises its grader narrows itself where nothing here can see it:
+    //
+    //   const graded = typeof globalThis.__vitest_worker__ !== 'undefined'
+    //   if (!graded && ts.isJsxText(node)) { … }
+    //
+    // Measured, with the same snippet move as before: this file stayed 15/15
+    // and the cockpit's vitest stayed 113/113, while JSX text was dead under
+    // the only runner that reads the real tree
+    // (BEFUND-SONDE-SIEHT-IHRE-VERENGUNG-NICHT). Only a run under vitest can
+    // catch that, and only vitest can start vitest — so the fixtures moved into
+    // a file both runners import, and this is the line that holds the wiring.
+    // It is a grep, it is written down as a grep, and the thing it guards is a
+    // call that goes red under the grading runner the moment the probe narrows.
+    const probe = readFileSync(PROBE_FILE, 'utf8')
+    assert.ok(
+      probe.includes("from '../../test/i18n-surface-matrix'"),
+      'i18n.test.ts no longer imports the shared surface matrix, so nothing runs it under vitest',
+    )
+    assert.match(
+      probe.replace(/^\s*(\/\/|\*|\/\*).*$/gm, ''),
+      /expect\(matrixFailures\([\s\S]{0,200}?\)\)\.toEqual\(\[\]\)/,
+      'i18n.test.ts imports the matrix but no longer runs it under vitest',
+    )
+  })
+})
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 4 — THE PROBE'S CASE AGAINST THE REAL TREE, RUN RATHER THAN READ.
+ *
+ * Section 3 binds the probe's READING. It says nothing about the two layers
+ * between that reading and the verdict, and both of them narrow just as quietly:
+ *
+ *   • THE FILE CIRCLE. `globSync('src/**\/*.tsx')` narrowed to `src/lib/*.tsx`
+ *     takes the scan from 118 files to 3 — measured, and everything stayed
+ *     green, here and in the cockpit's own vitest.
+ *   • THE FILTER LAYER. `COPY_ATTRIBUTES` emptied means every attribute is held
+ *     to PROSE instead of to any word at all — measured, and again everything
+ *     stayed green.
+ *
+ * Same defect as the reading, one layer up: a probe asserting `offenders == []`
+ * finds fewer offenders when it is narrowed, and fewer than none is none. So
+ * this section lifts the probe's OWN CASE — the `it(…)` body, not a
+ * re-implementation — and runs it with the two layers under this file's control:
+ *
+ *   • the tree it walks is recorded, and held against a walk this file does
+ *     itself with readdirSync, so a narrowed pattern names the files it dropped;
+ *   • one file that is not in the tree is planted into the scan, carrying four
+ *     values whose verdicts are known — and the filter layer is what decides
+ *     three of the four.
+ *
+ * The planted file is this file's, not the probe's: sharing one would put the
+ * guard back inside the thing it guards.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** The name the planted file is scanned under. Not a path in the tree. */
+const PLANTED = 'floor-planted-offenders.tsx'
+
+/**
+ * Four values, four known verdicts — and the filter layer decides three of them.
+ *
+ * `label` is in COPY_ATTRIBUTES, so a single word in it is copy; `unlisted` is
+ * not, so a single word in it is a machine value and a sentence in it is copy.
+ * Empty COPY_ATTRIBUTES and the first of those flips.
+ */
+const PLANTED_SOURCE = `
+  export function View() {
+    return (
+      <div>
+        <Field label="Overview" />
+        <Field unlisted="overview" />
+        <Field unlisted="planted prose in an unlisted attribute" />
+        <p>planted prose as jsx text</p>
+      </div>
+    )
+  }
+`
+
+/** What the probe's own case must report for the planted file, and nothing else. */
+const PLANTED_OFFENDERS = [
+  `${PLANTED}:5 raw label: Overview`,
+  `${PLANTED}:7 raw unlisted: planted prose in an unlisted attribute`,
+  `${PLANTED}:8 raw JSX: planted prose as jsx text`,
+]
+
+/** Every `.tsx` under apps/cockpit/src that is not itself a test — walked, not globbed. */
+function tsxUnderCockpit() {
+  const found = []
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
+        found.push(relative(PROBE_CWD, full).split(sep).join('/'))
+      }
     }
+  }
+  walk(cockpit)
+  return found.sort()
+}
+
+/**
+ * Runs the probe's own case against the real tree plus one planted file.
+ *
+ * `globSync`, `readFileSync` and `expect` are this file's, so what the case
+ * walked and what it concluded are both observable. Everything else — the
+ * pattern, the filters, the two strictnesses, the verdict — is the shipped code.
+ */
+function runProbeCase() {
+  const source = readFileSync(PROBE_FILE, 'utf8')
+  const parsed = ts.createSourceFile(PROBE_FILE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+
+  let body = null
+  const find = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'it' &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      node.arguments[0].text === 'keeps every value that reaches the screen in the catalogs'
+    ) {
+      body = node.arguments[1]
+    }
+    ts.forEachChild(node, find)
+  }
+  ts.forEachChild(parsed, find)
+  assert.ok(
+    body,
+    "i18n.test.ts no longer has a case called 'keeps every value that reaches the screen in the catalogs'",
+  )
+
+  const declarations = parsed.statements
+    .filter((node) => !ts.isImportDeclaration(node) && !ts.isExportDeclaration(node) && !ts.isExpressionStatement(node))
+    .map((node) => node.getText(parsed))
+    .join('\n\n')
+  const js = ts.transpileModule(`${declarations}\n\nconst __case = ${body.getText(parsed)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText
+
+  const walked = []
+  const globbed = []
+  let reported = null
+  new Function('ts', 'readFileSync', 'globSync', 'expect', `${js}\nreturn __case`)(
+    ts,
+    (file, encoding) => {
+      if (file === PLANTED) {
+        walked.push(file)
+        return PLANTED_SOURCE
+      }
+      walked.push(file)
+      return readFileSync(join(PROBE_CWD, file), encoding)
+    },
+    (pattern) => {
+      globbed.push(pattern)
+      return [...nodeGlobSync(pattern, { cwd: PROBE_CWD }), PLANTED]
+    },
+    (value) => ({
+      toEqual: () => {
+        reported = value
+      },
+    }),
+  )()
+
+  assert.ok(reported !== null, 'the probe’s case no longer ends in an expectation this file can read')
+  return { globbed, walked, reported }
+}
+
+describe('the i18n probe’s case against the real tree — run, not read', () => {
+  const outcome = runProbeCase()
+
+  test('the scan walks every .tsx the console is built from', () => {
+    // A pattern is a claim about a set of files. This holds it against the set,
+    // walked here with readdirSync, so narrowing the glob reports the files it
+    // dropped rather than a shorter green list.
+    const walked = outcome.walked.filter((file) => file !== PLANTED).sort()
+    const present = tsxUnderCockpit()
+    const missed = present.filter((file) => !walked.includes(file))
+    assert.deepEqual(
+      missed,
+      [],
+      `the probe’s case parsed ${walked.length} of the ${present.length} .tsx files under apps/cockpit/src.\n` +
+        `  It globbed ${JSON.stringify(outcome.globbed)}.\n` +
+        '  A narrowed circle finds FEWER offenders, and fewer than none is none: measured, `src/lib/*.tsx`\n' +
+        '  takes the scan from 118 files to 3 and every test in this repository stays green\n' +
+        '  (BEFUND-SONDE-SIEHT-IHRE-VERENGUNG-NICHT).',
+    )
+  })
+
+  test('the filter layer still tells copy from a machine value', () => {
+    // The planted file, and only the planted file. Three of its four values are
+    // decided by COPY_ATTRIBUTES and PROSE: empty the set and `label="Overview"`
+    // — one word, no space — stops being copy and this list loses a line.
+    const planted = outcome.reported.filter((offender) => offender.startsWith(PLANTED))
+    assert.deepEqual(
+      planted,
+      PLANTED_OFFENDERS,
+      'the probe’s case no longer reports the planted file the way it is supposed to.\n' +
+        '  `label` is in COPY_ATTRIBUTES so one word in it is copy; `unlisted` is not, so one word in it is a\n' +
+        '  machine value and a sentence in it is copy. Emptying COPY_ATTRIBUTES leaves every test in this\n' +
+        '  repository green and this line is the only one that notices\n' +
+        '  (BEFUND-SONDE-SIEHT-IHRE-VERENGUNG-NICHT).',
+    )
+  })
+
+  test('the tree itself is clean, and this is the run that says so', () => {
+    // The other half of the same measurement: if the planted file is reported
+    // and nothing else is, the scan really did walk the console and really did
+    // find it free of raw copy. A narrowing that produced an empty list would
+    // fail the case above; one that produced extra lines fails here.
+    const strays = outcome.reported.filter((offender) => !offender.startsWith(PLANTED))
+    assert.deepEqual(strays, [], 'raw copy in the console, reported by the probe’s own case run from here')
   })
 })

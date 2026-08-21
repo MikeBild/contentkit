@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { globSync, readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { matrixFailures } from '../../test/i18n-surface-matrix'
 import { CATALOGS, translate } from './i18n'
 import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePreference } from './locale-store'
 
@@ -407,6 +408,27 @@ describe('cockpit i18n', () => {
     // Chrome is not copy, and reporting it would drown the copy that is.
     expect(carried, 'a testid is not drawn').not.toContain('not-copy')
     expect(carried, 'a class list is not drawn').not.toContain('flex gap-2')
+  })
+
+  it('reads every surface it claims under the runner that grades the tree', () => {
+    // The case above is run BY VITEST, and so is the probe. That matters,
+    // because a probe can be narrowed in a way only the grading runner sees:
+    //
+    //   const graded = typeof globalThis.__vitest_worker__ !== 'undefined'
+    //   if (!graded && ts.isJsxText(node)) { … }
+    //
+    // Measured with exactly that, plus the same snippet move as before: the
+    // behavioural floor stayed 15/15 and this suite stayed 113/113, while JSX
+    // text was dead under the only runner that reads the real tree
+    // (BEFUND-SONDE-SIEHT-IHRE-VERENGUNG-NICHT). The floor lifts the probe out
+    // of this file and calls it under node:test, which is a different process
+    // with different globals — a reading of a COPY.
+    //
+    // So the matrix lives in a file of its own and both runners run it. The
+    // fixtures are not this file's: each sentinel is reachable through one
+    // surface and no other, and the check names the surface as well as the
+    // value, which is what the five expectations above cannot do.
+    expect(matrixFailures((source) => drawnValues(parse('surface-matrix.tsx', source)))).toEqual([])
   })
 
   it('keeps every value that reaches the screen in the catalogs', () => {
