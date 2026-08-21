@@ -2,7 +2,7 @@
 
 Version 1.6 · 2026-08-21 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
 
-**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `760b87c5ba693e1876c14378830fcd422a64a69e87d79a3619967413872e4caa`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `8f94e9cb4233382faf4b4962ea9d6ee6eee764993d8c09370cac1160768f3f31`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
 
 ## 0. What the cockpit is for
 
