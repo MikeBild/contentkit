@@ -29,7 +29,6 @@ import { useI18n, type TranslationKey } from '@/lib/i18n-context'
 import { keys } from '@/lib/query'
 import { useSite } from '@/lib/site'
 
-type QueueState = 'open' | 'deferred' | 'dismissed' | 'decided'
 type QueueKind = 'all' | Decision['kind']
 
 /**
@@ -94,11 +93,27 @@ function KindBadge({ kind, testId }: { kind: string; testId: string }) {
   )
 }
 
-const STATE_KEYS: Record<QueueState, TranslationKey> = {
-  open: 'decisions.open',
-  deferred: 'decisions.deferred',
-  dismissed: 'decisions.dismissed',
-  decided: 'decisions.decided',
+/**
+ * The one way from the queue to what is already over.
+ *
+ * §8.5: state and history are separate surfaces, and this page is the state one.
+ * So the history gets a sentence and a link rather than tabs, sections or
+ * counters — a number here would be a second queue, and the operator would have
+ * to decide which of the two is the work.
+ *
+ * It stands below the queue on purpose. Above it, it would be the first thing
+ * read on a page whose whole subject is what is still open.
+ */
+function HistoryLink() {
+  const { t } = useI18n()
+  return (
+    <p data-testid="decisions-history" className="text-sm text-muted-foreground">
+      {t('decisions.history')}{' '}
+      <AppLink data-testid="decisions-history-link" to="/audit" className="text-foreground underline underline-offset-4">
+        {t('decisions.historyLink')}
+      </AppLink>
+    </p>
+  )
 }
 
 /**
@@ -345,16 +360,19 @@ function DecisionCard({
           action: 'defer',
           remind_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         })
-      return ck.decisions.transition(site, decision.id, {
-        version: decision.version,
-        action: name === 'restore' ? 'restore' : 'dismiss',
-      })
+      return ck.decisions.transition(site, decision.id, { version: decision.version, action: 'dismiss' })
     },
     onSuccess: invalidate,
   })
   const overdue = Date.parse(decision.due_at) <= Date.now() && decision.state !== 'decided'
   return (
-    <Card data-testid={testId}>
+    // The state is on the card as an attribute rather than as a badge, because
+    // this page only ever shows one of them. Nothing renders it — it is what
+    // scripts/konvention-check.mjs reads to hold §8.5 to its word: a position
+    // that is over must not be standing here, and a check that looked for the
+    // WORDS would be satisfied by a finished position that simply says nothing
+    // about itself.
+    <Card data-testid={testId} data-decision-state={decision.state}>
       <CardHeader>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <KindBadge kind={decision.kind} testId={`${testId}-kind`} />
@@ -378,6 +396,13 @@ function DecisionCard({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
+                {/*
+                  Only the two verbs that move a position OUT of the queue. The
+                  "Wiederherstellen" entry that used to stand here belonged to the
+                  shelves and was reachable only from them; with the queue showing
+                  nothing but open work, it could never be drawn again, and a menu
+                  item that cannot be reached is a promise the console does not keep.
+                */}
                 {decision.state === 'open' ? (
                   <>
                     <DropdownMenuItem onSelect={() => action.mutate('defer')}>{t('decisions.defer')}</DropdownMenuItem>
@@ -385,10 +410,6 @@ function DecisionCard({
                       {t('decisions.dismiss')}
                     </DropdownMenuItem>
                   </>
-                ) : decision.state !== 'decided' ? (
-                  <DropdownMenuItem onSelect={() => action.mutate('restore')}>
-                    {t('decisions.restore')}
-                  </DropdownMenuItem>
                 ) : null}
                 {decision.kind === 'draft_capture' && decision.state === 'open' ? (
                   <DropdownMenuItem variant="destructive" onSelect={() => action.mutate('discard')}>
@@ -525,27 +546,28 @@ function DecisionCard({
 export function DecisionsPage() {
   const { t } = useI18n()
   const { site, current } = useSite()
-  const [state, setState] = useState<QueueState>('open')
   const [kind, setKind] = useState<QueueKind>('all')
+  // `state: 'open'` is not a filter this page offers, it is what this page IS.
+  // §8.5: the queue is the current state and nothing else — deferred, dismissed
+  // and decided are over, and what is over lives in the audit trail. There used
+  // to be a chip row for those three above the queue, which made the page's own
+  // subject one option among four and put history in front of work.
   const query = useQuery({
-    queryKey: keys.decisions(site, { state, kind }),
-    queryFn: () => ck.decisions.list(site, { state, ...(kind === 'all' ? {} : { kind }) }),
+    queryKey: keys.decisions(site, { state: 'open', kind }),
+    queryFn: () => ck.decisions.list(site, { state: 'open', ...(kind === 'all' ? {} : { kind }) }),
     enabled: Boolean(site),
   })
   const items = useMemo(() => query.data?.items ?? [], [query.data])
   // §8.6 asks for two empty states, and the thing that separates them is whether
   // the operator narrowed the view. An untouched queue that is empty is the good
-  // news; the same emptiness behind a shelf or a kind chip is a fact about the
-  // filter, and saying "Alles erledigt" over it would be a console congratulating
-  // itself for something it was told not to look at.
-  const filtered = state !== 'open' || kind !== 'all'
-  const filterLabel = [
-    state === 'open' ? null : t(STATE_KEYS[state]),
-    kind === 'all' ? null : t(KIND_KEYS[kind]),
-  ].filter((entry): entry is string => Boolean(entry))
+  // news; the same emptiness behind a kind chip is a fact about the filter, and
+  // saying "Alles erledigt" over it would be a console congratulating itself for
+  // something it was told not to look at.
+  const filtered = kind !== 'all'
+  const filterLabel = kind === 'all' ? [] : [t(KIND_KEYS[kind])]
   const split = Date.now() - 3 * 24 * 60 * 60 * 1000
-  const waitingLonger = state === 'open' ? items.filter((item) => Date.parse(item.opened_at) <= split) : []
-  const currentItems = state === 'open' ? items.filter((item) => Date.parse(item.opened_at) > split) : items
+  const waitingLonger = items.filter((item) => Date.parse(item.opened_at) <= split)
+  const currentItems = items.filter((item) => Date.parse(item.opened_at) > split)
   if (!site)
     return (
       <Page title={t('decisions.title')}>
@@ -555,25 +577,11 @@ export function DecisionsPage() {
   return (
     <Page title={t('decisions.title')} description={t('decisions.description')}>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-        <ToggleGroup
-          type="single"
-          value={state}
-          onValueChange={(value) => value && setState(value as QueueState)}
-          className="justify-start"
-        >
-          <ToggleGroupItem data-testid="decisions-state-open" value="open">
-            {t('decisions.open')} {query.data?.counts.open ?? ''}
-          </ToggleGroupItem>
-          <ToggleGroupItem data-testid="decisions-state-deferred" value="deferred">
-            {t('decisions.deferred')}
-          </ToggleGroupItem>
-          <ToggleGroupItem data-testid="decisions-state-dismissed" value="dismissed">
-            {t('decisions.dismissed')}
-          </ToggleGroupItem>
-          <ToggleGroupItem data-testid="decisions-state-decided" value="decided">
-            {t('decisions.decided')}
-          </ToggleGroupItem>
-        </ToggleGroup>
+        {/*
+          One chip row, and it is about ART — which kind of thing is waiting.
+          The row that used to stand above it switched the queue between open,
+          deferred, dismissed and decided; it is gone, not moved (§8.5).
+        */}
         <ToggleGroup
           type="single"
           value={kind}
@@ -599,13 +607,7 @@ export function DecisionsPage() {
           <SkeletonText lines={8} data-testid="decisions-skeleton" />
         ) : items.length === 0 ? (
           filtered ? (
-            <FilteredEmpty
-              label={filterLabel}
-              onReset={() => {
-                setState('open')
-                setKind('all')
-              }}
-            />
+            <FilteredEmpty label={filterLabel} onReset={() => setKind('all')} />
           ) : (
             <QueueCleared />
           )
@@ -638,6 +640,7 @@ export function DecisionsPage() {
             ) : null}
           </>
         )}
+        <HistoryLink />
       </div>
     </Page>
   )
