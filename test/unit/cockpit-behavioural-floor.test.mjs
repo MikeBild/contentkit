@@ -763,9 +763,34 @@ const I18N_CONTRACTS = [
   {
     id: 'i18n/visible-copy-is-catalogued',
     promise:
-      'Visible product copy and accessible labels come from the typed catalogs; only explicit technical literals stay raw.',
-    title: /visible product copy and accessible labels/i,
-    asserts: [/isJsxText/, /accessibleAttributes/, /offenders/],
+      'Every value that reaches the screen comes from the typed catalogs — JSX text, JSX expressions followed back ' +
+      'to the literals they carry, and attributes by exclusion rather than by a four-name list. Only named ' +
+      'technical literals stay raw.',
+    // The probe used to read `isJsxText` and four attribute names, so a JSX
+    // EXPRESSION was invisible to it whatever word it carried
+    // (LOCAL-CK-I18N-SONDE-SIEHT-NUR-JSXTEXT). The asserts below pin the three
+    // surfaces it reads now, so narrowing it back is a red test rather than a
+    // quiet loss of reach.
+    title: /every value that reaches the screen/i,
+    asserts: [/drawnValues/, /COPY_ATTRIBUTES/, /TECHNICAL/, /offenders/],
+    min: 1,
+  },
+  {
+    id: 'i18n/the-probe-reads-all-three-surfaces',
+    promise:
+      'The probe’s reach is itself a case: JSX text, a JSX expression several hops from its literal, and an ' +
+      'attribute outside any four-name list are all reported, while a testid and a class list are not.',
+    title: /reads jsx text, jsx expressions and attributes alike/i,
+    asserts: [/Raw text/, /A raw title/, /not-copy/],
+    min: 1,
+  },
+  {
+    id: 'i18n/dates-are-formatted-against-a-locale',
+    promise:
+      'No date, time or number is formatted against whatever locale the browser happens to run in: every ' +
+      '`toLocale*` call and every `Intl` formatter is told which locale to use.',
+    title: /formats every date, time and number against a locale/i,
+    asserts: [/TO_LOCALE/, /INTL_FORMATTERS/, /offenders/],
     min: 1,
   },
   {

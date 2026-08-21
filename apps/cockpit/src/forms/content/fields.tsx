@@ -706,7 +706,7 @@ export function FrontmatterForm({
 
       <Group id="extra" title={t('content.group.custom')} configured={Object.keys(fm.extra).length ? `${Object.keys(fm.extra).length}` : undefined}>
         <ExtraFieldsField
-          label="extra"
+          label={t('content.extra')}
           disabled={disabled}
           data-testid="ck-fm-extra"
           help={t('content.extraHelp')}

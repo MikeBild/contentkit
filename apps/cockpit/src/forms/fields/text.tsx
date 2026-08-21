@@ -210,8 +210,14 @@ export function TextAreaField({
           ? (forbidMessage ?? t('validation.forbiddenSequence'))
           : undefined)
 
+  // "bytes" is a word, and it was the English one on both consoles. The
+  // character budget carries no noun and needs no key.
   const budget =
-    maxBytes !== undefined ? `${bytes}/${maxBytes} bytes` : maxChars !== undefined ? `${value.length}/${maxChars}` : null
+    maxBytes !== undefined
+      ? t('field.byteBudget', { used: bytes, limit: maxBytes })
+      : maxChars !== undefined
+        ? `${value.length}/${maxChars}`
+        : null
 
   return (
     <FieldShell

@@ -162,18 +162,24 @@ export function UrlTemplateField({
     sample: Record<string, string>
     protocols?: string[]
   }) {
+  const { t } = useI18n()
   const resolved = value.replace(/\{([a-z_]+)\}/gi, (match, name: string) => sample[name] ?? match)
   const unknown = [...value.matchAll(/\{([a-z_]+)\}/gi)]
     .map((match) => match[1])
     .filter((name) => !placeholders.some((entry) => entry.token === name))
   const check = checkUrl(resolved, { protocols })
-  const error = shell.error ?? (unknown.length ? `Unknown placeholder: ${unknown.join(', ')}` : check.error)
+  // The same two sentences the plain URL field draws, through the same mapping.
+  // This field printed `checkUrl`'s English straight onto the console while the
+  // one above it translated the identical message.
+  const error =
+    shell.error ??
+    (unknown.length ? t('validation.unknownPlaceholder', { names: unknown.join(', ') }) : localizeUrlMessage(check.error, t))
 
   return (
     <FieldShell
       {...shell}
       error={error}
-      warning={shell.warning ?? check.warning}
+      warning={shell.warning ?? localizeUrlMessage(check.warning, t)}
       hint={shell.hint ?? <span className="font-mono">{resolved || '—'}</span>}
     >
       {(control) => (

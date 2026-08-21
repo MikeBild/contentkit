@@ -57,16 +57,22 @@ function isDeletable(release: Release) {
   return release.status !== 'active' && release.status !== 'building'
 }
 
-type Translator = ReturnType<typeof useI18n>['t']
+type Naming = Pick<ReturnType<typeof useI18n>, 't' | 'date'>
 
 // Through the catalogue, not composed here: "Release" happens to be the word in
 // both languages, which is how a hardcoded label survives unnoticed.
-function releaseName(release: Release, t: Translator) {
-  return t('releases.name', { date: new Date(release.created_at).toLocaleDateString() })
+//
+// The date goes through the catalogue's formatter for the same reason the word
+// does. `toLocaleDateString()` with no argument asks the BROWSER what locale it
+// is in, so a German console rendered "Release 12/17/2025" — the console's own
+// language never entered into it.
+function releaseName(release: Release, i18n: Naming) {
+  return i18n.t('releases.name', { date: i18n.date(release.created_at) })
 }
 
 export function ReleasesPage() {
-  const { t } = useI18n()
+  const i18n = useI18n()
+  const { t } = i18n
   const { site } = useSite()
   const can = useCan()
   const client = useQueryClient()
@@ -129,7 +135,7 @@ export function ReleasesPage() {
         compare: (left, right) => compareTime(left.created_at, right.created_at),
         cell: (release) => (
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="font-medium">{releaseName(release, t)}</span>
+            <span className="font-medium">{releaseName(release, i18n)}</span>
             <span className="break-words text-xs text-muted-foreground">{release.reason || '—'}</span>
           </div>
         ),
@@ -428,7 +434,7 @@ export function ReleasesPage() {
         renderMobileRow={(release, rowIndex) => (
           <div className="flex items-start justify-between gap-3 p-4">
             <div className="flex min-w-0 flex-col gap-1">
-              <span className="font-medium">{releaseName(release, t)}</span>
+              <span className="font-medium">{releaseName(release, i18n)}</span>
               <span className="break-words text-sm text-muted-foreground">{release.reason || '—'}</span>
               <RelativeTime value={release.created_at} data-testid={`release-mobile-${rowIndex}-age`} />
             </div>

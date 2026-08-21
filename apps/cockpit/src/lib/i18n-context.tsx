@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
-import { formatDateTime, formatNumber, LOCALE_TAGS, translate, type Locale, type TranslationKey } from './i18n'
+import { formatDate, formatDateTime, formatNumber, LOCALE_TAGS, translate, type Locale, type TranslationKey } from './i18n'
 import { createLocaleStore, LOCALE_STORAGE_KEY, type LocalePreference } from './locale-store'
 
 const localeStore = createLocaleStore({
@@ -28,6 +28,7 @@ export interface I18nValue {
   t(key: TranslationKey, values?: Readonly<Record<string, string | number>>): string
   number(value: number): string
   list(values: readonly string[]): string
+  date(value: string | number | Date): string
   dateTime(value: string | number | Date): string
   relativeTime(value: number, unit: Intl.RelativeTimeFormatUnit): string
 }
@@ -39,6 +40,7 @@ const FALLBACK_I18N: I18nValue = {
   t: (key, values) => translate('en', key, values),
   number: (value) => formatNumber('en', value),
   list: (values) => new Intl.ListFormat(LOCALE_TAGS.en, { style: 'short', type: 'conjunction' }).format(values),
+  date: (value) => formatDate('en', value),
   dateTime: (value) => formatDateTime('en', value),
   relativeTime: (value, unit) => new Intl.RelativeTimeFormat(LOCALE_TAGS.en, { numeric: 'auto' }).format(value, unit),
 }
@@ -53,6 +55,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     t: (key, values) => translate(snapshot.locale, key, values),
     number: (value) => formatNumber(snapshot.locale, value),
     list: (values) => new Intl.ListFormat(LOCALE_TAGS[snapshot.locale], { style: 'short', type: 'conjunction' }).format(values),
+    date: (value) => formatDate(snapshot.locale, value),
     dateTime: (value) => formatDateTime(snapshot.locale, value),
     relativeTime: (value, unit) => new Intl.RelativeTimeFormat(LOCALE_TAGS[snapshot.locale], { numeric: 'auto' }).format(value, unit),
   }), [snapshot])

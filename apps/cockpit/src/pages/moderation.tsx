@@ -93,7 +93,9 @@ export function ModerationPage() {
     be showing every status and a bare number beside forty rows would claim to be
     their count. The other two count whole lists, so their number needs no noun.
   */
-  const commentsBadge = <TabCountBadge count={pending} noun="pending" data-testid="ck-moderation-count-comments" />
+  const commentsBadge = (
+    <TabCountBadge count={pending} noun={t('tabCount.pending')} data-testid="ck-moderation-count-comments" />
+  )
   const contactBadge = <TabCountBadge count={contact} data-testid="ck-moderation-count-contact" />
   const feedbackBadge = <TabCountBadge count={feedback} data-testid="ck-moderation-count-feedback" />
 

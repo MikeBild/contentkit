@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { useI18n } from '@/lib/i18n-context'
+import { useI18n, type I18nValue } from '@/lib/i18n-context'
 import { FieldShell, type FieldShellProps } from './field'
 import type { ValueProps } from './text'
 
@@ -19,11 +19,28 @@ const MAX_BYTES = 256
  * is rejected on write. Repeating that here means the operator learns it from
  * the field instead of from a 422 that rejected the whole settings PATCH.
  */
+/** The one refusal `checkTokenValue` gives that is not about length. */
+const TOKEN_CHARACTER = '“<” is not allowed in a token value'
+
 export function checkTokenValue(value: string): string | undefined {
   if (!value) return undefined
-  if (value.includes('<')) return '“<” is not allowed in a token value'
+  if (value.includes('<')) return TOKEN_CHARACTER
   if (encoder.encode(value).length > MAX_BYTES) return `Longer than ${MAX_BYTES} bytes`
   return undefined
+}
+
+/**
+ * `checkTokenValue`'s answer, in the reader's language.
+ *
+ * One place rather than two: the swatch field mapped it to the catalogue and the
+ * font field printed it raw, so the same wrong value was English in one box and
+ * German in the next. Matching on the English sentence is the join that
+ * `LOCAL-CK-KETTE-UEBER-STRINGGLEICHHEIT` describes — it is here, once, where
+ * the sentence is defined a dozen lines above, rather than once per field.
+ */
+function localizeTokenMessage(raw: string | undefined, t: I18nValue['t']): string | undefined {
+  if (!raw) return undefined
+  return raw === TOKEN_CHARACTER ? t('color.tokenCharacter') : t('color.tokenLength', { count: MAX_BYTES })
 }
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
@@ -37,14 +54,7 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
  */
 export function ColorField({ value, onChange, ...shell }: FieldShellProps & ValueProps<string>) {
   const { t } = useI18n()
-  const rawError = checkTokenValue(value)
-  const error =
-    shell.error ??
-    (rawError === '“<” is not allowed in a token value'
-      ? t('color.tokenCharacter')
-      : rawError
-        ? t('color.tokenLength', { count: MAX_BYTES })
-        : undefined)
+  const error = shell.error ?? localizeTokenMessage(checkTokenValue(value), t)
   const pickable = HEX.test(value) ? value : '#000000'
 
   return (
@@ -152,7 +162,7 @@ export function FontFamilyField({ value, onChange, ...shell }: FieldShellProps &
   const { t } = useI18n()
   const error =
     shell.error ??
-    checkTokenValue(value) ??
+    localizeTokenMessage(checkTokenValue(value), t) ??
     (value && !FONT_FAMILY.test(value) ? t('color.fontCharacters') : undefined)
 
   return (

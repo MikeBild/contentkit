@@ -75,7 +75,7 @@ export function WebhooksPage() {
   const deliveriesBadge = (
     <TabCountBadge
       count={failed}
-      noun="failed"
+      noun={t('tabCount.failed')}
       variant="destructive"
       atLeast={failed === FAILED.limit}
       data-testid="ck-webhook-count-deliveries"

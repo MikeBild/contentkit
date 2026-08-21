@@ -441,6 +441,13 @@ type NavEntry = (typeof NAV)[number]
  * that any test could see. Four of fifteen entries were unpinned — exactly the
  * four judgement calls the split exists to make.
  *
+ * `reason` is documentation for whoever changes the split — the navigation test
+ * requires it to name the paths that cross. It is NOT what the switcher draws:
+ * nine English sentences reached the German console through `{note.reason}` for
+ * exactly as long as this array has existed, because the i18n probe read JSX
+ * text and four attributes and a JSX expression is neither
+ * (LOCAL-CK-I18N-SONDE-SIEHT-NUR-JSXTEXT). `reasonKey` is the drawn half.
+ *
  * So an exemption is now directional and exhaustive. It repeats the `context`
  * the entry claims, and it lists every path that crosses out of that context by
  * name. The test refuses a crossing that is not listed, a listed path that no
@@ -451,6 +458,7 @@ type NavEntry = (typeof NAV)[number]
 const MIXED = [
   {
     label: 'Overview',
+    reasonKey: 'switcher.mixedReason.overview',
     context: 'site',
     crosses: ['/v1/audit-events'],
     reason:
@@ -458,6 +466,7 @@ const MIXED = [
   },
   {
     label: 'Webhooks',
+    reasonKey: 'switcher.mixedReason.webhooks',
     context: 'site',
     crosses: ['/v1/webhook-deliveries', '/v1/webhook-deliveries/{delivery}/retry'],
     reason:
@@ -465,6 +474,7 @@ const MIXED = [
   },
   {
     label: 'Decisions',
+    reasonKey: 'switcher.mixedReason.decisions',
     context: 'site',
     crosses: ['/v1/comments/{comment}', '/v1/contact-submissions/{id}', '/v1/feedback/{item}'],
     reason:
@@ -472,12 +482,14 @@ const MIXED = [
   },
   {
     label: 'Decks',
+    reasonKey: 'switcher.mixedReason.decks',
     context: 'site',
     crosses: ['/v1/deck-themes', '/v1/deck-templates'],
     reason: 'per-site compile and validate, against the installation catalogs /v1/deck-themes and /v1/deck-templates',
   },
   {
     label: 'Compositions',
+    reasonKey: 'switcher.mixedReason.compositions',
     context: 'site',
     crosses: [
       '/v1/composition-patterns',
@@ -490,6 +502,7 @@ const MIXED = [
   },
   {
     label: 'Assistant',
+    reasonKey: 'switcher.mixedReason.assistant',
     context: 'installation',
     crosses: ['/v1/sites/{site}/render'],
     reason:
@@ -497,6 +510,7 @@ const MIXED = [
   },
   {
     label: 'System',
+    reasonKey: 'switcher.mixedReason.system',
     context: 'installation',
     crosses: [
       '/v1/sites/{site}/stats/audio',
@@ -515,6 +529,7 @@ const MIXED = [
   },
   {
     label: 'Moderation',
+    reasonKey: 'switcher.mixedReason.moderation',
     context: 'installation',
     crosses: ['/v1/sites/{site}/content'],
     reason:
@@ -522,6 +537,7 @@ const MIXED = [
   },
   {
     label: 'Sites',
+    reasonKey: 'switcher.mixedReason.sites',
     context: 'installation',
     crosses: ['/v1/sites/{site}'],
     reason:
@@ -673,7 +689,16 @@ const NAV_KEYS: Record<(typeof NAV)[number]['to'], TranslationKey> = {
   '/system': 'nav.system',
 }
 
-const GROUP_KEYS: Partial<Record<NavGroupDefinition['id'], TranslationKey>> = {
+/**
+ * Total, not `Partial`: a missing entry used to fall through to `group.label`,
+ * which is English written in this file. `SECTION_LABEL_KEYS` in
+ * site-settings.tsx has always been a total `Record` — there the compiler
+ * catches what here only attention caught. `overview` draws no heading (it is
+ * `collapsible: false`), and carries its key anyway so that adding a block
+ * cannot quietly reopen the fallback.
+ */
+const GROUP_KEYS: Record<NavGroupDefinition['id'], TranslationKey> = {
+  overview: 'nav.overview',
   content: 'nav.content',
   deliver: 'nav.deliver',
   tools: 'nav.tools',
@@ -695,14 +720,14 @@ const DIMMED: readonly NavEntry['selection'][] = ['seeds', 'ignored']
 /** One caption, two wrappers — a reason to disclose is the only difference. */
 const NOTE_CLASS = 'px-2 pt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden'
 
-/** The switcher's caption for the open page, and the long reason behind it. */
+/** The switcher's caption for the open page, and the key of the reason behind it. */
 function switcherNote(open: NavEntry | undefined) {
   const mixture = MIXED.find((entry) => entry.label === open?.label)
-  if (!open) return { text: '', reason: undefined }
-  if (open.selection !== 'governs') return { text: SELECTION_NOTE[open.selection], reason: mixture?.reason }
+  if (!open) return { text: '', reasonKey: undefined }
+  if (open.selection !== 'governs') return { text: SELECTION_NOTE[open.selection], reasonKey: mixture?.reasonKey }
   // A page the switcher does govern can still reach past the site — say so
   // rather than leaving the sidebar to imply otherwise.
-  return { text: mixture ? 'Parts of this page are installation-wide' : '', reason: mixture?.reason }
+  return { text: mixture ? 'Parts of this page are installation-wide' : '', reasonKey: mixture?.reasonKey }
 }
 
 export function Shell() {
@@ -863,14 +888,14 @@ export function Shell() {
                  * The trigger is a tab stop, so the sentence is one Tab away.
                  */}
                 {noteText ? (
-                  note.reason ? (
+                  note.reasonKey ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div tabIndex={0} data-testid="site-switcher-note" className={NOTE_CLASS}>
                           {noteText}
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent data-testid="site-switcher-note-reason">{note.reason}</TooltipContent>
+                      <TooltipContent data-testid="site-switcher-note-reason">{t(note.reasonKey)}</TooltipContent>
                     </Tooltip>
                   ) : (
                     <div data-testid="site-switcher-note" className={NOTE_CLASS}>
@@ -1018,7 +1043,7 @@ function NavBlock({
       <SidebarGroup data-testid={group.testId} data-context={group.context}>
         <SidebarGroupLabel asChild>
           <CollapsibleTrigger data-testid={`${group.testId}-toggle`}>
-            {GROUP_KEYS[group.id] ? t(GROUP_KEYS[group.id] as TranslationKey) : group.label}
+            {t(GROUP_KEYS[group.id])}
             <ChevronDown
               data-icon="inline-end"
               className="ml-auto transition-transform group-data-[state=closed]/collapsible:-rotate-90"

@@ -72,6 +72,28 @@ const EN = {
   'switcher.seeds': 'Only seeded this page’s own filter',
   'switcher.ignored': 'Not used on this page',
   'switcher.mixed': 'Parts of this page are installation-wide',
+  // What the switcher discloses about a page that reaches past the selected
+  // site. `MIXED` in app/shell.tsx names the same crossings for the navigation
+  // test; these are what the operator reads, and the two are deliberately not
+  // the same string.
+  'switcher.mixedReason.overview':
+    'The dashboard is governed by the site through /v1/sites/{site}/decisions and /v1/sites/{site}/stats/*, while /v1/audit-events contributes the installation activity stream.',
+  'switcher.mixedReason.webhooks':
+    'The endpoints belong to the site, but /v1/webhook-deliveries holds every site’s attempts and /v1/webhook-deliveries/{delivery}/retry is addressed by id; the page narrows the list with ?site_id=.',
+  'switcher.mixedReason.decisions':
+    'The queue is governed by /v1/sites/{site}/decisions, while /v1/comments/{comment}, /v1/contact-submissions/{id} and /v1/feedback/{item} resolve their site from the id of the reviewed source.',
+  'switcher.mixedReason.decks':
+    'Compiling and validating happen per site, against the installation-wide catalogs /v1/deck-themes and /v1/deck-templates.',
+  'switcher.mixedReason.compositions':
+    'Compiling happens per site, against the installation-wide catalogs /v1/composition-patterns and /v1/publishing-guides, which describe the software rather than any site.',
+  'switcher.mixedReason.assistant':
+    'Installation-wide transport over /v1/assistant/messages and /v1/assistant/elicitations/{elicitation}, but its previews are rendered through /v1/sites/{site}/render for the selected site.',
+  'switcher.mixedReason.system':
+    'Process health is installation-wide over /health and /ready, while /v1/sites/{site}/stats/http and /v1/sites/{site}/stats/mcp supply the selected site’s traffic readings.',
+  'switcher.mixedReason.moderation':
+    'Installation-wide rows over /v1/comments, /v1/contact-submissions and /v1/feedback; GET /v1/sites/{site}/content is read only to turn the id of an item in a comment row into the title of the post.',
+  'switcher.mixedReason.sites':
+    'A registry over /v1/sites, where creating a site carries its locale rows and its settings in that one call, but deleting one is DELETE /v1/sites/{site} — and that names the row the dialog was opened from, never the switcher.',
   'common.loading': 'Loading…',
   'common.actions': 'Actions',
   'common.details': 'Details',
@@ -2006,6 +2028,11 @@ const EN = {
   'audit.result.denied': 'Denied',
   'audit.result.failed': 'Failed',
   'audit.result.cancelled': 'Cancelled',
+  'content.extra': 'Custom fields',
+  'field.byteBudget': '{used}/{limit} bytes',
+  'tabCount.pending': 'pending',
+  'tabCount.failed': 'failed',
+  'validation.unknownPlaceholder': 'Unknown placeholder: {names}',
 } as const
 
 export type TranslationKey = keyof typeof EN
@@ -2080,6 +2107,24 @@ const DE: Catalog = {
   'switcher.seeds': 'Hat nur den Filter dieser Seite vorbelegt',
   'switcher.ignored': 'Wird auf dieser Seite nicht verwendet',
   'switcher.mixed': 'Teile dieser Seite gelten für die gesamte Installation',
+  'switcher.mixedReason.overview':
+    'Die Übersicht wird über /v1/sites/{site}/decisions und /v1/sites/{site}/stats/* von der Website bestimmt, während /v1/audit-events den Aktivitätsstrom der Installation beisteuert.',
+  'switcher.mixedReason.webhooks':
+    'Die Endpunkte gehören zur Website, aber /v1/webhook-deliveries enthält die Versuche aller Websites und /v1/webhook-deliveries/{delivery}/retry wird über die Id adressiert; die Seite grenzt die Liste mit ?site_id= ein.',
+  'switcher.mixedReason.decisions':
+    'Die Warteschlange wird von /v1/sites/{site}/decisions bestimmt, während /v1/comments/{comment}, /v1/contact-submissions/{id} und /v1/feedback/{item} ihre Website aus der Id der geprüften Quelle ableiten.',
+  'switcher.mixedReason.decks':
+    'Übersetzen und Prüfen geschehen je Website, gegen die installationsweiten Kataloge /v1/deck-themes und /v1/deck-templates.',
+  'switcher.mixedReason.compositions':
+    'Übersetzen geschieht je Website, gegen die installationsweiten Kataloge /v1/composition-patterns und /v1/publishing-guides, die die Software beschreiben und nicht eine einzelne Website.',
+  'switcher.mixedReason.assistant':
+    'Installationsweiter Transport über /v1/assistant/messages und /v1/assistant/elicitations/{elicitation}, die Vorschauen entstehen aber über /v1/sites/{site}/render für die gewählte Website.',
+  'switcher.mixedReason.system':
+    'Der Zustand des Prozesses gilt installationsweit über /health und /ready, während /v1/sites/{site}/stats/http und /v1/sites/{site}/stats/mcp die Verkehrswerte der gewählten Website liefern.',
+  'switcher.mixedReason.moderation':
+    'Installationsweite Zeilen über /v1/comments, /v1/contact-submissions und /v1/feedback; GET /v1/sites/{site}/content wird nur gelesen, um die Id eines Eintrags in einer Kommentarzeile in den Titel des Beitrags zu übersetzen.',
+  'switcher.mixedReason.sites':
+    'Ein Verzeichnis über /v1/sites, bei dem das Anlegen einer Website ihre Sprachzeilen und ihre Einstellungen in diesem einen Aufruf mitführt, das Löschen aber DELETE /v1/sites/{site} ist — und das benennt die Zeile, aus der der Dialog geöffnet wurde, nie den Umschalter.',
   'common.loading': 'Wird geladen…',
   'common.actions': 'Aktionen',
   'common.details': 'Details',
@@ -4059,6 +4104,11 @@ const DE: Catalog = {
   'audit.result.denied': 'Abgelehnt',
   'audit.result.failed': 'Fehlgeschlagen',
   'audit.result.cancelled': 'Abgebrochen',
+  'content.extra': 'Eigene Felder',
+  'field.byteBudget': '{used}/{limit} Byte',
+  'tabCount.pending': 'ausstehend',
+  'tabCount.failed': 'fehlgeschlagen',
+  'validation.unknownPlaceholder': 'Unbekannter Platzhalter: {names}',
 }
 
 export const CATALOGS: Record<Locale, Catalog> = { en: EN, de: DE }
@@ -4101,6 +4151,21 @@ export function translate(
 
 export function formatNumber(locale: Locale, value: number): string {
   return new Intl.NumberFormat(LOCALE_TAGS[locale]).format(value)
+}
+
+/**
+ * A date without a time, in the reader's locale.
+ *
+ * Beside `formatDateTime` rather than inside it, because a release is named by
+ * the day it was built and a time of day would be noise in the name. What it
+ * replaces is a bare `toLocaleDateString()`, which formats against whatever
+ * locale the BROWSER runs in — "Release 12/17/2025" stood on the German console
+ * for as long as the console has had a German catalog.
+ */
+export function formatDate(locale: Locale, value: string | number | Date): string {
+  return new Intl.DateTimeFormat(LOCALE_TAGS[locale], { dateStyle: 'medium' }).format(
+    value instanceof Date ? value : new Date(value),
+  )
 }
 
 export function formatDateTime(locale: Locale, value: string | number | Date): string {
