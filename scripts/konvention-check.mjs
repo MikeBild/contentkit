@@ -1,4 +1,4 @@
-/* global document, getComputedStyle, window */
+/* global document, getComputedStyle, window, requestAnimationFrame, HTMLElement */
 /**
  * The family convention, asserted against this repo's Cockpit in a real browser.
  *
@@ -165,6 +165,116 @@ const CATALOGUE_KEYS = [...englishCatalogue.matchAll(/^\s{2}'([a-zA-Z][\w.]*)':/
 if (CATALOGUE_KEYS.length < 500) {
   throw new Error(
     `Read ${CATALOGUE_KEYS.length} keys out of the EN catalogue in apps/cockpit/src/lib/i18n.ts; it holds far more. The catalogue's shape changed and this parser has to change with it.`,
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE VOCABULARY OF FINISHED WORK — DERIVED, NEVER WRITTEN DOWN HERE.
+//
+// Rule 16 has to be able to say "this word means something that is over" about
+// a line of plain text. A hand-written list of such words would know only what
+// its author happened to think of, which is precisely the shape of defect this
+// rule exists to catch: the queue came back as a chip row, then as a badge, then
+// as a bare counter line, and every list written for the previous shape was
+// green against the next one.
+//
+// So the words are derived from the product, along the two axes the product
+// itself defines what "over" means on:
+//
+//  - THE TWELVE DECISION ACTIONS of the audit page (`DECISION_ACTIONS` in
+//    apps/cockpit/src/pages/audit.tsx). Each one is `<subject>.<verb>`, the verb
+//    resolves through `VERB_KEYS` in apps/cockpit/src/lib/audit-action.ts — the
+//    module whose whole job is turning an audited action into German — and the
+//    key resolves in the German catalogue. A thirteenth decision verb arrives on
+//    the audit page and this rule already looks for it.
+//  - THE SETTLED STATES of the contract (`Decision.state` in docs/openapi.json,
+//    everything but `open`), through any catalogue key that carries that state's
+//    name as its last segment.
+//
+// CAPITALISED, and that is the whole of the case-sensitivity this rule turns on.
+// The catalogue's verb axis is lower-case prose about a past event ("verworfen",
+// "zurückgestellt"); a chip, a badge or a counter cell is a LABEL and German
+// labels are capitalised. Matching the capitalised form is what separates
+// „Verworfen 12" from „Der Entwurf wurde verworfen" — and this page's own road
+// to the record, „Was bereits entschieden wurde:", is lower-case prose too.
+const germanCatalogue = new Map(
+  [
+    ...i18nSource
+      .slice(i18nSource.indexOf('const DE: Catalog = {'), i18nSource.indexOf('\nexport const CATALOGS'))
+      .matchAll(/^\s{2}'([\w.]+)':\s*'((?:[^'\\]|\\.)*)',$/gm),
+  ].map((entry) => [entry[1], entry[2].replace(/\\'/g, "'")]),
+)
+if (germanCatalogue.size < 500) {
+  throw new Error(
+    `Read ${germanCatalogue.size} entries out of the DE catalogue in apps/cockpit/src/lib/i18n.ts; it holds far more. The catalogue's shape changed and this parser has to change with it.`,
+  )
+}
+
+const auditPageSource = await readFile(join(root, 'apps/cockpit/src/pages/audit.tsx'), 'utf8')
+const DECISION_ACTIONS = [
+  ...auditPageSource
+    .slice(
+      auditPageSource.indexOf('const DECISION_ACTIONS = ['),
+      auditPageSource.indexOf('] as const', auditPageSource.indexOf('const DECISION_ACTIONS = [')),
+    )
+    .matchAll(/'([a-z_]+(?:\.[a-z_]+)+)'/g),
+].map((entry) => entry[1])
+
+const auditActionSource = await readFile(join(root, 'apps/cockpit/src/lib/audit-action.ts'), 'utf8')
+const VERB_KEYS = new Map(
+  [
+    ...auditActionSource
+      .slice(
+        auditActionSource.indexOf('const VERB_KEYS = {'),
+        auditActionSource.indexOf('} as const', auditActionSource.indexOf('const VERB_KEYS = {')),
+      )
+      .matchAll(/^\s{2}(\w+): '([\w.]+)',$/gm),
+  ].map((entry) => [entry[1], entry[2]]),
+)
+
+const openapi = JSON.parse(await readFile(join(root, 'docs/openapi.json'), 'utf8'))
+const SETTLED_STATES = (openapi.components?.schemas?.Decision?.properties?.state?.enum ?? []).filter(
+  (state) => state !== 'open',
+)
+
+/** The label form of a catalogue value: German labels are capitalised, prose is not. */
+const asLabel = (word) => word.charAt(0).toUpperCase() + word.slice(1)
+
+/** Every German word for finished work this build can produce, and where it came from. */
+const SETTLED_WORDS = new Map()
+for (const action of DECISION_ACTIONS) {
+  const key = VERB_KEYS.get(action.split('.').at(-1))
+  const word = key ? germanCatalogue.get(key) : undefined
+  if (word) SETTLED_WORDS.set(asLabel(word), key)
+}
+/**
+ * The settled states this run has no German word for at all — its own reach, measured.
+ *
+ * A state is covered either by a catalogue key that carries its name (`deferred`
+ * → `audit.verb.deferred`) or by the decision action it came from, because an
+ * English state name is the past participle of its verb and therefore starts
+ * with it (`dismissed` ← `decision.dismiss` → "verworfen"). What neither axis
+ * reaches has no word in this run, and a counter line built only out of such a
+ * word would go unread — LOCAL-CK-ERLEDIGT-WORT-OHNE-KATALOG.
+ */
+const namedByAVerb = (state) =>
+  DECISION_ACTIONS.some((action) => {
+    const verb = action.split('.').at(-1)
+    return state.startsWith(verb) && germanCatalogue.has(VERB_KEYS.get(verb) ?? '')
+  })
+const STATES_WITHOUT_A_WORD = []
+for (const state of SETTLED_STATES) {
+  const key = [...germanCatalogue.keys()].find((entry) => entry.split('.').at(-1) === state)
+  const word = key ? germanCatalogue.get(key) : undefined
+  if (word) SETTLED_WORDS.set(asLabel(word), key)
+  else if (!namedByAVerb(state)) STATES_WITHOUT_A_WORD.push(state)
+}
+if (SETTLED_WORDS.size === 0 || DECISION_ACTIONS.length === 0 || SETTLED_STATES.length === 0) {
+  throw new Error(
+    `Derived ${SETTLED_WORDS.size} word(s) for finished work from ${DECISION_ACTIONS.length} decision action(s) and ` +
+      `${SETTLED_STATES.length} settled state(s). Rule 16's sweep over the rendered page would measure nothing. ` +
+      'One of the three sources moved: DECISION_ACTIONS in apps/cockpit/src/pages/audit.tsx, VERB_KEYS in ' +
+      'apps/cockpit/src/lib/audit-action.ts, or Decision.state in docs/openapi.json.',
   )
 }
 
@@ -767,7 +877,23 @@ const readQueue = () => {
  *   the two ways back are a re-added toggle and a chip that keeps the old label
  *   under a new handle.
  * - The way to the past is exactly ONE link. §8.5 says a sentence with a link,
- *   not counters, so both the count and the destination are measured.
+ *   not counters, so both the count and the destination are measured. The count
+ *   of links is read off the whole page; the sentence and the absence of a
+ *   number in it are read off THAT PARAGRAPH and are claimed as such — the
+ *   earlier wording said "the history is exactly one link with a sentence and no
+ *   count" and measured one `<p>`, which is a claim about the page made from a
+ *   paragraph.
+ * - NO WORD FOR FINISHED WORK stands in the rendered text of the page. This is
+ *   the fact the three above cannot supply, and it is the one the counter-probe
+ *   moves: a plain visible line reading „Zurückgestellt 4 · Verworfen 12 ·
+ *   Entschieden 128" carries no `data-decision-state` (the first is blind), is
+ *   no chip and no toggle (the second and third are blind), adds no link (the
+ *   count stays at one) and stands outside the history paragraph (its digits go
+ *   unread). It was green. The words come from `SETTLED_WORDS`, derived above,
+ *   and they are held against the text of the whole page read through every
+ *   panel (`readPageTextThroughEveryPanel`), so a section that hides them behind
+ *   a click — or behind an accordion that will not stay open — is read as if it
+ *   stood open.
  *
  * The kind chips are deliberately NOT read here. They filter what is waiting and
  * they stay; a rule that counted "every chip" would take them down with the
@@ -803,6 +929,7 @@ const readDecisionsPast = () => {
     historyText: history ? label(history) : null,
     // A counter beside the link would make the history a second queue, which is
     // exactly what §8.5 refuses. Digits in the sentence are the cheapest sign.
+    // This one is about the PARAGRAPH; the page's own text is swept separately.
     historyHasDigits: history ? /\d/.test(label(history)) : false,
   }
 }
@@ -946,8 +1073,162 @@ function unmeasured(where, why) {
   notMeasured.push({ where, why })
 }
 
-/** Opens a route and waits for it to have rendered — never on a fixed delay. */
-async function open(page, route, origin) {
+/**
+ * OPEN WHAT IS FOLDED, THEN READ.
+ *
+ * A closed `Collapsible` has no content in the DOM at all — Radix does not mount
+ * the panel until it opens — and a closed `<details>` is not laid out, so
+ * `innerText` yields neither its content nor its titles. Every rule below that
+ * reads this page reads a page with holes in it wherever something is folded,
+ * and "folded shut" is exactly where a surface that a paragraph forbids comes
+ * back: a trigger reading „Frühere Vorgänge" with an „Entschieden 128" line
+ * behind it left rule 16 green.
+ *
+ * So the step is tied to no rule in particular and runs on every route, before
+ * anything is read.
+ *
+ * SCOPED TO THE PAGE and not the document, because the shell's own disclosures —
+ * the navigation groups (§6), the account block — are another check's subject
+ * and `readShell` drives them deliberately.
+ *
+ * SENT INTO THE DOCUMENT — the whole loop runs in the page, one round trip, not
+ * one Playwright click per locator: a sibling measured the same step written per
+ * locator at 179.7 s against 27.8 s for this shape, on a page whose every card
+ * carries a disclosure. A locator is also a QUERY and not a reference — it
+ * re-resolves on every call, so a loop that clicks `first()` walks past elements
+ * it never pressed.
+ *
+ * EACH TRIGGER PRESSED ONCE, tracked by identity in a `WeakSet`, and not "press
+ * everything until nothing is folded". That second shape was written first and
+ * it did not work here: on four routes the count of folded sections did not move
+ * at all — it stood at 29 before and after a full round — because opening one
+ * panel of these lists reveals the next folded thing inside it, so removals and
+ * arrivals cancel out exactly. A run that reads progress off that count reports
+ * "nothing answered a click" about a page where every click worked.
+ *
+ * BOUNDED, because a trigger that folds itself back on click is a defect and not
+ * a reason to spin, and because a `WeakSet` cannot recognise a node React has
+ * replaced. What the bound leaves unopened is reported as unread.
+ *
+ * TWO KINDS OF TRIGGER ARE EXCLUDED, and both exclusions are load-bearing
+ * rather than tidy — they were measured, not guessed:
+ *
+ *  - `aria-haspopup`. Every decision card's action menu and every confirm
+ *    dialog's trigger says `aria-expanded="false"`; what they open is a menu or
+ *    a MODAL, rendered in a portal outside `[data-testid="page"]` — not folded
+ *    content — and its overlay then swallows every following click. A sibling
+ *    paid 60 s of a 120 s budget for that omission. Here it would be worse than
+ *    slow: „Verwerfen" and „Entwurf verwerfen" sit in those menus, and pressing
+ *    them answers a decision.
+ *  - `role="combobox"`. Radix's `Select` trigger carries `aria-expanded` and no
+ *    `aria-haspopup` at all, and it opens on POINTERDOWN — a synthetic `click()`
+ *    does nothing to it. The first version of this function pressed all of them:
+ *    29 triggers per route stayed shut round after round, every route paid six
+ *    five-second waits, the run went from 22 s to 510 s, and the detail sweep
+ *    then could not click a single row. A listbox is not folded content either.
+ *
+ * A ROUND THAT MOVES NOTHING ENDS THE LOOP and is reported as unmeasured: a
+ * piece of a page that will not open at all is not a piece that held. A round
+ * that moves SOMETHING but not everything is the other case and is not an error
+ * — this console has accordions (`decision-change-*`, `ck-delivery-*-expand`,
+ * `ck-contact-*-expand`) whose panel is controlled by one index, so opening one
+ * closes the last and no click order ever has them all open. Reading those is
+ * `readPageTextThroughEveryPanel`'s job, below.
+ *
+ * WHAT THIS STEP DOES NOT REACH is written down beside the run's other permanent
+ * gaps rather than assumed away: content behind a plain `useState` button with
+ * no `aria-expanded` and no `<details>` is still invisible here. Pressing every
+ * button on a decision queue is not the answer — some of them decide.
+ */
+const FOLDED = '[data-testid="page"] [aria-expanded="false"]:not([aria-haspopup]):not([role="combobox"])'
+
+async function unfoldPage(page, where) {
+  const unpressed = await page.evaluate(async (sel) => {
+    const settle = () =>
+      new Promise((done) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(done)), 0))
+    const pressed = new WeakSet()
+    for (let step = 0; step < 120; step += 1) {
+      for (const details of document.querySelectorAll('[data-testid="page"] details:not([open])')) details.open = true
+      const next = [...document.querySelectorAll(sel)].find(
+        (element) => element instanceof HTMLElement && !pressed.has(element),
+      )
+      if (!next) return 0
+      pressed.add(next)
+      next.click()
+      // Waited for the STATE to have been rendered and not for a fixed delay:
+      // React has to commit before the next trigger can be found, because
+      // opening one panel is how the one nested inside it appears at all.
+      await settle()
+    }
+    return [...document.querySelectorAll(sel)].filter((element) => !pressed.has(element)).length
+  }, FOLDED)
+  if (unpressed > 0) {
+    // Fail closed. More folded sections than this step is allowed to open means
+    // the rules below read a page with holes in it, and a hole is neither
+    // conformant nor breaching — it is unread.
+    unmeasured(where, `${unpressed} folded section(s) were never opened, so what stands inside them was not read`)
+  }
+}
+
+/**
+ * The rendered text of the page INCLUDING panels that cannot all be open at once.
+ *
+ * `unfoldPage` gets a page as far as clicking can: every `<details>`, every
+ * disclosure that stays open. What it cannot finish is an ACCORDION — this
+ * console has several (`decision-change-*`, `ck-delivery-*-expand`,
+ * `ck-contact-*-expand`) where the panel is controlled by a single index, so
+ * opening one closes the last. There is no state of the DOM in which all of them
+ * are readable, and a rule that read the DOM once would simply not see 28 of 29
+ * panels — silently, which is the failure this whole finding is about.
+ *
+ * So the panels are read in turn and their texts are UNIONED: press the first
+ * trigger nobody has pressed yet, let React render, take the text, repeat. The
+ * result is what a human would read if they opened everything one after another,
+ * which is what "nothing that is over stands on this page" has to be true of.
+ *
+ * One round trip, because the loop lives in the page: driven from here it would
+ * be one Playwright call per panel, and this is the step a sibling measured at
+ * 179.7 s against 27.8 s. Bounded, because a trigger that folds itself back on
+ * click is a defect and not a reason to spin, and a `WeakSet` cannot recognise a
+ * node React has replaced.
+ */
+async function readPageTextThroughEveryPanel(page) {
+  return page.evaluate(async (sel) => {
+    const surface = () => {
+      const node = document.querySelector('[data-testid="page"]')
+      return node instanceof HTMLElement ? node.innerText.replace(/\s+/g, ' ').trim() : ''
+    }
+    const settle = () =>
+      new Promise((done) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(done)), 0))
+    const chunks = [surface()]
+    const pressed = new WeakSet()
+    for (let step = 0; step < 80; step += 1) {
+      const next = [...document.querySelectorAll(sel)].find(
+        (element) => element instanceof HTMLElement && !pressed.has(element),
+      )
+      if (!next) break
+      pressed.add(next)
+      next.click()
+      await settle()
+      chunks.push(surface())
+    }
+    return chunks.join(' ')
+  }, FOLDED)
+}
+
+/**
+ * Opens a route and waits for it to have rendered — never on a fixed delay.
+ *
+ * `unfold` is off for the detail sweep and that is not an optimisation. Several
+ * detail surfaces are opened by pressing a disclosure of their own
+ * (`ck-audit-row-0-expand`, `content-row-0-open`); if this step has already
+ * pressed it, the sweep's click CLOSES it again and the surface never appears —
+ * measured: three surfaces went unreachable the moment unfolding was switched
+ * on. The routes themselves are still unfolded by their own pass, so nothing is
+ * read less than before; what a detail dialog folds away is named among this
+ * checker's permanent gaps instead.
+ */
+async function open(page, route, origin, { unfold = true } = {}) {
   const path = route === '/' ? '/cockpit/' : `/cockpit${route}`
   // Not `networkidle`: the assistant page holds a stream open, so "idle" never
   // arrives there and this would hang on one route out of eighteen.
@@ -973,6 +1254,9 @@ async function open(page, route, origin) {
   await page.evaluate(
     () => new Promise((done) => window.requestAnimationFrame(() => window.requestAnimationFrame(done))),
   )
+  // Before anything reads this route: a rule that forbids a surface has to be
+  // able to see the surface, and a browser does not build what is folded shut.
+  if (unfold) await unfoldPage(page, `route ${route}`)
   return settled
 }
 
@@ -988,7 +1272,7 @@ async function open(page, route, origin) {
  * table exists to end, so it is the one thing this function may not do.
  */
 async function openDetail(page, entry, origin) {
-  await open(page, entry.route, origin)
+  await open(page, entry.route, origin, { unfold: false })
   for (const step of entry.steps) {
     // A step may name several handles. That is not a fallback for a handle that
     // was renamed — it is for a row that legitimately wears one of two openers
@@ -1649,6 +1933,8 @@ try {
   // ── Rule 16 (§8.5), on the same page and the same fixture. What waits stands
   //    here; what is over lives in the trail and is reached by one link.
   const past = await page.evaluate(readDecisionsPast)
+  // Everything a human could read on this route, accordion panels included.
+  const decisionsText = await readPageTextThroughEveryPanel(page)
   if (
     check(past !== null, {
       rule: 16,
@@ -1712,10 +1998,37 @@ try {
       check(!past.historyHasDigits, {
         rule: 16,
         paragraph: '§8.5',
-        where: 'Entscheidungen › [data-testid="decisions-history"]',
-        expected: 'no count beside the link — a number would make the history a second queue',
+        where: 'Entscheidungen › the history paragraph ([data-testid="decisions-history"]), not the page',
+        expected: 'no count in the sentence beside the link — a number would make the history a second queue',
         found: `"${past.historyText}"`,
       })
+    }
+    // The fact the four readings above cannot supply: a word for finished work
+    // standing anywhere in what a human reads on this route, in whatever markup.
+    if (decisionsText.length === 0) {
+      unmeasured(
+        'Entscheidungen (route /decisions)',
+        'the page rendered no text at all, so the words of finished work were not looked for in it',
+      )
+    } else {
+      for (const [word, key] of SETTLED_WORDS) {
+        // Whole words, so „Verworfen" is not found inside a longer one, and
+        // CASE-SENSITIVE, which is the entire difference between the label
+        // „Verworfen 12" and this page's own prose „Was bereits entschieden
+        // wurde:". Escaped, because these words come out of a catalogue and a
+        // catalogue may one day hold a bracket.
+        const literal = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const hit = new RegExp(`(^|[^\\p{L}])${literal}([^\\p{L}]|$)`, 'u').exec(decisionsText)
+        if (hit === null) continue
+        const from = Math.max(0, hit.index - 40)
+        check(false, {
+          rule: 16,
+          paragraph: '§8.5',
+          where: 'Entscheidungen (route /decisions) › the rendered text of the page',
+          expected: `no word for finished work on the queue — "${word}" (${key}) names something that is over and belongs to the audit trail`,
+          found: `${from === 0 ? '' : '…'}${decisionsText.slice(from, from + 160)}…`,
+        })
+      }
     }
   }
 
@@ -2091,6 +2404,36 @@ const STRUCTURALLY_NOT_MEASURED = [
     '"Kind not determinable"). Those four compare against German literals, so on en they do not fall silent, they ' +
     'report the wrong thing. The other eleven stayed green but are just as unmeasured on en. This is a permanent ' +
     'structural gap, not a failed measurement, and therefore not in notMeasured.',
+  // Rule 16's reach, printed on every path — green as well as red — because a
+  // sweep whose vocabulary nobody can see is a sweep nobody can trust.
+  `rule 16 vocabulary — the sweep over the rendered decisions page looks for ${SETTLED_WORDS.size} German word(s) for ` +
+    'finished work, derived from the ' +
+    `${DECISION_ACTIONS.length} decision action(s) of apps/cockpit/src/pages/audit.tsx through ` +
+    'apps/cockpit/src/lib/audit-action.ts and the German catalogue, and from the settled states of ' +
+    `Decision.state in docs/openapi.json (${SETTLED_STATES.join(', ')}): ` +
+    `${[...SETTLED_WORDS].map(([word, key]) => `"${word}" (${key})`).join(', ')}. ` +
+    (STATES_WITHOUT_A_WORD.length === 0
+      ? 'Every settled state of the contract has a word in this list.'
+      : `NO word exists in this build for the settled state(s) ${STATES_WITHOUT_A_WORD.join(', ')} — the shelves that ` +
+        'said "Zurückgestellt", "Verworfen" and "Entschieden" fell with §8.5 itself and no label took their place, so ' +
+        'a counter line built only out of such a word is not read here. LOCAL-CK-ERLEDIGT-WORT-OHNE-KATALOG.'),
+  // What the unfolding step cannot reach, measured on this console rather than
+  // assumed away.
+  'folded content without an ARIA state — `unfoldPage` opens every `<details>` and presses every ' +
+    '[aria-expanded="false"] inside [data-testid="page"] before any rule reads a route, but content a page hides ' +
+    'behind a plain `useState` button — no aria-expanded, no <details>, no Collapsible — is still invisible to every ' +
+    'reading below. Pressing every button instead is not the fix: on the decisions queue some of them answer a ' +
+    'decision. LOCAL-CK-AUFKLAPPEN-OHNE-ARIA.',
+  // The exclusion the unfolding step makes on purpose, so it is not mistaken for
+  // coverage either.
+  'menus, dialogs and popovers — `unfoldPage` leaves [aria-haspopup] alone. What such a trigger opens renders in a ' +
+    'portal OUTSIDE [data-testid="page"], which is the surface §8.5 is about, and pressing it lays an overlay over ' +
+    'everything the next reading needs; on the decisions queue two of those entries ("Verwerfen", "Entwurf ' +
+    'verwerfen") answer a decision. Whatever stands inside them is unread by every rule in this file.',
+  'folded content ON A DETAIL SURFACE — the detail sweep opens its route with unfolding switched off, because three ' +
+    'of the surfaces are themselves reached by pressing a disclosure and this step would have pressed it first, so ' +
+    "the sweep's own click closed it again. The routes are unfolded by their own pass; what a detail dialog folds " +
+    'away is therefore read shut, exactly as it was before this step existed.',
 ]
 
 // Standing, in both outcomes, above the run's own gaps and above the verdict: a
@@ -2173,7 +2516,7 @@ if (violations.length > 0 || notMeasured.length > 0) {
           '13 · §4 — no route and no detail surface answers with an error screen; a page that threw is not a page that passed',
           '14 · §5 — no catalogue key is rendered as if it were a sentence; the key list is the catalogue itself, so the rule needs no word list',
           `15 · §7 — the convention copy in the repository root is version ${KONVENTION_VERSION}, the one this checker was written against`,
-          '16 · §8.5 — the decisions page carries nothing that is over: every position is open, no control switches the queue to a past state, and the history is reached by exactly one link to the audit trail',
+          `16 · §8.5 — the decisions page carries nothing that is over: every position is open, no control switches the queue to a past state, no word for finished work (${SETTLED_WORDS.size} of them, derived from the audit page's decision actions and the contract's settled states) stands in the rendered text of the page, and the history is reached by exactly one link to the audit trail — the sentence beside that link, and the absence of a number in it, are read off that paragraph`,
         ],
       },
       null,
