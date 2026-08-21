@@ -9,6 +9,37 @@
          defeating the pre-paint script below. The sibling console carries the
          same line for the same reason. -->
     <meta name="color-scheme" content="light dark" />
+    <!-- WHICH PRODUCT'S CONSOLE THIS DOCUMENT IS. THE ONLY PLACE IT IS SAID.
+
+         The family convention makes the DOM anchors of all six consoles
+         identical on purpose — `cockpit-wordmark`, `operator-role`, `sidebar`,
+         `page-title` — so that one check and one parity harness have a shared
+         footing. The price is that a sibling console satisfies every
+         precondition a run would otherwise trip over. It has been paid once
+         already: in CodeKit, WorkKit answered on the harness port and the run
+         produced eight violations in 156 s about a surface that was never
+         CodeKit. Not a timeout, not a crash — a complete, convincing, wrong
+         report, and since the check became a mandatory stage, a blocking one.
+
+         ContentKit's harness serves the BUILT `assets/cockpit` from disk rather
+         than a dev server, so the foreign responder here is a foreign bundle in
+         that directory: a sibling's build copied in, a leftover from a shared
+         artefact, a wrong `--prefix`. The question is the same one and it is
+         asked in the same place — of the document that was actually delivered,
+         before a browser is started.
+
+         Deliberately NOT the title below and NOT the sidebar wordmark:
+         scripts/konvention-check.mjs rule 11 has to be able to find both of
+         those broken. An identity that is also a checked rule turns every real
+         breach into "that is not even ContentKit" and stops measuring.
+
+         This tag is the single definition. scripts/konvention-check.mjs READS
+         it and types nothing; test/contract/cockpit-bundle.test.mjs holds the
+         built document's copy against the package name; and
+         test/unit/cockpit-pruefstand-kennung.test.mjs forbids the checker from
+         spelling the value out. It is a stamped build input like every other
+         file here, so a bundle built before it changed cannot be certified. -->
+    <meta name="cockpit-product" content="ContentKit" />
     <title>ContentKit Cockpit</title>
     <!-- The app icon, same motif as the sidebar wordmark.
 

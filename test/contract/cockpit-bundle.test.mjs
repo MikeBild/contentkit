@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -70,5 +70,62 @@ test('the app icon href is derived from the configured base, not spelled with it
       'either doubled or — as here — right by coincidence rather than by construction: it agrees with the config ' +
       `without being derived from it, and changing base in vite.config.ts would leave this line pointing at the old ` +
       `prefix. Write the path from the site root ("${href.slice(base.length - 1)}") and let the build prepend it.`,
+  )
+})
+
+/**
+ * Which product's console the BUILT bytes belong to.
+ *
+ * scripts/konvention-check.mjs asserts the marker against the document the
+ * fixture DELIVERS, before it starts a browser. That is the assertion that
+ * matters at run time, and it is only worth anything while the marker survives
+ * the build — Vite rewrites `<link>` and `<script>` hrefs, and "it does not
+ * touch meta content" is a claim about a tool, which is the kind of claim that
+ * ought to be measured rather than believed.
+ *
+ * And the value is held against `package.json` rather than repeated: the marker
+ * exists to say which product this is, so a marker free to drift away from the
+ * product's own name would be worse than no marker at all.
+ *
+ * `assets/cockpit` is build output and gitignored here, so the built half runs
+ * whenever a build has happened — every local run after `npm run cockpit:build`,
+ * which is what most working copies have. It does NOT run in CI: the `test` job
+ * carries this suite and does not build, and the `cockpit-e2e` job builds and
+ * does not carry it. Its absence is reported rather than passed over in silence,
+ * and the half CI needs is asserted where CI always has a bundle —
+ * scripts/konvention-check.mjs holds the delivered document to one declaration
+ * and to the value in the source. The source half here needs no build and always
+ * runs.
+ */
+test('the shell declares which product it is, and the build keeps the declaration', (t) => {
+  const source = readFileSync(join(cockpit, 'index.html'), 'utf8')
+  const declared = /<meta[^>]+name="cockpit-product"[^>]+content="([^"]+)"/.exec(source)?.[1]
+  assert.ok(declared, 'apps/cockpit/index.html declares <meta name="cockpit-product">')
+
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  assert.equal(
+    declared.toLowerCase(),
+    pkg.name.toLowerCase(),
+    `the console calls itself "${declared}" and the package calls itself "${pkg.name}". The marker exists to say ` +
+      'which product this is; one that can name a different one is worse than none.',
+  )
+
+  const builtPath = join(root, 'assets', 'cockpit', 'index.html')
+  if (!existsSync(builtPath)) {
+    t.diagnostic('assets/cockpit not built in this run — the source half above is checked, the built half is not')
+    return
+  }
+  const built = readFileSync(builtPath, 'utf8')
+  assert.equal(
+    [...built.matchAll(/name="cockpit-product"/g)].length,
+    1,
+    'the built document carries the identity exactly once — a second one is a second answer to a question that ' +
+      'has to have one',
+  )
+  assert.equal(
+    /<meta[^>]+name="cockpit-product"[^>]+content="([^"]+)"/.exec(built)?.[1],
+    declared,
+    'the build rewrote, dropped or duplicated the identity. The convention check reads the SERVED document, so a ' +
+      'marker that does not survive the build is a marker that is not there when it is needed.',
   )
 })

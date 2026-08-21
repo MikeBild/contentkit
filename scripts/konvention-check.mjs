@@ -111,6 +111,7 @@
  * Run it with `npm run konvention:check`; build the console first, or it will
  * tell you to: `npm run cockpit:build`.
  */
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1134,9 +1135,123 @@ if (
   })
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WHOSE CONSOLE ANSWERED.
+//
+// Every rule below reads a surface. None of them asks who is on the other end,
+// and the family has made that question expensive: §-by-§ the convention makes
+// the DOM anchors of all six consoles identical — `cockpit-wordmark`,
+// `operator-role`, `sidebar`, `page-title` — precisely so that one check and one
+// parity harness have a shared footing. A sibling therefore satisfies every
+// precondition this script would otherwise trip over.
+//
+// It has been paid for once. In CodeKit, WorkKit answered on the harness port
+// and the run produced EIGHT violations in 156 s about a surface that was never
+// CodeKit. That is worse than a timeout: a timeout gets investigated, and eight
+// concrete violations get repaired. Since the check became a mandatory stage a
+// wrong report is not merely misleading but blocking — and the obvious response
+// to a mandatory stage reporting inexplicable breaches is to silence it.
+//
+// THE SHAPE THE MISTAKE TAKES HERE
+//
+// ContentKit's stand does not attach to a port somebody else might hold: the
+// fixture binds an ephemeral port and serves the BUILT `assets/cockpit` off
+// disk. So the foreign responder is a foreign BUNDLE — a sibling's build copied
+// into that directory, a restored artefact from the wrong job, a wrong
+// `--prefix`. The content stamp above does not see it: it hashes SOURCES
+// against the recorded stamp and says nothing about which bytes are in
+// `assets/cockpit`. Measured, not assumed — with WatchKit's built bundle in
+// place the stamp check passed and the run went on to measure WatchKit.
+//
+// WHY THE VALUE IS DERIVED AND NOT TYPED
+//
+// CodeKit solved it with a marker in the delivered document, and CodeKit's fixer
+// named the weakness himself: there the expected value is a LITERAL in the
+// script while a contract test imports the same value. Rename it and the check
+// says "foreign document" about its own console — the message that is most
+// expensive to get wrong.
+//
+// So there is exactly ONE definition site, `apps/cockpit/index.html`, and this
+// reads it. Change the value and both sides move together. Rename the ATTRIBUTE
+// and the answer is not "foreign document" but the sentence that is true: the
+// expected value can no longer be derived from that file — a finding about THIS
+// repository.
+//
+// And explicitly not the browser title or the sidebar wordmark: rule 11 has to
+// be able to find both of those broken (§6). An identity that is also a checked
+// rule turns every real breach into "that is not even ContentKit" and measures
+// nothing afterwards.
+//
+// Construction taken from WatchKit's `assertPruefstandsKennung`, rewritten in
+// this file's idiom — read, not imported.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The attribute the console gives its own document. */
+const IDENTITY_META = 'cockpit-product'
+
+/** The definition site — the only place the value is written down. */
+const IDENTITY_SOURCE = 'apps/cockpit/index.html'
+
+/** A document's marker, or `null` if it carries none. */
+function markerIn(html) {
+  return new RegExp(`<meta[^>]+name="${IDENTITY_META}"[^>]+content="([^"]+)"`).exec(html)?.[1] ?? null
+}
+
+/**
+ * Asserts WHOSE console answered — before a single rule is measured.
+ *
+ * Throws rather than reporting, deliberately. A foreign console is not a
+ * convention breach, it is a run that did not happen: the throw lands in the
+ * catch below, which records it as an unmeasured stand and ends the run red
+ * WITH its report — the distinction this file already draws between "measured
+ * and red" and "never measured".
+ */
+function assertStandIdentity(html, origin) {
+  const expected = markerIn(readFileSync(join(root, IDENTITY_SOURCE), 'utf8'))
+  if (expected === null) {
+    throw new Error(
+      `${IDENTITY_SOURCE} no longer carries <meta name="${IDENTITY_META}" content="…">. This assertion derives ` +
+        'its expected value from that file and now has none, so it cannot say whose console answered. That is a ' +
+        `finding about THIS repository, not a statement about whatever is serving ${origin}.`,
+    )
+  }
+  const delivered = markerIn(html)
+  if (delivered === null) {
+    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1]?.trim() ?? '(no <title>)'
+    throw new Error(
+      `this is not ${expected}: the document served from ${origin} carries no <meta name="${IDENTITY_META}">. ` +
+        `Its title reads "${title}". Is a sibling console's bundle sitting in assets/cockpit? The DOM anchors are ` +
+        `identical family-wide, so this run would have measured it and filed the violations under ${expected}.`,
+    )
+  }
+  if (delivered !== expected) {
+    throw new Error(
+      `this is not ${expected}, it is ${delivered}: the document served from ${origin} calls itself "${delivered}" ` +
+        `while ${IDENTITY_SOURCE} says "${expected}". assets/cockpit holds someone else's build. Nothing was measured.`,
+    )
+  }
+  // Exactly one, because `markerIn` reads the first and a second one would be a
+  // second answer to a question that has to have one — a merge artefact or a
+  // build plugin injecting its own could leave the right value first and a
+  // different product's second, and every check above would be satisfied.
+  // test/contract/cockpit-bundle.test.mjs asserts the same thing about the file
+  // on disk; this is the half that runs on every CI run, because that job builds
+  // the bundle and the `test` job does not.
+  const declarations = [...html.matchAll(new RegExp(`name="${IDENTITY_META}"`, 'g'))].length
+  if (declarations !== 1) {
+    throw new Error(
+      `the document served from ${origin} declares <meta name="${IDENTITY_META}"> ${declarations} times. ` +
+        'One document, one identity — with two, this assertion reads whichever comes first and the run cannot ' +
+        'say whose console it measured.',
+    )
+  }
+  return expected
+}
+
 /**
  * Whether `assets/cockpit` was built from the sources as they stand.
  *
+
  * The one precondition that is specific to ContentKit. Every rule below except
  * 15 is read off the BUILT console, so a bundle that predates a source change is
  * a checker measuring a build nobody is shipping — and answering green about it,
@@ -1165,6 +1280,9 @@ let standFailure = null
 /** The digest of the bundle this run measured; printed so the report names its subject. */
 let bundleDigest = null
 
+/** Whose console answered — read off the delivered document, printed with the verdict. */
+let measuredProduct = null
+
 /** The assertions carried before the built console was involved — rule 15's. */
 const checksBeforeTheStand = checksRun
 
@@ -1176,6 +1294,19 @@ try {
 
   section('starting the test stand (fixture and browser)')
   fixture = await startFixture()
+
+  // WHOSE console this is, asked of the document that was actually DELIVERED and
+  // asked before the browser exists. Before, because everything after this line
+  // costs a minute and reads a surface — and a minute spent measuring a sibling
+  // is the entire defect. The shell is fetched over HTTP rather than read off
+  // disk on purpose: what a rule below sees is what the fixture serves, and the
+  // two can only be guaranteed to be the same document by asking the same
+  // server.
+  section('whose console answered')
+  const shellDocument = await fetch(`${fixture.origin}/cockpit/`).then((answer) => answer.text())
+  measuredProduct = assertStandIdentity(shellDocument, fixture.origin)
+
+  section('starting the browser')
   browser = await chromium.launch({ headless: true })
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1965,8 +2096,11 @@ if (violations.length > 0 || notMeasured.length > 0) {
         convention: CONVENTION,
         seconds: Number(seconds),
         locale: LOCALE,
-        // Which bundle this verdict is about. A certificate that does not name
-        // its subject is a certificate for whatever was lying around.
+        // Which bundle this verdict is about, and whose console it was. A
+        // certificate that does not name its subject is a certificate for
+        // whatever was lying around — and in this family "whatever was lying
+        // around" has already once been a sibling's console.
+        produkt: measuredProduct,
         bundle: bundleDigest,
         nichtGemessen: STRUCTURALLY_NOT_MEASURED,
         routes: ROUTES.length,
