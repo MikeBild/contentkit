@@ -59,7 +59,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { bundleStaleReason, readStamp } from './cockpit-build-stamp.mjs'
-import { startFixture } from './cockpit-fixture.mjs'
+import { IDENTITY_SOURCE, IDENTITY_SOURCE_ROUTE, startFixture } from './cockpit-fixture.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -1051,14 +1051,24 @@ if (
 // certifies `conform: true` next to `product: "WorkKit"`
 // (LOCAL-CK-ZERTIFIKAT-NENNT-FREMDES-PRODUKT).
 //
+// WHO READS IT is the half that rotted. The marker used to be pulled out of the
+// served bytes with a regular expression — a second HTML parser, standing beside
+// the one whose reading decides which product was measured. Eight marker forms,
+// one document each, at a living Chromium over real HTTP: the two disagreed on
+// five, and three of those five passed and printed `conform: true` next to a name
+// the browser had never read. The browser answers now, in the page, with
+// `document.querySelector` — the same parser that draws the screenshots
+// (LOCAL-CK-KENNUNG-LIEST-NICHT-WAS-DER-BROWSER-LIEST). The forms are in
+// test/contract/cockpit-identity-reader.test.mjs.
+//
 // Construction from WatchKit's `assertPruefstandsKennung`, read, not imported.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The attribute the console gives its own document. */
 const IDENTITY_META = 'cockpit-product'
 
-/** The definition site — the only place the value is written down. */
-const IDENTITY_SOURCE = 'apps/cockpit/index.html'
+// The definition site — the only place the value is written down — and the route
+// the fixture serves it at, both imported rather than spelled a second time.
 
 /**
  * The repository the derived identity has to belong to.
@@ -1084,9 +1094,44 @@ function repositoryName() {
   return manifest.name.toLowerCase()
 }
 
-/** A document's marker, or `null` if it carries none. */
-function markerIn(html) {
-  return new RegExp(`<meta[^>]+name="${IDENTITY_META}"[^>]+content="([^"]+)"`).exec(html)?.[1] ?? null
+/**
+ * A document's marker, READ BY THE BROWSER that draws it.
+ *
+ * This used to be a regular expression over the served bytes, and that is a
+ * second HTML parser standing beside the one whose answer actually matters. The
+ * two were measured against each other at a living Chromium over real HTTP,
+ * eight marker forms, one document each: they disagreed on FIVE, and on THREE of
+ * those the check passed and printed `conform: true` next to a product name the
+ * browser had never read (LOCAL-CK-KENNUNG-LIEST-NICHT-WAS-DER-BROWSER-LIEST):
+ *
+ *   • `content="WorkKit" content="ContentKit"` — the browser takes the FIRST
+ *     attribute, the greedy `[^>]+` took the last, and the counter saw one tag.
+ *   • `name="cockpit&#45;product"` — a character reference in an attribute VALUE
+ *     is decoded, so the browser saw two markers and read the decoy first; the
+ *     text counter, matching bytes, saw one.
+ *   • a marker inside a comment and no real one — the reader stripped no
+ *     comments at all, so it answered with a name that is not in the document.
+ *
+ * Every one of those is a rule of the HTML parser, and the list does not end
+ * where somebody's patience does: sibling repositories closed one form and
+ * opened the next twice over, until "read the marker" had become six rules. The
+ * run already holds a Chromium page open to photograph this console. Asking it
+ * needs none of the rules, because it IS the parser — and it stays right about
+ * forms nobody has thought of yet.
+ *
+ * Ambiguity is refused rather than guessed: two markers is not an answer, so the
+ * value comes back `null` and the caller ends the run instead of picking one.
+ */
+async function markerAt(page, url) {
+  await page.goto(url, { waitUntil: 'domcontentloaded' })
+  return page.evaluate((attribute) => {
+    const metas = [...document.querySelectorAll(`meta[name="${attribute}"]`)]
+    return {
+      count: metas.length,
+      value: metas.length === 1 ? metas[0].content : null,
+      title: document.title.trim(),
+    }
+  }, IDENTITY_META)
 }
 
 /**
@@ -1098,14 +1143,19 @@ function markerIn(html) {
  * WITH its report — the distinction this file already draws between "measured
  * and red" and "never measured".
  */
-function assertStandIdentity(html, origin) {
+async function assertStandIdentity(page, origin) {
   const repository = repositoryName()
-  const expected = markerIn(readFileSync(join(root, IDENTITY_SOURCE), 'utf8'))
+  const definition = await markerAt(page, `${origin}${IDENTITY_SOURCE_ROUTE}`)
+  const expected = definition.value
   if (expected === null) {
     throw new Error(
-      `${IDENTITY_SOURCE} no longer carries <meta name="${IDENTITY_META}" content="…">. This assertion derives ` +
-        'its expected value from that file and now has none, so it cannot say whose console answered. That is a ' +
-        `finding about THIS repository, not a statement about whatever is serving ${origin}.`,
+      definition.count > 1
+        ? `${IDENTITY_SOURCE} declares <meta name="${IDENTITY_META}"> ${definition.count} times, so the expected ` +
+            'value is two values and this assertion has none. A second answer to a question that has to have one is ' +
+            `a finding about THIS repository, not a statement about whatever is serving ${origin}.`
+        : `${IDENTITY_SOURCE} no longer carries <meta name="${IDENTITY_META}" content="…">. This assertion derives ` +
+            'its expected value from that file and now has none, so it cannot say whose console answered. That is a ' +
+            `finding about THIS repository, not a statement about whatever is serving ${origin}.`,
     )
   }
   // The derived value against the repository it is supposed to describe. Without
@@ -1118,9 +1168,24 @@ function assertStandIdentity(html, origin) {
         'the bundle would name the wrong product and agree with each other. Nothing was measured.',
     )
   }
-  const delivered = markerIn(html)
+  // Exactly one, because two markers are two answers to a question that has to
+  // have one — a merge artefact or a build plugin injecting its own could leave
+  // the right value first and a different product's second. The browser reads
+  // the first and would be satisfied; this refuses instead of picking.
+  // test/contract/cockpit-bundle.test.mjs asserts the same thing about the file
+  // on disk; this is the half that runs on every CI run, because that job builds
+  // the bundle and the `test` job does not.
+  const answered = await markerAt(page, `${origin}/cockpit/`)
+  const delivered = answered.value
+  if (delivered === null && answered.count > 1) {
+    throw new Error(
+      `the document served from ${origin} declares <meta name="${IDENTITY_META}"> ${answered.count} times. ` +
+        'One document, one identity — with two, this assertion would be reading whichever the browser reaches ' +
+        'first and the run cannot say whose console it measured.',
+    )
+  }
   if (delivered === null) {
-    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1]?.trim() ?? '(no <title>)'
+    const title = answered.title === '' ? '(no <title>)' : answered.title
     throw new Error(
       `this is not ${expected}: the document served from ${origin} carries no <meta name="${IDENTITY_META}">. ` +
         `Its title reads "${title}". Is a sibling console's bundle sitting in assets/cockpit? The DOM anchors are ` +
@@ -1131,21 +1196,6 @@ function assertStandIdentity(html, origin) {
     throw new Error(
       `this is not ${expected}, it is ${delivered}: the document served from ${origin} calls itself "${delivered}" ` +
         `while ${IDENTITY_SOURCE} says "${expected}". assets/cockpit holds someone else's build. Nothing was measured.`,
-    )
-  }
-  // Exactly one, because `markerIn` reads the first and a second one would be a
-  // second answer to a question that has to have one — a merge artefact or a
-  // build plugin injecting its own could leave the right value first and a
-  // different product's second, and every check above would be satisfied.
-  // test/contract/cockpit-bundle.test.mjs asserts the same thing about the file
-  // on disk; this is the half that runs on every CI run, because that job builds
-  // the bundle and the `test` job does not.
-  const declarations = [...html.matchAll(new RegExp(`name="${IDENTITY_META}"`, 'g'))].length
-  if (declarations !== 1) {
-    throw new Error(
-      `the document served from ${origin} declares <meta name="${IDENTITY_META}"> ${declarations} times. ` +
-        'One document, one identity — with two, this assertion reads whichever comes first and the run cannot ' +
-        'say whose console it measured.',
     )
   }
   return expected
@@ -1185,19 +1235,28 @@ try {
   section('starting the test stand (fixture and browser)')
   fixture = await startFixture()
 
-  // WHOSE console this is, asked of the document that was actually DELIVERED and
-  // asked before the browser exists. Before, because everything after this line
-  // costs a minute and reads a surface — and a minute spent measuring a sibling
-  // is the entire defect. The shell is fetched over HTTP rather than read off
-  // disk on purpose: what a rule below sees is what the fixture serves, and the
-  // two can only be guaranteed to be the same document by asking the same
-  // server.
-  section('whose console answered')
-  const shellDocument = await fetch(`${fixture.origin}/cockpit/`).then((answer) => answer.text())
-  measuredProduct = assertStandIdentity(shellDocument, fixture.origin)
-
   section('starting the browser')
   browser = await chromium.launch({ headless: true })
+
+  // WHOSE console this is, asked of the document that was actually DELIVERED and
+  // asked before a single rule is measured. Before, because everything after
+  // this line costs a minute and reads a surface — and a minute spent measuring
+  // a sibling is the entire defect. Starting the browser is not that minute: it
+  // is a second, and it buys the only parser whose answer counts. The document
+  // comes over HTTP from the stand rather than off disk, because what a rule
+  // below sees is what the fixture serves, and the two can only be guaranteed to
+  // be the same document by asking the same server.
+  //
+  // A context of its own, thrown away afterwards: the identity is read before
+  // the queue override and the locale that the measuring context carries, so
+  // nothing this run sets up can be part of the answer.
+  section('whose console answered')
+  const identityContext = await browser.newContext({ viewport: VIEWPORT })
+  try {
+    measuredProduct = await assertStandIdentity(await identityContext.newPage(), fixture.origin)
+  } finally {
+    await identityContext.close()
+  }
 
   // ───────────────────────────────────────────────────────────────────────────
   // With a gate open: the shell's labels, the banner, the queue and the counter.

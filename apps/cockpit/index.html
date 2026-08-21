@@ -26,7 +26,12 @@
          that directory: a sibling's build copied in, a leftover from a shared
          artefact, a wrong `--prefix`. The question is the same one and it is
          asked in the same place — of the document that was actually delivered,
-         before a browser is started.
+         over real HTTP, before a single rule is measured. It is asked OF THE
+         BROWSER: `document.querySelector` in the page, not a regular expression
+         over the bytes. A regex is a second HTML parser, and this file's thirty
+         comment lines are precisely where the two part company — one example
+         marker in here and the byte reader would answer with a name that is not
+         the document's (LOCAL-CK-KENNUNG-LIEST-NICHT-WAS-DER-BROWSER-LIEST).
 
          Deliberately NOT the title below and NOT the sidebar wordmark:
          scripts/konvention-check.mjs rule 11 has to be able to find both of
@@ -36,7 +41,7 @@
          This tag is the single definition. scripts/konvention-check.mjs READS
          it and types nothing; test/contract/cockpit-bundle.test.mjs holds the
          built document's copy against the package name; and
-         test/unit/cockpit-pruefstand-kennung.test.mjs forbids the checker from
+         test/unit/cockpit-stand-identity.test.mjs forbids the checker from
          spelling the value out. It is a stamped build input like every other
          file here, so a bundle built before it changed cannot be certified. -->
     <meta name="cockpit-product" content="ContentKit" />

@@ -44,6 +44,30 @@ import { fileURLToPath } from 'node:url'
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const bundle = join(root, 'assets', 'cockpit')
 
+/**
+ * The one place the console's identity is written down — named here, once.
+ *
+ * The checker imports both of these rather than repeating the path, because two
+ * spellings of the same file are two things that can drift apart.
+ */
+export const IDENTITY_SOURCE = join('apps', 'cockpit', 'index.html')
+
+/**
+ * Where the definition site is served, as a document.
+ *
+ * It exists so the identity assertion can ask the BROWSER what the definition
+ * site says, with the same parser that reads the delivered console — instead of
+ * running a regex over the bytes. Measured at a living Chromium over real HTTP:
+ * of eight marker forms, the regex disagreed with the browser on five, and three
+ * of those five certified `conform: true` next to the wrong product name
+ * (LOCAL-CK-KENNUNG-LIEST-NICHT-WAS-DER-BROWSER-LIEST).
+ *
+ * Under `/cockpit` on purpose, so it cannot be reached without going through the
+ * same shell-serving branch a rule below goes through; and named with two
+ * underscores so no route of the console can ever collide with it.
+ */
+export const IDENTITY_SOURCE_ROUTE = '/cockpit/__identity-source'
+
 /** How many rows a list answers with. Enough that every list overflows 800px. */
 export const LIST_SIZE = 30
 /** Arrays below the top level are incidental — ids, tags, scopes — and stay small. */
@@ -546,6 +570,20 @@ export async function startFixture() {
       if (pathname === '/' || !pathname.startsWith('/cockpit')) {
         response.writeHead(302, { location: '/cockpit/' })
         response.end()
+        return
+      }
+
+      // The definition site itself, so the browser can read its marker the same
+      // way it reads the delivered console's. Served before the bundle lookup,
+      // which answers every unknown path with index.html and would otherwise
+      // hand back the delivered document under this name.
+      if (pathname === IDENTITY_SOURCE_ROUTE) {
+        const source = await readFile(join(root, IDENTITY_SOURCE), 'utf8').catch(() => null)
+        response.writeHead(source === null ? 404 : 200, {
+          'content-type': source === null ? 'text/plain' : 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+        })
+        response.end(source ?? `${IDENTITY_SOURCE} is not in this repository`)
         return
       }
 

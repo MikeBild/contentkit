@@ -17,10 +17,18 @@
  * file asserts what the tag cannot assert about itself: one definition site,
  * read rather than typed and belonging to this package; the missing-attribute
  * branch pointing at THIS repository; the identity not being a rule the run has
- * to be able to find broken; and the question being asked before the browser
- * starts.
+ * to be able to find broken; and the question being asked before a single rule
+ * is measured.
  *
- * The built document's half is in test/contract/cockpit-bundle.test.mjs.
+ * WHO DOES THE READING is the other half, and it rotted the same way. The
+ * assertion used to run a regular expression over the served bytes, which is a
+ * second HTML parser standing beside the one whose reading decides which product
+ * was measured. Eight marker forms at a living Chromium over real HTTP: the two
+ * disagreed on five, and three of those five passed and certified the wrong name
+ * (LOCAL-CK-KENNUNG-LIEST-NICHT-WAS-DER-BROWSER-LIEST). The browser answers now.
+ * The forms and their measured answers are in
+ * test/contract/cockpit-identity-reader.test.mjs; the built document's half is in
+ * test/contract/cockpit-bundle.test.mjs.
  */
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -71,7 +79,7 @@ describe('the run knows whose console it measured', () => {
       /function repositoryName\(\)[\s\S]*?throw new Error\(/,
       'a package.json without a name is refused in a sentence, not by a TypeError on the top level',
     )
-    const start = code.indexOf('function assertStandIdentity(html, origin)')
+    const start = code.indexOf('function assertStandIdentity(page, origin)')
     const body = code.slice(start, code.indexOf('\n}\n', start))
     assert.ok(
       body.includes('repositoryName()'),
@@ -81,12 +89,20 @@ describe('the run knows whose console it measured', () => {
 
   test('the checker derives the expected value instead of typing it out', () => {
     // Derived: it comes out of the file that produces the document.
+    // One definition site, and one spelling of where it is: the path lives in
+    // scripts/cockpit-fixture.mjs, which also serves it, and the checker imports
+    // both rather than repeating either.
+    const fixture = readFileSync(join(root, 'scripts', 'cockpit-fixture.mjs'), 'utf8')
     assert.ok(
-      code.includes("const IDENTITY_SOURCE = 'apps/cockpit/index.html'"),
-      'the checker names one definition site',
+      fixture.includes(`export const IDENTITY_SOURCE = join('apps', 'cockpit', 'index.html')`),
+      'the fixture names one definition site',
     )
     assert.ok(
-      code.includes("markerIn(readFileSync(join(root, IDENTITY_SOURCE), 'utf8'))"),
+      code.includes("import { IDENTITY_SOURCE, IDENTITY_SOURCE_ROUTE, startFixture } from './cockpit-fixture.mjs'"),
+      'the checker imports the definition site rather than spelling the path a second time',
+    )
+    assert.ok(
+      code.includes('await markerAt(page, `${origin}${IDENTITY_SOURCE_ROUTE}`)'),
       'the checker READS the definition site rather than repeating what it says',
     )
 
@@ -98,7 +114,7 @@ describe('the run knows whose console it measured', () => {
     // nothing afterwards.
     const marker = /<meta[^>]+name="cockpit-product"[^>]+content="([^"]+)"/.exec(shell)?.[1]
     assert.ok(marker, `${IDENTITY_SOURCE} carries the marker`)
-    const start = code.indexOf('function assertStandIdentity(html, origin)')
+    const start = code.indexOf('function assertStandIdentity(page, origin)')
     assert.ok(start > 0, 'the identity assertion is findable')
     const body = code.slice(start, code.indexOf('\n}\n', start))
     assert.equal(
@@ -127,22 +143,56 @@ describe('the run knows whose console it measured', () => {
     assert.ok(code.includes('it is ${delivered}'), 'the responder-names-another-product branch')
   })
 
-  test('the question is asked before the browser starts', () => {
-    const asked = code.indexOf('assertStandIdentity(shellDocument, fixture.origin)')
+  test('the question is asked before a single rule is measured', () => {
+    // The browser now answers the question, so it has to start FIRST — and that
+    // is not the cost the old ordering was protecting against. Starting Chromium
+    // is a second; the minute is in the rules, and none of them may run before
+    // the run knows whose console it is looking at.
     const browser = code.indexOf('chromium.launch(')
+    const asked = code.indexOf('await assertStandIdentity(await identityContext.newPage(), fixture.origin)')
+    const firstRule = code.indexOf("section('the shell with a gate open")
     assert.ok(asked > 0, 'the assertion is wired into the run')
     assert.ok(browser > 0, 'the browser start is findable')
+    assert.ok(firstRule > 0, 'the first measured section is findable')
+    assert.ok(browser < asked, 'the browser is the reader, so it has to exist before the question is asked')
     assert.ok(
-      asked < browser,
-      'the identity is checked after the browser starts. Everything past that line costs a minute and reads a ' +
-        'surface, which is the whole defect: 156 s of measuring somebody else.',
+      asked < firstRule,
+      'a rule is measured before the run knows whose console answered. That is the whole defect: 156 s of ' +
+        'measuring somebody else, filed under this product.',
     )
   })
 
-  test('the document it judges is the one the fixture served, not the one on disk', () => {
-    // Reading assets/cockpit/index.html here instead would answer a different
-    // question than "what will the browser be shown".
-    assert.ok(code.includes('await fetch(`${fixture.origin}/cockpit/`)'), 'the shell is fetched from the stand')
+  test('the browser reads both documents, and reads them off the stand', () => {
+    // A regex over the served bytes is a SECOND HTML parser, and the one that
+    // draws the console is the only one whose reading decides which product was
+    // measured. Measured at a living Chromium over real HTTP: of eight marker
+    // forms the two parsers disagreed on five, and three of those five passed
+    // and certified the wrong name
+    // (LOCAL-CK-KENNUNG-LIEST-NICHT-WAS-DER-BROWSER-LIEST). The forms and their
+    // measured answers are in test/contract/cockpit-identity-reader.test.mjs.
+    assert.ok(
+      code.includes('document.querySelectorAll(`meta[name="${attribute}"]`)'),
+      'the marker is read out of the DOM, by the browser that built it',
+    )
+    assert.ok(code.includes('await markerAt(page, `${origin}/cockpit/`)'), 'the shell is read off the stand')
+    const start = code.indexOf('async function assertStandIdentity(page, origin)')
+    const body = code.slice(start, code.indexOf('\n}\n', start))
+    assert.equal(/RegExp|matchAll|\.exec\(/.test(body), false, 'the identity assertion parses HTML itself again')
+  })
+
+  test('two markers are refused rather than resolved to one of them', () => {
+    // The browser reads the first and would be satisfied. Ambiguity has to end
+    // the run instead: a guessed name is the outcome this whole assertion exists
+    // to prevent.
+    assert.ok(
+      code.includes('metas.length === 1 ? metas[0].content : null'),
+      'the reader picks a name out of a document that carries two',
+    )
+    assert.ok(code.includes('declares <meta name="${IDENTITY_META}"> ${answered.count} times'), 'the delivered half')
+    assert.ok(
+      code.includes('declares <meta name="${IDENTITY_META}"> ${definition.count} times'),
+      'the definition site half — two expected values are no expected value either',
+    )
   })
 
   test('the definition site is a hashed build input', () => {
