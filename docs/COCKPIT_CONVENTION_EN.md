@@ -1,8 +1,8 @@
 # Cockpit Convention
 
-Version 1.5 · 2026-08-20 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
+Version 1.6 · 2026-08-21 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
 
-**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.5, SHA-256 `57d47c606c9fb1e6efb7ebd4dab77a0b5901e09cd9f995b6f2632f4f7dcf70a2`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `7d04d842a705c31b5012541e7687ebc42e9b469ba5c1dd1a58d3447811dcd8c4`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
 
 ## 1. Home-screen contract
 
@@ -66,9 +66,9 @@ The overflow menu contains reminders, permanent dismissal with confirmation and 
 
 More context uses a named control such as **Show more**, never an unlabeled chevron. The expanded area contains full reasoning, source data or a structured response form.
 
-### 8.5 Shelves and history
+### 8.5 State and history are separate surfaces
 
-Below the active queue, use collapsible Deferred, Dismissed and Decided shelves. Current state and history are separate surfaces: completed work disappears from the open queue, while Audit remains append-only and complete.
+The Decisions page shows only what is waiting for a human. Deferred, dismissed and decided items are past: finished work leaves the queue rather than being dimmed, struck through, parked in sections below it or brought back by state chips. A control that switches the queue to a past state breaks the convention; queue filters filter the **kind**, never the state. The full history lives in the append-only audit trail and is reachable from the Decisions page through **exactly one** link—a sentence, not a row of counters. Where the past arrives there as a machine value only, name it and make it filterable in the trail; do not move the sections back into the queue.
 
 ### 8.6 Empty and incidents
 
