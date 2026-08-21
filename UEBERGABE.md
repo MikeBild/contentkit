@@ -3,7 +3,11 @@
 **Für:** Claude Code auf dem Mac, Repo `~/Projects/AI/contentkit`
 **Referenz-Grundlage dieses Produkts:** **Keine externe Referenz.** Die
 Wiedererkennung für den Endnutzer kommt aus den Familienmustern der
-Cockpit-Konvention v1.5, mit benannten Vorbildern je Muster: **WorkKit**
+Cockpit-Konvention in der Fassung, die als `COCKPIT-KONVENTION.md` im Repo
+liegt — hier steht bewusst keine Nummer mehr, aus dem Grund, den der Kasten
+zum Prüfkriterium weiter unten festhält: eine Nummer im Text erfüllt auch
+eine veraltete Kopie, und wer sie hebt, dreht sie mit. Sie stand hier auf
+„v1.5", während das Repo v1.6 führte. Benannte Vorbilder je Muster: **WorkKit**
 für die Entscheidungs-Grammatik (§8), **SubKit** für Diff-Freigabe,
 Sammlungs-Listen und Verbindungs-Status (§9–§11), **WikiKit** für Capture
 und Lesepfad (§4/§5). Wer eines der drei Produkte kennt, findet sich hier
