@@ -1060,6 +1060,7 @@ const EN = {
   'releases.buildDescription':
     'This builds every published revision of {site} and activates the result. The live site changes when the build succeeds.',
   'releases.buildActivate': 'Build and activate',
+  'releases.name': 'Release {date}',
   'releases.new': 'New release',
   'releases.liveSince': 'Live since',
   'releases.fileCountUnknown': 'no file count reported',
@@ -3096,6 +3097,7 @@ const DE: Catalog = {
   'releases.buildDescription':
     'Alle veröffentlichten Revisionen von {site} werden gebaut und das Ergebnis wird aktiviert. Die Live-Website ändert sich nach erfolgreichem Build.',
   'releases.buildActivate': 'Bauen und aktivieren',
+  'releases.name': 'Release {date}',
   'releases.new': 'Neues Release',
   'releases.liveSince': 'Live seit',
   'releases.fileCountUnknown': 'keine Dateianzahl gemeldet',

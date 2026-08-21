@@ -57,8 +57,12 @@ function isDeletable(release: Release) {
   return release.status !== 'active' && release.status !== 'building'
 }
 
-function releaseName(release: Release) {
-  return `Release ${new Date(release.created_at).toLocaleDateString()}`
+type Translator = ReturnType<typeof useI18n>['t']
+
+// Through the catalogue, not composed here: "Release" happens to be the word in
+// both languages, which is how a hardcoded label survives unnoticed.
+function releaseName(release: Release, t: Translator) {
+  return t('releases.name', { date: new Date(release.created_at).toLocaleDateString() })
 }
 
 export function ReleasesPage() {
@@ -125,7 +129,7 @@ export function ReleasesPage() {
         compare: (left, right) => compareTime(left.created_at, right.created_at),
         cell: (release) => (
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="font-medium">{releaseName(release)}</span>
+            <span className="font-medium">{releaseName(release, t)}</span>
             <span className="break-words text-xs text-muted-foreground">{release.reason || '—'}</span>
           </div>
         ),
@@ -424,7 +428,7 @@ export function ReleasesPage() {
         renderMobileRow={(release, rowIndex) => (
           <div className="flex items-start justify-between gap-3 p-4">
             <div className="flex min-w-0 flex-col gap-1">
-              <span className="font-medium">{releaseName(release)}</span>
+              <span className="font-medium">{releaseName(release, t)}</span>
               <span className="break-words text-sm text-muted-foreground">{release.reason || '—'}</span>
               <RelativeTime value={release.created_at} data-testid={`release-mobile-${rowIndex}-age`} />
             </div>
