@@ -780,8 +780,20 @@ const I18N_CONTRACTS = [
     promise:
       'The probe’s reach is itself a case: JSX text, a JSX expression several hops from its literal, and an ' +
       'attribute outside any four-name list are all reported, while a testid and a class list are not.',
+    // Each surface is pinned through its EXPECTATION, never through the word
+    // alone: `Raw text`, `A raw title` and `not-copy` all stand in the inline
+    // fixture too, so a bare /Raw text/ was satisfied by the snippet and
+    // reported nothing about whether anything was still asserted on it.
+    // Measured: with those three, deleting a surface from the probe and its
+    // one assertion left this file 8/8 green for all three surfaces.
     title: /reads jsx text, jsx expressions and attributes alike/i,
-    asserts: [/Raw text/, /A raw title/, /not-copy/],
+    asserts: [
+      /toContain\('Raw text'\)/,
+      /toContain\('the dashboard is site-governed'\)/,
+      /toContain\('A raw title'\)/,
+      /not\.toContain\('not-copy'\)/,
+      /not\.toContain\('flex gap-2'\)/,
+    ],
     min: 1,
   },
   {
