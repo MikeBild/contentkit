@@ -95,7 +95,7 @@ const DAY = 24 * 60 * MINUTE
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The version this checker was written against. Typed, never derived. */
-const KONVENTION_VERSION = '1.5'
+const KONVENTION_VERSION = '1.6'
 
 const conventionSource = await readFile(join(root, 'COCKPIT-KONVENTION.md'), 'utf8')
 const CONVENTION_HEADER = /^Version (\d+\.\d+) · /m.exec(conventionSource)?.[1] ?? null
@@ -748,6 +748,66 @@ const readQueue = () => {
 }
 
 /**
+ * §8.5, read on the Entscheidungen page: what waits stands here, and nothing else.
+ *
+ * The paragraph used to ask for shelves under the queue; ContentKit had them as
+ * a chip row ABOVE it (LOCAL-CK-REGALE). v1.6 removed both — deferred, dismissed
+ * and decided are over, and what is over lives in the audit trail. So this reads
+ * three separate facts, because "the shelves are gone" is not one of them:
+ *
+ * - EVERY rendered position is open. Read from `data-decision-state` on the card
+ *   rather than from words, because a finished position that simply says nothing
+ *   about itself would satisfy a check that hunted for "Entschieden" — and it
+ *   would still be a finished position standing in the queue. This is also the
+ *   fact the counter-probe moves: put one `state: "decided"` position in the
+ *   fixture and the page draws it, because a console that quietly dropped what
+ *   the API handed it would be lying about the queue (§1).
+ * - NO control switches the queue to a past state. The handles are read as a
+ *   family (`decisions-state-…`) and the chip labels are read as words, because
+ *   the two ways back are a re-added toggle and a chip that keeps the old label
+ *   under a new handle.
+ * - The way to the past is exactly ONE link. §8.5 says a sentence with a link,
+ *   not counters, so both the count and the destination are measured.
+ *
+ * The kind chips are deliberately NOT read here. They filter what is waiting and
+ * they stay; a rule that counted "every chip" would take them down with the
+ * state row and would be a different rule than the one that was written.
+ */
+const readDecisionsPast = () => {
+  const page = document.querySelector('[data-testid="page"]')
+  if (!page) return null
+  const label = (element) => (element?.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const cards = [...page.querySelectorAll('[data-testid^="decision-"]')].filter((element) =>
+    /^decision-(current|waiting)-\d+$/.test(element.getAttribute('data-testid') ?? ''),
+  )
+  // Anything that can be pressed and that is not the kind row: the state toggles
+  // used to live in their own ToggleGroup, so "a chip outside the kind group" is
+  // the shape a re-introduction would take whatever its handle said.
+  const chips = [...page.querySelectorAll('[data-slot="toggle-group-item"], button[role="radio"]')].filter(
+    (element) => !/^decisions-kind-/.test(element.getAttribute('data-testid') ?? ''),
+  )
+  const auditLinks = [...page.querySelectorAll('a[href]')].filter((element) =>
+    /\/audit(\?|$)/.test(element.getAttribute('href') ?? ''),
+  )
+  const history = page.querySelector('[data-testid="decisions-history"]')
+
+  return {
+    cards: cards.length,
+    states: cards.map((element) => element.getAttribute('data-decision-state')),
+    stateHandles: [...page.querySelectorAll('[data-testid^="decisions-state-"]')].map((element) =>
+      element.getAttribute('data-testid'),
+    ),
+    strayChips: chips.map((element) => label(element)).filter(Boolean),
+    auditLinkCount: auditLinks.length,
+    auditLinkText: auditLinks.map((element) => label(element)),
+    historyText: history ? label(history) : null,
+    // A counter beside the link would make the history a second queue, which is
+    // exactly what §8.5 refuses. Digits in the sentence are the cheapest sign.
+    historyHasDigits: history ? /\d/.test(label(history)) : false,
+  }
+}
+
+/**
  * The three prohibitions, read off whatever page is open.
  *
  * §2 ("Unbekannt" is forbidden as a state) is read from visible text *and* from
@@ -1261,7 +1321,7 @@ try {
   // ───────────────────────────────────────────────────────────────────────────
   // With a gate open: the shell's labels, the banner, the queue and the counter.
   // ───────────────────────────────────────────────────────────────────────────
-  section('the shell with a gate open — rules 1, 2, 3, 5a, 6, 9, 11')
+  section('the shell with a gate open — rules 1, 2, 3, 5a, 6, 9, 11, 16')
   const queue = openQueue()
   const { context, page } = await contextFor(browser, queue)
 
@@ -1585,6 +1645,79 @@ try {
         ? `no counter is rendered, while the queue lists ${seen.cards} position(s)`
         : `counter "${seen.badgeText}", queue ${seen.cards} position(s) (${seen.current} current + ${seen.aging} aging)`,
   })
+
+  // ── Rule 16 (§8.5), on the same page and the same fixture. What waits stands
+  //    here; what is over lives in the trail and is reached by one link.
+  const past = await page.evaluate(readDecisionsPast)
+  if (
+    check(past !== null, {
+      rule: 16,
+      paragraph: '§8.5',
+      where: 'Entscheidungen (route /decisions)',
+      expected: 'the page renders — §8.5 cannot be measured on a page that is not there',
+      found: 'no [data-testid="page"] on the route',
+    })
+  ) {
+    const finished = past.states.filter((state) => state !== 'open')
+    check(past.cards > 0 && finished.length === 0, {
+      rule: 16,
+      paragraph: '§8.5',
+      where: 'Entscheidungen (route /decisions) › the positions in the queue',
+      expected: 'every position is open — deferred, dismissed and decided are past and belong to the audit trail',
+      found:
+        past.cards === 0
+          ? 'the queue rendered no position at all, so the rule went unmeasured against this fixture'
+          : `${finished.length} of ${past.cards} position(s) carry a finished state: ${finished.join(', ')}`,
+    })
+    check(past.stateHandles.length === 0, {
+      rule: 16,
+      paragraph: '§8.5',
+      where: 'Entscheidungen (route /decisions) › toolbar',
+      expected: 'no control switches the queue to a past state',
+      found: `${past.stateHandles.length} state control(s): ${past.stateHandles.join(', ')}`,
+    })
+    const pastWords = past.strayChips.filter((text) => /Zurückgestellt|Verworfen|Entschieden/.test(text))
+    check(pastWords.length === 0, {
+      rule: 16,
+      paragraph: '§8.5',
+      where: 'Entscheidungen (route /decisions) › the chips above the queue',
+      expected: 'the chips name the KIND of what is waiting; none of them names a past state',
+      found: `chip(s) reading: ${pastWords.join(', ')}`,
+    })
+    // "Regal"/"shelf" is vocabulary from a paragraph that no longer exists; §5
+    // forbids leaking it into the surface under any label.
+    check(!/Regal|Shelf/i.test(`${past.historyText ?? ''} ${past.strayChips.join(' ')}`), {
+      rule: 16,
+      paragraph: '§8.5 / §5',
+      where: 'Entscheidungen (route /decisions)',
+      expected: 'the word "Regal" appears nowhere on the surface',
+      found: `"${past.historyText ?? ''}" / ${past.strayChips.join(', ')}`,
+    })
+    if (
+      check(past.auditLinkCount === 1, {
+        rule: 16,
+        paragraph: '§8.5',
+        where: 'Entscheidungen (route /decisions) › the way to the history',
+        expected: 'exactly one link to the audit trail',
+        found: `${past.auditLinkCount} link(s) to /audit: ${past.auditLinkText.join(', ') || 'none'}`,
+      })
+    ) {
+      check(past.historyText !== null && /Was bereits entschieden wurde/.test(past.historyText), {
+        rule: 16,
+        paragraph: '§8.5',
+        where: 'Entscheidungen › [data-testid="decisions-history"]',
+        expected: '"Was bereits entschieden wurde: Audit-Trail" — a sentence that says what is behind the link',
+        found: past.historyText === null ? 'the link stands without a sentence' : `"${past.historyText}"`,
+      })
+      check(!past.historyHasDigits, {
+        rule: 16,
+        paragraph: '§8.5',
+        where: 'Entscheidungen › [data-testid="decisions-history"]',
+        expected: 'no count beside the link — a number would make the history a second queue',
+        found: `"${past.historyText}"`,
+      })
+    }
+  }
 
   // ── Rules 4, 7 and 8 (§2, §8.3, §5) — prohibitions, so every route.
   section(`the prohibition sweep over ${ROUTES.length} route(s) — rules 4, 7, 8, 13, 14`)
@@ -2040,6 +2173,7 @@ if (violations.length > 0 || notMeasured.length > 0) {
           '13 · §4 — no route and no detail surface answers with an error screen; a page that threw is not a page that passed',
           '14 · §5 — no catalogue key is rendered as if it were a sentence; the key list is the catalogue itself, so the rule needs no word list',
           `15 · §7 — the convention copy in the repository root is version ${KONVENTION_VERSION}, the one this checker was written against`,
+          '16 · §8.5 — the decisions page carries nothing that is over: every position is open, no control switches the queue to a past state, and the history is reached by exactly one link to the audit trail',
         ],
       },
       null,
