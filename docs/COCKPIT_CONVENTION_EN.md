@@ -2,7 +2,22 @@
 
 Version 1.6 · 2026-08-21 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
 
-**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `7d04d842a705c31b5012541e7687ebc42e9b469ba5c1dd1a58d3447811dcd8c4`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `d075f69db5a178fc85b58cf0985334f79d5f2cd99f07eec74c9a1af2e834072a`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+
+## 0. What the cockpit is for
+
+**Decision of 2026-08-21 — this section applies before all others.**
+
+The cockpit shows the **present**: users and workflows, overview, reports, current data, and **the decisions that are waiting to be made**.
+
+**The past belongs in the audit trail.** Every product has its own area in the cockpit for it, and the past is retrievable there in full — which is exactly why it must not be reused anywhere else.
+
+The distinction that settles a doubtful case:
+
+- A **property of a current thing** stays where that thing is. “Last used” on a key row describes the key, not the history.
+- A **stream of past events** belongs in the audit trail. Not a second surface, not a counter tile, not a dimmed section below a list.
+
+Before building a surface, answer this first: **does a human have to do something here, or see something current?** If not, it belongs in the audit trail, not in the cockpit.
 
 ## 1. Home-screen contract
 
@@ -10,7 +25,7 @@ The first screen has three zones in this order:
 
 1. **Waiting for you.** One card contains every human gate, its count, the age of the oldest item and one action per row. It turns amber when non-empty. The Overview navigation entry repeats the deduplicated count. The card is the top slice of the Decisions queue and links to it; decisions happen on the Decisions page.
 2. **Core-object hero.** ContentKit's product signature is the release chain.
-3. **Recent activity.** The latest runs or changes, with every row linked when a destination exists.
+3. **The way to the past, not the past itself.** One line at the end: “What happened recently → **Audit trail**.” No event stream on the home screen, no list of recent runs. *(Decision of 2026-08-21.)*
 
 Every count links to its source. Every red state provides a path to the cause. Operational HTTP, p95 and call metrics live under Installation → System, never on Overview.
 
@@ -69,6 +84,14 @@ More context uses a named control such as **Show more**, never an unlabeled chev
 ### 8.5 State and history are separate surfaces
 
 The Decisions page shows only what is waiting for a human. Deferred, dismissed and decided items are past: finished work leaves the queue rather than being dimmed, struck through, parked in sections below it or brought back by state chips. A control that switches the queue to a past state breaks the convention; queue filters filter the **kind**, never the state. The full history lives in the append-only audit trail and is reachable from the Decisions page through **exactly one** link—a sentence, not a row of counters. Where the past arrives there as a machine value only, name it and make it filterable in the trail; do not move the sections back into the queue.
+
+### 8.5a Counter tiles
+
+Wanted for **open** work — when they break decisions down by **category** and thereby create an overview, rather than repeating a total. Every tile leads to the filtered list. For **finished** work there are none. *(2026-08-21.)*
+
+### 8.5b The number itself is a design question
+
+A Decisions page that puts hundreds of items in front of a human has failed at its job, however well it is structured. That is not a presentation problem but a scoping one: **what is alike is folded into one decision; what has no consequence is not a decision at all.**
 
 ### 8.6 Empty and incidents
 

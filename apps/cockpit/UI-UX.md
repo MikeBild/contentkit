@@ -15,7 +15,7 @@ the real work, and stating an absolute the console breaks forty-four times. A st
 guide that is wrong about itself is worse than none, so the marking matters as much as
 the rules.
 
-The family-level behaviour contract is [Cockpit Convention 1.5](../../COCKPIT-KONVENTION.md),
+The family-level behaviour contract is [Cockpit Convention 1.6](../../COCKPIT-KONVENTION.md),
 the German source in the repository root. It complements this product-specific
 component and layout guide. A shortened English translation for operators is
 [docs/COCKPIT_CONVENTION_EN.md](../../docs/COCKPIT_CONVENTION_EN.md) — a reading aid,
@@ -348,6 +348,18 @@ Jedes Produkt, das menschliche Entscheidungen sammelt (Freigaben, Reviews, Budge
 **8.4 Aufklappen.** Zeilen mit mehr Kontext tragen unten links einen benannten Toggle („Mehr anzeigen"), nie einen nackten Chevron. Aufgeklappt: volle Begründung, Rohdaten der Quelle, ggf. Formular für strukturierte Rückfragen. Die Entscheidungs-Buttons wandern ins Panel (kollabiert Kompakt-Form, expandiert Voll-Form).
 
 **8.5 Zustand und Geschichte sind getrennte Flächen.** Die Entscheidungs-Seite zeigt ausschließlich, was auf den Menschen wartet. Zurückgestellt, Verworfen und Entschieden sind Vergangenheit: Erledigtes verlässt die Queue — es wird nicht gedimmt, nicht durchgestrichen, nicht in eigene Sektionen unter der Queue gestellt und nicht über Zustands-Chips wieder hereingeholt. Ein Umschalter, der die Queue auf einen vergangenen Zustand stellt, ist ein Konventionsbruch; Filter auf der Queue filtern die **Art**, nie den Zustand. Die vollständige Geschichte wohnt im Audit-/Aktivitätsprotokoll (append, nie gekürzt) und ist von der Entscheidungs-Seite über **genau einen** Verweis erreichbar — ein Satz mit Link, keine Zähler-Kacheln. Wo die Vergangenheit dort nur als Maschinenwert ankommt, gehören Benennung und Filter ins Protokoll, nicht die Sektionen zurück in die Queue.
+
+**8.5a Zähler-Kacheln.** Für **Offenes** erwünscht — wenn sie Entscheidungen nach **Kategorie**
+aufschlüsseln und dadurch Übersicht schaffen, statt eine Summe zu wiederholen. Jede Kachel führt
+auf die gefilterte Liste. Für **Erledigtes** gibt es keine. *(Mike, 21.08.2026.)*
+
+**8.5b Die Zahl selbst ist eine Design-Frage.** Eine Entscheidungs-Seite, die einem Menschen
+Hunderte Positionen vorlegt, hat ihre Aufgabe verfehlt, egal wie gut sie gegliedert ist.
+Gemessen am 21.08.2026: WatchKit legt **359 Positionen** vor, weil Doku- und Drift-Befunde als
+Entscheidungen zählen; WorkKit zeigt **15 gleichartige Budget-Sperren einzeln**; SubKit lässt
+**jede Korrektur-Karte einer Gruppe einzeln** entscheiden; bei SubKit sind **32 von 35**
+Positionen wartende Unterhaltungen. Das ist kein Darstellungs-, sondern ein Zuschnittsproblem:
+**was gleichartig ist, wird zu einer Entscheidung zusammengefasst; was folgenlos ist, ist keine.**
 
 **8.6 Leere.** Nie etwas offen: grüner Check, „Alles erledigt" + „Gerade wartet keine Entscheidung auf dich." Nur weggefiltert: eigene, kompaktere Meldung mit Hinweis auf die Filter. Beide getrennt testbar (§4 gilt).
 
