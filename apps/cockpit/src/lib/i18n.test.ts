@@ -51,11 +51,12 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  * THIS LIST IS MEASURED, NOT COMPLETE, and the difference is the whole lesson
  * here. Its first version named ONE limit and called that the list. Its second
  * named seven and said "the probe's named limits are seven": nine more were
- * found the same day, by rerunning the same fixtures against the SHIPPED probe.
- * A count of blind spots is a claim about what nobody has looked for yet, and
- * that claim cannot be measured — so it is not made. What is claimed is that
- * each entry below has a measurement, and that the reach is wider than any of
- * them costs today, which IS measurable and is measured.
+ * measured against the SHIPPED probe the same day, and seven more within the
+ * hour after that. A count of blind spots is a claim about what nobody has
+ * looked for yet, and that claim cannot be measured — so it is not made. What is
+ * claimed is that every entry below carries its own measurement, and that none
+ * of them hides copy on this tree today. Both of those ARE measurable, and both
+ * are measured.
  *
  * DRAWN, THEN DISCARDED
  *   1. A single English word in an attribute nobody listed as copy. The probe
@@ -111,7 +112,7 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  *   • Closing 13 turns up nothing at all.
  * So the console hides no copy behind these limits today. That is a statement
  * about this tree on this day, and it is re-measurable; it is not a statement
- * that the list below has an end.
+ * that the list above has an end.
  *
  * The probe reports what it can prove from this file, never what it suspects.
  */
