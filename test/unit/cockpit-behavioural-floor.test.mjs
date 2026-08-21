@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -64,9 +65,13 @@ import { fileURLToPath } from 'node:url'
  * is genuinely obsolete, deleting its entry is a reviewable line in a diff, not a
  * silently vanished assertion.
  *
- * Node reads none of the cockpit as a module — every check here is over text —
- * so this runs identically wherever the root suite runs, with or without the
- * cockpit's own node_modules installed.
+ * Node reads none of the cockpit as a module, and all but one check here is over
+ * text — so this runs identically wherever the root suite runs, with or without
+ * the cockpit's own node_modules installed. The exception is section 3, which
+ * LIFTS the i18n probe out of its test file and RUNS it: a text check over a
+ * probe can only ever pin the words the probe is described in, never the
+ * surfaces it reads. `typescript` is a root devDependency for that reason, so
+ * the exception costs the independence from apps/cockpit/node_modules nothing.
  */
 
 const here = fileURLToPath(import.meta.url)
@@ -780,12 +785,15 @@ const I18N_CONTRACTS = [
     promise:
       'The probe’s reach is itself a case: JSX text, a JSX expression several hops from its literal, and an ' +
       'attribute outside any four-name list are all reported, while a testid and a class list are not.',
-    // Each surface is pinned through its EXPECTATION, never through the word
-    // alone: `Raw text`, `A raw title` and `not-copy` all stand in the inline
-    // fixture too, so a bare /Raw text/ was satisfied by the snippet and
-    // reported nothing about whether anything was still asserted on it.
-    // Measured: with those three, deleting a surface from the probe and its
-    // one assertion left this file 8/8 green for all three surfaces.
+    // TEXT ONLY, AND KNOWN TO BE. These five regexes pin that the case still
+    // makes five assertions; they cannot pin WHICH SURFACE each one runs over.
+    // Measured: delete `ts.isJsxText` from the probe, leave all five expect
+    // lines verbatim, move `Raw text` in the snippet to `<img alt="Raw text" />`
+    // — the value arrives through the attribute surface instead, this file
+    // stayed 8/8 and the cockpit's own vitest stayed 113/113
+    // (LOCAL-CK-BODEN-BINDET-NICHT-DIE-FLAECHE). What binds the surfaces is
+    // section 3 below, which runs the probe instead of reading it. This entry's
+    // remaining job is the one a grep can do: the case must still exist.
     title: /reads jsx text, jsx expressions and attributes alike/i,
     asserts: [
       /toContain\('Raw text'\)/,
@@ -1292,5 +1300,181 @@ describe('what is still graded by grep is written down', () => {
       `behavioural floor: ${N} contracts pinned across ${cases.length} rendering cases in ${suiteFiles.length} files, ` +
         `over ${COVERED_SUBJECTS.length} modules — ${M} named flows and ${uncoveredModules} modules still graded by grep.`,
     )
+  })
+})
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 3 — THE ONE CHECK THAT IS NOT A GREP.
+ *
+ * A PROBE THAT ASSERTS `offenders == []` CANNOT NOTICE ITS OWN NARROWING. Take a
+ * reading surface away from it and it finds FEWER violations — a subset of
+ * empty. So the i18n probe's case against the real tree is no guard over its
+ * reach, and neither is any amount of text about it:
+ *
+ *   • `/Raw text/` was satisfied by the probe's own inline fixture, which
+ *     contains those words (LOCAL-CK-BODEN-PINNT-DEN-SCHNIPSEL).
+ *   • `/toContain\('Raw text'\)/` was satisfied with `ts.isJsxText` DELETED, the
+ *     five expect lines left verbatim and the value moved to `alt=` in the
+ *     snippet — measured, 8/8 green, cockpit vitest 113/113 green
+ *     (LOCAL-CK-BODEN-BINDET-NICHT-DIE-FLAECHE).
+ *
+ * Both failures are the same one: a word about a surface is not the surface. So
+ * this section lifts `drawnValues` out of i18n.test.ts verbatim — every top-level
+ * declaration of the file, transpiled and called, never a re-implementation — and
+ * runs it over fixtures THIS FILE owns. Each surface gets a fixture in which its
+ * sentinel is reachable through that ONE surface and no other, and the assertion
+ * names the surface (`hit.attribute`) as well as the value. Deleting a branch is
+ * then red here whatever the probe's own case says, and moving a sentinel to
+ * another surface means editing this file — a reviewable line in a diff.
+ *
+ * The fixtures are deliberately not the probe's: sharing one would put the guard
+ * back inside the thing it guards.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const PROBE_FILE = join(cockpit, 'lib', 'i18n.test.ts')
+
+/**
+ * The shipped probe, made callable.
+ *
+ * Every top-level declaration of i18n.test.ts except its imports and its
+ * `describe(…)` — so `drawnValues` runs here exactly as vitest runs it, and a
+ * probe that no longer parses, no longer exists or no longer defines
+ * `drawnValues` is a red test rather than a skipped one.
+ */
+function liftProbe() {
+  const source = readFileSync(PROBE_FILE, 'utf8')
+  const parsed = ts.createSourceFile(PROBE_FILE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const declarations = parsed.statements
+    .filter((node) => !ts.isImportDeclaration(node) && !ts.isExportDeclaration(node) && !ts.isExpressionStatement(node))
+    .map((node) => node.getText(parsed))
+    .join('\n\n')
+  const js = ts.transpileModule(declarations, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText
+  const make = new Function('ts', 'readFileSync', 'globSync', `${js}\nreturn { drawnValues, parse }`)
+  return make(ts, readFileSync, () => {
+    throw new Error('the lifted probe is handed its source; it must not glob the tree')
+  })
+}
+
+/**
+ * One fixture per surface. The sentinel of each reaches the screen through that
+ * surface ALONE — no sentinel appears twice, and none of them is a substring of
+ * another — so a surface that stops being read takes its sentinel with it and
+ * nothing else can answer in its place.
+ */
+const SURFACES = [
+  {
+    id: 'JSX text',
+    why: 'the narrowest of the three surfaces, and the one the mutation deleted while every expectation stayed.',
+    fixture: `
+      export function View() {
+        return <p>floor sentinel drawn as jsx text</p>
+      }
+    `,
+    expect: { text: 'floor sentinel drawn as jsx text', attribute: undefined },
+  },
+  {
+    id: 'JSX expression, five hops from its literal',
+    why: '`{releaseName(release)}` put an English label on the German console and no expression was looked at at all.',
+    fixture: `
+      const MIXED = [{ id: 'overview', reason: 'floor sentinel five hops away' }]
+      function note() {
+        return { reason: MIXED.find((entry) => entry.id === 'overview')?.reason }
+      }
+      export function View() {
+        return <p>{note().reason}</p>
+      }
+    `,
+    expect: { text: 'floor sentinel five hops away', attribute: undefined },
+  },
+  {
+    id: 'JSX attribute, by exclusion rather than by list',
+    why: '`label="extra"` was invisible to a four-name allowlist; the attribute below is on no list at all.',
+    fixture: `
+      export function View() {
+        return <Field unlisted="floor sentinel in an unlisted attribute" />
+      }
+    `,
+    expect: { text: 'floor sentinel in an unlisted attribute', attribute: 'unlisted' },
+  },
+]
+
+/** What must NOT be drawn: reporting these would drown the copy that matters. */
+const NOT_SURFACES = [
+  {
+    id: 'a testid',
+    fixture: `
+      export function View() {
+        return <p data-testid="floor sentinel on a testid">x</p>
+      }
+    `,
+    sentinel: 'floor sentinel on a testid',
+  },
+  {
+    id: 'a class list',
+    fixture: `
+      export function View() {
+        return <p className="floor sentinel in a class list">x</p>
+      }
+    `,
+    sentinel: 'floor sentinel in a class list',
+  },
+]
+
+describe('the i18n probe reads the surfaces it claims — run, not read', () => {
+  test('the probe can be lifted out of its test file and called', () => {
+    const probe = liftProbe()
+    assert.equal(typeof probe.drawnValues, 'function', 'i18n.test.ts no longer defines drawnValues')
+    assert.equal(typeof probe.parse, 'function', 'i18n.test.ts no longer defines parse')
+  })
+
+  for (const surface of SURFACES) {
+    test(`${surface.id} reaches the report`, () => {
+      const probe = liftProbe()
+      const drawn = probe.drawnValues(probe.parse('floor-fixture.tsx', surface.fixture))
+      const hits = drawn.filter((hit) => hit.text.trim() === surface.expect.text)
+      assert.ok(
+        hits.length > 0,
+        `the probe drew nothing for the ${surface.id} surface.\n` +
+          `  it exists because: ${surface.why}\n` +
+          `  a surface the probe stops reading makes it find FEWER offenders, which is a subset of the empty\n` +
+          `  list it asserts against the real tree — so nothing else in this repository goes red for it.\n` +
+          `  drawn instead: ${JSON.stringify(drawn.map((hit) => `${hit.attribute ?? 'JSX'}: ${hit.text.trim()}`))}`,
+      )
+      assert.ok(
+        hits.some((hit) => hit.attribute === surface.expect.attribute),
+        `the ${surface.id} sentinel was reported, but through ${JSON.stringify(
+          hits.map((hit) => hit.attribute ?? '(a JSX child)'),
+        )} instead of ${surface.expect.attribute ? `the ${surface.expect.attribute} attribute` : 'a JSX child'}.\n` +
+          `  Which surface answered is the whole assertion: the value arriving by another route is exactly how a\n` +
+          `  deleted branch stayed green (LOCAL-CK-BODEN-BINDET-NICHT-DIE-FLAECHE).`,
+      )
+    })
+  }
+
+  for (const surface of NOT_SURFACES) {
+    test(`${surface.id} is not drawn`, () => {
+      const probe = liftProbe()
+      const drawn = probe.drawnValues(probe.parse('floor-fixture.tsx', surface.fixture))
+      const wrong = drawn.filter((hit) => hit.text.includes(surface.sentinel))
+      assert.deepEqual(
+        wrong.map((hit) => `${hit.attribute ?? 'JSX'}: ${hit.text.trim()}`),
+        [],
+        `${surface.id} is now reported as copy; the offender list it feeds would drown the copy that is.`,
+      )
+    })
+  }
+
+  test('the surfaces are told apart by their own sentinels', () => {
+    // The guard over the guard: if two fixtures shared a sentinel, or one
+    // sentinel contained another, a single surface could answer for two and the
+    // matrix above would go green on half a probe.
+    const sentinels = [...SURFACES.map((s) => s.expect.text), ...NOT_SURFACES.map((s) => s.sentinel)]
+    assert.equal(new Set(sentinels).size, sentinels.length, 'two fixtures share a sentinel')
+    for (const one of sentinels) {
+      const contained = sentinels.filter((other) => other !== one && other.includes(one))
+      assert.deepEqual(contained, [], `the sentinel "${one}" is a substring of ${JSON.stringify(contained)}`)
+    }
   })
 })
