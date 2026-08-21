@@ -2,111 +2,53 @@
 /**
  * The family convention, asserted against this repo's Cockpit in a real browser.
  *
- * WHY THIS EXISTS
- *
- * COCKPIT-KONVENTION.md is prose in six repositories. §7 says so itself: the
- * convention "wird nicht technisch erzwungen" and is held by two light
- * mechanisms — a versioned copy per repo, and a contract check that reads the
- * running console. This file is the second mechanism for ContentKit. It does not
- * re-check anything a source test can read; it opens the built console and reads
+ * COCKPIT-KONVENTION.md is prose in six repositories, and §7 leaves it to two
+ * mechanisms rather than to enforcement: a versioned copy per repo, and a check
+ * that reads the running console. This is the second one for ContentKit. It
+ * re-checks nothing a source test can read; it opens the built console and reads
  * the words an operator reads, because that is the only place a shared label is
- * either kept or quietly lost. A rule that only exists in a document is a rule
- * that drifts.
+ * kept or quietly lost. Every rule quotes the paragraph it comes from, so a
+ * disagreement is settled against the convention and not against this script —
+ * and an assertion relaxed to make the run green is the one change that makes
+ * this file worthless.
  *
- * WHAT IT RUNS AGAINST
+ * It runs against scripts/cockpit-fixture.mjs: the built `assets/cockpit` on a
+ * local origin, with an API synthesized from docs/openapi.json. On top of that
+ * it overrides the decision queue, whose `counts.open` and `items` the fixture
+ * synthesizes independently — so §8.1's counter rule would otherwise measure the
+ * fixture. Two variants are driven, because §8.7 has two halves: a gate is open
+ * (banner) and nothing is open (no banner).
  *
- * `scripts/cockpit-fixture.mjs` — the built `assets/cockpit` on a local origin,
- * with an API synthesized from `docs/openapi.json`. No database, no backend, no
- * `npm start`; the reasoning for that shape is in that file's header. On top of
- * it this file installs `page.route()` overrides for the one endpoint whose
- * *numbers* have to be coherent rather than merely well-shaped: the decision
- * queue. The fixture synthesizes `counts.open` and `items` independently, so the
- * two disagree by construction — which would turn §8.1's counter rule into a
- * measurement of the fixture instead of the console. Two variants are driven,
- * because §8.7 is a rule with two halves: a gate is open (the banner must be
- * there) and nothing is open (it must not).
+ * MANDATORY STAGE SINCE LOCAL-CK-CHECK-INS-GATE
  *
- * WHAT IT DELIBERATELY DOES NOT DO
+ * Last stage of `npm run verify` and a step of the `cockpit-e2e` job in
+ * .github/workflows/ci.yml. Both, because `verify` is not what CI runs — wired
+ * only there, AK-CK-G.1's "Prüfweg: CI-Gate" would claim more than is held.
+ * Before that it was deliberately ungated: it landed in fa8e45f as a RED backlog
+ * measured against the convention, and a red check cannot gate — the only way
+ * out is to weaken an assertion. That reason lapsed on 20.08.2026 with the last
+ * violation and left no trace; a sweep across all six products found the check
+ * running in no gate, no CI job and no hook (BEFUND-CHECK-LAEUFT-NIRGENDS).
  *
- * It does not soften. Red is a legitimate answer here, and an assertion relaxed
- * to make the output green is the one change that makes this file worthless —
- * the more so now that it is a gate stage, because a gate is a standing
- * temptation to argue with the assertion instead of with the console. Every rule
- * below quotes the paragraph it comes from, so a disagreement is settled against
- * COCKPIT-KONVENTION.md rather than against this script.
+ * WHAT BEING MANDATORY DEMANDED FIRST
  *
- * WHY IT IS A GATE STAGE NOW, AND WHY IT WAS NOT
+ * - Every class of violation exits non-zero. Re-measured against a broken
+ *   wordmark, a broken tab title and a favicon pointing nowhere.
+ * - A run that could not MEASURE is no longer green. `notMeasured` used to print
+ *   above a `conform: true` and exit 0. "Unchecked" is its own answer and a gate
+ *   has to refuse it as firmly as a breach.
+ * - A crash reports what was already found, instead of losing the findings to a
+ *   stack trace: the stand starts inside the same try as the sweep.
  *
- * Until 20.08.2026 this header said the opposite in this very place: "not wired
- * into `verify`, `test`, `validate:*` or any CI workflow, and must not be. It
- * reports where the console stands against the family convention; the repo's own
- * gates report whether the repo is sound. Mixing the two turns a roadmap into a
- * broken build."
+ * AND THE TRAP SPECIFIC TO THIS PRODUCT
  *
- * That was correct for the state it described, and it is worth keeping the
- * reasoning rather than deleting it. This file landed in fa8e45f BEFORE the
- * console had been brought to the convention, so it was deliberately RED — a
- * backlog measured against COCKPIT-KONVENTION.md, not a verdict about the repo.
- * A red check cannot be a gate: it blocks every commit over the defects it
- * exists to enumerate, and the only way out is to weaken an assertion, which
- * deletes exactly the information this file carries.
- *
- * That state ended on 20.08.2026. LOCAL-CK-TITEL, -WORTMARKE, -APPICON,
- * -ART-UNBEKANNT, -DETAILROUTEN, -FAVICON-BASEPFAD and -KONVENTION-V15 closed
- * the backlog one commit at a time, and the run has reported `conform: true`
- * since. With the last violation the reason not to gate lapsed — and nobody
- * noticed, because a reason that lapses leaves no trace anywhere. It took a
- * sweep across all six products to find it (BEFUND-CHECK-LAEUFT-NIRGENDS): the
- * check ran in no gate, no CI workflow and no hook in any of them. A guarantee
- * that is never asked for is a comment, and a check that has been green for a
- * day while nothing calls it is the largest comment in the repository.
- *
- * So since LOCAL-CK-CHECK-INS-GATE it is asked: the last stage of
- * `npm run verify`, after the fast ones and after `validate:cockpit`, which is
- * what builds the bundle it reads; and a step of the `cockpit-e2e` job in
- * .github/workflows/ci.yml, the one CI job that already has a browser and a
- * fresh build. Both, because `verify` is not what CI runs — putting it only in
- * `verify` would leave AK-CK-G.1's "Prüfweg: CI-Gate" claiming more than is
- * held, which is the same defect one level up.
- *
- * WHAT A GATE STAGE OWES, AND WHAT HAD TO CHANGE FIRST
- *
- * A gate hangs on an exit code, so a check that reports red and returns 0 is
- * worse as a mandatory stage than no stage at all. Three things were measured
- * and, where they did not hold, repaired before this file was allowed to carry
- * one (LOCAL-CK-CHECK-INS-GATE):
- *
- * - Every class of violation exits non-zero. It always did; re-measured against
- *   a broken wordmark, a broken tab title and a favicon pointing nowhere.
- * - A run that could not MEASURE is no longer green. `nichtGeprueft` used to be
- *   printed ABOVE a `conform: true` and an exit code of 0 — the report said "I
- *   did not look here" while the gate read "sound", which is the §12 failure the
- *   list was built to end. An unmeasured place now ends the run red and no
- *   `conform: true` is written while one exists. It is still not counted as a
- *   violation: "unchecked" is its own answer, and a gate has to refuse it just
- *   as firmly as a breach. Two sibling products were carrying the same illness
- *   on the same day.
- * - A crash reports what was already found. Rule 15 is measured before the
- *   fixture starts, so a missing or unusable `assets/cockpit` used to end the
- *   run in a stacktrace and take that finding with it. The stand is now started
- *   inside the same try as the sweep, and a stand that cannot be built is an
- *   unmeasured entry with a sentence, not a stack trace where the report goes.
- *
- * AND THE TRAP THAT IS SPECIFIC TO THIS PRODUCT
- *
- * This check measures the BUILT `assets/cockpit`, not the source (the siblings
- * measure a dev server or `vite preview`). As a mandatory stage that is the
- * likeliest way to be lied to: with a stale bundle it certifies a state that is
- * not the source, in green, at speed. Measured rather than assumed — with
- * `app.name` set to "CONTENTKIT" in the catalogue and no rebuild, the run
- * reported `conform: true` and exit 0 over a §6 breach sitting in the source.
- * So what the bundle was built FROM is now part of the measurement: the build
- * hashes its inputs into `assets/cockpit-build-stamp.json`, this run recomputes
- * that hash, and a difference ends the run as unmeasured, red, naming the files
- * that moved. The first version of the guard compared modification times and had
- * three ways to say "fresh" over a changed source — the reasoning, and why a
- * content stamp is both stricter and cheaper, is in
- * scripts/cockpit-build-stamp.mjs.
+ * This check measures the BUILT bundle, not the source (the siblings measure a
+ * dev server), so a stale bundle certifies a state that is not the source, in
+ * green, at speed. Measured: with `app.name` set to "CONTENTKIT" and no rebuild
+ * the run reported `conform: true` over a §6 breach in the source. So the build
+ * hashes its inputs into assets/cockpit-build-stamp.json, this run recomputes
+ * the hash, and a difference ends the run unmeasured and red — see
+ * scripts/cockpit-build-stamp.mjs for why content and not mtime.
  *
  * Run it with `npm run konvention:check`; build the console first, or it will
  * tell you to: `npm run cockpit:build`.
@@ -142,30 +84,14 @@ const DAY = 24 * 60 * MINUTE
 // ─────────────────────────────────────────────────────────────────────────────
 // The version of the standard, twice — once as a label, once as a claim.
 //
-// These look redundant and are not, and getting them confused is how this file
-// spent a day reporting against a document that no longer existed.
+// The LABEL is what every printed line says it measured against. Derived from
+// the copy's header line, because as a literal it went stale silently: the copy
+// moved on, the report kept announcing the old number, green.
 //
-// The LABEL is every line this file prints: "measured against v1.5". Until this
-// commit it was a literal in two places at the bottom and it went stale exactly
-// the way a literal does — the repo's copy moved on, the report kept announcing
-// the old number, green. A verdict that misnames its standard is not a weaker
-// verdict, it is a different one. So the label is read out of the copy's header
-// line and cannot be forgotten.
-//
-// But a label read out of the file can never CONTRADICT the file. Leave a v1.3
-// copy lying in this repo and the run cheerfully says "measured against v1.3"
-// and passes; it cannot notice that it is measuring against a superseded
-// agreement, because the two agree by construction. §7 makes the per-repo copy
-// the mechanism against drift, and a mechanism that cannot disagree is
-// decoration. WikiKit found this in AK-WI-G.1 — an acceptance criterion naming
-// "v1.4" in prose would have been satisfied by an outdated copy.
-//
-// So the CLAIM sits beside it: the version this checker was written against,
-// typed out by hand, and asserted against the header (rule 15). Hand-typed on
-// purpose — derive it and the assert proves nothing. This file rose from v1.4
-// to v1.5 by hand and the places that said "v1.4" were found by grep; that is
-// the drift a machine should catch. Construction copied from CodeKit's
-// `checkKonventionVersion`, in this file's own idiom — not imported.
+// The CLAIM is rule 15, hand-typed, held against that same header. Derive it and
+// the assertion proves nothing — a superseded copy would then agree with itself
+// and pass. Construction from CodeKit's `checkKonventionVersion`, copied rather
+// than imported.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The version this checker was written against. Typed, never derived. */
@@ -175,7 +101,7 @@ const conventionSource = await readFile(join(root, 'COCKPIT-KONVENTION.md'), 'ut
 const CONVENTION_HEADER = /^Version (\d+\.\d+) · /m.exec(conventionSource)?.[1] ?? null
 const CONVENTION = CONVENTION_HEADER
   ? `COCKPIT-KONVENTION.md v${CONVENTION_HEADER}`
-  : 'COCKPIT-KONVENTION.md (Kopfzeile ohne lesbare Version)'
+  : 'COCKPIT-KONVENTION.md (header line without a readable version)'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The routes, read from the router rather than written down.
@@ -197,18 +123,12 @@ if (ROUTES.length < 16) {
 // ─────────────────────────────────────────────────────────────────────────────
 // …and checked against the navigation, which is a DIFFERENT list.
 //
-// The obvious mistake — and a sibling console made it — is to derive the sweep
-// from the navigation instead. The navigation is not the console: `/profile`
-// here is a full route reached from the account menu and is not in `NAV` at all,
-// and ContentKit's navigation is additionally SCOPE-FILTERED, so an entry an
-// operator lacks the permission for is not in the DOM to be derived from. Either
-// way a page would be structurally invisible to this file while being one click
-// away for an operator.
-//
-// So the router stays the source and the navigation is only asserted AGAINST it:
-// every navigation target must be a route. That catches the other direction — a
-// menu entry pointing at a path the router does not serve — which the router
-// list alone cannot see.
+// Deriving the sweep from the navigation — as a sibling console did — hides
+// pages: `/profile` is reached from the account menu and is in no NAV entry, and
+// this navigation is scope-filtered, so an entry the operator lacks permission
+// for is not in the DOM at all. The navigation is therefore only asserted
+// AGAINST the router: every target must be a route. That catches the other
+// direction, a menu entry pointing at a path the router does not serve.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const shellSource = await readFile(join(root, 'apps/cockpit/src/app/shell.tsx'), 'utf8')
@@ -228,22 +148,12 @@ if (ORPHAN_NAV.length > 0) {
 // ─────────────────────────────────────────────────────────────────────────────
 // The catalogue's own keys, so a key on screen can be recognised as one.
 //
-// WHY A CHECK LIKE THIS EXISTS AT ALL
-//
-// A sibling console shipped three buttons in English that already had German
-// catalogue entries: its translation helper only descended into a single string
-// child, and putting an icon beside the word turned the children into an array
-// it walked past. ContentKit cannot fail that way — `t()` takes a key and returns
-// a string, so nothing about a component's children can reach it — but it has a
-// failure of the same SHAPE, and this run created it deliberately: `translate()`
-// degrades a key it cannot resolve to the key itself rather than throwing
-// (LOCAL-CK-ART-UNBEKANNT). That is the right trade and a silent one, because a
-// dotted identifier in a table cell looks like data.
-//
-// So the rule is the sibling's rule in this console's spelling: a catalogue key
-// visible on screen PROVES the sentence never came out of the catalogue. It needs
-// no word list — the catalogue is the list — and it catches every future
-// occurrence of the class rather than the one that was noticed.
+// `translate()` degrades an unresolvable key to the key itself rather than
+// throwing (LOCAL-CK-ART-UNBEKANNT) — the right trade, and a silent one, because
+// a dotted identifier in a table cell looks like data. A catalogue key visible on
+// screen therefore PROVES the sentence never came out of the catalogue. The rule
+// needs no word list: the catalogue is the list, so it catches the whole class
+// rather than the one occurrence somebody noticed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const i18nSource = await readFile(join(root, 'apps/cockpit/src/lib/i18n.ts'), 'utf8')
@@ -259,35 +169,21 @@ if (CATALOGUE_KEYS.length < 500) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The detail surfaces — the half of the console this file could not see.
+// The detail surfaces — the half of the console the sweep could not see.
 //
-// WHY THIS EXISTS
+// Visiting the eighteen ROUTES and stopping there made every prohibition a
+// statement about list pages only, and in this family the breaches were on the
+// detail surfaces: a sibling had an English field table with a bare UUID, found
+// by a human on a screenshot (LOCAL-CK-DETAILROUTEN).
 //
-// The sweep below used to visit the eighteen ROUTES and stop there, and the
-// prohibitions it carries — no visible UUID, no bare "OK", no "Unbekannt" — were
-// therefore statements about list pages only. Every surface that shows ONE
-// record was structurally out of reach, and in this family that is exactly where
-// the breaches were found: a sibling console had a full field table in English
-// with an undisguised UUID on a detail page, and another had a whole English
-// services page, and both were found by a human looking at a screenshot rather
-// than by a check (LOCAL-CK-DETAILROUTEN).
-//
-// WHY IT IS A TABLE OF CLICKS AND NOT A LIST OF ROUTES
-//
-// Because ContentKit's console has NO detail routes. `router.tsx` is eighteen
-// static paths and not one `$id` among them: a document, a published entry, a
-// pattern, a webhook endpoint, an audit event and a contact submission are all
-// opened WITHIN their list page, as a dialog, an expanding row or a full-page
-// swap that never moves the URL. "Visit the detail route" is not a thing that
-// can be done here; opening the surface is. So each entry names the collection,
-// the route it lives on, the handles to click in order, and the handle the
-// surface itself carries — and the surface has to actually appear, or the entry
-// is reported as unmeasured rather than passed over.
-//
-// Index-based handles (`content-row-0-open`) are used deliberately: every row
-// trigger in this console is templated on the row INDEX, not on the record id,
-// so `-0-` means "the first row, whatever it is" and survives a fixture whose
-// ids change.
+// It is a table of CLICKS because this console has no detail routes — eighteen
+// static paths, not one `$id`. A record opens within its list page, as a dialog,
+// an expanding row or a full-page swap that never moves the URL. So each entry
+// names the collection, its route, the handles to click in order and the handle
+// the surface carries; a surface that does not appear is reported as unmeasured
+// rather than passed over. Handles are index-based (`content-row-0-open`)
+// because every row trigger is templated on the row index, so `-0-` survives a
+// fixture whose ids change.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DETAILS = [
@@ -389,17 +285,14 @@ const WITHOUT_DETAIL = [
 // ─────────────────────────────────────────────────────────────────────────────
 // The decision queue, made coherent.
 //
-// The shape is DecisionList from docs/openapi.json, so nothing here can describe
-// a body the console does not expect. The *contents* answer UEBERGABE.md's
-// AK-CK-1.1 — five waiting drafts, two moderation cases, one open promotion —
-// with three of them opened more than three days ago so that §8.2's aging
-// rubric has something to render, and one past its deadline so §8.1's counter
-// has a reason to turn red.
+// Shape: DecisionList from docs/openapi.json. Contents: AK-CK-1.1's five waiting
+// drafts, two moderation cases and one open promotion, three of them older than
+// three days so §8.2's aging rubric renders, one past its deadline so §8.1's
+// counter has a reason to turn red.
 //
-// Timestamps are stamped against the run rather than frozen: the queue splits
-// "current" from "waiting longer" against `Date.now()`, so a fixed instant would
-// drift every position into the aging rubric and the split would stop being
-// observable.
+// Timestamps are stamped against the run, not frozen: the queue splits "current"
+// from "waiting longer" against `Date.now()`, so a fixed instant would drift
+// every position into the aging rubric.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function decisionId(index) {
@@ -555,19 +448,13 @@ function check(condition, entry) {
 // ─────────────────────────────────────────────────────────────────────────────
 // How far the run actually got.
 //
-// The sweep below runs inside one `try`, and its `catch` used to say the same
-// fixed sentence whichever way the run ended: "nothing below rule 15 was
-// measured". That is true when the stand never came up, and false the moment it
-// falls over mid-sweep — the LOCAL-CK-CHECK-INSTABIL case, where a TimeoutError
-// in open() arrives long after the sidebar, the banner, the queue and the
-// wordmark have all been read. Measured: a broken <title> plus an injected
-// failure just before the route loop printed the rule 11 violation and claimed
-// two lines further down that nothing had been measured.
-//
-// That is the same disease as the one the catch was written to cure, pointed
-// the other way: a report asserting more than it knows. So the run keeps a
-// count of the assertions it has carried and the name of the section it is in,
-// and the failure sentence is built from those instead of being a constant.
+// The catch below used to say "nothing below rule 15 was measured" whichever way
+// the run ended — true when the stand never came up, false when it falls over
+// mid-sweep (LOCAL-CK-CHECK-INSTABIL). Measured: a broken <title> plus an
+// injected failure before the route loop printed the rule 11 violation and
+// claimed two lines later that nothing had been measured. So the run counts the
+// assertions it has carried and names the section it is in, and the failure
+// sentence is built from those.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let checksRun = 0
@@ -1138,52 +1025,33 @@ if (
 // ─────────────────────────────────────────────────────────────────────────────
 // WHOSE CONSOLE ANSWERED.
 //
-// Every rule below reads a surface. None of them asks who is on the other end,
-// and the family has made that question expensive: §-by-§ the convention makes
-// the DOM anchors of all six consoles identical — `cockpit-wordmark`,
-// `operator-role`, `sidebar`, `page-title` — precisely so that one check and one
-// parity harness have a shared footing. A sibling therefore satisfies every
-// precondition this script would otherwise trip over.
+// The convention makes the DOM anchors of all six consoles identical on purpose
+// — `cockpit-wordmark`, `operator-role`, `sidebar`, `page-title` — so a sibling
+// satisfies every precondition below. Paid for once already: in CodeKit, WorkKit
+// answered on the harness port and the run produced EIGHT violations in 156 s
+// about a surface that was never CodeKit. As a mandatory stage a wrong report
+// does not merely mislead, it blocks — and the obvious answer to that is to
+// silence the check.
 //
-// It has been paid for once. In CodeKit, WorkKit answered on the harness port
-// and the run produced EIGHT violations in 156 s about a surface that was never
-// CodeKit. That is worse than a timeout: a timeout gets investigated, and eight
-// concrete violations get repaired. Since the check became a mandatory stage a
-// wrong report is not merely misleading but blocking — and the obvious response
-// to a mandatory stage reporting inexplicable breaches is to silence it.
+// Here the foreign responder is a foreign BUNDLE, not a foreign port: the
+// fixture binds an ephemeral port and serves whatever is in `assets/cockpit`.
+// The content stamp hashes SOURCES and says nothing about those bytes —
+// measured: with WatchKit's bundle in place the stamp passed and the run went on
+// to measure WatchKit.
 //
-// THE SHAPE THE MISTAKE TAKES HERE
+// The expected value is DERIVED from `apps/cockpit/index.html`, the single
+// definition site, so a rename moves both sides together and a renamed ATTRIBUTE
+// reports what is true — that the value can no longer be derived — instead of
+// "foreign document" about its own console. Deliberately not the browser title
+// or the wordmark: rule 11 has to be able to find both of those broken (§6).
 //
-// ContentKit's stand does not attach to a port somebody else might hold: the
-// fixture binds an ephemeral port and serves the BUILT `assets/cockpit` off
-// disk. So the foreign responder is a foreign BUNDLE — a sibling's build copied
-// into that directory, a restored artefact from the wrong job, a wrong
-// `--prefix`. The content stamp above does not see it: it hashes SOURCES
-// against the recorded stamp and says nothing about which bytes are in
-// `assets/cockpit`. Measured, not assumed — with WatchKit's built bundle in
-// place the stamp check passed and the run went on to measure WatchKit.
+// The derived value is then held against the root package.json name, because
+// otherwise the two halves can agree while both being wrong: a sibling's
+// index.html copied in here makes the marker and the bundle match and the run
+// certifies `conform: true` next to `product: "WorkKit"`
+// (LOCAL-CK-ZERTIFIKAT-NENNT-FREMDES-PRODUKT).
 //
-// WHY THE VALUE IS DERIVED AND NOT TYPED
-//
-// CodeKit solved it with a marker in the delivered document, and CodeKit's fixer
-// named the weakness himself: there the expected value is a LITERAL in the
-// script while a contract test imports the same value. Rename it and the check
-// says "foreign document" about its own console — the message that is most
-// expensive to get wrong.
-//
-// So there is exactly ONE definition site, `apps/cockpit/index.html`, and this
-// reads it. Change the value and both sides move together. Rename the ATTRIBUTE
-// and the answer is not "foreign document" but the sentence that is true: the
-// expected value can no longer be derived from that file — a finding about THIS
-// repository.
-//
-// And explicitly not the browser title or the sidebar wordmark: rule 11 has to
-// be able to find both of those broken (§6). An identity that is also a checked
-// rule turns every real breach into "that is not even ContentKit" and measures
-// nothing afterwards.
-//
-// Construction taken from WatchKit's `assertPruefstandsKennung`, rewritten in
-// this file's idiom — read, not imported.
+// Construction from WatchKit's `assertPruefstandsKennung`, read, not imported.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The attribute the console gives its own document. */
@@ -1191,6 +1059,9 @@ const IDENTITY_META = 'cockpit-product'
 
 /** The definition site — the only place the value is written down. */
 const IDENTITY_SOURCE = 'apps/cockpit/index.html'
+
+/** The repository the derived identity has to belong to. */
+const REPOSITORY_NAME = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name.toLowerCase()
 
 /** A document's marker, or `null` if it carries none. */
 function markerIn(html) {
@@ -1213,6 +1084,16 @@ function assertStandIdentity(html, origin) {
       `${IDENTITY_SOURCE} no longer carries <meta name="${IDENTITY_META}" content="…">. This assertion derives ` +
         'its expected value from that file and now has none, so it cannot say whose console answered. That is a ' +
         `finding about THIS repository, not a statement about whatever is serving ${origin}.`,
+    )
+  }
+  // The derived value against the repository it is supposed to describe. Without
+  // it, a sibling's index.html copied in here would make marker and bundle agree
+  // and the certificate would name a foreign product next to `conform: true`.
+  if (expected.toLowerCase() !== REPOSITORY_NAME) {
+    throw new Error(
+      `${IDENTITY_SOURCE} declares <meta name="${IDENTITY_META}" content="${expected}">, but this repository is ` +
+        `"${REPOSITORY_NAME}" (package.json). A sibling's document is in this repo, so both the expected value and ` +
+        'the bundle would name the wrong product and agree with each other. Nothing was measured.',
     )
   }
   const delivered = markerIn(html)
@@ -1251,24 +1132,11 @@ function assertStandIdentity(html, origin) {
 /**
  * Whether `assets/cockpit` was built from the sources as they stand.
  *
-
- * The one precondition that is specific to ContentKit. Every rule below except
- * 15 is read off the BUILT console, so a bundle that predates a source change is
- * a checker measuring a build nobody is shipping — and answering green about it,
- * fast, which is the most convincing way to be wrong. The header records the
- * measurement: a §6 breach written into the catalogue and left unbuilt passed
- * this check without a word.
- *
- * The first version of this guard compared modification times, and mtimes
- * answered a different question than the one being asked — a restore that keeps
- * timestamps (`cp -p`, `rsync -a`, `tar -x`, every CI cache restore) hands it a
- * changed source that looks older than the bundle, and it said `conform: true`
- * over a measured §6 breach. Content answers the actual question, costs 20 ms
- * for 189 inputs, and covers the two blind spots the mtime walk also had: the
- * dotted entries it skipped wholesale (`.env.production`, whose `VITE_*` values
- * Vite bakes into the bundle) and the build inputs outside apps/cockpit
- * (`contract/cockpit-ui.css`, `assets/site.css`). The reasoning, the exclusions
- * and the failure direction are in scripts/cockpit-build-stamp.mjs.
+ * The precondition specific to this product: every rule but 15 reads the BUILT
+ * console, and a stale bundle answers green about a build nobody ships. The
+ * guard hashes content rather than comparing mtimes — 20 ms for 189 inputs, and
+ * mtimes said "fresh" over a measured §6 breach after a timestamp-preserving
+ * restore. Reasoning, exclusions and failure direction: cockpit-build-stamp.mjs.
  */
 const BUNDLE_PRECONDITION = 'assets/cockpit was built from the sources as they stand'
 
@@ -1453,17 +1321,10 @@ try {
 
   // ── Rule 11 (§6). The browser tab names the product.
   //
-  //    Read off the SERVED document rather than out of apps/cockpit/index.html,
-  //    which is the whole reason this rule lives here and not in a unit test: the
-  //    file is a template, `transformIndexHtml` plugins rewrite it on the way
-  //    through the build, and a router that sets a per-route title would overwrite
-  //    it again in the browser. What an operator reads on the tab is the last of
-  //    those, and that is what §6 fixes: "<Produktname> Cockpit", exactly.
-  //
-  //    Compared character for character, and deliberately not case-insensitively —
-  //    "Contentkit Cockpit" and "CONTENTKIT COCKPIT" are precisely the two spellings
-  //    the paragraph exists to rule out, and a loose comparison would wave both
-  //    through.
+  //    Read off the SERVED document, not apps/cockpit/index.html: the file is a
+  //    template, build plugins rewrite it, and a per-route title would overwrite
+  //    it again in the browser. Compared character for character — "Contentkit
+  //    Cockpit" and "CONTENTKIT COCKPIT" are the two spellings §6 rules out.
   const title = await page.evaluate(() => document.title)
   check(title === 'ContentKit Cockpit', {
     rule: 11,
@@ -1475,25 +1336,16 @@ try {
 
   // ── Rule 11 (§6). The app icon is declared, and the file behind it exists.
   //
-  //    Two assertions, and the second is the one that matters. §6: "ein Verweis
-  //    ins Leere ist schlimmer als keiner, weil er wie Erfüllung aussieht." This
-  //    fixture makes that failure mode concrete — it answers every unmatched path
-  //    under /cockpit/ with index.html, so a <link rel="icon"> pointing at a file
-  //    nobody built comes back 200 with a web page in it, and a check that only
-  //    read the status would be green over a blank tab. Hence the content type:
-  //    an icon is bytes, not markup.
+  //    §6: a reference into nothing is worse than none, because it looks like
+  //    compliance. The fixture answers every unmatched path under /cockpit/ with
+  //    index.html, so status alone is green over a blank tab — hence the content
+  //    type. And hence `Image.decode()`: this favicon once carried token names in
+  //    an XML comment, two hyphens made it unparseable, and it still answered 200
+  //    with `image/svg+xml`. Only decoding asks what an operator asks.
   //
-  //    And hence the third condition, which cost a screenshot to learn: the
-  //    browser has to be able to DECODE those bytes. The first version of this
-  //    favicon carried the token names in an XML comment, two hyphens in a row
-  //    made the document unparseable, and it still answered 200 with
-  //    `image/svg+xml` — status and content type both saying yes over a broken
-  //    image in every tab. `Image.decode()` is the only one of the three that
-  //    asks the question an operator asks.
-  //
-  //    The href is resolved against the document's own base rather than pasted
-  //    together, because this console is served under /cockpit/ and the base path
-  //    is exactly what a favicon reference gets wrong.
+  //    The href is resolved against the document's own base, because this console
+  //    is served under /cockpit/ and the base path is what favicon references get
+  //    wrong.
   const appIcon = await page.evaluate(() => {
     const link = document.querySelector('link[rel~="icon"]')
     return link
@@ -1517,20 +1369,13 @@ try {
   ) {
     // ── Rule 11 (§6). The built href is exactly `base` + the source href.
     //
-    //    The other half of the same rule; `test/contract/cockpit-bundle.test.mjs`
-    //    holds the first, which is that the SOURCE href must not already carry the
-    //    base. Together the two catch both ways this has gone wrong in the family
-    //    with one construction: doubling the prefix (a sibling built
-    //    /cockpit/cockpit/favicon.svg) and accepting a hand-written one in
-    //    silence (here — Vite leaves an unresolvable path alone, so the prefixed
-    //    spelling builds to the identical string and looks correct while being
-    //    uncoupled from `base`).
-    //
-    //    This half lives here because it needs the BUILT document, which only
-    //    exists after `npm run cockpit:build`; the contract test may not depend on
-    //    build output that is not in the repository. Nothing is repeated between
-    //    them: `base` is read out of vite.config.ts in both places rather than
-    //    written down in either.
+    //    The other half of the rule; test/contract/cockpit-bundle.test.mjs holds
+    //    the first (the SOURCE href must not already carry the base). Together
+    //    they catch both family failures: a doubled prefix
+    //    (/cockpit/cockpit/favicon.svg in a sibling) and a hand-written prefix
+    //    that builds to the identical string while being uncoupled from `base`.
+    //    This half needs the BUILT document, which the contract test may not
+    //    depend on. `base` is read from vite.config.ts in both places.
     const viteConfig = await readFile(join(root, 'apps/cockpit/vite.config.ts'), 'utf8')
     const base = /^\s*base: '([^']+)',/m.exec(viteConfig)?.[1]
     const indexHtml = await readFile(join(root, 'apps/cockpit/index.html'), 'utf8')
@@ -2011,42 +1856,33 @@ for (const entry of [...new Set(fixture?.unanswered ?? [])]) {
 const seconds = ((Date.now() - started) / 1000).toFixed(1)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The gap that is not a gap in the run, but in the file.
+// The gap that is not in the run, but in the file.
 //
-// `nichtGeprueft` above lists what this run TRIED and failed to reach — a hung
-// skeleton, a handle that would not click, a fixture that answered 501. Those
-// are accidents of one run and they go away when the cause does. This is a
-// different animal: LOCALE is fixed to 'de', so the English catalogue is never
-// measured at all, by construction, in every run there has ever been. It cannot
-// go in the same list — a permanent gap parked among transient ones is a
-// permanent gap nobody ever sees again (LOCAL-CK-EINE-SPRACHE-GEPRUEFT).
+// `notMeasured` above lists what this run TRIED and failed to reach; those go
+// away when the cause does. LOCALE is fixed to 'de', so the English catalogue is
+// never measured at all, in every run there has ever been. A permanent gap
+// parked among transient ones is a permanent gap nobody sees again
+// (LOCAL-CK-EINE-SPRACHE-GEPRUEFT), and a mandatory stage's report is read as a
+// certificate, which has to name what it did not examine.
 //
-// It matters more now than it did yesterday: as a mandatory stage this report is
-// read as a certificate, and a certificate has to name what it did not examine.
-//
-// The numbers below are measured, not estimated. Running this same file with
-// LOCALE = 'en' on 20.08.2026 produced 5 violations across four rules, all of
-// them false: those four compare against German literals, so on the English
-// catalogue they do not fall silent, they report the wrong thing. Fixing that —
-// teaching the rules which catalogue they are reading — is
-// LOCAL-CK-ABRUFSATZ-ROUTENTIEFE's neighbour and is deliberately not done here.
-// This sentence only ends the state where the gap did not appear as one.
+// The number below is measured: this file with LOCALE = 'en' on 20.08.2026
+// produced 5 false violations across four rules. Teaching those rules which
+// catalogue they read is deliberately not done here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STRUCTURALLY_NOT_MEASURED = [
-  `Katalog en — dieser Lauf misst nur ${LOCALE} (LOCALE ist fest verdrahtet). Gemessen mit LOCALE = 'en': ` +
-    '5 Verstöße über vier Regeln — 3 (§8.1, „Entscheidungen" → „Decisions"), 6 (§8.2, „Liegt schon länger" → ' +
-    '„Waiting longer"), 10 (§8.6, beide Sätze des geleerten Zustands) und 12 (§2/§5, „Art nicht ermittelbar" → ' +
-    '„Kind not determinable"). Diese vier vergleichen gegen deutsche Literale und schlagen auf en falsch an — ' +
-    'sie schweigen nicht, sie melden Falsches. Die übrigen elf Regeln blieben dabei grün, sind auf en aber ' +
-    'ebenso ungemessen wie diese vier. Das ist eine dauerhafte strukturelle Lücke, kein gescheiterter ' +
-    'Messversuch, und steht deshalb nicht in nichtGeprueft.',
+  `catalogue en — this run measures ${LOCALE} only (LOCALE is hard-wired). Measured with LOCALE = 'en': ` +
+    '5 violations across four rules — 3 (§8.1, "Entscheidungen" → "Decisions"), 6 (§8.2, "Liegt schon länger" → ' +
+    '"Waiting longer"), 10 (§8.6, both sentences of the empty state) and 12 (§2/§5, "Art nicht ermittelbar" → ' +
+    '"Kind not determinable"). Those four compare against German literals, so on en they do not fall silent, they ' +
+    'report the wrong thing. The other eleven stayed green but are just as unmeasured on en. This is a permanent ' +
+    'structural gap, not a failed measurement, and therefore not in notMeasured.',
 ]
 
-// Standing, in both outcomes, above the run's own gaps and above the verdict —
-// for the same reason `nichtGeprueft` is printed there: a certificate has to
-// carry what it did not look at where the eye lands, not only in its JSON.
-console.error(`ℹ nicht gemessen — ${STRUCTURALLY_NOT_MEASURED.length} dauerhafte Lücke(n) dieses Prüfskripts:`)
+// Standing, in both outcomes, above the run's own gaps and above the verdict: a
+// certificate has to carry what it did not look at where the eye lands, not only
+// in its JSON.
+console.error(`ℹ not measured — ${STRUCTURALLY_NOT_MEASURED.length} permanent gap(s) of this checker:`)
 for (const entry of STRUCTURALLY_NOT_MEASURED) console.error(`    ${entry}`)
 console.error('')
 
@@ -2054,9 +1890,9 @@ console.error('')
 // green "conform: true" is a gap nobody reads; §12 wants it where the eye lands
 // first, and the JSON below carries it too so a machine sees the same thing.
 if (notMeasured.length > 0) {
-  console.error(`⚠ nicht geprüft — ${notMeasured.length} Stelle(n), die dieser Lauf NICHT gemessen hat:`)
+  console.error(`⚠ unchecked — ${notMeasured.length} place(s) this run did NOT measure:`)
   for (const entry of notMeasured) console.error(`    ${entry.where}: ${entry.why}`)
-  console.error('  Diese Stellen sind weder konform noch nicht-konform. Sie sind ungeprüft.\n')
+  console.error('  These places are neither conformant nor breaching. They are unchecked.\n')
 }
 
 // A run that could not look is not a run that found nothing. Both endings are
@@ -2065,17 +1901,17 @@ if (notMeasured.length > 0) {
 // console, or fix the stand and run again.
 if (violations.length > 0 || notMeasured.length > 0) {
   for (const entry of violations) {
-    console.error(`✗ Regel ${entry.rule} · ${entry.paragraph} · ${entry.where}`)
-    console.error(`    erwartet: ${entry.expected}`)
-    console.error(`    ist:      ${entry.found}`)
+    console.error(`✗ rule ${entry.rule} · ${entry.paragraph} · ${entry.where}`)
+    console.error(`    expected: ${entry.expected}`)
+    console.error(`    found:    ${entry.found}`)
   }
   if (violations.length > 0) {
-    console.error(`\nKonvention-Check failed: ${violations.length} violation(s) against ${CONVENTION} in ${seconds}s.`)
+    console.error(`\nConvention check failed: ${violations.length} violation(s) against ${CONVENTION} in ${seconds}s.`)
     console.error('Fix the console — never the assertion. Every rule quotes the paragraph it comes from.')
   }
   if (notMeasured.length > 0) {
     console.error(
-      `\nKonvention-Check inconclusive: ${notMeasured.length} place(s) went unmeasured against ${CONVENTION} in ${seconds}s.`,
+      `\nConvention check inconclusive: ${notMeasured.length} place(s) went unmeasured against ${CONVENTION} in ${seconds}s.`,
     )
     console.error(
       standFailure
@@ -2100,13 +1936,13 @@ if (violations.length > 0 || notMeasured.length > 0) {
         // certificate that does not name its subject is a certificate for
         // whatever was lying around — and in this family "whatever was lying
         // around" has already once been a sibling's console.
-        produkt: measuredProduct,
+        product: measuredProduct,
         bundle: bundleDigest,
-        nichtGemessen: STRUCTURALLY_NOT_MEASURED,
+        notMeasuredStructurally: STRUCTURALLY_NOT_MEASURED,
         routes: ROUTES.length,
-        detailflaechen: DETAILS.map((entry) => `${entry.collection} (${entry.route})`),
-        ohneDetailflaeche: WITHOUT_DETAIL.map((entry) => `${entry.collection} (${entry.route}) — ${entry.why}`),
-        nichtGeprueft: notMeasured,
+        detailSurfaces: DETAILS.map((entry) => `${entry.collection} (${entry.route})`),
+        withoutDetailSurface: WITHOUT_DETAIL.map((entry) => `${entry.collection} (${entry.route}) — ${entry.why}`),
+        notMeasured,
         rules: [
           '1 · §5/§6 — the account block spells the role "Administrator"',
           '2 · §6 — the admin navigation block is called "Installation"',
