@@ -821,6 +821,20 @@ const I18N_CONTRACTS = [
     min: 1,
   },
   {
+    id: 'i18n/technical-exceptions-are-scoped-and-earned',
+    promise:
+      'The values allowed to stay raw are allowed per FILE, the way recorded findings are, and every one of them ' +
+      'still silences something in the file it names.',
+    // TECHNICAL was the one exception list with no scope while RECORDED, the
+    // mechanism for exactly this, has been per file since it was written.
+    // Thirteen of its entries are one or two characters — `d`, `h`, `m`, `s`,
+    // `ms`, `kB`, `CK`, `HTTP`, `MCP`, `portfolio` — so unscoped, a drawn "m"
+    // anywhere in the console was silently right (LOCAL-CK-TECHNICAL-UNSCOPED).
+    title: /grants no technical exception for nothing/i,
+    asserts: [/TECHNICAL\.get\(/, /silenced/, /toEqual\(\[\]\)/],
+    min: 1,
+  },
+  {
     id: 'i18n/dates-are-formatted-against-a-locale',
     promise:
       'No date, time or number is formatted against whatever locale the browser happens to run in: every ' +

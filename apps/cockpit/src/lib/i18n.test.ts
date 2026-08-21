@@ -176,32 +176,45 @@ const ANNOUNCED_ARIA = new Set([
 ])
 
 /**
- * Values that are not copy: protocol names, product names, unit symbols and
- * machine identifiers a reader is meant to see verbatim. They are the same
+ * Values that are not copy, BY FILE: protocol names, product names, unit symbols
+ * and machine identifiers a reader is meant to see verbatim. They are the same
  * string in both languages by nature, so a catalog key for them would be a key
  * to keep in step for nothing.
+ *
+ * SCOPED, because it was not, and `RECORDED` two screens down always was. That
+ * asymmetry is not a detail: an unscoped exception is an exception granted to
+ * the whole console, and thirteen of the entries here are one or two characters
+ * — `d`, `h`, `m`, `s`, `ms`, `kB`, `CK`, `HTTP`, `MCP`, `portfolio` … Unscoped,
+ * a drawn `"m"` anywhere in the console was silently right; scoped, it is right
+ * in src/pages/profile.tsx, where a remaining session is counted down as
+ * `4h 12m`, and reported everywhere else.
+ *
+ * Every entry below names the files it actually silences, and the case
+ * "no exception here is granted for nothing" holds that list to what the tree
+ * does: an entry that stops silencing anything is an exception nobody can
+ * check any more, and it goes. `SHA-256` went that way when the list was
+ * measured (LOCAL-CK-TECHNICAL-UNSCOPED).
  */
-const TECHNICAL = new Set([
-  'SHA-256',
-  'POST /v1/sites —',
-  'KiB / 256 KiB',
-  '#0f172a',
-  'Inter, system-ui, sans-serif',
-  'field_name',
-  'HTTP',
-  'MCP',
-  'CK',
-  'portfolio',
-  'ms',
-  'kB',
-  'noreferrer noopener',
-  'Google Analytics 4',
-  'Google Chirp 3 HD',
+const TECHNICAL = new Map<string, string[]>([
+  ['POST /v1/sites —', ['src/forms/site/wizard.tsx']],
+  ['KiB / 256 KiB', ['src/forms/content/body.tsx']],
+  ['#0f172a', ['src/forms/fields/color.tsx']],
+  ['Inter, system-ui, sans-serif', ['src/forms/fields/color.tsx']],
+  ['field_name', ['src/forms/fields/map.tsx']],
+  ['HTTP', ['src/pages/system.tsx']],
+  ['MCP', ['src/pages/system.tsx']],
+  ['CK', ['src/app/shell.tsx']],
+  ['portfolio', ['src/forms/content/preview.tsx']],
+  ['ms', ['src/components/statistics.tsx']],
+  ['kB', ['src/components/statistics.tsx']],
+  ['noreferrer noopener', ['src/pages/assistant.tsx', 'src/content/draft.tsx']],
+  ['Google Analytics 4', ['src/forms/site/sections.tsx']],
+  ['Google Chirp 3 HD', ['src/forms/site/sections.tsx']],
   // The unit suffixes a remaining session is counted down in — `4h 12m`.
-  'd',
-  'h',
-  'm',
-  's',
+  ['d', ['src/pages/profile.tsx']],
+  ['h', ['src/pages/profile.tsx']],
+  ['m', ['src/pages/profile.tsx']],
+  ['s', ['src/pages/profile.tsx']],
 ])
 
 /**
@@ -520,7 +533,7 @@ describe('cockpit i18n', () => {
       for (const hit of drawn) {
         const copy = hit.text.replace(/\s+/g, ' ').trim()
         if (!copy || !LETTERS.test(copy)) continue
-        if (TECHNICAL.has(copy)) continue
+        if (TECHNICAL.get(copy)?.includes(file)) continue
         if (RECORDED.has(`${file}:${hit.attribute ?? ''}`)) continue
         const strict = hit.attribute === undefined || COPY_ATTRIBUTES.has(hit.attribute)
         if (!strict && !PROSE.test(hit.text)) continue
@@ -529,6 +542,31 @@ describe('cockpit i18n', () => {
     }
 
     expect([...new Set(offenders)]).toEqual([])
+  })
+
+  it('grants no technical exception for nothing', () => {
+    // The half that keeps the list above honest once it is scoped. An entry
+    // naming a file it no longer silences anything in is an exception nobody can
+    // check: it reads as evidence, it costs nothing to keep, and the day that
+    // word becomes copy in that file it is already forgiven. Measured when the
+    // list was scoped — `SHA-256` had been silencing nothing at all
+    // (LOCAL-CK-TECHNICAL-UNSCOPED).
+    const silenced = new Set<string>()
+
+    for (const file of globSync('src/**/*.tsx').filter((entry) => !entry.endsWith('.test.tsx'))) {
+      for (const hit of drawnValues(parse(file))) {
+        const copy = hit.text.replace(/\s+/g, ' ').trim()
+        if (!copy || !LETTERS.test(copy)) continue
+        const strict = hit.attribute === undefined || COPY_ATTRIBUTES.has(hit.attribute)
+        if (!strict && !PROSE.test(hit.text)) continue
+        if (TECHNICAL.get(copy)?.includes(file)) silenced.add(`${copy}\u0000${file}`)
+      }
+    }
+
+    const idle = [...TECHNICAL].flatMap(([value, files]) =>
+      files.filter((file) => !silenced.has(`${value}\u0000${file}`)).map((file) => `${file}: ${value}`),
+    )
+    expect(idle).toEqual([])
   })
 
   it('formats every date, time and number against a locale it was told', () => {
