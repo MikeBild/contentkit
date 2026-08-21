@@ -1181,7 +1181,17 @@ const TOOLS = [
       if (!row) throw Object.assign(new Error('pending comment not found'), { statusCode: 404 })
       await audit(deps, principal, {
         siteId: site.id,
-        action: `comment.${input.action}`,
+        // The RESULTING STATUS, not the requested action, which is the same
+        // string the REST route writes (`comment.${input.status}`,
+        // src/routes.mjs). Two spellings for one deed made the audit trail
+        // unsearchable: /v1/audit-events filters `action` by equality, so an
+        // operator who picked "Kommentar freigeben" in the Cockpit saw the
+        // comments approved over HTTP and not the ones approved here, with
+        // nothing on screen saying a second spelling existed
+        // (LOCAL-CK-AUDIT-MCP-SCHREIBWEISE). Rows written before this change
+        // keep the old spelling and are named by apps/cockpit/src/pages/audit.tsx
+        // so they do not read as machine values.
+        action: `comment.${row.status}`,
         resourceType: 'comment',
         resourceId: row.id,
       })

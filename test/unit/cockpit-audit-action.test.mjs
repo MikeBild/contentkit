@@ -30,6 +30,7 @@ const here = fileURLToPath(import.meta.url)
 const root = dirname(dirname(dirname(here)))
 const module = readFileSync(join(root, 'apps', 'cockpit', 'src', 'lib', 'audit-action.ts'), 'utf8')
 const overview = readFileSync(join(root, 'apps', 'cockpit', 'src', 'pages', 'overview.tsx'), 'utf8')
+const auditPage = readFileSync(join(root, 'apps', 'cockpit', 'src', 'pages', 'audit.tsx'), 'utf8')
 const catalogs = readFileSync(join(root, 'apps', 'cockpit', 'src', 'lib', 'i18n.ts'), 'utf8')
 
 /** The `{…}` that follows an anchor, braces balanced. */
@@ -92,11 +93,9 @@ const LITERAL_ACTIONS = [
 ].filter((action) => !action.startsWith('eq.'))
 
 const ASSEMBLED_ACTIONS = [
-  // `comment.${input.status}` and `comment.${input.action}` — src/routes.mjs and src/mcp/tools.mjs
+  // `comment.${input.status}` and `comment.${row.status}` — src/routes.mjs and src/mcp/tools.mjs
   'comment.approved',
   'comment.rejected',
-  'comment.approve',
-  'comment.reject',
   // `contact.${input.status}` — the ContactSubmission enum in src/openapi.mjs
   'contact.new',
   'contact.read',
@@ -127,9 +126,24 @@ const ASSEMBLED_ACTIONS = [
   'access.reader.delete',
 ]
 
+/**
+ * Actions no surface writes any more, and that are still in the trail.
+ *
+ * The audit record is append-only, so "the server can no longer write it" is not
+ * "nobody will ever read it". Until LOCAL-CK-AUDIT-MCP-SCHREIBWEISE the MCP
+ * moderation tool audited the requested action while REST audited the resulting
+ * status; the writer was fixed, the rows were not — and a mapping that forgot
+ * them would turn old rows back into machine strings. They are kept apart from
+ * ASSEMBLED_ACTIONS so the filter is not asked to offer a spelling nothing
+ * produces.
+ */
+const LEGACY_ACTIONS = ['comment.approve', 'comment.reject']
+
 describe('the Overview says what happened, not which endpoint it happened at', () => {
   test('every action the server writes resolves to a phrase', () => {
-    const unnamed = [...LITERAL_ACTIONS, ...ASSEMBLED_ACTIONS].filter((action) => auditPhrase(action) === null).sort()
+    const unnamed = [...LITERAL_ACTIONS, ...ASSEMBLED_ACTIONS, ...LEGACY_ACTIONS]
+      .filter((action) => auditPhrase(action) === null)
+      .sort()
     assert.deepEqual(
       unnamed,
       [],
@@ -209,5 +223,112 @@ describe('the Overview says what happened, not which endpoint it happened at', (
       /sentence \? <span className="min-w-0 truncate">\{sentence\}<\/span> : null/,
       'an unnamed action keeps the machine value alone rather than an invented sentence',
     )
+  })
+})
+
+/**
+ * The audit page's own two tables, read out of the page for the same reason the
+ * module's are: a rule asserted by reading source text is a rule nobody drives.
+ */
+function stringList(source, anchor) {
+  const from = source.indexOf(anchor)
+  assert.ok(from > 0, `${anchor} is not in apps/cockpit/src/pages/audit.tsx any more`)
+  const to = source.indexOf('] as const', from)
+  assert.ok(to > from, `${anchor} no longer ends in "] as const"`)
+  return [...source.slice(from, to).matchAll(/'([a-z_]+(?:\.[a-z_]+)+)'/g)].map((hit) => hit[1])
+}
+
+const DECISION_ACTIONS = stringList(auditPage, 'const DECISION_ACTIONS = [')
+const ADMIN_ACTIONS = stringList(auditPage, 'const ADMIN_ACTIONS = [')
+const AUDIT_ACTION_KEYS = Object.fromEntries(
+  [
+    ...braceGroup(auditPage, auditPage.indexOf('const AUDIT_ACTION_KEYS =')).matchAll(
+      /'([a-z_]+(?:\.[a-z_]+)+)':\s*'([\w.]+)'/g,
+    ),
+  ].map((hit) => [hit[1], hit[2]]),
+)
+
+/**
+ * The audit page's filter and its label table, graded the way the Overview's
+ * mapping already is.
+ *
+ * The defect this exists for: the comment over DECISION_ACTIONS claimed the list
+ * held "both spellings the moderation routes produce" while it held one, so a
+ * comment approved over MCP reached the operator as `comment.approve` — a
+ * machine string — and could not be filtered for under "Kommentar freigeben"
+ * (LOCAL-CK-AUDIT-MCP-SCHREIBWEISE). lib/audit-action.ts knew both spellings and
+ * was graded for it; this table knew neither and was graded by nothing.
+ *
+ * The list of actions is DERIVED from the server, as above. What is NOT required
+ * to be in the filter is spelled out with a reason each, because the filter is a
+ * list of DEEDS an operator did and the server also writes decision-subject rows
+ * that are events rather than deeds. Every one of them must still resolve
+ * through lib/audit-action.ts, so nothing in this class reaches a human as a raw
+ * value on either surface.
+ */
+const NOT_A_DEED = {
+  'draft_capture.create': 'a capture arriving is an event, not something an operator decided',
+  'promotion_review.request': 'requesting a review opens the decision; it is not the answer to one',
+  'contact.new': 'a contact request arriving is an event',
+  'comment.delete': 'deleting a comment is administration of the record, not a moderation verdict',
+  'contact.delete': 'deleting a contact request is administration of the record, not a verdict',
+}
+
+describe('the audit page names every decision the server can write, and can filter for it', () => {
+  test('every action the filter offers has a label in both catalogs', () => {
+    const offered = [...DECISION_ACTIONS, ...ADMIN_ACTIONS]
+    const unnamed = offered.filter((action) => !AUDIT_ACTION_KEYS[action]).sort()
+    assert.deepEqual(unnamed, [], `the filter offers these without a label: ${unnamed.join(', ')}`)
+    const missing = [...new Set(Object.values(AUDIT_ACTION_KEYS))]
+      .filter((key) => [...catalogs.matchAll(new RegExp(`'${key}':`, 'g'))].length !== 2)
+      .sort()
+    assert.deepEqual(
+      missing,
+      [],
+      `these keys are not in both the English and the German catalog: ${missing.join(', ')}`,
+    )
+  })
+
+  test('every decision the server writes is offered by the filter, or named as not being one', () => {
+    const subjects = new Set(DECISION_ACTIONS.map((action) => action.split('.')[0]))
+    const fromServer = [...LITERAL_ACTIONS, ...ASSEMBLED_ACTIONS].filter((action) => subjects.has(action.split('.')[0]))
+    const orphans = fromServer.filter((action) => !DECISION_ACTIONS.includes(action) && !(action in NOT_A_DEED)).sort()
+    assert.deepEqual(
+      orphans,
+      [],
+      `the server writes these decision rows and the Cockpit's filter cannot ask for them: ${orphans.join(', ')}. ` +
+        'Either the filter is missing a deed, or it is not one and belongs in NOT_A_DEED with a reason.',
+    )
+    // The exception list is not an excuse: what is not a deed still has to read
+    // as German somewhere, and that somewhere is the Overview's sentence.
+    for (const action of Object.keys(NOT_A_DEED)) {
+      assert.ok(auditPhrase(action), `${action} is excused from the filter but reaches the Overview as a raw value`)
+    }
+  })
+
+  test('one deed is one action string, so the equality filter reaches all of it', () => {
+    // The audit endpoint filters `action` with `eq.`, so two spellings of the
+    // same deed split the answer in half with nothing on screen saying so.
+    // src/mcp/tools.mjs audits the resulting status, exactly as src/routes.mjs
+    // does, and the spelling it used before is named but not offered.
+    const mcp = readFileSync(join(root, 'src', 'mcp', 'tools.mjs'), 'utf8')
+    assert.match(mcp, /action: `comment\.\$\{row\.status\}`/)
+    // And no surface writes the requested action instead. Read over every server
+    // source, not just the one that had the defect, so a second moderation
+    // surface cannot reintroduce the split.
+    const requested = serverSources(join(root, 'src'))
+      .filter((file) => /action: `comment\.\$\{input\.action\}`/.test(readFileSync(file, 'utf8')))
+      .map((file) => file.slice(root.length + 1))
+    assert.deepEqual(
+      requested,
+      [],
+      `these audit a comment by the requested action rather than the resulting status: ${requested.join(', ')}`,
+    )
+    for (const legacy of LEGACY_ACTIONS) {
+      assert.ok(AUDIT_ACTION_KEYS[legacy], `${legacy} is in the append-only trail and has to read as German`)
+      assert.ok(!DECISION_ACTIONS.includes(legacy), `${legacy} must not be a second filter entry under the same label`)
+    }
+    const labels = DECISION_ACTIONS.map((action) => AUDIT_ACTION_KEYS[action])
+    assert.equal(new Set(labels).size, labels.length, 'two filter entries share a label; one of them cannot be chosen')
   })
 })

@@ -32,10 +32,22 @@ import { compareText, compareTime } from '@/lib/table-view'
  * an operator looking for a decision they made last week had to page through
  * every event in the installation and read machine strings.
  *
- * The list is the decision verbs from all three surfaces, including both
- * spellings the moderation routes produce: REST audits the resulting status
- * (`comment.approved`), MCP audits the requested action (`comment.approve`), and
- * which one wrote the row is not something an operator should have to know.
+ * The list is the decision verbs from all three surfaces, and it is a list of
+ * DEEDS: one entry per thing an operator did, because /v1/audit-events filters
+ * `action` by equality and two entries under one label would be two halves of an
+ * answer with nothing on screen saying so.
+ *
+ * That is why the moderation verbs appear once. They used to be written twice —
+ * REST audited the resulting status (`comment.approved`), the MCP tool the
+ * requested action (`comment.approve`) — and this comment claimed both spellings
+ * stood here while only the REST one did: an operator who picked "Kommentar
+ * freigeben" was shown the comments approved over HTTP and not the ones approved
+ * over MCP (LOCAL-CK-AUDIT-MCP-SCHREIBWEISE). The fix is at the writer —
+ * src/mcp/tools.mjs now audits the resulting status too — so one deed is one
+ * action string. The spelling MCP used until then is named in AUDIT_ACTION_KEYS
+ * below, so rows already in the trail read as German rather than as machine
+ * values; it is deliberately not a filter entry, because a second option reading
+ * "Kommentar freigeben" would be a promise the equality filter cannot keep.
  */
 const DECISION_ACTIONS = [
   'decision.defer',
@@ -54,6 +66,13 @@ const DECISION_ACTIONS = [
 
 /**
  * Everything else worth filtering by — the administrative half.
+ *
+ * Both halves are FIXED LISTS. Deriving the options from the loaded page was
+ * circular: the filter could only offer what the last fifty rows happened to
+ * contain, so the one action an operator is hunting for — the rare revoke, the
+ * failed build — was exactly the one missing from the menu. What holds a fixed
+ * list to the server instead is test/unit/cockpit-audit-action.test.mjs, which
+ * reads the actions out of src/** and fails when the Cockpit cannot ask for one.
  */
 const ADMIN_ACTIONS = [
   'api_key.create',
@@ -71,16 +90,6 @@ const ADMIN_ACTIONS = [
   'content.unpublish',
   'content.delete',
 ] as const
-
-/**
- * The actions worth filtering by, as a fixed list.
- *
- * Deriving the options from the loaded page was circular: the filter could only
- * offer what the last fifty rows happened to contain, so the one action an
- * operator is hunting for — the rare revoke, the failed build — was exactly the
- * one missing from the menu.
- */
-const AUDIT_ACTIONS = [...DECISION_ACTIONS, ...ADMIN_ACTIONS] as const
 
 const LIMITS = [50, 100, 200]
 
@@ -125,7 +134,16 @@ const AUDIT_ACTION_KEYS = {
   'content.publish': 'audit.action.contentPublish',
   'content.unpublish': 'audit.action.contentUnpublish',
   'content.delete': 'audit.action.contentDelete',
-} as const satisfies Record<(typeof AUDIT_ACTIONS)[number], TranslationKey>
+  // LEGACY SPELLINGS, named but not offered. Until LOCAL-CK-AUDIT-MCP-SCHREIBWEISE
+  // the MCP moderation tool audited the requested action rather than the
+  // resulting status, so rows written before that fix say `comment.approve` and
+  // `comment.reject`. The trail is append-only: those rows are still there and a
+  // table that did not know them would print them at an operator as machine
+  // strings. They are not in AUDIT_ACTIONS because the filter is a list of
+  // deeds — see the comment above DECISION_ACTIONS.
+  'comment.approve': 'audit.action.commentApprove',
+  'comment.reject': 'audit.action.commentReject',
+} as const satisfies Record<string, TranslationKey>
 
 const auditActionLabel = (t: (key: TranslationKey) => string, action: string) =>
   action in AUDIT_ACTION_KEYS ? t(AUDIT_ACTION_KEYS[action as keyof typeof AUDIT_ACTION_KEYS]) : action

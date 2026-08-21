@@ -63,10 +63,13 @@ const SUBJECT_KEYS = {
  * aktivieren") because there it labels a *filter* — the same word in the two
  * places would be wrong in one of them.
  *
- * Both spellings of the moderation verbs are here: the REST route audits the
- * resulting status (`comment.approved`), the MCP tool audits the requested
- * action (`comment.approve`), and an operator reading the trail should not have
- * to know which surface wrote the row.
+ * Both spellings of the moderation verbs are here, and one of them is history.
+ * The MCP tool used to audit the requested action (`comment.approve`) while the
+ * REST route audited the resulting status (`comment.approved`); since
+ * LOCAL-CK-AUDIT-MCP-SCHREIBWEISE both write the status, so one deed is one
+ * action string and the audit filter's equality match reaches all of it. The
+ * trail is append-only, so the old spelling is still in it and still has to read
+ * as German — which is what `approve` and `reject` are doing here.
  */
 const VERB_KEYS = {
   activate: 'audit.verb.activated',
