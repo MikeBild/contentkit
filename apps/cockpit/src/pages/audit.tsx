@@ -9,6 +9,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -20,14 +21,41 @@ import { visibleMetadata } from '@/lib/opaque'
 import { compareText, compareTime } from '@/lib/table-view'
 
 /**
- * The actions worth filtering by, as a fixed list.
+ * What happened to a decision, as the trail records it.
  *
- * Deriving the options from the loaded page was circular: the filter could only
- * offer what the last fifty rows happened to contain, so the one action an
- * operator is hunting for — the rare revoke, the failed build — was exactly the
- * one missing from the menu.
+ * This is the other half of §8.5. The Entscheidungen page shows what is waiting
+ * and nothing else, so the deferred, the dismissed and the decided are only
+ * reachable here — and "reachable" has to mean more than "the row exists". The
+ * server has written `decision.dismiss`, `comment.approved`,
+ * `draft_capture.triage` and the rest all along (src/routes.mjs, src/mcp/tools.mjs);
+ * what was missing was a name for them and a way to ask for them. Without both,
+ * an operator looking for a decision they made last week had to page through
+ * every event in the installation and read machine strings.
+ *
+ * The list is the decision verbs from all three surfaces, including both
+ * spellings the moderation routes produce: REST audits the resulting status
+ * (`comment.approved`), MCP audits the requested action (`comment.approve`), and
+ * which one wrote the row is not something an operator should have to know.
  */
-const AUDIT_ACTIONS = [
+const DECISION_ACTIONS = [
+  'decision.defer',
+  'decision.dismiss',
+  'decision.restore',
+  'comment.approved',
+  'comment.rejected',
+  'contact.read',
+  'contact.closed',
+  'feedback.reset',
+  'draft_capture.triage',
+  'draft_capture.discard',
+  'promotion_review.activate',
+  'promotion_review.reject',
+] as const
+
+/**
+ * Everything else worth filtering by — the administrative half.
+ */
+const ADMIN_ACTIONS = [
   'api_key.create',
   'api_key.revoke',
   'identity.create',
@@ -43,6 +71,16 @@ const AUDIT_ACTIONS = [
   'content.unpublish',
   'content.delete',
 ] as const
+
+/**
+ * The actions worth filtering by, as a fixed list.
+ *
+ * Deriving the options from the loaded page was circular: the filter could only
+ * offer what the last fifty rows happened to contain, so the one action an
+ * operator is hunting for — the rare revoke, the failed build — was exactly the
+ * one missing from the menu.
+ */
+const AUDIT_ACTIONS = [...DECISION_ACTIONS, ...ADMIN_ACTIONS] as const
 
 const LIMITS = [50, 100, 200]
 
@@ -61,6 +99,18 @@ const AUDIT_RESULT_KEYS = {
 } as const satisfies Record<string, TranslationKey>
 
 const AUDIT_ACTION_KEYS = {
+  'decision.defer': 'audit.action.decisionDefer',
+  'decision.dismiss': 'audit.action.decisionDismiss',
+  'decision.restore': 'audit.action.decisionRestore',
+  'comment.approved': 'audit.action.commentApprove',
+  'comment.rejected': 'audit.action.commentReject',
+  'contact.read': 'audit.action.contactRead',
+  'contact.closed': 'audit.action.contactClose',
+  'feedback.reset': 'audit.action.feedbackReset',
+  'draft_capture.triage': 'audit.action.draftTriage',
+  'draft_capture.discard': 'audit.action.draftDiscard',
+  'promotion_review.activate': 'audit.action.promotionActivate',
+  'promotion_review.reject': 'audit.action.promotionReject',
   'api_key.create': 'audit.action.apiKeyCreate',
   'api_key.revoke': 'audit.action.apiKeyRevoke',
   'identity.create': 'audit.action.identityCreate',
@@ -294,7 +344,25 @@ export function AuditPage() {
           <SelectContent>
             <SelectGroup>
               <SelectItem value={ANY}>{t('audit.allActions')}</SelectItem>
-              {AUDIT_ACTIONS.map((value) => (
+            </SelectGroup>
+            {/*
+              Two groups rather than one alphabet. The decision verbs are what an
+              operator arrives with from the Entscheidungen page — that page shows
+              only open work now, so this menu is the way back to what was already
+              answered — and a heading is what makes them findable among the
+              installation's administrative traffic.
+            */}
+            <SelectGroup>
+              <SelectLabel>{t('audit.group.decisions')}</SelectLabel>
+              {DECISION_ACTIONS.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(AUDIT_ACTION_KEYS[value])}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>{t('audit.group.administration')}</SelectLabel>
+              {ADMIN_ACTIONS.map((value) => (
                 <SelectItem key={value} value={value}>
                   {t(AUDIT_ACTION_KEYS[value])}
                 </SelectItem>
