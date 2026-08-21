@@ -2,30 +2,22 @@
  * The coupling between `npm run verify` in package.json and the jobs in
  * .github/workflows/ci.yml.
  *
- * WHY THIS FILE EXISTS
- *
- * The convention check became a mandatory stage in two places at once — the end
- * of the `verify` chain and a step in the `cockpit-e2e` job — and nothing but a
- * comment said the two lists belonged together. That is the shape
+ * The convention check became mandatory in two places at once — the end of the
+ * `verify` chain and a step in `cockpit-e2e` — and nothing but a comment said
+ * the two lists belonged together. That is the shape
  * cockpit-parity/BEFUND-GATE-IST-NICHT-CI.md names: an equivalence a comment
- * asserts and nothing enforces. Take the stage out of `verify` and CI stays
- * green and silent; take the step out of the job and `verify` stays green and
- * silent. Both directions are one edit away, and both were invisible.
+ * asserts and nothing enforces. Remove the stage from either side and the other
+ * stays green and silent. A comment cannot fail; this can.
  *
- * A comment cannot fail. This can. The mechanism is copied from WikiKit's
- * test/unit/ci-workflows.test.ts and WatchKit's improvement on it (stage ids
- * read out of the source instead of typed, plus a guard against the regex that
- * silently matches nothing), rather than imported: §7's rule for the family is
- * that patterns travel as copies, and a shared helper across six repositories
- * would be a seventh thing to keep in sync.
+ * Mechanism copied from WikiKit's test/unit/ci-workflows.test.ts and WatchKit's
+ * improvement on it (stage ids read from the source, plus a guard against a
+ * regex that silently matches nothing) rather than imported — §7 has patterns
+ * travel as copies.
  *
- * WHAT IS DELIBERATELY NOT ASSERTED
- *
- * That the two lists are identical. They are not, and should not be: three of
- * `verify`'s stages have no CI job on purpose, and two are spelled out in CI as
- * the steps they decompose into rather than by their script name. Every one of
- * those is a row in the table below with the reason written next to it — so the
- * asymmetry is a decision on the record instead of a gap nobody can see.
+ * What is NOT asserted: that the two lists are identical. Three `verify` stages
+ * have no CI job on purpose and two are spelled out in CI as the steps they
+ * decompose into. Each is a row in the table below with its reason, so the
+ * asymmetry is on the record instead of being a gap nobody can see.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -195,28 +187,12 @@ test('`verify` builds the console before it measures it, and generates before it
   )
 
   // check:cockpit-api-drift REWRITES apps/cockpit/src/api/schema.d.ts before it
-  // refuses a diff, and a stage that rewrites a build input belongs in front of
-  // the build that reads it.
-  //
-  // Under the mtime guard that was not a preference but a requirement: the
-  // rewrite always pushed the file's mtime past the bundle's, so behind the
-  // build konvention:check reported a stale bundle on EVERY run — red,
-  // mandatory, and for entirely the wrong reason, which is how a stage gets
-  // muted. Measured after the fact: with the mtime predicate, `gen-api` leaves
-  // the tree STALE; with the content stamp it does not move the digest at all.
-  //
-  // 61d4cfc removed that consequence, and the first version of this comment
-  // claimed it anyway — written the same hour, against a measurement its own
-  // predecessor commit had already invalidated. Measured: `gen-api` moves the
-  // mtime and leaves the CONTENT identical (md5 unchanged), the digest does not
-  // move, konvention:check exits 0. It could not go red that way in any case —
-  // if the generator's output really differed, `git diff --exit-code` in this
-  // same stage fails and the `&&` chain never reaches konvention:check
-  // (measured: a probe in docs/openapi.json, exit 1 at this stage).
-  //
-  // The order therefore stands on the plain argument, not on the vanished
-  // symptom: a build input has to be final before the build reads it
-  // (LOCAL-CK-DRIFT-VOR-BUILD).
+  // refuses a diff, so it belongs in front of the build that reads that input
+  // (LOCAL-CK-DRIFT-VOR-BUILD). Under the old mtime guard this was not a
+  // preference: the rewrite pushed the mtime past the bundle's and made
+  // konvention:check red on every run. The content stamp removed that symptom —
+  // measured: `gen-api` moves the mtime, leaves the content identical and the
+  // digest unmoved — so the order now stands on the plain argument alone.
   assert.ok(
     at('check:cockpit-api-drift') < at('validate:cockpit'),
     '`check:cockpit-api-drift` regenerates a build input, so it must run before the build, not after it',

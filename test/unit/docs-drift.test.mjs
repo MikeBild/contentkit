@@ -98,28 +98,19 @@ test('public authoring docs name every runtime layout', async () => {
 })
 
 /**
- * Two Fassungen of one convention, held to the same version by the bytes.
+ * Two editions of one convention, held to the same version by the bytes.
  *
- * ContentKit is the only product in the family that carries the Cockpit
- * convention twice: the German source in the repository root, which is the
- * standard, and `docs/COCKPIT_CONVENTION_EN.md`, a shortened English reading
- * aid for operators. The translation names the source it was made from — a
- * version and a SHA-256 — and that sentence is the only thing keeping the two
- * from drifting apart. It is also written by hand, so before this test the
- * cheapest way to make the repository lie was to update one file: the German
- * copy moves to a new version and the English one keeps quoting a digest of a
- * document that no longer exists, in a sentence that reads like diligence.
+ * ContentKit carries the Cockpit convention twice: the German source in the
+ * repository root, which is the standard, and docs/COCKPIT_CONVENTION_EN.md, a
+ * shortened English reading aid. The translation names the version and SHA-256
+ * it was made from, by hand, and that sentence is the only thing keeping the two
+ * together — so the cheapest way to make the repository lie was to update one
+ * file and leave a digest quoting a document that no longer exists.
  *
- * A stale pointer here is worse than none, for the same reason §6 gives about a
- * favicon that answers 404 — it looks like the question was already settled. So
- * the digest is recomputed from the file rather than compared to a constant,
- * and the version is read out of the source's own header line rather than
- * written down in this test; neither number lives in two places.
- *
- * This is drift control, not translation review: it cannot tell whether the
- * English §6 says what the German §6 says. What it can tell is that a change to
- * the standard was noticed on both sides, which is the failure that actually
- * happened in this family.
+ * Both numbers are therefore recomputed and read from the source's own header
+ * rather than written down here. This is drift control, not translation review:
+ * it cannot tell whether the English §6 says what the German §6 says, only that
+ * a change to the standard was noticed on both sides.
  */
 test('the English convention quotes the German source’s real version and digest', async () => {
   const source = await readFile(join(root, 'COCKPIT-KONVENTION.md'), 'utf8')
@@ -136,13 +127,13 @@ test('the English convention quotes the German source’s real version and diges
   const quoted = /version (\d+\.\d+), SHA-256 `([0-9a-f]{64})`/.exec(translation)
   assert.ok(
     quoted,
-    'docs/COCKPIT_CONVENTION_EN.md no longer names the source it translates ("version x.y, SHA-256 `…`"); that sentence is the only link between the two Fassungen',
+    'docs/COCKPIT_CONVENTION_EN.md no longer names the source it translates ("version x.y, SHA-256 `…`"); that sentence is the only link between the two editions',
   )
 
   assert.equal(
     quoted[1],
     sourceVersion,
-    `docs/COCKPIT_CONVENTION_EN.md says it translates version ${quoted[1]}, but COCKPIT-KONVENTION.md is version ${sourceVersion} — one Fassung was updated and the other was not`,
+    `docs/COCKPIT_CONVENTION_EN.md says it translates version ${quoted[1]}, but COCKPIT-KONVENTION.md is version ${sourceVersion} — one edition was updated and the other was not`,
   )
   assert.equal(
     quoted[2],

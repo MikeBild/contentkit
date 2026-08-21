@@ -248,26 +248,13 @@ test('the stamp is written beside the served bundle, never inside it', () => {
  * Everything in the repository that could invoke a build, found rather than
  * typed.
  *
- * The first version listed six paths by hand. Three ways past it, all green: a
- * new `.github/workflows/nightly.yml`, an `npx vite build` appended to
- * scripts/test-e2e-local.sh, and — inside a file that WAS on the list —
- * `npx vite --mode production build`, because a flag between the two words
- * tears `/\bvite build\b/` apart. A hand-written list of files and a regex over
- * a word sequence are the same mistake twice: modelling commands as prose.
- *
- * The replacement then lost in the other direction, and the honest way to find
- * that out was to run both over the same corpus rather than to reason about it.
- * 50 mutations, one unstamped build each, in a .sh file, in a package.json and
- * in a workflow: the text version caught 44, the command version 21. 25 of the
- * 26 the command version gave up were real — quoting, grouping punctuation,
- * shell wrappers, substitutions, and four places a command can sit that
- * `scripts` and `run:` do not cover. The 26th was a false red the text version
- * produced by insisting on one exact spelling of the build script.
- *
- * Both halves are kept: the command model answers what a process does, and its
- * reach is now the text version's reach. The corpus is above, as the two tests
- * that call themselves the specification; the numbers are 50 of 50 caught, and
- * the one legitimate spelling stays green.
+ * A hand-written list of six paths and a `/\bvite build\b/` regex are the same
+ * mistake twice — modelling commands as prose. Both halves are kept because
+ * running them over one corpus, rather than reasoning about them, is what
+ * settled it: 50 mutations, one unstamped build each; the text version caught
+ * 44, the command version 21, and 25 of the 26 it gave up were real (quoting,
+ * grouping punctuation, shell wrappers, substitutions). Together: 50 of 50, and
+ * the one legitimate spelling stays green. The corpus is the two tests above.
  */
 async function commandSources() {
   const skipped = new Set(['node_modules', '.git', 'dist', '.vite', 'coverage'])
@@ -298,24 +285,13 @@ async function commandSources() {
 /**
  * A shell string, cut into the commands it actually runs.
  *
- * `split(/&&|\|\||;|\n/)` is the obvious version and it was this file's, and it
- * loses four things — every one of them a spelling the TEXT version in f6e0f81
- * caught, so each is a regression this file wrote for itself:
- *
- *   - It cuts inside quotes. `sh -c "vite build; echo done"` is one argument;
- *     cutting at the semicolon leaves `sh -c "vite build`.
- *   - It leaves the punctuation that groups commands attached.
- *     `(cd apps/cockpit && npx vite build)` becomes `vite build)`, and
- *     `build)` is not `build`. This is not an exotic spelling: line 27 of
- *     scripts/build-cockpit.sh is `(cd "$APP" && npm run build)`, so the
- *     subshell parenthesis is the HOUSE spelling for exactly this operation.
- *   - It stops at a shell that was handed a script. `bash -lc 'vite build'`
- *     runs a build and its own tokens say `bash`.
- *   - It stops at a command substitution, `$(…)` and backticks alike.
- *
- * So the split respects quoting, the grouping punctuation is opened, and
- * anything that is itself a script — a wrapper's `-c` argument, a substitution
- * — is asked the same question again rather than treated as a word.
+ * The obvious `split(/&&|\|\||;|\n/)` loses four spellings, each one a
+ * regression against the text version in f6e0f81: it cuts inside quotes; it
+ * leaves grouping punctuation attached, and `(cd "$APP" && npm run build)` is
+ * the HOUSE spelling in scripts/build-cockpit.sh:27; it stops at a shell handed
+ * a script (`bash -lc 'vite build'`); and it stops at a command substitution.
+ * So quoting is respected, grouping punctuation is opened, and anything that is
+ * itself a script is asked the same question again.
  */
 function splitOutsideQuotes(text) {
   const parts = []

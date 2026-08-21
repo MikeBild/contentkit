@@ -1,51 +1,30 @@
 /**
  * The content stamp of `assets/cockpit`: what the bundle was built FROM.
  *
- * WHY THIS EXISTS
- *
  * Every rule in scripts/konvention-check.mjs but one is read off the BUILT
  * console, so a bundle that predates a source change turns the checker into a
- * green verdict about bytes nobody ships. The first attempt at that guard
- * compared modification times, and mtimes answer a different question than the
- * one being asked. Three ways it said "fresh" over a changed source, the first
- * measured rather than reasoned:
+ * green verdict about bytes nobody ships. The first guard compared modification
+ * times and said "fresh" over a changed source three ways:
  *
- *   1. A restore that preserves timestamps. `cp -p`, `rsync -a`, `tar -x` and
- *      every CI cache restore keep the original mtime, so a source older than
- *      the bundle can carry newer content. Measured: a §6 breach written into
- *      apps/cockpit/src/lib/i18n.ts plus `touch -t 202608202000` produced
- *      `conform: true` and exit 0.
- *   2. Dotted entries were skipped wholesale — correct for `.vite`, a cache
- *      written DURING the build, but `.env.production` is skipped by the same
- *      line and Vite bakes its `VITE_*` values into the bundle.
- *   3. Build inputs outside `apps/cockpit` were never looked at at all:
- *      vite.config.ts hashes `contract/cockpit-ui.css` into the served
- *      document, and `gen:css` derives `src/content/site.scoped.css` from
- *      `assets/site.css` — the second one only during a build, so editing it
- *      changes nothing a source walk can see until the next build happens.
+ *   1. Timestamp-preserving restores (`cp -p`, `rsync -a`, `tar -x`, every CI
+ *      cache restore). Measured: a §6 breach in apps/cockpit/src/lib/i18n.ts
+ *      plus `touch -t 202608202000` produced `conform: true` and exit 0.
+ *   2. Dotted entries were skipped wholesale — right for `.vite`, wrong for
+ *      `.env.production`, whose `VITE_*` values Vite bakes into the bundle.
+ *   3. Build inputs outside apps/cockpit were never looked at (see
+ *      EXTERNAL_INPUTS below).
  *
- * All three are the same defect: mtime is a proxy, and a proxy can be wrong in
- * the direction that matters. Content cannot. This module hashes the actual
- * build inputs; `npm run build` in apps/cockpit writes the result beside the
- * bundle, and the checker recomputes it and compares. Equal means the bundle
- * was built from exactly these bytes — restored timestamps, dotfiles and files
- * outside the app included.
+ * All three are one defect: mtime is a proxy and a proxy can be wrong in the
+ * direction that matters. This module hashes the actual build inputs instead;
+ * `npm run build` writes the result beside the bundle and the checker recomputes
+ * it. One walk and one sha256 per input, measurable with this file's `--time`
+ * CLI — a fraction of a second against a build of tens.
  *
- * WHAT IT COSTS
- *
- * One walk and one sha256 per input file, measurable with this file's `--time`
- * CLI. It is a fraction of a second against a build that takes tens of them and
- * a browser sweep that takes twenty.
- *
- * THE FAILURE DIRECTION
- *
- * Every way of being wrong here is red. A missing or unreadable stamp is
- * refused outright. A bundle built by a path that writes no stamp leaves the
- * previous one standing — and that is still safe, because the previous stamp
- * describes the sources of the previous build: if they have moved since, the
- * hashes disagree and the run is refused; if they have not, the rebuild came
- * from the same bytes and the stamp is telling the truth. The one thing this
- * cannot do is certify a bundle it cannot account for.
+ * Every way of being wrong here is red: a missing or unreadable stamp is refused
+ * outright, and a build path that writes no stamp leaves the previous one
+ * standing — still safe, because it describes the previous build's sources, so
+ * either the hashes disagree and the run is refused or the rebuild came from the
+ * same bytes. What this cannot do is certify a bundle it cannot account for.
  */
 import { createHash } from 'node:crypto'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -55,28 +34,19 @@ import { fileURLToPath } from 'node:url'
 export const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /**
- * Where the stamp lives: beside the bundle it describes, and deliberately NOT
- * inside it.
+ * Where the stamp lives: beside the bundle it describes, never inside it.
  *
- * `assets/cockpit` is served unauthenticated at /cockpit/ — src/cockpit.mjs
- * says so in as many words, because the bundle carries no data. The stamp does:
- * a list of every source file in the console and a sha256 of each. Inside the
- * output directory it would be `GET /cockpit/build-stamp.json` to anybody, and
- * the day an `.env.production` appears that becomes a hash of secrets, offered
- * over the internet to be brute-forced. One directory up it is not addressable
- * from a URL at all, while still travelling with the bundle in
- * build-binary.sh's `assets` tar entry.
+ * `assets/cockpit` is served unauthenticated at /cockpit/ because the bundle
+ * carries no data. The stamp does: every source path in the console and a sha256
+ * of each, which the day an `.env.production` appears becomes a hash of secrets
+ * offered to the internet. One directory up it is not addressable from a URL.
  *
- * WHAT ACTUALLY KEEPS IT OUT OF REACH, named precisely, because the wrong
- * answer here is worse than none: `cleanPath()` in src/utils.mjs, called on
- * every request at src/routes.mjs:1233, throws 400 on any path with a `..`
- * segment. That is what stops `/cockpit/../cockpit-build-stamp.json` — not
- * serveCockpit(), which until this file existed answered that exact path with
- * 200 and all 21769 bytes, because its prefix check was a string prefix rather
- * than a path prefix and this file's NAME happens to begin with the bundle
- * directory's name. That is now `dir + sep` and has a test, so both layers
- * hold; but the name being a near-miss for the served directory was luck, and
- * luck is not a reason to put a file somewhere.
+ * What actually keeps it out of reach — named precisely, because a wrong answer
+ * here is worse than none — is `cleanPath()` in src/utils.mjs (called at
+ * src/routes.mjs:1233), which rejects any `..` segment with 400. Not
+ * serveCockpit(), which answered `/cockpit/../cockpit-build-stamp.json` with 200
+ * and all 21769 bytes until its string prefix became a path prefix. Both layers
+ * hold now, but the near-miss name was luck.
  */
 export const STAMP_PATH = join('assets', 'cockpit-build-stamp.json')
 

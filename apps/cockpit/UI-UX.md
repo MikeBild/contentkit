@@ -329,9 +329,9 @@ print an opaque identifier as a fallback.
   label in a hover/focus Tooltip. Definitions use Tooltip; multi-sentence help
   uses Popover. One field label gets one help trigger, never stacked help icons.
 
-## 12. Entscheidungs-Grammatik
+## 12. Decision grammar
 
-Wortgleiche Kopie von §8 der Cockpit-Konvention v1.5 (`COCKPIT-KONVENTION.md` im Repo-Root). Sie steht hier, weil die Entscheidungs-Seite dieses Produkts an ihr gemessen wird; der Maßstab hat eine Quelle und keine abweichenden Kopien (§13).
+Verbatim copy of §8 of the Cockpit convention (`COCKPIT-KONVENTION.md` in the repository root), in German because the standard is German and §13 allows one source and no diverging copies. It stands here because this product's decision page is measured against it.
 
 ### 8. Entscheidungs-Grammatik
 

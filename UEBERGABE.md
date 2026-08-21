@@ -143,26 +143,15 @@ Jobs `cockpit-e2e` in `.github/workflows/ci.yml`. `UI-UX.md` aktualisiert; alle
 Repo-Gates grün.
 Prüfweg: CI-Gate.
 
-> Bis 20.08.2026 stand über diesem Kriterium „Prüfweg: CI-Gate", während von
-> den drei genannten Ankern nur `check:docs-drift` wirklich in CI lag
-> (`ci.yml:34`). Regel 15 und das Etikett im Bericht leben in
-> `konvention:check`, und der lief in keinem Gate, keiner CI und keinem Hook —
-> in keinem der sechs Produkte (BEFUND-CHECK-LAEUFT-NIRGENDS). Der
-> Kriteriumstext stimmte; die Prüfweg-Zeile darunter behauptete als einzige
-> mehr, als gehalten wurde. Mit LOCAL-CK-CHECK-INS-GATE ist der Check
-> verdrahtet, und zwar an beiden Orten, weil `npm run verify` gerade **nicht**
-> das ist, was CI ausführt: der Job `test` ruft die schnellen Stufen einzeln
-> auf. Nur in `verify` gehängt bliebe „CI-Gate" weiter eine Behauptung.
+> Bis 20.08.2026 stand hier „Prüfweg: CI-Gate", während von den drei genannten
+> Ankern nur `check:docs-drift` in CI lag (`ci.yml:34`); `konvention:check` lief
+> in keinem der sechs Produkte in einem Gate (BEFUND-CHECK-LAEUFT-NIRGENDS). Mit
+> LOCAL-CK-CHECK-INS-GATE hängt er an beiden Orten — `npm run verify` ist nicht
+> das, was CI ausführt.
 
-> Bis 20.08.2026 trug dieses Kriterium eine Versionsnummer im Text
-> („Konventions-Kopie v1.4", dann „v1.5"). Eine Nummer im Kriteriumstext ist
-> auch von einer veralteten Kopie erfüllt, sobald die Familie weiterzieht: das
-> Kriterium fragt dann nach einer Zahl statt nach Identität mit der
-> Familienfassung. Und beim Heben dreht man die Zahl mit, statt den Fehler zu
-> bemerken — hier zweimal geschehen. Das Kriterium nennt deshalb keine Nummer
-> mehr, sondern fordert die unveränderte Fassung und zeigt auf die Stellen, an
-> denen eine Maschine die Nummer hält. Dass die Kopie byte-identisch mit der
-> Familienfassung ist, kann kein Repo-Gate beweisen — die Quelle liegt
-> außerhalb des Repos; das bleibt Sache dessen, der sie kopiert. Prüfbar
-> gemacht ist der Teil, der prüfbar ist: dass Kopie, Prüfskript und englische
-> Lesehilfe nicht auseinanderlaufen. Muster von WikiKits AK-WI-G.1 übernommen.
+> Bis 20.08.2026 nannte das Kriterium eine Versionsnummer („v1.4", dann „v1.5").
+> Eine Nummer im Text erfüllt auch eine veraltete Kopie, und beim Heben dreht man
+> sie mit, statt den Fehler zu bemerken — hier zweimal geschehen. Byte-Identität
+> mit der Familienfassung kann kein Repo-Gate beweisen; die Quelle liegt außerhalb
+> des Repos. Prüfbar gemacht ist, dass Kopie, Prüfskript und englische Lesehilfe
+> nicht auseinanderlaufen. Muster von WikiKits AK-WI-G.1.
