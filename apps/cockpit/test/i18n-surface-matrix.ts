@@ -44,7 +44,7 @@ export interface Surface {
 export const SURFACES: Surface[] = [
   {
     id: 'JSX text',
-    why: 'the narrowest of the three surfaces, and the one the mutation deleted while every expectation stayed.',
+    why: 'the narrowest of the four surfaces, and the one the mutation deleted while every expectation stayed.',
     fixture: `
       export function View() {
         return <p>floor sentinel drawn as jsx text</p>
@@ -76,6 +76,28 @@ export const SURFACES: Surface[] = [
     `,
     expect: { text: 'floor sentinel in an unlisted attribute', attribute: 'unlisted' },
   },
+  {
+    id: 'JSX spread attribute',
+    why: '`ts.isJsxSpreadAttribute` is not `ts.isJsxAttribute`, and `{...shell}` alone stands 29 times in the console, carrying label, hint and help.',
+    fixture: `
+      const SHELL = { hint: 'floor sentinel spread onto a component' }
+      export function View() {
+        return <Field {...SHELL} />
+      }
+    `,
+    expect: { text: 'floor sentinel spread onto a component', attribute: 'hint' },
+  },
+  {
+    id: 'a value behind `satisfies`',
+    why: '`as` was read and `satisfies` was not, and the tree writes `as const satisfies` ten times.',
+    fixture: `
+      const NOTE = { reason: 'floor sentinel behind a satisfies' } as const satisfies Record<string, string>
+      export function View() {
+        return <p>{NOTE.reason}</p>
+      }
+    `,
+    expect: { text: 'floor sentinel behind a satisfies', attribute: undefined },
+  },
 ]
 
 export interface NotSurface {
@@ -103,6 +125,16 @@ export const NOT_SURFACES: NotSurface[] = [
       }
     `,
     sentinel: 'floor sentinel in a class list',
+  },
+  {
+    id: 'a class list spread onto a component',
+    fixture: `
+      const SHELL = { className: 'floor sentinel spread as a class list' }
+      export function View() {
+        return <p {...SHELL}>x</p>
+      }
+    `,
+    sentinel: 'floor sentinel spread as a class list',
   },
 ]
 

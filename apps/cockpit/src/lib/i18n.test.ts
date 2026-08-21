@@ -17,7 +17,7 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  * in both catalogs" explains why nobody noticed; it does not explain why the
  * check did not.
  *
- * So it now reads all three surfaces:
+ * So it now reads all four surfaces:
  *
  *   1. JSX text, as before.
  *   2. JSX child EXPRESSIONS, followed backwards through file-local values to
@@ -29,11 +29,18 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  *   3. JSX ATTRIBUTES, by exclusion instead of by list. A four-name allowlist can
  *      only ever catch the four attributes somebody already thought of, and
  *      `label="extra"` on the Custom-fields group was not one of them.
+ *   4. JSX SPREAD ATTRIBUTES. `ts.isJsxSpreadAttribute` is not
+ *      `ts.isJsxAttribute`, so `{...shell}` — 29 of the console's 228 spreads —
+ *      was a whole way onto the screen that nothing looked at. The properties
+ *      behind a spread are held to the same two strictnesses as a written-out
+ *      attribute, because on screen there is no difference between them.
  *
  * Following VALUES, never callees: `X.find(…)` and `X[i]` carry an element of
  * `X`, `X.map(fn)` carries what `fn` returns, a call to a file-local `function`
  * DECLARATION carries that function's returns, and `t(…)` carries the catalog
- * and therefore has nothing to report. The word `declaration` is load-bearing:
+ * and therefore has nothing to report. `as` and `satisfies` are both read
+ * through; reading one and not the other made everything behind the tree's ten
+ * `as const satisfies` invisible. The word `declaration` is load-bearing:
  * `const f = () => '…'` is an initializer the resolver reaches and then cannot
  * read, so `{f()}` is blind (limit 13). What it cannot follow is listed below,
  * measured.
@@ -111,6 +118,16 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  *     compositions.tsx:351 and body.tsx:133 — `portrait`, `hero`,
  *     `code-example`, `data-table`.
  *   • Closing 13 turns up nothing at all.
+ *   • The fourth surface and `satisfies` turn up nothing at all either — not
+ *     0 offenders, 0 VALUES. Every spread in this console spreads `props`,
+ *     `shell`, `control` or `tooltip`, and all four are function parameters,
+ *     which is limit 9; and no `satisfies` in the tree sits on a path the
+ *     resolver walks to something drawn. They are read anyway, because a surface
+ *     that costs nothing today is not a surface that stays empty, and because
+ *     "we did not look there" is the one sentence this file exists to avoid.
+ *     Both were run against a fixture before they were shipped, so the +0 is a
+ *     measurement of the tree rather than of a patch that never fired:
+ *     apps/cockpit/test/i18n-surface-matrix.ts.
  * So the console hides no copy behind these limits today. That is a statement
  * about this tree on this day, and it is re-measurable; it is not a statement
  * that the list above has an end.
@@ -220,6 +237,11 @@ const INTL_FORMATTERS = new Set([
 /** Array methods whose result is an element of the receiver. */
 const ELEMENT_OF = new Set(['find', 'at', 'pop', 'shift'])
 
+/** An attribute that carries layout or test wiring rather than anything a reader sees. */
+function presentational(name: string): boolean {
+  return name === 'className' || name.startsWith('data-') || (name.startsWith('aria-') && !ANNOUNCED_ARIA.has(name))
+}
+
 function parse(file: string, source = readFileSync(file, 'utf8')): ts.SourceFile {
   return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 }
@@ -294,7 +316,15 @@ function drawnValues(parsed: ts.SourceFile): DrawnValue[] {
     const through = (nodes: ts.Node[], key: string | undefined) =>
       nodes.flatMap((node) => (ts.isBlock(node) ? returnsOf(node).flatMap((value) => into(value, key)) : into(node, key)))
 
-    if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) {
+    if (
+      ts.isParenthesizedExpression(node) ||
+      ts.isAsExpression(node) ||
+      // `satisfies` is `as` with the assignment checked the other way round, and
+      // the tree writes `as const satisfies …` ten times. Reading one and not the
+      // other made every value behind those ten invisible.
+      ts.isSatisfiesExpression(node) ||
+      ts.isNonNullExpression(node)
+    ) {
       return into(node.expression, property)
     }
     // A string reached while looking for a property is the object, not the property.
@@ -337,6 +367,39 @@ function drawnValues(parsed: ts.SourceFile): DrawnValue[] {
     return []
   }
 
+  /**
+   * The object literals an expression can be, for a `{...spread}`.
+   *
+   * `literals` answers with strings and a spread needs the property NAMES too —
+   * which attribute a value is drawn through is half of every finding here. It
+   * follows the same hops as `literals` and stops at the same depth, so a spread
+   * is exactly as far-sighted as an attribute and no further.
+   */
+  const objectsOf = (node: ts.Node | undefined, depth: number, seen: Set<string>): ts.ObjectLiteralExpression[] => {
+    if (!node || depth > 12) return []
+    const mark = `${node.pos}:${node.end}`
+    if (seen.has(mark)) return []
+    seen.add(mark)
+    const into = (next: ts.Node | undefined) => objectsOf(next, depth + 1, seen)
+    const through = (nodes: ts.Node[]) =>
+      nodes.flatMap((found) => (ts.isBlock(found) ? returnsOf(found).flatMap(into) : into(found)))
+
+    if (
+      ts.isParenthesizedExpression(node) ||
+      ts.isAsExpression(node) ||
+      ts.isSatisfiesExpression(node) ||
+      ts.isNonNullExpression(node)
+    ) {
+      return into(node.expression)
+    }
+    if (ts.isObjectLiteralExpression(node)) return [node]
+    if (ts.isIdentifier(node)) return through(resolve(node))
+    if (ts.isConditionalExpression(node)) return [...into(node.whenTrue), ...into(node.whenFalse)]
+    if (ts.isBinaryExpression(node)) return [...into(node.left), ...into(node.right)]
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) return through(resolve(node.expression))
+    return []
+  }
+
   const drawn: DrawnValue[] = []
   const visit = (node: ts.Node): void => {
     if (ts.isJsxText(node)) {
@@ -354,12 +417,29 @@ function drawnValues(parsed: ts.SourceFile): DrawnValue[] {
     }
     if (ts.isJsxAttribute(node) && node.initializer) {
       const name = node.name.getText(parsed)
-      const presentational =
-        name === 'className' || name.startsWith('data-') || (name.startsWith('aria-') && !ANNOUNCED_ARIA.has(name))
-      if (!presentational) {
+      if (!presentational(name)) {
         const carried = ts.isJsxExpression(node.initializer) ? node.initializer.expression : node.initializer
         for (const text of literals(carried, undefined, 0, new Set())) {
           drawn.push({ text, line: lineOf(parsed, node), attribute: name })
+        }
+      }
+    }
+    // `ts.isJsxSpreadAttribute` is not `ts.isJsxAttribute`, so `{...shell}` was
+    // a fourth way onto the screen that nothing looked at. The properties are
+    // held to the same two strictnesses as a written-out attribute, because on
+    // screen there is no difference between the two.
+    if (ts.isJsxSpreadAttribute(node)) {
+      for (const object of objectsOf(node.expression, 0, new Set())) {
+        for (const assignment of object.properties) {
+          if (!ts.isPropertyAssignment(assignment)) continue
+          const name =
+            ts.isIdentifier(assignment.name) || ts.isStringLiteralLike(assignment.name)
+              ? assignment.name.text
+              : undefined
+          if (name === undefined || presentational(name)) continue
+          for (const text of literals(assignment.initializer, undefined, 0, new Set())) {
+            drawn.push({ text, line: lineOf(parsed, node), attribute: name })
+          }
         }
       }
     }

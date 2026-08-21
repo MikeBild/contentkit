@@ -769,8 +769,8 @@ const I18N_CONTRACTS = [
     id: 'i18n/visible-copy-is-catalogued',
     promise:
       'Every value that reaches the screen comes from the typed catalogs — JSX text, JSX expressions followed back ' +
-      'to the literals they carry, and attributes by exclusion rather than by a four-name list. Only named ' +
-      'technical literals stay raw.',
+      'to the literals they carry, attributes by exclusion rather than by a four-name list, and the properties ' +
+      'behind a `{...spread}`. Only named technical literals stay raw.',
     // The probe used to read `isJsxText` and four attribute names, so a JSX
     // EXPRESSION was invisible to it whatever word it carried
     // (LOCAL-CK-I18N-SONDE-SIEHT-NUR-JSXTEXT). The asserts below pin the three
