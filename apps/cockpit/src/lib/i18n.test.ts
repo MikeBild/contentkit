@@ -32,18 +32,36 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  * Following VALUES, never callees: `X.find(…)` and `X[i]` carry an element of
  * `X`, `X.map(fn)` carries what `fn` returns, a call to a file-local function
  * carries that function's returns, and `t(…)` carries the catalog and therefore
- * has nothing to report. A parameter, an import or an API response cannot be
- * resolved here and stays unresolved: the probe reports what it can prove from
- * this file, not what it suspects.
+ * has nothing to report. What it cannot follow is listed below, measured.
  *
  * Two strictnesses, because attributes carry two different kinds of value. An
  * attribute whose only job is to be read — `label`, `title`, `alt`, `noun`,
  * `help` — is held to any word at all. Every other attribute carries machine
  * values here (`active="compile"`, `protocols={['https:']}`, `paths={[…]}`) and
  * is held to PROSE: two words with a space between them, which no identifier
- * has. That leaves one gap, and it is a known one rather than an invisible one:
- * a single English word in an attribute nobody listed as copy. `COPY_ATTRIBUTES`
- * is where that gap is closed, one name at a time.
+ * has.
+ *
+ * WHAT THIS PROBE DOES NOT SEE — measured against fixtures, not reasoned about.
+ * A named limit is only better than a hidden one once somebody has run it, and
+ * the first version of this list named one of the seven:
+ *
+ *   1. A single English word in an attribute nobody listed as copy. The probe
+ *      draws it; PROSE then drops it, because every unlisted attribute in this
+ *      console carries machine values. `COPY_ATTRIBUTES` closes this one name
+ *      at a time.
+ *   2. An object SPREAD: `{ ...BASE }` carries none of `BASE`'s properties.
+ *   3. ARRAY DESTRUCTURING: `const [first] = ROWS` resolves to nothing.
+ *   4. A `let` REASSIGNED after its declaration — only the initializer is read,
+ *      so the value that actually reaches the screen is the one missed.
+ *   5. A CALLBACK PARAMETER: `ROWS.map((row) => <li>{row.note}</li>)` follows
+ *      what `fn` returns but not `row`, so `row.note` stays unresolved. Closing
+ *      it against this tree adds 28 strings and all 28 are machine identifiers
+ *      (`hero`, `portrait`, `code-example`): it hides nothing today, which is
+ *      why it is written down rather than closed.
+ *   6. A MODULE BOUNDARY: an imported binding is another file's value.
+ *   7. A function PARAMETER, and an API response — neither is provable here.
+ *
+ * The probe reports what it can prove from this file, never what it suspects.
  */
 const LETTERS = /[A-Za-zÄÖÜäöüß]/
 
