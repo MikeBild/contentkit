@@ -30,9 +30,12 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  *      `label="extra"` on the Custom-fields group was not one of them.
  *
  * Following VALUES, never callees: `X.find(…)` and `X[i]` carry an element of
- * `X`, `X.map(fn)` carries what `fn` returns, a call to a file-local function
- * carries that function's returns, and `t(…)` carries the catalog and therefore
- * has nothing to report. What it cannot follow is listed below, measured.
+ * `X`, `X.map(fn)` carries what `fn` returns, a call to a file-local `function`
+ * DECLARATION carries that function's returns, and `t(…)` carries the catalog
+ * and therefore has nothing to report. The word `declaration` is load-bearing:
+ * `const f = () => '…'` is an initializer the resolver reaches and then cannot
+ * read, so `{f()}` is blind (limit 13). What it cannot follow is listed below,
+ * measured.
  *
  * Two strictnesses, because attributes carry two different kinds of value. An
  * attribute whose only job is to be read — `label`, `title`, `alt`, `noun`,
@@ -41,25 +44,74 @@ import { createLocaleStore, LOCALE_STORAGE_KEY, resolveLocale, type LocalePrefer
  * is held to PROSE: two words with a space between them, which no identifier
  * has.
  *
- * WHAT THIS PROBE DOES NOT SEE — measured against fixtures, not reasoned about.
- * A named limit is only better than a hidden one once somebody has run it, and
- * the first version of this list named one of the seven:
+ * WHAT THIS PROBE DOES NOT SEE. Every line below was RUN against an inline
+ * fixture with a control alongside it — a file-local `const`, which the probe
+ * reads — so each one is a measurement, not a suspicion.
  *
+ * THIS LIST IS MEASURED, NOT COMPLETE, and the difference is the whole lesson
+ * here. Its first version named ONE limit and called that the list. Its second
+ * named seven and said "the probe's named limits are seven": nine more were
+ * found the same day, by rerunning the same fixtures against the SHIPPED probe.
+ * A count of blind spots is a claim about what nobody has looked for yet, and
+ * that claim cannot be measured — so it is not made. What is claimed is that
+ * each entry below has a measurement, and that the reach is wider than any of
+ * them costs today, which IS measurable and is measured.
+ *
+ * DRAWN, THEN DISCARDED
  *   1. A single English word in an attribute nobody listed as copy. The probe
  *      draws it; PROSE then drops it, because every unlisted attribute in this
  *      console carries machine values. `COPY_ATTRIBUTES` closes this one name
  *      at a time.
+ *
+ * A NAME IT CANNOT RESOLVE TO A DECLARATION IT READS. `declarationsIn` reads
+ * `const`/`let`/`var` with an initializer and a plain identifier for a name, and
+ * `function` declarations. Everything else is a name with nothing behind it:
  *   2. An object SPREAD: `{ ...BASE }` carries none of `BASE`'s properties.
- *   3. ARRAY DESTRUCTURING: `const [first] = ROWS` resolves to nothing.
- *   4. A `let` REASSIGNED after its declaration — only the initializer is read,
- *      so the value that actually reaches the screen is the one missed.
- *   5. A CALLBACK PARAMETER: `ROWS.map((row) => <li>{row.note}</li>)` follows
- *      what `fn` returns but not `row`, so `row.note` stays unresolved. Closing
- *      it against this tree adds 28 strings and all 28 are machine identifiers
- *      (`hero`, `portrait`, `code-example`): it hides nothing today, which is
- *      why it is written down rather than closed.
- *   6. A MODULE BOUNDARY: an imported binding is another file's value.
- *   7. A function PARAMETER, and an API response — neither is provable here.
+ *   3. ARRAY destructuring: `const [first] = ROWS` resolves to nothing.
+ *   4. OBJECT destructuring: `const { reason } = NOTE` likewise — the binding
+ *      name is not an identifier declaration the resolver can see.
+ *   5. A SHORTHAND property: `const reason = '…'; const N = { reason }` — the
+ *      object reader handles `PropertyAssignment` only.
+ *   6. A COMPUTED key: `{ [K]: '…' }` has no name to match a property against.
+ *   7. A `let` REASSIGNED after its declaration — only the initializer is read,
+ *      so `let msg = 'x'; msg = '<sentence>'` reports `x`, which is to say
+ *      precisely not the value that reaches the screen.
+ *   8. A CALLBACK PARAMETER: `ROWS.map((row) => <li>{row.note}</li>)` follows
+ *      what `fn` returns but not `row`.
+ *   9. A function PARAMETER, its default value, and an API response — none of
+ *      the three is provable from this file.
+ *  10. A MODULE BOUNDARY: an imported binding is another file's value.
+ *  11. A CLASS member, a static member, or a namespace member.
+ *  12. An object METHOD in shorthand (`{ note() { … } }`) or a getter.
+ *  13. A call to an ARROW-FUNCTION const: `const f = () => '…'; {f()}`. The
+ *      resolver reaches the arrow function and has no branch for it.
+ *
+ * A CALL OR EXPRESSION FORM IT DOES NOT FOLLOW
+ *  14. `Array#join`, and `filter`/`slice`/`sort`/`concat`/`flat` chains —
+ *      `ELEMENT_OF` knows `find`, `at`, `pop` and `shift`.
+ *  15. TEMPLATE INTERPOLATION: only the literal parts are read, never the
+ *      values interpolated between them.
+ *  16. `for (const row of ROWS)`.
+ *  17. `Object.values`/`Object.entries`, and `Map#get`.
+ *  18. A hard DEPTH limit (`depth > 12`). Eleven links of `const` to `const`
+ *      still resolve; the twelfth returns nothing — silently, with no report
+ *      that a chain was abandoned rather than exhausted.
+ *
+ * WHAT THE LIMITS COST TODAY — measured against the real tree, which is the only
+ * number here that can be measured, and the reason these are named rather than
+ * closed:
+ *   • Closing 4, 14 and 15 together turns up exactly 4 further strings, and all
+ *     4 are FALSE: shell.tsx:921 and :922, `Reader access` and `Site settings`,
+ *     reached through the `items` and `open` props of NavBlock. What is drawn
+ *     there is `t(NAV_KEYS[to])`; the `label` field is an internal identifier
+ *     that never reaches the screen.
+ *   • Closing 8 turns up 28, and all 28 are machine identifiers from
+ *     compositions.tsx:351 and body.tsx:133 — `portrait`, `hero`,
+ *     `code-example`, `data-table`.
+ *   • Closing 13 turns up nothing at all.
+ * So the console hides no copy behind these limits today. That is a statement
+ * about this tree on this day, and it is re-measurable; it is not a statement
+ * that the list below has an end.
  *
  * The probe reports what it can prove from this file, never what it suspects.
  */
