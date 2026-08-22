@@ -2,7 +2,7 @@
 
 Version 1.6 · 2026-08-21 · Applies to ContentKit, SubKit, WorkKit, WikiKit, CodeKit and WatchKit
 
-**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `8f94e9cb4233382faf4b4962ea9d6ee6eee764993d8c09370cac1160768f3f31`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
+**This is a shortened English translation for operators, not the standard.** Where the two differ, the German source wins. That source is [`COCKPIT-KONVENTION.md`](../COCKPIT-KONVENTION.md) in the repository root — version 1.6, SHA-256 `d659b1f9fca1791b9beb96ee81d5706832ed677d386d33f2bb92088bca4cf125`. This copy is tenant-neutral and drops detail the source carries; read it to get oriented, and settle any question against the source. The convention is copied, not shared as code: every product owns its components and releases. A product may document a justified deviation, but these rules are the default.
 
 ## 0. What the cockpit is for
 
@@ -122,3 +122,19 @@ Checking and repairing are separate actions in that order. Check reads and chang
 ## 14. Modes and boundaries
 
 Every autonomy or approval mode shows its gate matrix: which gates remain and which are removed. A mode name alone is not a safety statement. Policy rows distinguish a model-facing **Guardrail** from a **Boundary** enforced through authorization, isolation or payload-bound human approval.
+
+## 15. Audit trail
+
+**Decision by Mike, 2026-08-22.** §0 sends the past here, so this surface must be the *same* in all six products. Measured on 2026-08-22 it was not: four different column sets, "action" against "operation", "actor" against "origin", one heading "Audit-Protokoll" against five reading "Audit", and one product with no table at all. The cause was that no paragraph existed — the briefs carried a description, and a description cannot fail.
+
+**15.1 Name and place.** The menu entry is **Audit**, in the Installation group (§6). The page heading is **Audit-Trail**. Not "protocol", not "log", not "history".
+
+**15.2 The five columns**, in this order, with these names: **Zeitpunkt · Vorgang · Art · Ergebnis · Verursacher**. The time is absolute ("19.08.2026, 14:11"), never a span. The operation is a German name, never a machine value; where no name exists the machine value stands **recognisable as such**, not as "unknown" (§2). The originator is an em dash where the source carries none — **never inferred**. Product-specific extra columns are allowed and stand to the **right** of the five (WorkKit: transport, details; ContentKit: site). An extra column is never another name for one of the five.
+
+**15.3 What the page must do.** Server-side search and filters, complete paging, event detail with visible hashes and raw data, chain status, and export of the current selection.
+
+**15.4 The footnote is mandatory.** The page names **what the trail does not cover**, so a narrow one is not read as a complete one. A source that does not answer is named **above the table**, never swallowed.
+
+**15.5 The engine.** The binding standard is **audit.v1**: append-only, a `prev_sha256`/`sha256` chain, sequence and hash written atomically under a lock, event and change in **one** transaction, errors and refusals recorded as well, and daily chain-head manifests kept outside the product database. Surfaces: `GET /v1/audit`, `/v1/audit/{id}`, `/v1/audit/verify`, `/v1/audit/export.ndjson`.
+
+**15.6 The eleven proofs.** An audit trail is finished only when each of them has been **run** — not described, not promised. They are listed in full in `AUDIT-NACHWEISE.md` in the parity repository. The state is kept as a table of product by proof with three outcomes per cell: **run · failed · not built (with a measurement)**. **A cell without a run is never green.** Historical gaps are not talked away: old data is sealed as `legacy_partial`, and the gapless proof begins at the documented cutover.
