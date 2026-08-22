@@ -1465,6 +1465,25 @@ function repositoryName() {
  *
  * Ambiguity is refused rather than guessed: two markers is not an answer, so the
  * value comes back `null` and the caller ends the run instead of picking one.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHERE THE BOUNDARY NOW IS, AND WHAT THAT COSTS.
+ *
+ * Asking the browser moved the question. Identity used to be a property of the
+ * DELIVERED DOCUMENT; it is now a property of the DOM AFTER SCRIPTS HAVE RUN.
+ * That is not a side effect of a nicer reader — it is a different claim, and it
+ * was measured over real HTTP at a live Chromium: a marker that no byte of the
+ * document carries and a script appends IS read, and a script that overwrites
+ * the marker the document was served with WINS. Both are pinned as forms in
+ * test/contract/cockpit-identity-reader.test.mjs.
+ *
+ * The price: the bytes on the wire no longer decide whose console answered, so a
+ * console that ships one name and paints another passes this assertion. That is
+ * the right trade — the DOM is what a human sees, and a name only the bytes
+ * carry is a name nobody reads — but it means this reader answers "whose console
+ * is DRAWN here", never "whose bundle was SERVED here". What answers the second
+ * question is the build stamp, and it answers it once, at the start of the run.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 async function markerAt(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded' })

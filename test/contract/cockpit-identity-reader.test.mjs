@@ -122,6 +122,23 @@ const FORMS = [
     head: `<meta NAME="COCKPIT-PRODUCT" content="${DECOY}" />\n    ${marker(REAL)}`,
     expect: { count: 1, value: REAL },
   },
+  // ───────────────────────────────────────────────────────────────────────────
+  // THE BOUNDARY, PINNED. The two forms below are not parser rules — they are
+  // the consequence of asking a BROWSER instead of the bytes: identity is a
+  // property of the DOM AFTER SCRIPTS HAVE RUN. Measured, both of them, and
+  // spelled out here so the move cannot be undone or widened unnoticed
+  // (LOCAL-CK-KENNUNG-DOM-NACH-SKRIPT).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    id: 'a marker no byte of the document carries, written by a script',
+    head: `<script>const meta = document.createElement('meta'); meta.name = ${JSON.stringify(attribute)}; meta.content = ${JSON.stringify(REAL)}; document.head.appendChild(meta)</script>`,
+    expect: { count: 1, value: REAL },
+  },
+  {
+    id: 'a script that overwrites the marker the document was served with',
+    head: `${marker(DECOY)}\n    <script>document.querySelector('meta[name=' + ${JSON.stringify(JSON.stringify(attribute))} + ']').setAttribute('content', ${JSON.stringify(REAL)})</script>`,
+    expect: { count: 1, value: REAL },
+  },
   {
     id: 'an unquoted value ending in a slash',
     // In an unquoted attribute value only whitespace and `>` end the value, so
