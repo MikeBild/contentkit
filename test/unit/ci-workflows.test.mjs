@@ -18,6 +18,29 @@
  * have no CI job on purpose and two are spelled out in CI as the steps they
  * decompose into. Each is a row in the table below with its reason, so the
  * asymmetry is on the record instead of being a gap nobody can see.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * A WARNING FROM THE SECOND HALF OF THIS FILE, TO WHOEVER TOUCHES IT NEXT.
+ *
+ * The readings below exist because three defects reached main that were green on
+ * a developer's machine and red on the runner — a Node 22 export, an unwarmed
+ * browser cache, a hook Node 20 does not call. THE FIRST VERSION OF THOSE
+ * READINGS WAS THAT DEFECT ITSELF, and it is worth knowing exactly how.
+ *
+ * `test/fixtures/node-engine-floor.json` is written on whatever machine runs the
+ * generator. The self-check compared EVERY name in it against the running Node,
+ * and on the Linux runner it failed on `constants.O_SYMLINK` — an export macOS
+ * has, Linux does not, and NOTHING IN THIS REPOSITORY IMPORTS. It was the only
+ * failure in an otherwise green 20.x leg: 1123 of 1127.
+ *
+ * THE SNAPSHOT IS A FLOOR FOR THE VERSION, NOT FOR THE PLATFORM. Do not make it
+ * one again. A few builtins export platform-specific names, so a check that
+ * compares the whole snapshot to the whole engine is measuring a difference no
+ * import can reach — and a check that fails on something nobody can act on is a
+ * check people learn to ignore. The self-check therefore measures THE IMPORTS
+ * THE TREE ACTUALLY MAKES, which is the set that would break at runtime and the
+ * only set worth failing over.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
