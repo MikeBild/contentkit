@@ -143,28 +143,38 @@ let origin = null
 let browser = null
 let page = null
 
-before(async () => {
-  server = createServer((request, response) => {
-    const body = documents.get(new URL(request.url ?? '/', 'http://127.0.0.1').pathname)
-    response.writeHead(body === undefined ? 404 : 200, {
-      'content-type': body === undefined ? 'text/plain' : 'text/html; charset=utf-8',
-      'cache-control': 'no-store',
-    })
-    response.end(body ?? 'not found')
-  })
-  // Ephemeral, so this is runnable while anything else holds a port.
-  await new Promise((done) => server.listen(0, '127.0.0.1', done))
-  origin = `http://127.0.0.1:${server.address().port}`
-  browser = await chromium.launch({ headless: true })
-  page = await browser.newPage()
-})
-
-after(async () => {
-  await browser?.close()
-  await new Promise((done) => server?.close(done))
-})
-
 describe('the identity reader reads what the browser reads', () => {
+  /**
+   * The browser, opened and closed AROUND THE SUITE — not at the top level.
+   *
+   * `before`/`after` written outside a suite are ROOT hooks, and Node's runner
+   * only began running those in 22. `engines.node` is `>=20.12` and CI has a 20.x
+   * leg: there the hook was registered, never called, and every case met
+   * `page === null` — a suite that fails for a reason that has nothing to do with
+   * what it measures, on the one engine nobody develops on
+   * (LOCAL-CK-WURZEL-HOOK-ERST-AB-NODE-22). Inside the suite the hooks run on both.
+   */
+  before(async () => {
+    server = createServer((request, response) => {
+      const body = documents.get(new URL(request.url ?? '/', 'http://127.0.0.1').pathname)
+      response.writeHead(body === undefined ? 404 : 200, {
+        'content-type': body === undefined ? 'text/plain' : 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      response.end(body ?? 'not found')
+    })
+    // Ephemeral, so this is runnable while anything else holds a port.
+    await new Promise((done) => server.listen(0, '127.0.0.1', done))
+    origin = `http://127.0.0.1:${server.address().port}`
+    browser = await chromium.launch({ headless: true })
+    page = await browser.newPage()
+  })
+
+  after(async () => {
+    await browser?.close()
+    await new Promise((done) => server?.close(done))
+  })
+
   for (const [index, form] of FORMS.entries()) {
     test(form.id, async () => {
       const read = await markerAt(page, `${origin}/${index}`)

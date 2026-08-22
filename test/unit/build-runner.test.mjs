@@ -1,4 +1,4 @@
-import test, { after } from 'node:test'
+import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -53,7 +53,6 @@ test('the worker entry point resolves as a sibling of the runner, not from cwd',
 // nothing special from the runner share one. Anything testing lifecycle or a
 // particular deck renderer builds its own.
 const shared = createBuildRunner({ root })
-after(() => shared.close())
 
 test('a build in a worker returns the same shape as an in-process build', async () => {
   const built = await build(shared, [doc('alpha'), doc('beta')])
@@ -330,3 +329,13 @@ test('a queued build still runs after the worker ahead of it dies', async () => 
     await runner.close()
   }
 })
+
+// Teardown as a case, not as a root `after`.
+//
+// Node's runner only began calling ROOT before/after hooks in 22, and
+// engines.node is `>=20.12`. The root `after` that used to stand beside
+// `createBuildRunner` above was registered and never called on the 20.x leg, so
+// the shared worker outlived the file there — measured at 62s against 48s on
+// 22 for this file alone (LOCAL-CK-WURZEL-HOOK-ERST-AB-NODE-22). Top-level cases
+// run in order on every engine, and this one is last.
+test('the shared worker is closed when the file is done', () => shared.close())
