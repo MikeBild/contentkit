@@ -27,7 +27,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      # `npm test`, with the runner's own case count kept.
+      #
+      # The 20.x leg reported green while running 139 cases fewer than the 22.x
+      # leg — eleven percent, same commit. Every one of them announces why, so
+      # nothing was silent; nobody compared the two numbers, because neither leg
+      # can see the other. The `matrix-parity` job below does
+      # (LOCAL-CK-ZWANZIG-MISST-WENIGER).
+      - name: Unit suite, and the number of cases this engine actually ran
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee unit.tap
+          awk '/^# tests /{print $3}' unit.tap > case-count.txt
+          echo "Node ${{ matrix.node-version }} ran $(cat case-count.txt) cases"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: case-count-${{ matrix.node-version }}
+          path: case-count.txt
+          if-no-files-found: error
       # test/contract/cockpit-identity-reader.test.mjs launches Chromium in a
       # before-hook: it holds the shipped identity reader against the browser
       # whose reading is the one that matters. Playwright's binaries are not in
@@ -44,6 +61,30 @@ jobs:
       - run: npm run check:embedded-drift
       - run: npm run check:docs-drift
       - run: npm audit --audit-level=high
+
+  # Both legs of `test` are required checks and both report green. Neither can
+  # see the other, so until this job existed nothing in the repository compared
+  # what they each MEASURED — and they differ by 139 cases, for a reason that is
+  # written in every skipped suite and was read by nobody
+  # (LOCAL-CK-ZWANZIG-MISST-WENIGER). It is ~10 s and one download.
+  matrix-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+      - uses: actions/download-artifact@v8
+        with:
+          name: case-count-20.x
+          path: floor
+      - uses: actions/download-artifact@v8
+        with:
+          name: case-count-22.x
+          path: current
+      - run: node scripts/matrix-parity-check.mjs floor/case-count.txt current/case-count.txt
 
   # The console is a quarter of the codebase and the primary deliverable inside
   # the binary, and until this job existed CI never type-checked it, never

@@ -98,6 +98,19 @@ function runs(from) {
 }
 
 /**
+ * Every COMMAND LINE a job runs, not every step.
+ *
+ * A `run:` may be a script: the unit step is `npm test` piped into `tee` so the
+ * matrix-parity job has the runner's own case count, and it carries three more
+ * lines besides. Matching whole steps made "does this job run this stage?" a
+ * question about the step's formatting; matching lines keeps it a question about
+ * the command, and each line is still compared whole — never a substring.
+ */
+function commandLines(from) {
+  return runs(from).flatMap((step) => step.split('\n').map((line) => line.trim()))
+}
+
+/**
  * Every stage of `verify`, and the CI job that runs it.
  *
  * `job: null` means "deliberately not in CI", and the reason has to be written
@@ -109,7 +122,10 @@ function runs(from) {
  */
 const VERIFY_STAGES_IN_CI = {
   lint: { job: 'test', runs: ['npm run lint'] },
-  test: { job: 'test', runs: ['npm test'] },
+  // Spelled out with its pipe: the step keeps the runner's own `# tests` count
+  // for the matrix-parity job, which is the only thing in this repository that
+  // compares what the two legs actually measured (LOCAL-CK-ZWANZIG-MISST-WENIGER).
+  test: { job: 'test', runs: ['npm test 2>&1 | tee unit.tap'] },
   'test:contract': { job: 'test', runs: ['npm run test:contract'] },
   'test:smoke': { job: 'test', runs: ['npm run test:smoke'] },
   'check:embedded-drift': { job: 'test', runs: ['npm run check:embedded-drift'] },
@@ -154,7 +170,7 @@ test('every stage of `npm run verify` is accounted for against CI', () => {
 test('each stage runs in the job the table names, step by step', () => {
   for (const [stage, entry] of Object.entries(VERIFY_STAGES_IN_CI)) {
     if (entry.job === null) continue
-    const steps = runs(job(entry.job))
+    const steps = commandLines(job(entry.job))
     for (const command of entry.runs) {
       assert.ok(
         steps.includes(command),
@@ -171,8 +187,8 @@ test('each stage runs in the job the table names, step by step', () => {
 test('no CI job runs a verify stage the table assigns elsewhere', () => {
   const stages = new Set(verifyStages())
   for (const [name, entry] of Object.entries(ci.jobs)) {
-    for (const command of runs(entry)) {
-      const stage = /^npm (?:run )?([a-z][a-z0-9:-]*)$/.exec(command.trim())?.[1]
+    for (const command of commandLines(entry)) {
+      const stage = /^npm (?:run )?([a-z][a-z0-9:-]*)(?:\s|$)/.exec(command.trim())?.[1]
       const resolved = stage === 'test' ? 'test' : stage
       if (!resolved || !stages.has(resolved)) continue
       assert.equal(
@@ -535,6 +551,150 @@ test('no test file registers a hook outside a suite', () => {
       packageJson.engines.node +
       '` and the 20.x CI leg do not. Move the hook inside its `describe`, or make the teardown a final case:\n  ' +
       offenders.join('\n  '),
+  )
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// THE FOURTH SHAPE: OPENLY UNEQUAL, AND UNCOMPARED — LOCAL-CK-ZWANZIG-MISST-WENIGER.
+//
+// The three readings above catch a leg that is green for the wrong reason. This
+// one catches two legs that are both green and do not measure the same thing.
+//
+// The 20.x leg runs 139 cases FEWER than the 22.x leg: 1127 against 1266, same
+// commit, eleven percent. Nothing about it is silent — every skipped suite prints
+// "this Node cannot import TypeScript" — and yet nobody compared the two numbers,
+// because neither leg can see the other. Both are required checks. Both said
+// green. One measured less.
+//
+// The comparison of the NUMBERS belongs to the `matrix-parity` job, which is the
+// only place both numbers exist, and it uses the runners' own counting rather
+// than a re-derivation (an attempt to compute the gap from the source landed on
+// 147 against a measured 139 — which is the argument against re-implementing a
+// runner in a test). What belongs HERE is the other half: the gap has to stay
+// NAMED. A file may not start withholding cases from an engine without saying so.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const PARITY = JSON.parse(readFileSync(join(root, 'test', 'fixtures', 'matrix-parity.json'), 'utf8'))
+
+/**
+ * Conditional skips that are NOT about the engine, each with its reason.
+ *
+ * A skip whose condition is an environment variable withholds the same cases
+ * from every engine, so it cannot open a gap between the two legs — it opens one
+ * between a laptop and CI, which the jobs below already answer by setting the
+ * variable. Written down rather than pattern-matched, because "this condition is
+ * not engine-shaped" is a judgement and judgements belong on the record.
+ */
+const NOT_THE_ENGINE = {
+  'test/unit/cockpit-navigation.test.mjs':
+    'guarded on whether the navigation table could be read out of shell.tsx, not on the engine — ' +
+    'measured: 33 cases on 20.14.0 and 33 on 22.23.1',
+  'test/integration/migrations-postgres.test.mjs':
+    'guarded on CONTENTKIT_TEST_DATABASE_URL, which the integration job sets',
+  'test/integration/oauth-postgres.test.mjs': 'guarded on CONTENTKIT_TEST_DATABASE_URL, which the integration job sets',
+  'test/integration/oauth-cockpit-login-postgres.test.mjs':
+    'guarded on CONTENTKIT_TEST_DATABASE_URL, which the integration job sets',
+  'test/integration/oauth-identity-grants-postgres.test.mjs':
+    'guarded on CONTENTKIT_TEST_DATABASE_URL, which the integration job sets',
+  'test/integration/stats-postgres.test.mjs': 'guarded on CONTENTKIT_TEST_DATABASE_URL, which the integration job sets',
+  'test/e2e/local-binary.test.mjs':
+    'guarded on CONTENTKIT_E2E_BINARY and CONTENTKIT_E2E_DATABASE_URL, which binary-e2e sets',
+}
+
+/**
+ * Every test file that can withhold cases from some run, read from the source.
+ *
+ * The pattern is assembled rather than written out, and that is not decoration:
+ * spelled literally it matches THIS file — the reading would find itself and
+ * report the checker as a gap. Same trap the planted fixture for the floor
+ * reading is written around, one file over.
+ */
+const CONDITIONAL_SKIP = new RegExp(`${'skip'}:\\s*(?!false\\b|true\\b)\\S`)
+
+function conditionallySkipping() {
+  return sources()
+    .filter((file) => file.startsWith(join(root, 'test')))
+    .filter((file) =>
+      CONDITIONAL_SKIP.test(
+        readFileSync(file, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^[ \t]*\/\/.*$/gm, ''),
+      ),
+    )
+    .map((file) => relative(root, file))
+    .sort()
+}
+
+test('every file that withholds cases from a run is named, engine or not', () => {
+  const named = [...PARITY.files, ...Object.keys(NOT_THE_ENGINE)].sort()
+  assert.deepEqual(
+    conditionallySkipping(),
+    named,
+    'a conditional skip decides that some run measures less than another. Either it is the engine gap — then it ' +
+      'belongs in test/fixtures/matrix-parity.json and its number has to move with it — or it is not, and it ' +
+      'belongs in NOT_THE_ENGINE above with the reason it cannot open one.',
+  )
+  assert.equal(
+    new Set(named).size,
+    named.length,
+    'a file is claimed both as the engine gap and as not the engine gap; it can only be one',
+  )
+})
+
+test('each file the declaration blames really carries the cause it blames it for', () => {
+  for (const file of PARITY.files) {
+    const text = readFileSync(join(root, file), 'utf8')
+    assert.ok(
+      text.includes(PARITY.cause),
+      `test/fixtures/matrix-parity.json blames ${file} for "${PARITY.cause}", which is not in it any more`,
+    )
+  }
+  assert.ok(PARITY.difference > 0, 'a declared difference of zero would make the matrix-parity job vacuous')
+})
+
+// The declaration says the gap is an ENGINE gap. That is a claim about this
+// machine, so it is measured on this machine rather than believed: below the
+// version that strips types every one of these modules must fail to import, and
+// above it every one must succeed. A cause that has stopped being true — Node 20
+// gone from the matrix, or a module rewritten to .mjs — is a row that would
+// otherwise sit in the table for ever, explaining a gap that no longer has it.
+test('the cause the declaration names is true of the engine running this file', async (t) => {
+  const strips = Number(process.versions.node.split('.')[0]) > 20
+  let measured = 0
+  for (const module of PARITY.modules) {
+    assert.ok(existsSync(join(root, module)), `matrix-parity.json names ${module}, which is not in the tree`)
+    const imported = await import(join(root, module)).then(
+      () => true,
+      () => false,
+    )
+    measured += 1
+    assert.equal(
+      imported,
+      strips,
+      strips
+        ? `${module} does not import on Node v${process.versions.node}, so the gap is not only about type stripping`
+        : `${module} DOES import on Node v${process.versions.node}, so it withholds nothing here and the ` +
+            'declaration blames it for a gap it is not causing',
+    )
+  }
+  assert.equal(measured, PARITY.modules.length)
+  t.diagnostic(
+    `Node v${process.versions.node} ${strips ? 'strips types' : 'cannot strip types'}; ` +
+      `${PARITY.files.length} files withhold ${PARITY.difference} cases from the ${PARITY.floor} leg`,
+  )
+})
+
+test('the modules the declaration lists are the ones those files actually reach for', () => {
+  const reached = new Set()
+  for (const file of PARITY.files) {
+    for (const hit of readFileSync(join(root, file), 'utf8').matchAll(/import\(\s*'([^']+\.ts)'\s*\)/g)) {
+      reached.add(relative(root, join(dirname(join(root, file)), hit[1])))
+    }
+  }
+  assert.deepEqual(
+    [...reached].sort(),
+    [...PARITY.modules].sort(),
+    'the TypeScript modules those six files import and the ones matrix-parity.json blames have drifted apart',
   )
 })
 

@@ -1,0 +1,28 @@
+{
+  "comment": "The declared difference between the two matrix legs of the `test` job. scripts/matrix-parity-check.mjs holds the runners' own case counts against it; test/unit/ci-workflows.test.mjs holds the file list against the source and against the cause at runtime. Change the number only together with the reason it moved.",
+  "floor": "20.x",
+  "current": "22.x",
+  "difference": 139,
+  "skippedOnFloor": 3,
+  "cause": "this Node cannot import TypeScript (type stripping landed in 22.6)",
+  "files": [
+    "test/unit/cockpit-dates-progress.test.mjs",
+    "test/unit/cockpit-lists.test.mjs",
+    "test/unit/cockpit-primitives.test.mjs",
+    "test/unit/cockpit-relative-time.test.mjs",
+    "test/unit/cockpit-release-chain.test.mjs",
+    "test/unit/cockpit-site-wizard.test.mjs"
+  ],
+  "modules": [
+    "apps/cockpit/src/components/ui/progress-value.ts",
+    "apps/cockpit/src/forms/content/frontmatter.ts",
+    "apps/cockpit/src/forms/fields/date-value.ts",
+    "apps/cockpit/src/forms/site/rules.ts",
+    "apps/cockpit/src/lib/audio-budget.ts",
+    "apps/cockpit/src/lib/cursor.ts",
+    "apps/cockpit/src/lib/relative-time.ts",
+    "apps/cockpit/src/lib/release-chain.ts",
+    "apps/cockpit/src/lib/stat-tile.ts",
+    "apps/cockpit/src/lib/table-view.ts"
+  ]
+}
