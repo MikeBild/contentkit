@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, globSync as nodeGlobSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -1534,6 +1534,55 @@ const PLANTED_OFFENDERS = [
   `${PLANTED}:8 raw JSX: planted prose as jsx text`,
 ]
 
+/**
+ * `fs.globSync` for the engines this package claims — not for the one it is run on.
+ *
+ * `node:fs` gained `globSync` in Node 22. `engines.node` is `>=20.12` and CI runs
+ * a 20.x leg, where importing the name does not fail a case: it fails the whole
+ * module before a single test is collected. Nothing local said so, because the
+ * machine that ran the suite was newer than the runner that had to.
+ *
+ * Only the forms the shipped probe actually uses are supported — `**` across
+ * directories, `*` and `?` within one, and `{a,b}` alternation — and the walk
+ * starts at the pattern's fixed prefix so it never descends into node_modules.
+ * `test/unit/ci-runner-parity.test.mjs` is what keeps the import list honest;
+ * this is only the replacement.
+ */
+function globSyncCompat(pattern, { cwd }) {
+  const ACROSS = '\u0000'
+  const expression = new RegExp(
+    `^${pattern
+      .replace(/[.+^$()|[\]\\]/g, '\\$&')
+      .replace(/\{([^{}]*)\}/g, (_, list) => `(${list.split(',').join('|')})`)
+      .replace(/\*\*\//g, ACROSS)
+      .replace(/\*/g, '[^/]*')
+      .replace(/\?/g, '[^/]')
+      .replace(new RegExp(ACROSS, 'g'), '(?:[^/]*\\/)*')}$`,
+  )
+
+  const fixed = []
+  for (const segment of pattern.split('/')) {
+    if (/[*?{}]/.test(segment)) break
+    fixed.push(segment)
+  }
+  const base = join(cwd, ...fixed)
+  if (!existsSync(base)) return []
+
+  const found = []
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else {
+        const path = relative(cwd, full).split(sep).join('/')
+        if (expression.test(path)) found.push(path)
+      }
+    }
+  }
+  walk(base)
+  return found.sort()
+}
+
 /** Every `.tsx` under apps/cockpit/src that is not itself a test — walked, not globbed. */
 function tsxUnderCockpit() {
   const found = []
@@ -1603,7 +1652,7 @@ function runProbeCase() {
     },
     (pattern) => {
       globbed.push(pattern)
-      return [...nodeGlobSync(pattern, { cwd: PROBE_CWD }), PLANTED]
+      return [...globSyncCompat(pattern, { cwd: PROBE_CWD }), PLANTED]
     },
     (value) => ({
       toEqual: () => {
