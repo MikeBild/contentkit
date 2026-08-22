@@ -28,6 +28,17 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      # test/contract/cockpit-identity-reader.test.mjs launches Chromium in a
+      # before-hook: it holds the shipped identity reader against the browser
+      # whose reading is the one that matters. Playwright's binaries are not in
+      # node_modules and no postinstall fetches them, so without this step the
+      # hook fails and CANCELS all ten cases — on a developer machine with a warm
+      # browser cache the same suite is green, which is how it reached main.
+      #
+      # Installed here rather than moved to `cockpit-e2e`: the reader ships to
+      # users on `engines.node >= 20.12`, and this is the only job that runs it
+      # on 20.x. Moving it would keep CI green by measuring less.
+      - run: npx playwright install chromium
       - run: npm run test:contract
       - run: npm run test:smoke
       - run: npm run check:embedded-drift
