@@ -369,24 +369,36 @@ test('the floor snapshot describes the engine package.json actually claims', () 
 
 // The snapshot is committed, so on 22.x and on a developer machine nothing
 // re-derives it. This is what stops it drifting into fiction: on the 20.x leg —
-// the floor itself — every name it claims has to be really there. Subset, not
-// equality: a later 20.x patch may add exports, and a check that went red for
-// that would be a check people learn to ignore.
-test('on the floor engine itself, the snapshot claims nothing that is not there', (t) => {
+// the floor itself — a name it claims has to be really there.
+//
+// SCOPED TO WHAT THE TREE ACTUALLY IMPORTS, and that scope is the whole point.
+// The first version compared EVERY name in the snapshot against the running
+// Node and went red on the runner for `constants.O_SYMLINK` — an export macOS
+// has, Linux does not, and nothing in this repository imports. The snapshot is
+// written on a developer's machine, so it is a floor for the VERSION and not for
+// the platform, and a check that fails on a difference no import can reach is a
+// check people learn to ignore. What it has to catch is the snapshot permitting
+// an import this engine cannot serve, so it measures the imports.
+test('on the floor engine, every import the snapshot permits really resolves', (t) => {
   if (process.versions.node.split('.')[0] !== FLOOR.generatedFrom.replace(/^v/, '').split('.')[0]) {
     t.diagnostic(`not the floor engine (running v${process.versions.node}); the 20.x CI leg is where this measures`)
     return
   }
-  for (const [module, names] of Object.entries(FLOOR.modules)) {
-    const live = hereExports.get(module)
-    if (!live?.size) continue
-    for (const name of names) {
+  let checked = 0
+  for (const file of sources()) {
+    for (const { module, name } of builtinUsage(readFileSync(file, 'utf8')).named) {
+      if (!FLOOR.modules[module]?.includes(name)) continue
+      const live = hereExports.get(module)
+      if (!live?.size) continue
+      checked += 1
       assert.ok(
         live.has(name),
-        `the snapshot claims node:${module} exports '${name}'; this Node does not. ${REGENERATE}`,
+        `${relative(root, file)} imports { ${name} } from 'node:${module}', which the snapshot permits and this ` +
+          `Node (v${process.versions.node} on ${process.platform}) does not export. ${REGENERATE}`,
       )
     }
   }
+  assert.ok(checked > 300, `expected the tree's builtin imports to be readable, checked ${checked}`)
 })
 
 /** Every use of a builtin export the floor engine does not have. */

@@ -74,6 +74,11 @@ const snapshot = {
     'scripts/gen-node-floor-exports.mjs on that major — never on a newer one. See the script header.',
   engines: engines.node,
   generatedFrom: `v${process.versions.node}`,
+  // Recorded, not asserted on. A few builtins export platform-specific names —
+  // `constants.O_SYMLINK` exists on darwin and not on linux — so this file is a
+  // floor for the VERSION, not for the platform, and the check that reads it is
+  // scoped to the imports the tree actually makes for exactly that reason.
+  generatedOn: `${process.platform}-${process.arch}`,
   modules,
 }
 await writeFile(OUT, `${JSON.stringify(snapshot, null, 2)}\n`)

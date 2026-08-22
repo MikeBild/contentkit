@@ -2,6 +2,7 @@
   "comment": "Named exports of every node: builtin on the OLDEST Node engines.node allows. Regenerate with scripts/gen-node-floor-exports.mjs on that major — never on a newer one. See the script header.",
   "engines": ">=20.12",
   "generatedFrom": "v20.14.0",
+  "generatedOn": "darwin-arm64",
   "modules": {
     "assert": [
       "AssertionError",
