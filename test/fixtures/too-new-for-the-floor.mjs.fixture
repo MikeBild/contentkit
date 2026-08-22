@@ -1,0 +1,14 @@
+// Not a .mjs file, on purpose: the tree scan in test/unit/ci-workflows.test.mjs
+// reads every .mjs under test/, scripts/ and src/, so a planted offence written
+// inline there would be an offence the scan finds in the checker itself.
+//
+// Five lines, four of them decoys. `globSync` arrived in node:fs on Node 22 and
+// is the real defect that took the 20.x leg down (LOCAL-CK-CI-NEUER-ALS-DER-RUNNER);
+// both spellings of it must be reported. The `existsSync`/`readFileSync` imports
+// and the filename string must not be — the last one is the trap the member
+// reading falls into if it forgets that `.test.mjs` is not a member expression.
+import { existsSync, globSync as g, readFileSync } from 'node:fs'
+import fs from 'node:fs'
+import test from 'node:test'
+const files = fs.globSync('src/**/*.tsx')
+const name = 'cockpit-behavioural-floor.test.mjs'
