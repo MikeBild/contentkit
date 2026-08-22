@@ -332,3 +332,132 @@ describe('the audit page names every decision the server can write, and can filt
     assert.equal(new Set(labels).size, labels.length, 'two filter entries share a label; one of them cannot be chosen')
   })
 })
+
+// ═════════════════════════════════════════════════════════════════════════════
+// §15.2 — THE AUDIT-TRAIL'S OWN TABLE.
+//
+// The Overview was fixed once already; the audit page kept its own hand-written
+// table and its own silent fallback, so `oauth.login` stood in typewriter type
+// between two German sentences and nothing said the mapping had a hole. Reading
+// the page for a label is not enough: what matters is that EVERY value the
+// server can put in a row has a German name, and that the one remaining way to
+// print a raw value says out loud that it is one.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const RESOURCE_KEYS = record('RESOURCE_KEYS')
+
+/**
+ * Every resource type the server writes.
+ *
+ * Derived like the actions: the literals out of src/**, plus the one assembled
+ * form (`access_${singular}` over users/groups/rules), plus `system` — which
+ * src/audit.mjs substitutes when a row is about the installation rather than an
+ * object in it, and which is therefore a kind and not a gap.
+ */
+const RESOURCE_TYPES = [
+  ...new Set([
+    ...serverSources(join(root, 'src')).flatMap((file) =>
+      [...readFileSync(file, 'utf8').matchAll(/resourceType: '([a-z_]+)'/g)].map((hit) => hit[1]),
+    ),
+    'access_user',
+    'access_group',
+    'access_rule',
+    'system',
+  ]),
+]
+
+/** The `id` and label key of each column of the audit table, in the order it is declared. */
+function auditColumns() {
+  const from = auditPage.indexOf('const columns = useMemo<DataColumn<AuditEvent>[]>(')
+  assert.ok(from > 0, 'apps/cockpit/src/pages/audit.tsx no longer declares its columns that way')
+  const to = auditPage.indexOf('const { view, setView } = useTableView(', from)
+  assert.ok(to > from, 'the column list no longer ends where this test looks for its end')
+  const block = auditPage.slice(from, to)
+  const found = []
+  for (const match of block.matchAll(/\bid: '([a-z]+)',[\s\S]{0,320}?\blabel: t\('([a-z.]+)'\)/g)) {
+    found.push({ id: match[1], label: match[2] })
+  }
+  assert.ok(found.length >= 6, `expected the columns to be readable, found ${found.length}`)
+  return found
+}
+
+describe('the audit trail is the surface §15 describes', () => {
+  test('the five columns stand in §15.2’s order, and the extras stand right of them', () => {
+    const columns = auditColumns()
+    assert.deepEqual(
+      columns.slice(0, 5),
+      [
+        { id: 'when', label: 'audit.when' },
+        { id: 'operation', label: 'audit.operation' },
+        { id: 'kind', label: 'audit.kind' },
+        { id: 'result', label: 'audit.result' },
+        { id: 'origin', label: 'audit.origin' },
+      ],
+      'COCKPIT-KONVENTION.md §15.2 fixes these five, in this order: Zeitpunkt · Vorgang · Art · ' +
+        'Ergebnis · Verursacher. Extra columns are allowed and stand to the RIGHT of them, and an extra ' +
+        'column is never another name for one of the five.',
+    )
+    // The names, not just the keys — the catalog is where the words live and a
+    // renamed key with the old word would satisfy the list above.
+    for (const [key, word] of [
+      ['audit.when', 'Zeitpunkt'],
+      ['audit.operation', 'Vorgang'],
+      ['audit.kind', 'Art'],
+      ['audit.result', 'Ergebnis'],
+      ['audit.origin', 'Verursacher'],
+      ['audit.title', 'Audit-Trail'],
+      ['nav.audit', 'Audit'],
+    ]) {
+      assert.ok(
+        catalogs.includes(`'${key}': '${word}'`),
+        `§15 requires '${key}' to read "${word}" in the German catalog`,
+      )
+    }
+  })
+
+  test('every action the server can write has a German name ON THIS PAGE', () => {
+    // The page reads its filter vocabulary first and lib/audit-action.ts second.
+    // A value neither can name is the defect this test exists for, and it is the
+    // first one that fails rather than the tenth that is noticed in a screenshot.
+    const unnamed = [...LITERAL_ACTIONS, ...ASSEMBLED_ACTIONS, ...LEGACY_ACTIONS]
+      .filter((action) => !AUDIT_ACTION_KEYS[action] && auditPhrase(action) === null)
+      .sort()
+    assert.deepEqual(
+      unnamed,
+      [],
+      `the audit table would print these as raw machine values: ${unnamed.join(', ')}. ` +
+        '§15.2: "Vorgang ist ein deutscher Name, nie ein Maschinenwert."',
+    )
+  })
+
+  test('every resource type the server can write has a kind', () => {
+    const unnamed = RESOURCE_TYPES.filter((type) => !RESOURCE_KEYS[type]).sort()
+    assert.deepEqual(unnamed, [], `§15.2's "Art" column has no German word for: ${unnamed.join(', ')}`)
+    assert.ok(RESOURCE_TYPES.length >= 15, `expected the resource types to be readable, found ${RESOURCE_TYPES.length}`)
+    const missing = [...new Set(Object.values(RESOURCE_KEYS))]
+      .filter((key) => [...catalogs.matchAll(new RegExp(`'${key}':`, 'g'))].length !== 2)
+      .sort()
+    assert.deepEqual(missing, [], `these kinds are not in both catalogs: ${missing.join(', ')}`)
+  })
+
+  test('the one way a raw value still reaches the screen says that it is one', () => {
+    // §15.2 permits a machine value — "als solcher erkennbar" — and forbids both
+    // a plausible German invention and "Unbekannt". What it does not permit is
+    // the shape that put us here: the raw string returned as though it were a
+    // name, with nothing anywhere saying the mapping had a hole.
+    // From the body brace, not from the destructured parameter that precedes it.
+    const declared = auditPage.indexOf('function Operation(')
+    assert.ok(declared > 0, 'apps/cockpit/src/pages/audit.tsx no longer has an Operation cell')
+    const operation = braceGroup(auditPage, auditPage.indexOf(') {', declared))
+    assert.match(operation, /read\.machine/, 'the Operation cell no longer distinguishes a machine value')
+    assert.match(operation, /audit\.machineValue/, 'the machine-value branch no longer says that it is one')
+    assert.match(operation, /<code\b/, 'the machine value is no longer set apart from the German names')
+    assert.ok(
+      !/audit\.unknownActor|audit\.unknownResource/.test(auditPage),
+      '§15.2 forbids inventing a name where the source carries none; a dash is the answer',
+    )
+    for (const invented of ["'audit.unknownActor'", "'audit.unknownResource'"]) {
+      assert.ok(!catalogs.includes(invented), `${invented} is back in the catalog`)
+    }
+  })
+})

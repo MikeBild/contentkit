@@ -112,6 +112,52 @@ const OVERRIDES = {
   'oauth.token_issued': { subject: 'audit.subject.token', verb: 'audit.verb.issued' },
 } as const satisfies Record<string, AuditPhrase>
 
+/**
+ * The KIND a row is about — §15.2's third column, "Art".
+ *
+ * Keyed by `resource_type`, which is a CLOSED set the server writes and not the
+ * left half of the action: `oauth.login` is about an operator session, and
+ * `access.user.create` about a reader. Reading the action for this would name
+ * the wrong thing twice over.
+ *
+ * `system` is what src/audit.mjs writes when a row is about the installation
+ * rather than an object in it, so it is a kind like any other and not a gap.
+ * test/unit/cockpit-audit-action.test.mjs reads the set out of src/ and fails on
+ * the first value this table does not carry — the same reading that keeps the
+ * filter honest, for the same reason: silence here means a machine value in
+ * front of an operator.
+ */
+const RESOURCE_KEYS = {
+  access_group: 'audit.subject.accessGroup',
+  access_rule: 'audit.subject.accessRule',
+  access_user: 'audit.subject.accessUser',
+  api_key: 'audit.subject.apiKey',
+  comment: 'audit.subject.comment',
+  composition: 'audit.subject.composition',
+  contact: 'audit.subject.contact',
+  content: 'audit.subject.content',
+  content_item: 'audit.subject.content',
+  decision: 'audit.subject.decision',
+  deck: 'audit.subject.deck',
+  draft_capture: 'audit.subject.draft',
+  identity_grant: 'audit.subject.identity',
+  oauth_client: 'audit.subject.oauthClient',
+  oauth_grant: 'audit.subject.consent',
+  operator_session: 'audit.subject.session',
+  promotion_review: 'audit.subject.promotion',
+  release: 'audit.subject.release',
+  revision: 'audit.subject.revision',
+  site: 'audit.subject.site',
+  system: 'audit.subject.system',
+  webhook: 'audit.subject.webhook',
+} as const satisfies Record<string, TranslationKey>
+
+/** The German kind for one resource type, or null when this module cannot name it. */
+export function auditResourceKind(resourceType: string | null | undefined): TranslationKey | null {
+  if (!resourceType) return null
+  return RESOURCE_KEYS[resourceType as keyof typeof RESOURCE_KEYS] ?? null
+}
+
 export interface AuditPhrase {
   subject: TranslationKey
   verb: TranslationKey

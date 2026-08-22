@@ -3,6 +3,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { ck, type AuditEvent } from '@/api/ck'
 import { Page } from '@/app/shell'
 import { Button } from '@/components/ui/button'
+import { auditPhrase, auditResourceKind } from '@/lib/audit-action'
 import { DataTable, firstPage, useTableView, type DataColumn } from '@/components/ui/data-table'
 import {
   Select,
@@ -145,8 +146,76 @@ const AUDIT_ACTION_KEYS = {
   'comment.reject': 'audit.action.commentReject',
 } as const satisfies Record<string, TranslationKey>
 
-const auditActionLabel = (t: (key: TranslationKey) => string, action: string) =>
-  action in AUDIT_ACTION_KEYS ? t(AUDIT_ACTION_KEYS[action as keyof typeof AUDIT_ACTION_KEYS]) : action
+/**
+ * The German name for one operation — §15.2's "Vorgang".
+ *
+ * THREE READINGS, AND NO SILENT FOURTH.
+ *
+ * 1. `lib/audit-action.ts`, which composes `<subject>.<verb>` in the PAST tense
+ *    and reaches every action the server assembles at a call site. This is what
+ *    the Overview has used since the last time a raw value stood in front of an
+ *    operator, and it is first here so that one column speaks one tense: a
+ *    trail is a list of things that are over. The filter's vocabulary is
+ *    infinitive on purpose — there it labels a choice, not an event — and
+ *    putting it in the rows made "Kommentar freigeben" sit under
+ *    "Sitzung begonnen" in the same column.
+ * 2. The filter's vocabulary, for an action the composition cannot name.
+ * 3. `null` — and the caller prints the machine value MARKED AS ONE.
+ *
+ * What is gone is the fallback that returned the raw action as if it were a
+ * name: `oauth.login` sat in typewriter type between two German sentences and
+ * nothing anywhere said the mapping had a hole. §15.2 allows a machine value —
+ * "als solcher erkennbar" — and forbids both a plausible German invention and
+ * "Unbekannt". A silent fallback is the shape that lets the next hole through,
+ * so the hole is now also a red test: test/unit/cockpit-audit-action.test.mjs
+ * reads every action out of src/ and fails on the first one neither reading can
+ * name.
+ */
+const auditOperation = (
+  t: (key: TranslationKey) => string,
+  action: string,
+): { label: string; machine: false } | { label: string; machine: true } => {
+  const phrase = auditPhrase(action)
+  if (phrase) return { label: `${t(phrase.subject)} ${t(phrase.verb)}`, machine: false }
+  if (action in AUDIT_ACTION_KEYS) {
+    return { label: t(AUDIT_ACTION_KEYS[action as keyof typeof AUDIT_ACTION_KEYS]), machine: false }
+  }
+  return { label: action, machine: true }
+}
+
+/**
+ * Who caused the row — §15.2's "Verursacher".
+ *
+ * The label the source carries, else the actor TYPE it carries, else a dash.
+ * The type is read, not inferred; "Unbekannter Akteur" was neither, and §15.2
+ * says plainly that where the source carries none the answer is a dash.
+ */
+const originLabel = (t: (key: TranslationKey) => string, event: AuditEvent) => {
+  const type = AUDIT_ACTOR_KEYS[event.actor_type as keyof typeof AUDIT_ACTOR_KEYS]
+  return event.actor_label || (type ? t(type) : '—')
+}
+
+/** The German kind for a row's resource, or a dash — §15.2 forbids inventing "Unbekannt". */
+const kindLabel = (t: (key: TranslationKey) => string, resourceType: string | null | undefined) => {
+  const key = auditResourceKind(resourceType)
+  return key ? t(key) : '—'
+}
+
+/** The operation as one cell: a German name, or the machine value shown as one. */
+function Operation({ action }: { action: string }) {
+  const { t } = useI18n()
+  const read = auditOperation(t, action)
+  if (!read.machine) return <span>{read.label}</span>
+  // Named as a machine value ON THE SURFACE, not in a `title`: a tooltip is
+  // invisible to touch and to the keyboard, and the whole point is that nobody
+  // reads this as German. §15.2 asks for "als solcher erkennbar" — so it says so.
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+      <code className="font-mono text-xs break-all">{read.label}</code>
+      <span className="text-xs text-muted-foreground">{t('audit.machineValue')}</span>
+    </span>
+  )
+}
 
 /**
  * "No filter", as a value Radix will accept.
@@ -225,30 +294,23 @@ export function AuditPage() {
         cell: (event) => dateTime(event.created_at),
       },
       {
-        id: 'actor',
-        priority: 'supporting',
-        kind: 'identity',
-        label: t('audit.actor'),
-        compare: (left, right) => compareText(left.actor_label, right.actor_label),
-        className: 'text-muted-foreground',
-        cell: (event) => event.actor_label || t(AUDIT_ACTOR_KEYS[event.actor_type as keyof typeof AUDIT_ACTOR_KEYS] ?? 'audit.unknownActor'),
-      },
-      {
-        id: 'action',
+        id: 'operation',
         priority: 'essential',
         kind: 'identity',
-        label: t('audit.action'),
+        label: t('audit.operation'),
         compare: (left, right) => compareText(left.action, right.action),
-        className: 'font-mono text-xs',
-        cell: (event) => auditActionLabel(t, event.action),
+        cell: (event) => <Operation action={event.action} />,
       },
       {
-        id: 'resource',
-        priority: 'detail',
-        label: t('audit.resource'),
-        compare: (left, right) => compareText(left.resource_label, right.resource_label),
+        id: 'kind',
+        priority: 'supporting',
+        label: t('audit.kind'),
+        compare: (left, right) => compareText(left.resource_type, right.resource_type),
         className: 'text-muted-foreground',
-        cell: (event) => event.resource_label || event.resource_type || t('audit.unknownResource'),
+        // §15.2's "Art" is the KIND, and the label of the object is not a kind.
+        // A row about a release named "2026-08-19" says "Release" here; which
+        // release it was is the detail below it.
+        cell: (event) => kindLabel(t, event.resource_type),
       },
       {
         id: 'result',
@@ -261,6 +323,28 @@ export function AuditPage() {
             {t(AUDIT_RESULT_KEYS[event.result as keyof typeof AUDIT_RESULT_KEYS] ?? 'audit.result.failed')}
           </StatusBadge>
         ),
+      },
+      {
+        id: 'origin',
+        priority: 'supporting',
+        kind: 'identity',
+        label: t('audit.origin'),
+        compare: (left, right) => compareText(left.actor_label, right.actor_label),
+        className: 'text-muted-foreground',
+        // §15.2: a dash where the source carries none — NEVER inferred. The
+        // actor type is carried by the row, so naming it is reading and not
+        // guessing; "Unbekannter Akteur" was neither, and is gone.
+        cell: (event) => originLabel(t, event),
+      },
+      // Product-specific columns, and to the RIGHT of the five (§15.2).
+      {
+        id: 'site',
+        priority: 'detail',
+        label: t('audit.site'),
+        hiddenByDefault: true,
+        compare: (left, right) => compareText(left.site_label, right.site_label),
+        className: 'text-muted-foreground',
+        cell: (event) => event.site_label ?? '—',
       },
       {
         id: 'transport',
@@ -315,10 +399,7 @@ export function AuditPage() {
   )
 
   return (
-    <Page
-      title={t('audit.title')}
-      description={t('audit.description')}
-    >
+    <Page title={t('audit.title')} description={t('audit.description')}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/*
           The three filters are Radix Selects now, and each one's `data-testid`
@@ -327,15 +408,8 @@ export function AuditPage() {
           are unchanged — `ck-audit-site-filter`, `ck-audit-action-filter`,
           `ck-audit-limit-filter` are what scripts/verify-cockpit-prod.md drives.
         */}
-        <Select
-          value={scope || ANY}
-          onValueChange={(next) => setScope(next === ANY ? '' : next)}
-        >
-          <SelectTrigger
-            className="w-44"
-            data-testid="ck-audit-site-filter"
-            aria-label={t('audit.filter.site')}
-          >
+        <Select value={scope || ANY} onValueChange={(next) => setScope(next === ANY ? '' : next)}>
+          <SelectTrigger className="w-44" data-testid="ck-audit-site-filter" aria-label={t('audit.filter.site')}>
             <SelectValue placeholder={t('site.every')} />
           </SelectTrigger>
           <SelectContent>
@@ -352,11 +426,7 @@ export function AuditPage() {
           </SelectContent>
         </Select>
         <Select value={action || ANY} onValueChange={(next) => setAction(next === ANY ? '' : next)}>
-          <SelectTrigger
-            className="w-52"
-            data-testid="ck-audit-action-filter"
-            aria-label={t('audit.filter.action')}
-          >
+          <SelectTrigger className="w-52" data-testid="ck-audit-action-filter" aria-label={t('audit.filter.action')}>
             <SelectValue placeholder={t('audit.allActions')} />
           </SelectTrigger>
           <SelectContent>
@@ -389,11 +459,7 @@ export function AuditPage() {
           </SelectContent>
         </Select>
         <Select value={String(limit)} onValueChange={(next) => setLimit(Number(next))}>
-          <SelectTrigger
-            className="w-32"
-            data-testid="ck-audit-limit-filter"
-            aria-label={t('audit.filter.limit')}
-          >
+          <SelectTrigger className="w-32" data-testid="ck-audit-limit-filter" aria-label={t('audit.filter.limit')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -410,12 +476,7 @@ export function AuditPage() {
           // The one thing the seeded copy owes the operator: a way back to the
           // selected site, said out loud rather than implied by a switcher that
           // does nothing here.
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="ck-audit-follow-site"
-            onClick={() => setScope(site)}
-          >
+          <Button variant="ghost" size="sm" data-testid="ck-audit-follow-site" onClick={() => setScope(site)}>
             {t(scope ? 'audit.followSite' : 'audit.followEvery', {
               scope,
               site: selected?.name ?? site,
@@ -435,11 +496,7 @@ export function AuditPage() {
         isLoading={events.isPending}
         error={events.error}
         onRetry={() => events.refetch()}
-        emptyMessage={
-          action || scope
-            ? t('audit.empty.filteredDescription')
-            : t('audit.empty.description')
-        }
+        emptyMessage={action || scope ? t('audit.empty.filteredDescription') : t('audit.empty.description')}
         view={view}
         onViewChange={setView}
         page={page}
@@ -452,9 +509,11 @@ export function AuditPage() {
             <div className="grid gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium">{auditActionLabel(t, event.action)}</p>
+                  <p className="text-xs font-medium">
+                    <Operation action={event.action} />
+                  </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {event.actor_label || t(AUDIT_ACTOR_KEYS[event.actor_type as keyof typeof AUDIT_ACTOR_KEYS] ?? 'audit.unknownActor')}
+                    {originLabel(t, event)}
                     {' · '}
                     {dateTime(event.created_at)}
                   </p>
@@ -465,7 +524,7 @@ export function AuditPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="truncate text-xs text-muted-foreground">
-                  {event.resource_label || event.resource_type || t('audit.unknownResource')}
+                  {event.resource_label || kindLabel(t, event.resource_type)}
                 </span>
                 <Button
                   size="sm"
@@ -480,7 +539,7 @@ export function AuditPage() {
             </div>
           )
         }}
-        renderExpandedRow={(event) => expanded === event.id ? detail(event) : null}
+        renderExpandedRow={(event) => (expanded === event.id ? detail(event) : null)}
       />
     </Page>
   )
